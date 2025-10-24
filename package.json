@@ -13,12 +13,15 @@
     "start:backend": "node dist/Server.ts",
     "start:frontend": "cd frontend && npm run build && npm run serve",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:db": "node test-db-connection.js",
+    "test:mcp": "node test-mcp-connection.js",
     "setup": "npm install && cd frontend && npm install",
     "build:all": "npm run build && cd frontend && npm run build"
   },
   "author": "Gift Sibiya",
   "license": "ISC",
   "dependencies": {
+    "@types/minio": "^7.1.0",
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
     "body-parser": "^2.2.0",
@@ -27,6 +30,7 @@
     "drizzle-kit": "^0.31.5",
     "drizzle-orm": "^0.44.7",
     "express": "^5.1.0",
+    "minio": "^8.0.6",
     "multer": "^2.0.2",
     "pg": "^8.16.3"
   },

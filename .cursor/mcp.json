@@ -1,7 +1,11 @@
 {
-    "mcpServers": {
-      "supabase": {
-        "url": "https://mcp.supabase.com/mcp?project_ref=zqplnpxfpckvdhuqmfcr"
+  "mcpServers": {
+    "skaftin": {
+      "command": "node",
+      "args": ["mcp-client.js"],
+      "env": {
+        "MCP_SERVER_URL": "http://localhost:4005/api/mcp/tools"
       }
     }
   }
+}
