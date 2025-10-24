@@ -1,0 +1,45 @@
+{
+  "name": "skaftin",
+  "version": "1.0.0",
+  "description": "Skaftin Platform",
+  "main": "src/Server.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "nodemon src/Server.ts",
+    "dev:backend": "nodemon src/Server.ts",
+    "dev:frontend": "cd frontend && npm start",
+    "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "start": "node dist/Server.ts",
+    "start:backend": "node dist/Server.ts",
+    "start:frontend": "cd frontend && npm run build && npm run serve",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "setup": "npm install && cd frontend && npm install",
+    "build:all": "npm run build && cd frontend && npm run build"
+  },
+  "author": "Gift Sibiya",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.12.2",
+    "bcrypt": "^6.0.0",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "drizzle-kit": "^0.31.5",
+    "drizzle-orm": "^0.44.7",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/body-parser": "^1.19.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.4",
+    "@types/node": "^24.9.1",
+    "@types/pg": "^8.15.5",
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.9.3"
+  }
+}
