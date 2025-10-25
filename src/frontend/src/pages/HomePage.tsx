@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useAppStore } from '../store/useAppStore';
 import { 
   Database, 
   Cloud, 
@@ -13,10 +12,14 @@ import {
   Play,
   Star,
   Users,
-  Globe
 } from 'lucide-react';
+import { useAppStore } from '../stores/StoresIndex';
 
-const HomePage = () => {
+interface HomePageProps {
+  onGetStarted?: () => void;
+}
+
+const HomePage = ({ onGetStarted }: HomePageProps) => {
   const { theme, setTheme } = useAppStore();
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
 
@@ -114,7 +117,10 @@ const HomePage = () => {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
-              <button className="btn-primary text-lg px-8 py-4">
+              <button 
+                onClick={onGetStarted}
+                className="btn-primary text-lg px-8 py-4"
+              >
                 Start Building
                 <ArrowRight className="w-5 h-5 ml-2" />
               </button>

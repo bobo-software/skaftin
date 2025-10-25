@@ -7,6 +7,7 @@ import { testConnection } from './backend/db/connection';
 // ROUTERS
 import healthRoutes from './backend/routes/health.routes';
 import mcpRoutes from './backend/routes/mcp.routes';
+import authRoutes from './backend/routes/auth.routes';
 
 // Validate configuration on startup
 validateConfig();
@@ -28,6 +29,7 @@ app.use(bodyParser.json());
 // Routes
 app.use('/api/health', healthRoutes);
 app.use('/api/mcp', mcpRoutes);
+app.use('/api/auth', authRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.send('Hello from Skaftin ⛪, be blessed!');
