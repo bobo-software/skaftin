@@ -56,6 +56,64 @@ class McpService {
     return await this.executeTool('execute_sql', { projectId, query, parameters });
   }
 
+  // Alias for executeSql for consistency
+  static async executeQuery(projectId: string, query: string, parameters?: any[]): Promise<any> {
+    return await this.executeSql(projectId, query, parameters);
+  }
+
+  // Additional database operations
+  static async insertData(projectId: string, tableName: string, data: any): Promise<any> {
+    return await this.executeTool('insert_data', { projectId, tableName, data });
+  }
+
+  static async updateData(projectId: string, tableName: string, data: any, where: any): Promise<any> {
+    return await this.executeTool('update_data', { projectId, tableName, data, where });
+  }
+
+  static async deleteData(projectId: string, tableName: string, where: any): Promise<any> {
+    return await this.executeTool('delete_data', { projectId, tableName, data: where });
+  }
+
+  static async selectData(projectId: string, tableName: string, options?: any): Promise<any> {
+    return await this.executeTool('select_data', { projectId, tableName, ...options });
+  }
+
+  static async dropTable(projectId: string, tableName: string): Promise<any> {
+    return await this.executeTool('drop_table', { projectId, tableName });
+  }
+
+  static async addColumn(projectId: string, tableName: string, columnName: string, columnType: string, nullable?: boolean): Promise<any> {
+    return await this.executeTool('add_column', { projectId, tableName, columnName, columnType, nullable });
+  }
+
+  static async dropColumn(projectId: string, tableName: string, columnName: string): Promise<any> {
+    return await this.executeTool('drop_column', { projectId, tableName, columnName });
+  }
+
+  static async createIndex(projectId: string, tableName: string, indexName: string, columns: string[], unique?: boolean): Promise<any> {
+    return await this.executeTool('create_index', { projectId, tableName, indexName, columns, unique });
+  }
+
+  static async listIndexes(projectId: string, tableName: string): Promise<any> {
+    return await this.executeTool('list_indexes', { projectId, tableName });
+  }
+
+  static async createForeignKey(projectId: string, tableName: string, columnName: string, referencedTable: string, referencedColumn: string): Promise<any> {
+    return await this.executeTool('create_foreign_key', { projectId, tableName, columnName, referencedTable, referencedColumn });
+  }
+
+  static async backupSchema(projectId: string, backupName?: string): Promise<any> {
+    return await this.executeTool('backup_schema', { projectId, backupName });
+  }
+
+  static async restoreSchema(projectId: string, backupName: string): Promise<any> {
+    return await this.executeTool('restore_schema', { projectId, backupName });
+  }
+
+  static async getDatabaseStats(projectId: string): Promise<any> {
+    return await this.executeTool('get_database_stats', { projectId });
+  }
+
   // Storage operations
   static async listFiles(projectId: string, prefix?: string): Promise<any> {
     return await this.executeTool('list_files', { projectId, prefix });

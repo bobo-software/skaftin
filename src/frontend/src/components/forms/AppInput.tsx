@@ -1,10 +1,10 @@
 import React from 'react';
 
 interface AppInputProps {
-  type?: 'text' | 'email' | 'password' | 'number' | 'tel' | 'url';
+  type?: 'text' | 'email' | 'password' | 'number' | 'tel' | 'url' | 'datetime-local' | 'date' | 'time' | 'checkbox' | 'textarea';
   placeholder?: string;
-  value: string;
-  onChange: (value: string) => void;
+  value: string | boolean | number;
+  onChange: (value: string | boolean | number) => void;
   label?: string;
   error?: string;
   disabled?: boolean;
@@ -12,6 +12,10 @@ interface AppInputProps {
   className?: string;
   icon?: React.ReactNode;
   showPasswordToggle?: boolean;
+  rows?: number;
+  min?: number;
+  max?: number;
+  step?: number;
 }
 
 const AppInput = ({
@@ -25,12 +29,94 @@ const AppInput = ({
   required = false,
   className = '',
   icon,
-  showPasswordToggle = false
+  showPasswordToggle = false,
+  rows = 3,
+  min,
+  max,
+  step
 }: AppInputProps) => {
   const [showPassword, setShowPassword] = React.useState(false);
   const [isFocused, setIsFocused] = React.useState(false);
   
   const inputType = type === 'password' && showPassword ? 'text' : type;
+  
+  const baseInputClasses = `
+    w-full px-4 py-3 rounded-lg border transition-all duration-200
+    ${icon ? 'pl-10' : ''}
+    ${showPasswordToggle && type === 'password' ? 'pr-12' : ''}
+    ${error 
+      ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20' 
+      : isFocused 
+        ? 'border-primary-500 ring-2 ring-primary-500/20' 
+        : 'border-dark-200 dark:border-dark-700'
+    }
+    ${disabled 
+      ? 'bg-dark-50 dark:bg-dark-800 text-dark-400 dark:text-dark-500 cursor-not-allowed' 
+      : 'bg-white dark:bg-dark-700 text-dark-900 dark:text-white'
+    }
+    focus:outline-none focus:ring-2 focus:ring-primary-500/20
+  `;
+
+  const renderInput = () => {
+    // Checkbox input
+    if (type === 'checkbox') {
+      return (
+        <div className="flex items-center space-x-3">
+          <input
+            type="checkbox"
+            checked={!!value}
+            onChange={(e) => onChange(e.target.checked)}
+            disabled={disabled}
+            className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
+          />
+          <span className="text-sm text-dark-600 dark:text-dark-300">
+            {value ? 'True' : 'False'}
+          </span>
+        </div>
+      );
+    }
+
+    // Textarea input
+    if (type === 'textarea') {
+      return (
+        <textarea
+          placeholder={placeholder}
+          value={String(value || '')}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          disabled={disabled}
+          required={required}
+          rows={rows}
+          className={`${baseInputClasses} resize-none`}
+        />
+      );
+    }
+
+    // Regular input
+    return (
+      <input
+        type={inputType as any}
+        placeholder={placeholder}
+        value={String(value || '')}
+        onChange={(e) => {
+          if (type === 'number') {
+            onChange(parseFloat(e.target.value) || 0);
+          } else {
+            onChange(e.target.value);
+          }
+        }}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        disabled={disabled}
+        required={required}
+        min={min}
+        max={max}
+        step={step}
+        className={baseInputClasses}
+      />
+    );
+  };
   
   return (
     <div className={`space-y-2 ${className}`}>
@@ -48,32 +134,7 @@ const AppInput = ({
           </div>
         )}
         
-        <input
-          type={inputType}
-          placeholder={placeholder}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          disabled={disabled}
-          required={required}
-          className={`
-            w-full px-4 py-3 rounded-lg border transition-all duration-200
-            ${icon ? 'pl-10' : ''}
-            ${showPasswordToggle && type === 'password' ? 'pr-12' : ''}
-            ${error 
-              ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20' 
-              : isFocused 
-                ? 'border-primary-500 ring-2 ring-primary-500/20' 
-                : 'border-dark-200 dark:border-dark-700'
-            }
-            ${disabled 
-              ? 'bg-dark-50 dark:bg-dark-800 text-dark-400 dark:text-dark-500 cursor-not-allowed' 
-              : 'bg-white dark:bg-dark-700 text-dark-900 dark:text-white'
-            }
-            focus:outline-none focus:ring-2 focus:ring-primary-500/20
-          `}
-        />
+        {renderInput()}
         
         {showPasswordToggle && type === 'password' && (
           <button

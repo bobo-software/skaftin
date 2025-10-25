@@ -74,7 +74,10 @@ const AppRoutes = () => {
                 const data = sessionStorage.getItem('projectCreationData');
                 return data ? JSON.parse(data).name : '';
               })()}
-              onComplete={() => navigate(ROUTES.DASHBOARD)}
+              onComplete={(project) => {
+                setCurrentProject(project);
+                navigate(ROUTES.DASHBOARD);
+              }}
               onError={(error) => {
                 console.error('Project creation error:', error);
                 navigate(ROUTES.PROJECTS);

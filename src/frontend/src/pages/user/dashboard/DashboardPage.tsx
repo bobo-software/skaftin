@@ -26,6 +26,7 @@ const DashboardPage = ({ onBackToProjects }: DashboardPageProps) => {
   const { currentProject } = useProjectStore();
   const [activeSection, setActiveSection] = useState('overview');
 
+
   const sidebarItems = [
     { id: 'overview', name: 'Project Overview', icon: BarChart3 },
     { id: 'database', name: 'Database', icon: Database },
@@ -38,7 +39,7 @@ const DashboardPage = ({ onBackToProjects }: DashboardPageProps) => {
       case 'overview':
         return <ProjectOverviewTab />;
       case 'database':
-        return <ProjectDatabaseTab />;
+        return <ProjectDatabaseTab projectId={currentProject?.id || ''} />;
       case 'storage':
         return <ProjectStorageTab />;
       case 'settings':

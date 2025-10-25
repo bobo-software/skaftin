@@ -1,96 +1,91 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useAppStore } from '../../../../stores/StoresIndex';
-import McpService from '../../../../services/McpService';
+import { useState } from 'react';
+import { useProjectStore } from '../../../../stores/StoresIndex';
 import { 
   Database, 
-  Plus,
-  Code
+  Code,
+  Table,
+  Wrench,
+  Search
 } from 'lucide-react';
+import { 
+  TableViewer, 
+  SqlEditor, 
+  SchemaDesigner, 
+  QueryBuilder 
+} from '../../../../components/ComponentsIndex';
 
-const ProjectDatabaseTab = () => {
-  const { currentProject } = useAppStore();
-  const [tables, setTables] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+interface ProjectDatabaseTabProps {
+  projectId: string;
+}
 
-  const loadTables = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const response = await McpService.listTables(currentProject.id);
-      
-      if (response.success && response.result.success) {
-        setTables(response.result.data || []);
-      }
-    } catch (error) {
-      console.error('Error loading tables:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentProject]);
+const ProjectDatabaseTab = ({ projectId }: ProjectDatabaseTabProps) => {
+  const { currentProject } = useProjectStore();
+  const [activeTab, setActiveTab] = useState('tables');
 
-  useEffect(() => {
-    if (currentProject) {
-      loadTables();
-    }
-  }, [currentProject, loadTables]);
+
+  const tabs = [
+    { id: 'tables', name: 'Table Viewer', icon: Table, component: TableViewer },
+    { id: 'sql', name: 'SQL Editor', icon: Code, component: SqlEditor },
+    { id: 'designer', name: 'Schema Designer', icon: Wrench, component: SchemaDesigner },
+    { id: 'builder', name: 'Query Builder', icon: Search, component: QueryBuilder }
+  ];
+
+  const renderContent = () => {
+    const activeTabConfig = tabs.find(tab => tab.id === activeTab);
+    if (!activeTabConfig) return null;
+
+    const Component = activeTabConfig.component;
+    return <Component projectId={projectId} />;
+  };
+
+  if (!currentProject) {
+    return (
+      <div className="text-center py-12">
+        <Database className="w-16 h-16 text-dark-300 dark:text-dark-600 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-dark-900 dark:text-white mb-2">No Project Selected</h3>
+        <p className="text-dark-600 dark:text-dark-300">Select a project to access database tools</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-dark-900 dark:text-white">Database</h2>
-        <button className="btn-primary">
-          <Plus className="w-5 h-5 mr-2" />
-          Create Table
-        </button>
+        <div>
+          <h2 className="text-2xl font-bold text-dark-900 dark:text-white">Database Tools</h2>
+          <p className="text-sm text-dark-600 dark:text-dark-300">
+            Manage your database with powerful tools and interfaces
+          </p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card">
-          <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">Tables</h3>
-          {isLoading ? (
-            <div className="text-center py-8">
-              <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-dark-600 dark:text-dark-300">Loading tables...</p>
-            </div>
-          ) : tables.length === 0 ? (
-            <div className="text-center py-8">
-              <Database className="w-12 h-12 text-dark-300 dark:text-dark-600 mx-auto mb-4" />
-              <p className="text-dark-600 dark:text-dark-300">No tables created yet</p>
-              <button className="btn-primary mt-4">
-                <Plus className="w-4 h-4 mr-2" />
-                Create Your First Table
+      {/* Tab Navigation */}
+      <div className="border-b border-dark-200 dark:border-dark-700">
+        <nav className="flex space-x-8">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                    : 'border-transparent text-dark-500 dark:text-dark-400 hover:text-dark-700 dark:hover:text-dark-300 hover:border-dark-300 dark:hover:border-dark-600'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span>{tab.name}</span>
               </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {tables.map((table, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-dark-50 dark:bg-dark-700 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <Database className="w-5 h-5 text-primary-500" />
-                    <div className="flex flex-col">
-                      <span className="font-medium text-dark-900 dark:text-white">{table.table_name}</span>
-                      <span className="text-xs text-dark-500 dark:text-dark-400">{table.table_type}</span>
-                    </div>
-                  </div>
-                  <button className="text-dark-400 hover:text-dark-600 dark:hover:text-dark-300">
-                    <Code className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+            );
+          })}
+        </nav>
+      </div>
 
-        <div className="card">
-          <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">SQL Editor</h3>
-          <div className="bg-dark-900 rounded-lg p-4 font-mono text-sm">
-            <div className="text-green-400">-- Write your SQL queries here</div>
-            <div className="text-blue-400">SELECT * FROM users;</div>
-          </div>
-          <button className="btn-primary mt-4 w-full">
-            <Code className="w-4 h-4 mr-2" />
-            Execute Query
-          </button>
-        </div>
+      {/* Tab Content */}
+      <div className="mt-6">
+        {renderContent()}
       </div>
     </div>
   );
