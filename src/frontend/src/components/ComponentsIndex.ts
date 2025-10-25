@@ -16,6 +16,7 @@ export { default as DeleteProjectModal } from './modals/DeleteProjectModal';
 export { default as DeleteConfirmModal } from './modals/DeleteConfirmModal';
 export { default as AddRowModal } from './modals/AddRowModal';
 export { default as CsvImportModal } from './modals/CsvImportModal';
+export { default as FileUploadModal } from './modals/FileUploadModal';
 
 // ---------- Database Components ---------- //
 export { default as TableViewer } from './database/TableViewer';
@@ -23,4 +24,5 @@ export { default as DataTable } from './database/DataTable';
 export { default as SqlEditor } from './database/SqlEditor';
 export { default as SchemaDesigner } from './database/SchemaDesigner';
 export { default as SchemaEditor } from './database/SchemaEditor';
+export { default as StorageViewer } from './database/StorageViewer';
 export { default as QueryBuilder } from './database/QueryBuilder';

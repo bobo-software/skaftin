@@ -5,13 +5,15 @@ import {
   Code,
   Table,
   Wrench,
-  Search
+  Search,
+  Folder
 } from 'lucide-react';
 import { 
   TableViewer, 
   SqlEditor, 
   SchemaDesigner, 
-  QueryBuilder 
+  QueryBuilder,
+  StorageViewer
 } from '../../../../components/ComponentsIndex';
 
 interface ProjectDatabaseTabProps {
@@ -25,6 +27,7 @@ const ProjectDatabaseTab = ({ projectId }: ProjectDatabaseTabProps) => {
 
   const tabs = [
     { id: 'tables', name: 'Table Viewer', icon: Table, component: TableViewer },
+    { id: 'storage', name: 'Storage', icon: Folder, component: StorageViewer },
     { id: 'sql', name: 'SQL Editor', icon: Code, component: SqlEditor },
     { id: 'designer', name: 'Schema Designer', icon: Wrench, component: SchemaDesigner },
     { id: 'builder', name: 'Query Builder', icon: Search, component: QueryBuilder }

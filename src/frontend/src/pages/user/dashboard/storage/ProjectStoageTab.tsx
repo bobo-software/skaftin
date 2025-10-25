@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useAppStore } from '../../../../stores/StoresIndex';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useProjectStore } from '../../../../stores/StoresIndex';
 import McpService from '../../../../services/McpService';
 import { 
   Cloud, 
@@ -9,30 +9,77 @@ import {
 } from 'lucide-react';
 
 const ProjectStorageTab = () => {
-  const { currentProject } = useAppStore();
+  console.log('ProjectStorageTab: Component mounted');
+  
+  const { currentProject, setCurrentProject } = useProjectStore();
+  console.log('ProjectStorageTab: Current project from store:', currentProject);
+  
+  // Temporary: Set a project if none is selected
+  useEffect(() => {
+    if (!currentProject) {
+      console.log('ProjectStorageTab: No current project, setting test project');
+      const testProject = {
+        id: 'b76224c8-2f0b-488c-ae7e-ed194585dce0',
+        name: 'vMelodic',
+        description: 'Test Project',
+        schema_name: 'project_vmelodic',
+        bucket_name: 'project-vmelodic',
+        created_at: '2025-10-25T09:01:53.091Z',
+        updated_at: '2025-10-25T09:01:53.091Z',
+        user_id: '550e8400-e29b-41d4-a716-446655440000'
+      };
+      setCurrentProject(testProject);
+    }
+  }, [currentProject, setCurrentProject]);
+  
+  const projectToUse = currentProject;
+  console.log('ProjectStorageTab: Using project:', projectToUse);
+  
   const [files, setFiles] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const isLoadingRef = useRef(false);
 
   const loadFiles = useCallback(async () => {
+    console.log('ProjectStorageTab: Loading files for project:', projectToUse?.id);
+    
+    // Prevent multiple simultaneous requests
+    if (isLoadingRef.current) {
+      console.log('ProjectStorageTab: Already loading, skipping request');
+      return;
+    }
+    
     try {
+      isLoadingRef.current = true;
       setIsLoading(true);
-      const response = await McpService.listFiles(currentProject.id);
+      const response = await McpService.listFiles(projectToUse.id);
+      console.log('ProjectStorageTab: MCP response:', response);
       
       if (response.success && response.result.success) {
-        setFiles(response.result.data || []);
+        const files = response.result.data || [];
+        console.log('ProjectStorageTab: Extracted files:', files);
+        setFiles(files);
+      } else {
+        console.error('ProjectStorageTab: Failed to load files:', response);
+        setFiles([]);
       }
     } catch (error) {
-      console.error('Error loading files:', error);
+      console.error('ProjectStorageTab: Error loading files:', error);
+      setFiles([]);
     } finally {
+      console.log('ProjectStorageTab: Setting loading to false');
+      isLoadingRef.current = false;
       setIsLoading(false);
     }
-  }, [currentProject]);
+  }, [projectToUse.id]); // Only depend on project ID
 
   useEffect(() => {
-    if (currentProject) {
+    if (projectToUse?.id) {
       loadFiles();
+    } else {
+      console.log('ProjectStorageTab: No project available, setting loading to false');
+      setIsLoading(false);
     }
-  }, [currentProject, loadFiles]);
+  }, [projectToUse?.id, loadFiles]); // Only depend on project ID and loadFiles
 
   return (
     <div className="space-y-6">
@@ -45,7 +92,13 @@ const ProjectStorageTab = () => {
       </div>
 
       <div className="card">
-        {isLoading ? (
+        {!projectToUse ? (
+          <div className="text-center py-12">
+            <Cloud className="w-16 h-16 text-dark-300 dark:text-dark-600 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-2">No Project Selected</h3>
+            <p className="text-dark-600 dark:text-dark-300">Please select a project to view its storage</p>
+          </div>
+        ) : isLoading ? (
           <div className="text-center py-12">
             <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-dark-600 dark:text-dark-300">Loading files...</p>
