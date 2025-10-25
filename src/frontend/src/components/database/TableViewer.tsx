@@ -3,19 +3,15 @@ import { useDatabaseStore, useRealtimeStore } from '../../stores/StoresIndex';
 import McpService from '../../services/McpService';
 import { 
   Database, 
-  Eye, 
-  Edit3, 
-  Trash2, 
   Plus,
   RefreshCw,
   Search,
   Filter,
   Download,
   Table,
-  List,
-  Settings
+  List
 } from 'lucide-react';
-import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor } from '../ComponentsIndex';
+import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal } from '../ComponentsIndex';
 
 interface TableViewerProps {
   projectId: string;
@@ -38,8 +34,9 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('schema');
+  const [activeTab, setActiveTab] = useState('data');
   const [showAddRowModal, setShowAddRowModal] = useState(false);
+  const [showCsvImportModal, setShowCsvImportModal] = useState(false);
   const [tableData, setTableData] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState<{
@@ -138,6 +135,26 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     } catch (error) {
       console.error('Error adding row:', error);
       return false;
+    }
+  };
+
+  const handleCsvImport = async (dataArray: any[], columnMapping: any) => {
+    if (!selectedTable) return;
+    
+    try {
+      const result = await McpService.bulkInsertData(projectId, selectedTable, dataArray);
+      if (result.success) {
+        console.log(`Successfully imported ${dataArray.length} rows`);
+        setShowCsvImportModal(false);
+        await fetchTableData(selectedTable);
+        alert(`Successfully imported ${dataArray.length} rows from CSV!`);
+      } else {
+        console.error('Failed to import CSV:', result.error);
+        alert('Failed to import CSV data. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error importing CSV:', error);
+      alert('Error importing CSV data. Please try again.');
     }
   };
 
@@ -247,12 +264,12 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         </div>
       )}
 
-      <div className="flex h-full min-h-[600px]">
+      <div className="flex h-screen">
         {/* Tables Sidebar */}
         <div className="w-80 flex-shrink-0 border-r border-dark-200 dark:border-dark-700 bg-dark-50 dark:bg-dark-800">
           <div className="h-full flex flex-col">
             {/* Sidebar Header */}
-            <div className="p-4 border-b border-dark-200 dark:border-dark-700">
+            <div className="p-4 border-b border-dark-200 dark:border-dark-700 flex-shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-semibold text-dark-900 dark:text-white">Tables</h4>
                 <span className="text-xs text-dark-500 dark:text-dark-400 bg-dark-100 dark:bg-dark-700 px-2 py-1 rounded">
@@ -290,7 +307,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
               </div>
             </div>
 
-            {/* Tables List */}
+            {/* Tables List - Scrollable */}
             <div className="flex-1 overflow-y-auto p-4">
               {filteredTables.length === 0 ? (
                 <div className="text-center py-8">
@@ -334,7 +351,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         </div>
 
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 h-full">
           {currentTable ? (
             <div className="h-full flex flex-col">
               {/* Content Header */}
@@ -415,6 +432,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                       loading={dataLoading}
                       onRefresh={() => selectedTable && fetchTableData(selectedTable)}
                       onAddRow={() => setShowAddRowModal(true)}
+                      onCsvImport={() => setShowCsvImportModal(true)}
                       onEditRow={async (updatedRow, index) => {
                         if (!selectedTable) return;
                         
@@ -494,6 +512,17 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         loading={deleteModal.loading}
         variant={deleteModal.type}
       />
+
+      {/* CSV Import Modal */}
+      {currentTable && (
+        <CsvImportModal
+          isOpen={showCsvImportModal}
+          onClose={() => setShowCsvImportModal(false)}
+          onImport={handleCsvImport}
+          tableColumns={currentTable.columns || []}
+          loading={dataLoading}
+        />
+      )}
     </div>
   );
 };

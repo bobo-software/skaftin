@@ -38,7 +38,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // Routes
 app.use('/api/health', healthRoutes);
@@ -77,6 +78,26 @@ export { io };
 
 app.get('/', (req: Request, res: Response) => {
   res.send('Hello from Skaftin ⛪, be blessed!');
+});
+
+// Special endpoint for large SQL dumps
+app.post('/api/parse-sql', (req: Request, res: Response) => {
+  try {
+    const { sql } = req.body;
+    if (!sql) {
+      return res.status(400).json({ error: 'SQL content is required' });
+    }
+    
+    // For now, just return success - the parsing will be done on the frontend
+    res.json({ 
+      success: true, 
+      message: 'SQL received successfully',
+      length: sql.length 
+    });
+  } catch (error) {
+    console.error('Error parsing SQL:', error);
+    res.status(500).json({ error: 'Failed to parse SQL' });
+  }
 });
 
 // Test database connection on startup

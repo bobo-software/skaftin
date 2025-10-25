@@ -96,6 +96,65 @@ export class MCPService {
         ],
         category: 'database'
       },
+        {
+          name: 'bulk_insert_data',
+          description: 'Insert multiple rows of data into a table',
+          parameters: [
+            { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+            { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+            { name: 'dataArray', type: 'array', required: true, description: 'Array of data objects to insert' }
+          ],
+          category: 'database'
+        },
+        {
+          name: 'list_foreign_keys',
+          description: 'List all foreign key constraints for a table',
+          parameters: [
+            { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+            { name: 'tableName', type: 'string', required: true, description: 'Name of the table' }
+          ],
+          category: 'database'
+        },
+        {
+          name: 'list_all_constraints',
+          description: 'List all constraints (foreign keys, primary keys, check constraints) for a table',
+          parameters: [
+            { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+            { name: 'tableName', type: 'string', required: true, description: 'Name of the table' }
+          ],
+          category: 'database'
+        },
+        {
+          name: 'drop_foreign_key',
+          description: 'Drop a foreign key constraint',
+          parameters: [
+            { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+            { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+            { name: 'constraintName', type: 'string', required: true, description: 'Name of the constraint to drop' }
+          ],
+          category: 'database'
+        },
+        {
+          name: 'add_check_constraint',
+          description: 'Add a check constraint to a table',
+          parameters: [
+            { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+            { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+            { name: 'constraintName', type: 'string', required: true, description: 'Name of the constraint' },
+            { name: 'checkClause', type: 'string', required: true, description: 'Check condition (e.g., "age > 0")' }
+          ],
+          category: 'database'
+        },
+        {
+          name: 'drop_constraint',
+          description: 'Drop any constraint from a table',
+          parameters: [
+            { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+            { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+            { name: 'constraintName', type: 'string', required: true, description: 'Name of the constraint to drop' }
+          ],
+          category: 'database'
+        },
       {
         name: 'update_data',
         description: 'Update data in a table',
@@ -379,6 +438,48 @@ export class MCPService {
             parameters.data
           );
           break;
+
+            case 'bulk_insert_data':
+              result = await this.databaseService.bulkInsertData(
+                parameters.projectId || projectId,
+                parameters.tableName,
+                parameters.dataArray
+              );
+              break;
+            case 'list_foreign_keys':
+              result = await this.databaseService.listForeignKeys(
+                parameters.projectId || projectId,
+                parameters.tableName
+              );
+              break;
+            case 'list_all_constraints':
+              result = await this.databaseService.listAllConstraints(
+                parameters.projectId || projectId,
+                parameters.tableName
+              );
+              break;
+            case 'drop_foreign_key':
+              result = await this.databaseService.dropForeignKey(
+                parameters.projectId || projectId,
+                parameters.tableName,
+                parameters.constraintName
+              );
+              break;
+            case 'add_check_constraint':
+              result = await this.databaseService.addCheckConstraint(
+                parameters.projectId || projectId,
+                parameters.tableName,
+                parameters.constraintName,
+                parameters.checkClause
+              );
+              break;
+            case 'drop_constraint':
+              result = await this.databaseService.dropConstraint(
+                parameters.projectId || projectId,
+                parameters.tableName,
+                parameters.constraintName
+              );
+              break;
 
         case 'update_data':
           result = await this.databaseService.updateData(

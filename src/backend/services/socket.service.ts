@@ -1,7 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 
 interface DatabaseEvent {
-  type: 'insert' | 'update' | 'delete' | 'create_table' | 'drop_table' | 'alter_column';
+  type: 'insert' | 'update' | 'delete' | 'create_table' | 'drop_table' | 'alter_column' | 'bulk_insert';
   projectId: string;
   tableName: string;
   data?: any;
@@ -89,6 +89,16 @@ class SocketService {
       tableName,
       columnName,
       changes,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  emitBulkRowsInserted(projectId: string, tableName: string, rows: any[]) {
+    this.emitDatabaseChange({
+      type: 'bulk_insert',
+      projectId,
+      tableName,
+      data: rows,
       timestamp: new Date().toISOString()
     });
   }

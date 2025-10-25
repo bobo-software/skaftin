@@ -243,6 +243,60 @@ export class DatabaseService {
     }
   }
 
+  async bulkInsertData(projectId: string, tableName: string, dataArray: any[]): Promise<any> {
+    try {
+      const project = await this.getProject(projectId);
+      const schemaName = project.schema_name;
+      
+      if (dataArray.length === 0) {
+        return {
+          success: true,
+          data: [],
+          message: 'No data to insert'
+        };
+      }
+
+      // Get all unique columns from the data
+      const allColumns = [...new Set(dataArray.flatMap(row => Object.keys(row)))];
+      
+      // Build the bulk insert query
+      const values: any[] = [];
+      const valueRows: string[] = [];
+      
+      dataArray.forEach((row, rowIndex) => {
+        const rowValues: string[] = [];
+        allColumns.forEach((column, colIndex) => {
+          const paramIndex = rowIndex * allColumns.length + colIndex + 1;
+          rowValues.push(`$${paramIndex}`);
+          values.push(row[column] || null);
+        });
+        valueRows.push(`(${rowValues.join(', ')})`);
+      });
+
+      const query = `
+        INSERT INTO ${schemaName}.${tableName} (${allColumns.join(', ')})
+        VALUES ${valueRows.join(', ')}
+        RETURNING *
+      `;
+      
+      const result = await pool.query(query, values);
+      
+      // Emit Socket.IO event for real-time updates
+      if (this.socketService) {
+        this.socketService.emitBulkRowsInserted(projectId, tableName, result.rows);
+      }
+      
+      return {
+        success: true,
+        data: result.rows,
+        message: `${result.rows.length} rows inserted successfully`
+      };
+    } catch (error) {
+      console.error('Error bulk inserting data:', error);
+      throw new Error(`Failed to bulk insert data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   async updateData(projectId: string, tableName: string, data: any, where: any): Promise<any> {
     try {
       const project = await this.getProject(projectId);
@@ -518,6 +572,46 @@ export class DatabaseService {
     }
   }
 
+  async listForeignKeys(projectId: string, tableName: string): Promise<any> {
+    try {
+      const project = await this.getProject(projectId);
+      const schemaName = project.schema_name;
+      
+      const query = `
+        SELECT
+          tc.constraint_name,
+          tc.table_name,
+          kcu.column_name,
+          ccu.table_name AS referenced_table_name,
+          ccu.column_name AS referenced_column_name,
+          rc.delete_rule,
+          rc.update_rule
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.key_column_usage AS kcu
+          ON tc.constraint_name = kcu.constraint_name
+          AND tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage AS ccu
+          ON ccu.constraint_name = tc.constraint_name
+          AND ccu.table_schema = tc.table_schema
+        JOIN information_schema.referential_constraints AS rc
+          ON tc.constraint_name = rc.constraint_name
+          AND tc.table_schema = rc.constraint_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+          AND tc.table_schema = $1
+          AND tc.table_name = $2
+      `;
+      
+      const result = await pool.query(query, [schemaName, tableName]);
+      return {
+        success: true,
+        data: result.rows
+      };
+    } catch (error) {
+      console.error('Error listing foreign keys:', error);
+      throw new Error(`Failed to list foreign keys: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   // Foreign Key Operations
   async createForeignKey(projectId: string, tableName: string, columnName: string, referencedTable: string, referencedColumn: string): Promise<any> {
     try {
@@ -618,6 +712,135 @@ export class DatabaseService {
     } catch (error) {
       console.error('Error restoring schema:', error);
       throw new Error(`Failed to restore schema: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // List all constraints for a table
+  async listAllConstraints(projectId: string, tableName: string): Promise<any> {
+    try {
+      const project = await this.getProject(projectId);
+      const schemaName = project.schema_name;
+      
+      // Get foreign keys
+      const fkQuery = `
+        SELECT 
+          tc.constraint_name,
+          tc.table_name,
+          kcu.column_name,
+          ccu.table_name AS referenced_table_name,
+          ccu.column_name AS referenced_column_name,
+          rc.delete_rule,
+          rc.update_rule,
+          'FOREIGN KEY' as constraint_type
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.key_column_usage AS kcu
+          ON tc.constraint_name = kcu.constraint_name
+          AND tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage AS ccu
+          ON ccu.constraint_name = tc.constraint_name
+          AND ccu.table_schema = tc.table_schema
+        JOIN information_schema.referential_constraints AS rc
+          ON tc.constraint_name = rc.constraint_name
+          AND tc.table_schema = rc.constraint_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+          AND tc.table_schema = $1
+          AND tc.table_name = $2
+      `;
+      
+      const fkResult = await pool.query(fkQuery, [schemaName, tableName]);
+      
+      // Get other constraints
+      const otherQuery = `
+        SELECT 
+          tc.constraint_name,
+          tc.table_name,
+          tc.constraint_type,
+          kcu.column_name,
+          cc.check_clause
+        FROM information_schema.table_constraints AS tc
+        LEFT JOIN information_schema.key_column_usage AS kcu
+          ON tc.constraint_name = kcu.constraint_name
+          AND tc.table_schema = kcu.table_schema
+        LEFT JOIN information_schema.check_constraints AS cc
+          ON tc.constraint_name = cc.constraint_name
+          AND tc.table_schema = cc.constraint_schema
+        WHERE tc.table_schema = $1
+          AND tc.table_name = $2
+          AND tc.constraint_type != 'FOREIGN KEY'
+        ORDER BY tc.constraint_type, tc.constraint_name
+      `;
+      
+      const otherResult = await pool.query(otherQuery, [schemaName, tableName]);
+      
+      const allConstraints = [
+        ...fkResult.rows,
+        ...otherResult.rows
+      ];
+      
+      return {
+        success: true,
+        data: allConstraints
+      };
+    } catch (error) {
+      console.error('Error listing constraints:', error);
+      throw new Error(`Failed to list constraints: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Drop a foreign key constraint
+  async dropForeignKey(projectId: string, tableName: string, constraintName: string): Promise<any> {
+    try {
+      const project = await this.getProject(projectId);
+      const schemaName = project.schema_name;
+      
+      const query = `ALTER TABLE ${schemaName}.${tableName} DROP CONSTRAINT ${constraintName}`;
+      await pool.query(query);
+      
+      return {
+        success: true,
+        message: `Foreign key constraint ${constraintName} dropped successfully`
+      };
+    } catch (error) {
+      console.error('Error dropping foreign key:', error);
+      throw new Error(`Failed to drop foreign key: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Add a check constraint
+  async addCheckConstraint(projectId: string, tableName: string, constraintName: string, checkClause: string): Promise<any> {
+    try {
+      const project = await this.getProject(projectId);
+      const schemaName = project.schema_name;
+      
+      const query = `ALTER TABLE ${schemaName}.${tableName} ADD CONSTRAINT ${constraintName} CHECK (${checkClause})`;
+      await pool.query(query);
+      
+      return {
+        success: true,
+        message: `Check constraint ${constraintName} added successfully`
+      };
+    } catch (error) {
+      console.error('Error adding check constraint:', error);
+      throw new Error(`Failed to add check constraint: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Drop any constraint
+  async dropConstraint(projectId: string, tableName: string, constraintName: string): Promise<any> {
+    try {
+      const project = await this.getProject(projectId);
+      const schemaName = project.schema_name;
+      
+      const query = `ALTER TABLE ${schemaName}.${tableName} DROP CONSTRAINT ${constraintName}`;
+      await pool.query(query);
+      
+      return {
+        success: true,
+        message: `Constraint ${constraintName} dropped successfully`
+      };
+    } catch (error) {
+      console.error('Error dropping constraint:', error);
+      throw new Error(`Failed to drop constraint: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }

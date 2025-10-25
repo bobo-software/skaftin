@@ -65,6 +65,14 @@ class McpService {
     return await this.executeTool('insert_data', { projectId, tableName, data });
   }
 
+  static async bulkInsertData(projectId: string, tableName: string, dataArray: any[]): Promise<any> {
+    return await this.executeTool('bulk_insert_data', { projectId, tableName, dataArray });
+  }
+
+  static async listForeignKeys(projectId: string, tableName: string): Promise<any> {
+    return await this.executeTool('list_foreign_keys', { projectId, tableName });
+  }
+
   static async updateData(projectId: string, tableName: string, data: any, where: any): Promise<any> {
     return await this.executeTool('update_data', { projectId, tableName, data, where });
   }
@@ -142,6 +150,23 @@ class McpService {
 
   static async deleteFile(projectId: string, fileName: string): Promise<any> {
     return await this.executeTool('delete_file', { projectId, fileName });
+  }
+
+  // Constraint management methods
+  static async listAllConstraints(projectId: string, tableName: string): Promise<any> {
+    return await this.executeTool('list_all_constraints', { projectId, tableName });
+  }
+
+  static async dropForeignKey(projectId: string, tableName: string, constraintName: string): Promise<any> {
+    return await this.executeTool('drop_foreign_key', { projectId, tableName, constraintName });
+  }
+
+  static async addCheckConstraint(projectId: string, tableName: string, constraintName: string, checkClause: string): Promise<any> {
+    return await this.executeTool('add_check_constraint', { projectId, tableName, constraintName, checkClause });
+  }
+
+  static async dropConstraint(projectId: string, tableName: string, constraintName: string): Promise<any> {
+    return await this.executeTool('drop_constraint', { projectId, tableName, constraintName });
   }
 }
 

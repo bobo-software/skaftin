@@ -1,14 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Edit3, 
   Trash2, 
   Plus,
   RefreshCw,
   Search,
-  Filter,
-  Download,
-  Eye,
-  MoreHorizontal
+  Download
 } from 'lucide-react';
 import { AppButton } from '../ComponentsIndex';
 
@@ -17,6 +13,7 @@ interface DataTableProps {
   loading?: boolean;
   onRefresh?: () => void;
   onAddRow?: () => void;
+  onCsvImport?: () => void;
   onEditRow?: (row: any, index: number) => void;
   onBulkDelete?: (selectedIndices: number[]) => void;
   columns?: string[];
@@ -33,6 +30,7 @@ const DataTable = ({
   loading = false,
   onRefresh,
   onAddRow,
+  onCsvImport,
   onEditRow,
   onBulkDelete,
   columns,
@@ -247,6 +245,16 @@ const DataTable = ({
               onClick={onAddRow}
             >
               Add Row
+            </AppButton>
+          )}
+          
+          {onCsvImport && (
+            <AppButton 
+              variant="secondary" 
+              icon={<Download className="w-4 h-4" />}
+              onClick={onCsvImport}
+            >
+              Import CSV
             </AppButton>
           )}
         </div>

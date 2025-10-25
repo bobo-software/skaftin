@@ -15,6 +15,7 @@ export { default as CreateProjectModal } from './modals/CreateProjectModal';
 export { default as DeleteProjectModal } from './modals/DeleteProjectModal';
 export { default as DeleteConfirmModal } from './modals/DeleteConfirmModal';
 export { default as AddRowModal } from './modals/AddRowModal';
+export { default as CsvImportModal } from './modals/CsvImportModal';
 
 // ---------- Database Components ---------- //
 export { default as TableViewer } from './database/TableViewer';
