@@ -85,6 +85,132 @@ export class MCPService {
         ],
         category: 'database'
       },
+      {
+        name: 'insert_data',
+        description: 'Insert data into a table',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+          { name: 'data', type: 'object', required: true, description: 'Data to insert' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'update_data',
+        description: 'Update data in a table',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+          { name: 'data', type: 'object', required: true, description: 'Data to update' },
+          { name: 'where', type: 'object', required: true, description: 'WHERE conditions' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'delete_data',
+        description: 'Delete data from a table',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+          { name: 'where', type: 'object', required: true, description: 'WHERE conditions' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'select_data',
+        description: 'Select data from a table',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+          { name: 'columns', type: 'array', required: false, description: 'Columns to select (default: all)' },
+          { name: 'where', type: 'object', required: false, description: 'WHERE conditions' },
+          { name: 'limit', type: 'number', required: false, description: 'Limit number of rows' },
+          { name: 'offset', type: 'number', required: false, description: 'Offset for pagination' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'add_column',
+        description: 'Add a column to an existing table',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+          { name: 'columnName', type: 'string', required: true, description: 'Name of the column' },
+          { name: 'columnType', type: 'string', required: true, description: 'Data type of the column' },
+          { name: 'nullable', type: 'boolean', required: false, description: 'Whether column is nullable' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'drop_column',
+        description: 'Drop a column from a table',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+          { name: 'columnName', type: 'string', required: true, description: 'Name of the column to drop' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'drop_table',
+        description: 'Drop a table',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'tableName', type: 'string', required: true, description: 'Name of the table to drop' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'create_index',
+        description: 'Create an index on a table',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+          { name: 'indexName', type: 'string', required: true, description: 'Name of the index' },
+          { name: 'columns', type: 'array', required: true, description: 'Columns to index' },
+          { name: 'unique', type: 'boolean', required: false, description: 'Whether index is unique' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'list_indexes',
+        description: 'List indexes on a table',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'tableName', type: 'string', required: true, description: 'Name of the table' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'create_foreign_key',
+        description: 'Create a foreign key constraint',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+          { name: 'columnName', type: 'string', required: true, description: 'Name of the column' },
+          { name: 'referencedTable', type: 'string', required: true, description: 'Referenced table' },
+          { name: 'referencedColumn', type: 'string', required: true, description: 'Referenced column' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'backup_schema',
+        description: 'Create a backup of the project schema',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'backupName', type: 'string', required: false, description: 'Name for the backup' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'restore_schema',
+        description: 'Restore a schema from backup',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'backupName', type: 'string', required: true, description: 'Name of the backup to restore' }
+        ],
+        category: 'database'
+      },
 
       // Storage Tools
       {
@@ -220,6 +346,108 @@ export class MCPService {
           result = await this.databaseService.generateTypeScriptTypes(
             parameters.projectId || projectId,
             parameters.tableName
+          );
+          break;
+
+        case 'insert_data':
+          result = await this.databaseService.insertData(
+            parameters.projectId || projectId,
+            parameters.tableName,
+            parameters.data
+          );
+          break;
+
+        case 'update_data':
+          result = await this.databaseService.updateData(
+            parameters.projectId || projectId,
+            parameters.tableName,
+            parameters.data,
+            parameters.where
+          );
+          break;
+
+        case 'delete_data':
+          result = await this.databaseService.deleteData(
+            parameters.projectId || projectId,
+            parameters.tableName,
+            parameters.where
+          );
+          break;
+
+        case 'select_data':
+          result = await this.databaseService.selectData(
+            parameters.projectId || projectId,
+            parameters.tableName,
+            parameters.columns,
+            parameters.where,
+            parameters.limit,
+            parameters.offset
+          );
+          break;
+
+        case 'add_column':
+          result = await this.databaseService.addColumn(
+            parameters.projectId || projectId,
+            parameters.tableName,
+            parameters.columnName,
+            parameters.columnType,
+            parameters.nullable
+          );
+          break;
+
+        case 'drop_column':
+          result = await this.databaseService.dropColumn(
+            parameters.projectId || projectId,
+            parameters.tableName,
+            parameters.columnName
+          );
+          break;
+
+        case 'drop_table':
+          result = await this.databaseService.dropTable(
+            parameters.projectId || projectId,
+            parameters.tableName
+          );
+          break;
+
+        case 'create_index':
+          result = await this.databaseService.createIndex(
+            parameters.projectId || projectId,
+            parameters.tableName,
+            parameters.indexName,
+            parameters.columns,
+            parameters.unique
+          );
+          break;
+
+        case 'list_indexes':
+          result = await this.databaseService.listIndexes(
+            parameters.projectId || projectId,
+            parameters.tableName
+          );
+          break;
+
+        case 'create_foreign_key':
+          result = await this.databaseService.createForeignKey(
+            parameters.projectId || projectId,
+            parameters.tableName,
+            parameters.columnName,
+            parameters.referencedTable,
+            parameters.referencedColumn
+          );
+          break;
+
+        case 'backup_schema':
+          result = await this.databaseService.backupSchema(
+            parameters.projectId || projectId,
+            parameters.backupName
+          );
+          break;
+
+        case 'restore_schema':
+          result = await this.databaseService.restoreSchema(
+            parameters.projectId || projectId,
+            parameters.backupName
           );
           break;
 

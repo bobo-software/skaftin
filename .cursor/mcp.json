@@ -1,11 +1,11 @@
 {
   "mcpServers": {
-    "skaftin": {
-      "command": "node",
-      "args": ["mcp-client.js"],
-      "env": {
-        "MCP_SERVER_URL": "http://localhost:4005/api/mcp/tools"
+      "skaftin_mcp": {
+        "command": "node",
+        "args": ["mcp-server.js"],
+        "env": {
+          "MCP_SERVER_URL": "http://localhost:4005/api/mcp"
+        }
       }
-    }
   }
 }
