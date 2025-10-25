@@ -1,8 +1,11 @@
 import { pool } from '../db/connection';
+import { StorageService } from './storage.service';
 
 export class ProjectService {
+  private storageService: StorageService;
+
   constructor() {
-    // Storage service will be initialized when needed
+    this.storageService = new StorageService();
   }
 
   async createProject(userId: string, name: string, description?: string): Promise<any> {
@@ -13,8 +16,8 @@ export class ProjectService {
       // Create database schema
       await pool.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName}`);
       
-      // Create MinIO bucket (placeholder - will be implemented later)
-      console.log(`Creating bucket: ${bucketName}`);
+      // Create MinIO bucket
+      await this.storageService.createBucket(bucketName);
 
       // Insert project record
       const query = `
@@ -95,13 +98,15 @@ export class ProjectService {
       
       // Drop database schema
       await pool.query(`DROP SCHEMA IF EXISTS ${project.schema_name} CASCADE`);
+      console.log(`✅ Deleted database schema: ${project.schema_name}`);
       
-      // Delete MinIO bucket (this would need to be implemented in StorageService)
-      // await this.storageService.deleteBucket(project.bucket_name);
+      // Delete MinIO bucket and all its contents
+      await this.storageService.deleteBucket(project.bucket_name);
       
       // Delete project record
       const query = 'DELETE FROM platform.projects WHERE id = $1';
       await pool.query(query, [projectId]);
+      console.log(`✅ Deleted project record: ${projectId}`);
     } catch (error) {
       console.error('Error deleting project:', error);
       throw new Error(`Failed to delete project: ${error instanceof Error ? error.message : 'Unknown error'}`);

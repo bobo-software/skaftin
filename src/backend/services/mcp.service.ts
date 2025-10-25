@@ -279,6 +279,14 @@ export class MCPService {
         ],
         category: 'project'
       },
+      {
+        name: 'delete_project',
+        description: 'Delete a project (removes schema and bucket)',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' }
+        ],
+        category: 'project'
+      },
 
       // Utility Tools
       {
@@ -497,6 +505,11 @@ export class MCPService {
 
         case 'get_project_info':
           result = await this.projectService.getProject(parameters.projectId || projectId);
+          break;
+
+        case 'delete_project':
+          await this.projectService.deleteProject(parameters.projectId || projectId);
+          result = { success: true, message: 'Project deleted successfully' };
           break;
 
         // Utility Tools

@@ -98,6 +98,53 @@ export class StorageService {
     }
   }
 
+  async createBucket(bucketName: string): Promise<void> {
+    try {
+      const exists = await this.client.bucketExists(bucketName);
+      if (!exists) {
+        await this.client.makeBucket(bucketName, 'us-east-1');
+        console.log(`✅ Created MinIO bucket: ${bucketName}`);
+      } else {
+        console.log(`ℹ️ MinIO bucket already exists: ${bucketName}`);
+      }
+    } catch (error) {
+      console.error('Error creating bucket:', error);
+      throw new Error(`Failed to create bucket: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async deleteBucket(bucketName: string): Promise<void> {
+    try {
+      const exists = await this.client.bucketExists(bucketName);
+      if (exists) {
+        // First, remove all objects in the bucket
+        const objectsList: any[] = [];
+        const stream = this.client.listObjects(bucketName, '', true);
+        
+        await new Promise((resolve, reject) => {
+          stream.on('data', (obj) => objectsList.push(obj.name));
+          stream.on('error', reject);
+          stream.on('end', resolve);
+        });
+        
+        // Remove all objects
+        if (objectsList.length > 0) {
+          await this.client.removeObjects(bucketName, objectsList);
+          console.log(`🗑️ Removed ${objectsList.length} objects from bucket: ${bucketName}`);
+        }
+        
+        // Remove the bucket
+        await this.client.removeBucket(bucketName);
+        console.log(`✅ Deleted MinIO bucket: ${bucketName}`);
+      } else {
+        console.log(`ℹ️ MinIO bucket does not exist: ${bucketName}`);
+      }
+    } catch (error) {
+      console.error('Error deleting bucket:', error);
+      throw new Error(`Failed to delete bucket: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   async checkConnection(): Promise<boolean> {
     try {
       // Try to list buckets to test connection
