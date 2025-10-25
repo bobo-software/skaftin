@@ -63,15 +63,19 @@ const ProjectStorageTab = () => {
       isLoadingRef.current = true;
       setIsLoading(true);
       const prefix = currentPath === 'Root' ? '' : currentPath + '/';
-      console.log('ProjectStorageTab: Loading files with prefix:', prefix, 'currentPath:', currentPath);
+      console.log('🔍 Loading files for path:', currentPath, 'with prefix:', prefix);
       const response = await McpService.listFiles(projectToUse.id, prefix);
       
       if (response.success && response.result.success) {
         const files = response.result.data || [];
-        console.log('ProjectStorageTab: Files loaded:', files);
-        setFiles(files);
+        // Filter out .folder marker files only when we're inside a folder
+        const filteredFiles = currentPath === 'Root' 
+          ? files 
+          : files.filter(file => !file.name.endsWith('/.folder'));
+        console.log('📁 Files loaded for', currentPath + ':', filteredFiles.map(f => f.name));
+        setFiles(filteredFiles);
       } else {
-        console.log('ProjectStorageTab: Failed to load files:', response);
+        console.log('❌ Failed to load files:', response);
         setFiles([]);
       }
     } catch {
@@ -88,7 +92,11 @@ const ProjectStorageTab = () => {
     
     try {
       // Create a folder by uploading an empty file with folder path
-      const folderPath = `${currentPath}${newFolderName}/.folder`;
+      const folderPath = currentPath === 'Root' 
+        ? `${newFolderName}/.folder` 
+        : `${currentPath}/${newFolderName}/.folder`;
+      
+      console.log('ProjectStorageTab: Creating folder:', folderPath, 'in path:', currentPath);
       const response = await McpService.uploadFile(
         projectToUse.id,
         folderPath,
@@ -114,8 +122,10 @@ const ProjectStorageTab = () => {
   const handleFileUpload = async (file: File) => {
     try {
       const base64 = await fileToBase64(file);
-      const filePath = `${currentPath}${file.name}`;
+      // Use current path as prefix for the file name
+      const filePath = currentPath === 'Root' ? file.name : `${currentPath}/${file.name}`;
       
+      console.log('ProjectStorageTab: Uploading file:', filePath, 'to path:', currentPath);
       const response = await McpService.uploadFile(
         projectToUse.id,
         filePath,
@@ -216,7 +226,7 @@ const ProjectStorageTab = () => {
   // Folder navigation functions
   const navigateToFolder = (folderName: string) => {
     const newPath = currentPath === 'Root' ? folderName : `${currentPath}/${folderName}`;
-    console.log('ProjectStorageTab: Navigating to folder:', folderName, 'newPath:', newPath, 'currentPath:', currentPath);
+    console.log('📂 Navigating to folder:', folderName, 'from', currentPath, '→', newPath);
     setCurrentPath(newPath);
     setPathHistory(prev => [...prev, currentPath]);
     setSelectedFiles(new Set()); // Clear selection when navigating
@@ -271,31 +281,56 @@ const ProjectStorageTab = () => {
     const folders: { [key: string]: any[] } = {};
     const rootFiles: any[] = [];
 
-    console.log('ProjectStorageTab: Grouping files, currentPath:', currentPath, 'files:', files);
+    console.log('🗂️ Grouping files for path:', currentPath, 'with', files.length, 'files');
 
     files.forEach(file => {
       if (file.name.includes('/')) {
-        const folderName = file.name.split('/')[0];
-        
-        // Only show folders when we're in root directory
         if (currentPath === 'Root') {
+          // In root: group by first-level folders
+          const folderName = file.name.split('/')[0];
           if (!folders[folderName]) {
             folders[folderName] = [];
           }
           folders[folderName].push(file);
-          console.log('ProjectStorageTab: Added to folder:', folderName, file.name);
+          console.log('📁 Added folder:', folderName);
         } else {
-          // When inside a folder, show files as individual items
-          rootFiles.push(file);
-          console.log('ProjectStorageTab: Added to rootFiles:', file.name);
+          // Inside a folder: check if this is a subfolder or direct file
+          const pathPrefix = currentPath + '/';
+          if (file.name.startsWith(pathPrefix)) {
+            const remainingPath = file.name.substring(pathPrefix.length);
+            const pathParts = remainingPath.split('/');
+            
+            if (pathParts.length > 1) {
+              // This is a subfolder
+              const subfolderName = pathParts[0];
+              if (!folders[subfolderName]) {
+                folders[subfolderName] = [];
+              }
+              folders[subfolderName].push(file);
+              console.log('📁 Added subfolder:', subfolderName);
+            } else {
+              // This is a direct file in current folder
+              rootFiles.push(file);
+              console.log('📄 Added direct file:', file.name);
+            }
+          } else {
+            // File doesn't match current path
+            rootFiles.push(file);
+            console.log('📄 Added unmatched file:', file.name);
+          }
         }
       } else {
         rootFiles.push(file);
-        console.log('ProjectStorageTab: Added to rootFiles (no slash):', file.name);
+        console.log('📄 Added root file:', file.name);
       }
     });
 
-    console.log('ProjectStorageTab: Final grouping - folders:', Object.keys(folders), 'rootFiles:', rootFiles.length);
+    const folderNames = Object.keys(folders);
+    console.log('🎯 Final result - Folders:', folderNames, 'Files:', rootFiles.length);
+    if (folderNames.length > 0) {
+      console.log('📂 Folders being rendered:', folderNames);
+    }
+    
     return { folders, rootFiles };
   };
 
@@ -311,7 +346,6 @@ const ProjectStorageTab = () => {
     
     if (fileName.startsWith(currentFolder + '/')) {
       const displayName = fileName.substring(currentFolder.length + 1);
-      console.log('ProjectStorageTab: Display name for', fileName, '->', displayName, 'currentFolder:', currentFolder);
       return displayName;
     }
     
@@ -390,38 +424,41 @@ const ProjectStorageTab = () => {
         ) : (
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-dark-900 dark:text-white">
-                Files ({files.length})
-              </h3>
-              <div className="flex items-center space-x-2">
-                {selectedFiles.size > 0 && (
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm text-dark-600 dark:text-dark-300">
-                      {selectedFiles.size} selected
-                    </span>
-                    <button 
-                      onClick={() => setSelectedFiles(new Set())}
-                      className="text-sm text-dark-500 hover:text-dark-700 dark:hover:text-dark-300"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-                <button 
-                  onClick={() => setShowCreateFolder(true)}
-                  className="btn-secondary"
-                >
-                  <FolderPlus className="w-4 h-4 mr-2" />
-                  New Folder
-                </button>
-                <button 
-                  onClick={() => setShowUploadModal(true)}
-                  className="btn-primary"
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload File
-                </button>
+                <div className="flex items-center justify-between space-x-3">
+                <h3 className="text-sm font-semibold text-dark-900 dark:text-white">
+                  Files ({files.length})
+                </h3>
               </div>
+                <div className="flex items-center justify-end space-x-2">
+                  <button 
+                    onClick={() => setShowCreateFolder(true)}
+                    className="flex items-center space-x-1 px-2 py-1 text-xs bg-dark-100 dark:bg-dark-700 text-dark-700 dark:text-dark-300 rounded hover:bg-dark-200 dark:hover:bg-dark-600 transition-colors"
+                  >
+                    <FolderPlus className="w-3 h-3" />
+                    <span>New Folder</span>
+                  </button>
+                  <button 
+                    onClick={() => setShowUploadModal(true)}
+                    className="flex items-center space-x-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                  >
+                    <Upload className="w-3 h-3" />
+                    <span>Upload</span>
+                  </button>
+
+                </div>
+              {selectedFiles.size > 0 && (
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-dark-600 dark:text-dark-300">
+                    {selectedFiles.size} selected
+                  </span>
+                  <button 
+                    onClick={() => setSelectedFiles(new Set())}
+                    className="text-sm text-dark-500 hover:text-dark-700 dark:hover:text-dark-300"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
             </div>
             
             {(() => {

@@ -15,20 +15,44 @@ export class StorageService {
       const bucketName = project.bucket_name;
       
       const objects: any[] = [];
-      const stream = this.client.listObjects(bucketName, prefix, true);
       
-      return new Promise((resolve, reject) => {
-        stream.on('data', (obj) => {
-          objects.push({
-            name: obj.name,
-            size: obj.size,
-            lastModified: obj.lastModified,
-            etag: obj.etag
+      if (prefix === '') {
+        // List all files when no prefix
+        const stream = this.client.listObjects(bucketName, '', true);
+        
+        return new Promise((resolve, reject) => {
+          stream.on('data', (obj) => {
+            objects.push({
+              name: obj.name,
+              size: obj.size,
+              lastModified: obj.lastModified,
+              etag: obj.etag
+            });
           });
+          stream.on('error', reject);
+          stream.on('end', () => resolve(objects));
         });
-        stream.on('error', reject);
-        stream.on('end', () => resolve(objects));
-      });
+      } else {
+        // When prefix is provided, we need to get all files and filter them
+        // because MinIO's prefix filtering doesn't work well for nested folders
+        const stream = this.client.listObjects(bucketName, '', true);
+        
+        return new Promise((resolve, reject) => {
+          stream.on('data', (obj) => {
+            // Filter files that start with the prefix
+            if (obj?.name?.startsWith(prefix)) {
+              objects.push({
+                name: obj.name,
+                size: obj.size,
+                lastModified: obj.lastModified,
+                etag: obj.etag
+              });
+            }
+          });
+          stream.on('error', reject);
+          stream.on('end', () => resolve(objects));
+        });
+      }
     } catch (error) {
       console.error('Error listing files:', error);
       throw new Error(`Failed to list files: ${error instanceof Error ? error.message : 'Unknown error'}`);
