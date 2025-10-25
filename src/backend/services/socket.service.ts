@@ -1,11 +1,13 @@
 import { Server as SocketIOServer } from 'socket.io';
 
 interface DatabaseEvent {
-  type: 'insert' | 'update' | 'delete' | 'create_table' | 'drop_table';
+  type: 'insert' | 'update' | 'delete' | 'create_table' | 'drop_table' | 'alter_column';
   projectId: string;
   tableName: string;
   data?: any;
   oldData?: any;
+  columnName?: string;
+  changes?: any;
   timestamp: string;
 }
 
@@ -75,6 +77,18 @@ class SocketService {
       projectId,
       tableName,
       data: deletedData,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Emit column alteration event
+  emitColumnAltered(projectId: string, tableName: string, columnName: string, changes: any) {
+    this.emitDatabaseChange({
+      type: 'alter_column',
+      projectId,
+      tableName,
+      columnName,
+      changes,
       timestamp: new Date().toISOString()
     });
   }

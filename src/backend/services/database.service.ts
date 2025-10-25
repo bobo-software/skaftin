@@ -367,6 +367,75 @@ export class DatabaseService {
     }
   }
 
+  async alterColumn(projectId: string, tableName: string, columnName: string, changes: {
+    newName?: string;
+    newType?: string;
+    nullable?: boolean;
+    defaultValue?: string;
+  }): Promise<any> {
+    try {
+      const project = await this.getProject(projectId);
+      const schemaName = project.schema_name;
+      const queries: string[] = [];
+
+      // Rename column if needed
+      if (changes.newName && changes.newName !== columnName) {
+        queries.push(`ALTER TABLE ${schemaName}.${tableName} RENAME COLUMN ${columnName} TO ${changes.newName}`);
+      }
+
+      // Change column type if needed
+      if (changes.newType) {
+        const targetColumnName = changes.newName || columnName;
+        queries.push(`ALTER TABLE ${schemaName}.${tableName} ALTER COLUMN ${targetColumnName} TYPE ${changes.newType}`);
+      }
+
+      // Change nullable constraint if needed
+      if (changes.nullable !== undefined) {
+        const targetColumnName = changes.newName || columnName;
+        const nullConstraint = changes.nullable ? 'DROP NOT NULL' : 'SET NOT NULL';
+        queries.push(`ALTER TABLE ${schemaName}.${tableName} ALTER COLUMN ${targetColumnName} ${nullConstraint}`);
+      }
+
+      // Set default value if needed
+      if (changes.defaultValue !== undefined) {
+        const targetColumnName = changes.newName || columnName;
+        if (changes.defaultValue === null || changes.defaultValue === '') {
+          queries.push(`ALTER TABLE ${schemaName}.${tableName} ALTER COLUMN ${targetColumnName} DROP DEFAULT`);
+        } else {
+          queries.push(`ALTER TABLE ${schemaName}.${tableName} ALTER COLUMN ${targetColumnName} SET DEFAULT '${changes.defaultValue}'`);
+        }
+      }
+
+      // Execute all queries in a transaction
+      if (queries.length > 0) {
+        await pool.query('BEGIN');
+        try {
+          for (const query of queries) {
+            await pool.query(query);
+          }
+          await pool.query('COMMIT');
+        } catch (error) {
+          await pool.query('ROLLBACK');
+          throw error;
+        }
+      }
+
+      // Emit Socket.IO event for real-time updates
+      if (this.socketService) {
+        this.socketService.emitColumnAltered(projectId, tableName, columnName, changes);
+      }
+
+      return {
+        success: true,
+        message: `Column ${columnName} updated successfully`,
+        changes: changes
+      };
+    } catch (error) {
+      console.error('Error altering column:', error);
+      throw new Error(`Failed to alter column: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   async dropColumn(projectId: string, tableName: string, columnName: string): Promise<any> {
     try {
       const project = await this.getProject(projectId);

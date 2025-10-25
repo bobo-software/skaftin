@@ -161,7 +161,7 @@ const DashboardPage = ({ onBackToProjects }: DashboardPageProps) => {
         </header>
 
         {/* Content */}
-        <main className="p-6">
+        <main className="px-4">
           {renderContent()}
         </main>
       </div>

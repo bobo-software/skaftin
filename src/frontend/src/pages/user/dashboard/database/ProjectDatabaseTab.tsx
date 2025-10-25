@@ -49,16 +49,7 @@ const ProjectDatabaseTab = ({ projectId }: ProjectDatabaseTabProps) => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-dark-900 dark:text-white">Database Tools</h2>
-          <p className="text-sm text-dark-600 dark:text-dark-300">
-            Manage your database with powerful tools and interfaces
-          </p>
-        </div>
-      </div>
+    <div className="space-b-2">
 
       {/* Tab Navigation */}
       <div className="border-b border-dark-200 dark:border-dark-700">

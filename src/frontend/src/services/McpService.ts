@@ -70,7 +70,7 @@ class McpService {
   }
 
   static async deleteData(projectId: string, tableName: string, where: any): Promise<any> {
-    return await this.executeTool('delete_data', { projectId, tableName, data: where });
+    return await this.executeTool('delete_data', { projectId, tableName, where });
   }
 
   static async selectData(projectId: string, tableName: string, options?: any): Promise<any> {
@@ -83,6 +83,20 @@ class McpService {
 
   static async addColumn(projectId: string, tableName: string, columnName: string, columnType: string, nullable?: boolean): Promise<any> {
     return await this.executeTool('add_column', { projectId, tableName, columnName, columnType, nullable });
+  }
+
+  static async alterColumn(projectId: string, tableName: string, columnName: string, changes: {
+    newName?: string;
+    newType?: string;
+    nullable?: boolean;
+    defaultValue?: string;
+  }): Promise<any> {
+    return await this.executeTool('alter_column', { 
+      projectId, 
+      tableName, 
+      columnName, 
+      ...changes 
+    });
   }
 
   static async dropColumn(projectId: string, tableName: string, columnName: string): Promise<any> {

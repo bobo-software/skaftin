@@ -143,6 +143,20 @@ export class MCPService {
         category: 'database'
       },
       {
+        name: 'alter_column',
+        description: 'Alter an existing column (rename, change type, nullable, default)',
+        parameters: [
+          { name: 'projectId', type: 'string', required: true, description: 'Project ID' },
+          { name: 'tableName', type: 'string', required: true, description: 'Name of the table' },
+          { name: 'columnName', type: 'string', required: true, description: 'Name of the column to alter' },
+          { name: 'newName', type: 'string', required: false, description: 'New name for the column' },
+          { name: 'newType', type: 'string', required: false, description: 'New data type for the column' },
+          { name: 'nullable', type: 'boolean', required: false, description: 'Whether column should be nullable' },
+          { name: 'defaultValue', type: 'string', required: false, description: 'New default value for the column' }
+        ],
+        category: 'database'
+      },
+      {
         name: 'drop_column',
         description: 'Drop a column from a table',
         parameters: [
@@ -401,6 +415,20 @@ export class MCPService {
             parameters.columnName,
             parameters.columnType,
             parameters.nullable
+          );
+          break;
+
+        case 'alter_column':
+          result = await this.databaseService.alterColumn(
+            parameters.projectId || projectId,
+            parameters.tableName,
+            parameters.columnName,
+            {
+              newName: parameters.newName,
+              newType: parameters.newType,
+              nullable: parameters.nullable,
+              defaultValue: parameters.defaultValue
+            }
           );
           break;
 

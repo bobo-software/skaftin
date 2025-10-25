@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabaseStore, useRealtimeStore } from '../../stores/StoresIndex';
 import McpService from '../../services/McpService';
-import MaterialTable from '@material-table/core';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { 
   Database, 
   Eye, 
@@ -17,7 +15,7 @@ import {
   List,
   Settings
 } from 'lucide-react';
-import { AppButton, AddRowModal } from '../ComponentsIndex';
+import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor } from '../ComponentsIndex';
 
 interface TableViewerProps {
   projectId: string;
@@ -40,10 +38,21 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('structure');
+  const [activeTab, setActiveTab] = useState('schema');
   const [showAddRowModal, setShowAddRowModal] = useState(false);
   const [tableData, setTableData] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    type: 'single' | 'bulk';
+    item?: any;
+    indices?: number[];
+    loading: boolean;
+  }>({
+    isOpen: false,
+    type: 'single',
+    loading: false
+  });
 
   useEffect(() => {
     if (projectId) {
@@ -132,6 +141,81 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     }
   };
 
+  const handleDeleteRow = (row: any, index: number) => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'single',
+      item: row,
+      indices: [index],
+      loading: false
+    });
+  };
+
+  const handleBulkDelete = (indices: number[]) => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'bulk',
+      indices,
+      loading: false
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!selectedTable || !deleteModal.indices) return;
+
+    setDeleteModal(prev => ({ ...prev, loading: true }));
+
+    try {
+      if (deleteModal.type === 'single') {
+        // Single row delete
+        const row = deleteModal.item;
+        const whereClause = { id: row.id };
+        const result = await McpService.deleteData(projectId, selectedTable, whereClause);
+        
+        if (result.success) {
+          console.log('Row deleted successfully');
+          await fetchTableData(selectedTable);
+          setDeleteModal({ isOpen: false, type: 'single', loading: false });
+        } else {
+          console.error('Failed to delete row:', result.error);
+          alert('Failed to delete row. Please try again.');
+        }
+      } else {
+        // Bulk delete
+        let successCount = 0;
+        let errorCount = 0;
+        
+        for (const index of deleteModal.indices!) {
+          const row = tableData[index];
+          const whereClause = { id: row.id };
+          const result = await McpService.deleteData(projectId, selectedTable, whereClause);
+          
+          if (result.success) {
+            successCount++;
+          } else {
+            errorCount++;
+            console.error('Failed to delete row:', row.id, result.error);
+          }
+        }
+        
+        if (errorCount > 0) {
+          alert(`Deleted ${successCount} rows successfully. ${errorCount} rows failed to delete.`);
+        } else {
+          console.log(`Successfully deleted ${successCount} rows`);
+        }
+        
+        await fetchTableData(selectedTable);
+        setDeleteModal({ isOpen: false, type: 'bulk', loading: false });
+      }
+    } catch (error) {
+      console.error('Error deleting rows:', error);
+      alert('Error deleting rows. Please try again.');
+      setDeleteModal(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+
+
   if (loading && tables.length === 0) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -144,32 +228,9 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-dark-900 dark:text-white">Table Viewer</h3>
-          <p className="text-sm text-dark-600 dark:text-dark-300">
-            Browse and manage your database tables
-          </p>
-        </div>
-        <div className="flex items-center space-x-2">
-          <AppButton
-            variant="secondary"
-            size="sm"
-            onClick={() => fetchTables(projectId)}
-            icon={<RefreshCw className="w-4 h-4" />}
-          >
-            Refresh
-          </AppButton>
-          <AppButton
-            variant="primary"
-            size="sm"
-            icon={<Plus className="w-4 h-4" />}
-          >
-            Create Table
-          </AppButton>
-        </div>
       </div>
 
       {error && (
@@ -186,50 +247,75 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Tables List - Compact */}
-        <div className="lg:col-span-1">
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="font-semibold text-dark-900 dark:text-white text-sm">Tables</h4>
-              <span className="text-xs text-dark-500 dark:text-dark-400">
-                {tables.length}
-              </span>
-            </div>
-            
-            <div className="relative mb-3">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-dark-400" />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-7 pr-3 py-1.5 text-sm border border-dark-200 dark:border-dark-700 rounded bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-1 focus:ring-primary-500 focus:border-transparent"
-              />
+      <div className="flex h-full min-h-[600px]">
+        {/* Tables Sidebar */}
+        <div className="w-80 flex-shrink-0 border-r border-dark-200 dark:border-dark-700 bg-dark-50 dark:bg-dark-800">
+          <div className="h-full flex flex-col">
+            {/* Sidebar Header */}
+            <div className="p-4 border-b border-dark-200 dark:border-dark-700">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-dark-900 dark:text-white">Tables</h4>
+                <span className="text-xs text-dark-500 dark:text-dark-400 bg-dark-100 dark:bg-dark-700 px-2 py-1 rounded">
+                  {tables.length}
+                </span>
+              </div>
+              
+              <div className="flex items-center space-x-2 mb-3">
+                <AppButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => fetchTables(projectId)}
+                  icon={<RefreshCw className="w-4 h-4" />}
+                >
+                  Refresh
+                </AppButton>
+                <AppButton
+                  variant="primary"
+                  size="sm"
+                  icon={<Plus className="w-4 h-4" />}
+                >
+                  Create
+                </AppButton>
+              </div>
+              
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-dark-400" />
+                <input
+                  type="text"
+                  placeholder="Search tables..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2 text-sm border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                />
+              </div>
             </div>
 
-            <div className="space-y-1 max-h-80 overflow-y-auto">
+            {/* Tables List */}
+            <div className="flex-1 overflow-y-auto p-4">
               {filteredTables.length === 0 ? (
-                <div className="text-center py-6">
-                  <Database className="w-8 h-8 text-dark-300 dark:text-dark-600 mx-auto mb-2" />
-                  <p className="text-xs text-dark-600 dark:text-dark-300">
-                    {searchTerm ? 'No matches' : 'No tables'}
+                <div className="text-center py-8">
+                  <Database className="w-12 h-12 text-dark-300 dark:text-dark-600 mx-auto mb-3" />
+                  <p className="text-sm text-dark-600 dark:text-dark-300">
+                    {searchTerm ? 'No tables found' : 'No tables yet'}
+                  </p>
+                  <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                    {searchTerm ? 'Try a different search term' : 'Create your first table'}
                   </p>
                 </div>
               ) : (
-                filteredTables.map((table) => (
-                  <div
-                    key={table.table_name}
-                    onClick={() => handleTableSelect(table.table_name)}
-                    className={`p-2 rounded cursor-pointer transition-colors ${
-                      selectedTable === table.table_name
-                        ? 'bg-primary-100 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-800'
-                        : 'bg-dark-50 dark:bg-dark-700 hover:bg-dark-100 dark:hover:bg-dark-600'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <Database className="w-3 h-3 text-primary-500" />
+                <div className="space-y-1">
+                  {filteredTables.map((table) => (
+                    <div
+                      key={table.table_name}
+                      onClick={() => handleTableSelect(table.table_name)}
+                      className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${
+                        selectedTable === table.table_name
+                          ? 'bg-primary-100 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-800 shadow-sm'
+                          : 'bg-white dark:bg-dark-700 hover:bg-dark-50 dark:hover:bg-dark-600 border border-transparent hover:border-dark-200 dark:hover:border-dark-600'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <Database className="w-4 h-4 text-primary-500 flex-shrink-0" />
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-dark-900 dark:text-white truncate">
                             {table.table_name}
@@ -239,65 +325,53 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-1">
-                        <button 
-                          className="p-1 rounded hover:bg-dark-200 dark:hover:bg-dark-600"
-                          title="View"
-                        >
-                          <Eye className="w-3 h-3 text-dark-400" />
-                        </button>
-                        <button 
-                          className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/20"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3 h-3 text-red-400" />
-                        </button>
-                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Table Details with Tabs */}
-        <div className="lg:col-span-3">
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col min-w-0">
           {currentTable ? (
-            <div className="card">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h4 className="font-semibold text-dark-900 dark:text-white">
-                    {currentTable.table_name}
-                  </h4>
-                  <p className="text-sm text-dark-600 dark:text-dark-300">
-                    {currentTable.table_type} • {currentTable.columns?.length || 0} columns
-                  </p>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <AppButton variant="secondary" size="sm" icon={<Filter className="w-4 h-4" />}>
-                    Filter
-                  </AppButton>
-                  <AppButton variant="secondary" size="sm" icon={<Download className="w-4 h-4" />}>
-                    Export
-                  </AppButton>
+            <div className="h-full flex flex-col">
+              {/* Content Header */}
+              <div className="p-6 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-900">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xl font-semibold text-dark-900 dark:text-white">
+                      {currentTable.table_name}
+                    </h4>
+                    <p className="text-sm text-dark-600 dark:text-dark-300 mt-1">
+                      {currentTable.table_type} • {currentTable.columns?.length || 0} columns
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <AppButton variant="secondary" size="sm" icon={<Filter className="w-4 h-4" />}>
+                      Filter
+                    </AppButton>
+                    <AppButton variant="secondary" size="sm" icon={<Download className="w-4 h-4" />}>
+                      Export
+                    </AppButton>
+                  </div>
                 </div>
               </div>
 
               {/* Tab Navigation */}
-              <div className="border-b border-dark-200 dark:border-dark-700 mb-4">
+              <div className="px-6 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-900">
                 <nav className="flex space-x-6">
                   {[
-                    { id: 'structure', name: 'Structure', icon: Table },
                     { id: 'data', name: 'Data', icon: List },
-                    { id: 'settings', name: 'Settings', icon: Settings }
+                    { id: 'schema', name: 'Schema', icon: Table },
                   ].map((tab) => {
                     const Icon = tab.icon;
                     return (
                       <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center space-x-2 py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                        className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                           activeTab === tab.id
                             ? 'border-primary-500 text-primary-600 dark:text-primary-400'
                             : 'border-transparent text-dark-500 dark:text-dark-400 hover:text-dark-700 dark:hover:text-dark-300 hover:border-dark-300 dark:hover:border-dark-600'
@@ -312,64 +386,19 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
               </div>
 
               {/* Tab Content */}
-              <div className="mt-4">
-                {activeTab === 'structure' && (
-                  <div>
-                    {loading ? (
-                      <div className="text-center py-8">
-                        <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                        <p className="text-dark-600 dark:text-dark-300">Loading table structure...</p>
-                      </div>
-                    ) : currentTable.columns ? (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b border-dark-200 dark:border-dark-700">
-                              <th className="text-left py-2 px-3 text-sm font-medium text-dark-700 dark:text-dark-300">
-                                Column
-                              </th>
-                              <th className="text-left py-2 px-3 text-sm font-medium text-dark-700 dark:text-dark-300">
-                                Type
-                              </th>
-                              <th className="text-left py-2 px-3 text-sm font-medium text-dark-700 dark:text-dark-300">
-                                Nullable
-                              </th>
-                              <th className="text-left py-2 px-3 text-sm font-medium text-dark-700 dark:text-dark-300">
-                                Default
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {currentTable.columns.map((column, index) => (
-                              <tr key={index} className="border-b border-dark-100 dark:border-dark-800">
-                                <td className="py-2 px-3 text-sm text-dark-900 dark:text-white">
-                                  {column.column_name}
-                                </td>
-                                <td className="py-2 px-3 text-sm text-dark-600 dark:text-dark-300">
-                                  {column.data_type}
-                                  {column.character_maximum_length && (
-                                    <span className="text-xs text-dark-500 dark:text-dark-400">
-                                      ({column.character_maximum_length})
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-2 px-3 text-sm">
-                                  <span className={`px-2 py-1 rounded-full text-xs ${
-                                    column.is_nullable 
-                                      ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300'
-                                      : 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
-                                  }`}>
-                                    {column.is_nullable ? 'Yes' : 'No'}
-                                  </span>
-                                </td>
-                                <td className="py-2 px-3 text-sm text-dark-600 dark:text-dark-300">
-                                  {column.column_default || '-'}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+              <div className="flex-1 overflow-hidden">
+                {activeTab === 'schema' && (
+                  <div className="h-full overflow-y-auto p-6">
+                    {currentTable.columns ? (
+                      <SchemaEditor
+                        projectId={projectId}
+                        tableName={currentTable.table_name}
+                        columns={currentTable.columns}
+                        loading={loading}
+                        onSchemaChange={() => {
+                          fetchTableDetails(projectId, selectedTable!);
+                        }}
+                      />
                     ) : (
                       <div className="text-center py-8">
                         <Database className="w-12 h-12 text-dark-300 dark:text-dark-600 mx-auto mb-4" />
@@ -380,182 +409,58 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                 )}
 
                 {activeTab === 'data' && (
-                  <div>
-                    {dataLoading ? (
-                      <div className="text-center py-8">
-                        <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                        <p className="text-dark-600 dark:text-dark-300">Loading table data...</p>
-                      </div>
-                    ) : tableData.length > 0 ? (
-                      <div className="bg-white dark:bg-dark-900 rounded-lg">
-                        <ThemeProvider theme={createTheme({
-                          palette: {
-                            mode: 'light',
-                            primary: {
-                              main: '#32A956',
-                            },
-                            secondary: {
-                              main: '#6B7280',
-                            },
-                          },
-                        })}>
-                          <MaterialTable
-                          title=""
-                          data={tableData}
-                          columns={Object.keys(tableData[0] || {}).map(column => ({
-                            title: column,
-                            field: column,
-                            render: (rowData) => {
-                              const value = rowData[column];
-                              if (value === null) {
-                                return <span className="text-gray-400 italic">null</span>;
-                              }
-                              if (typeof value === 'boolean') {
-                                return (
-                                  <span className={`px-2 py-1 rounded-full text-xs ${
-                                    value ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                                  }`}>
-                                    {value ? 'true' : 'false'}
-                                  </span>
-                                );
-                              }
-                              return String(value);
-                            }
-                          }))}
-                          options={{
-                            search: true,
-                            paging: true,
-                            addRowPosition: 'first',
-                            headerStyle: {
-                              backgroundColor: '#f8fafc',
-                              color: '#1f2937',
-                              fontWeight: 'bold',
-                              fontSize: '14px'
-                            }
-                          }}
-                          actions={[
-                            {
-                              icon: () => <Plus className="w-4 h-4" />,
-                              tooltip: 'Add Row',
-                              isFreeAction: true,
-                              onClick: () => setShowAddRowModal(true)
-                            },
-                            {
-                              icon: () => <RefreshCw className="w-4 h-4" />,
-                              tooltip: 'Refresh Data',
-                              isFreeAction: true,
-                              onClick: () => selectedTable && fetchTableData(selectedTable)
-                            }
-                          ]}
-                          editable={{
-                            onRowAdd: async (newData) => {
-                              try {
-                                if (!selectedTable) throw new Error('No table selected');
-                                
-                                const result = await McpService.insertData(projectId, selectedTable, newData);
-                                if (result.success) {
-                                  // Refresh table data
-                                  await fetchTableData(selectedTable);
-                                  return newData;
-                                } else {
-                                  throw new Error(result.error || 'Failed to insert data');
-                                }
-                              } catch (error) {
-                                console.error('Error adding row:', error);
-                                throw error;
-                              }
-                            },
-                            onRowUpdate: async (newData, oldData) => {
-                              try {
-                                if (!selectedTable) throw new Error('No table selected');
-                                
-                                // Use the primary key (id) for the where clause
-                                const whereClause = { id: oldData.id };
-                                const result = await McpService.updateData(projectId, selectedTable, newData, whereClause);
-                                if (result.success) {
-                                  // Refresh table data
-                                  await fetchTableData(selectedTable);
-                                  return newData;
-                                } else {
-                                  throw new Error(result.error || 'Failed to update data');
-                                }
-                              } catch (error) {
-                                console.error('Error updating row:', error);
-                                throw error;
-                              }
-                            },
-                            onRowDelete: async (oldData) => {
-                              try {
-                                if (!selectedTable) throw new Error('No table selected');
-                                
-                                // Use the primary key (id) for the where clause
-                                const whereClause = { id: oldData.id };
-                                const result = await McpService.deleteData(projectId, selectedTable, whereClause);
-                                if (result.success) {
-                                  // Refresh table data
-                                  await fetchTableData(selectedTable);
-                                  return oldData;
-                                } else {
-                                  throw new Error(result.error || 'Failed to delete data');
-                                }
-                              } catch (error) {
-                                console.error('Error deleting row:', error);
-                                throw error;
-                              }
-                            },
-                          }}
-                        />
-                        </ThemeProvider>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <List className="w-12 h-12 text-dark-300 dark:text-dark-600 mx-auto mb-4" />
-                        <h4 className="text-lg font-semibold text-dark-900 dark:text-white mb-2">
-                          No Data Found
-                        </h4>
-                        <p className="text-dark-600 dark:text-dark-300 mb-4">
-                          This table doesn't have any data yet
-                        </p>
-                        <p className="text-sm text-dark-500 dark:text-dark-400">
-                          Use the "Add Row" button to insert new data
-                        </p>
-                      </div>
-                    )}
+                  <div className="h-full overflow-hidden">
+                    <DataTable
+                      data={tableData}
+                      loading={dataLoading}
+                      onRefresh={() => selectedTable && fetchTableData(selectedTable)}
+                      onAddRow={() => setShowAddRowModal(true)}
+                      onEditRow={async (updatedRow, index) => {
+                        if (!selectedTable) return;
+                        
+                        try {
+                          // Find the original row to get the ID for the where clause
+                          const originalRow = tableData[index];
+                          const whereClause = { id: originalRow.id };
+                          
+                          // Remove the id from the update data
+                          const { id, ...updateData } = updatedRow;
+                          
+                          const result = await McpService.updateData(projectId, selectedTable, updateData, whereClause);
+                          
+                          if (result.success) {
+                            console.log('Row updated successfully');
+                            await fetchTableData(selectedTable);
+                          } else {
+                            console.error('Failed to update row:', result.error);
+                            alert('Failed to update row. Please try again.');
+                          }
+                        } catch (error) {
+                          console.error('Error updating row:', error);
+                          alert('Error updating row. Please try again.');
+                        }
+                      }}
+                      onBulkDelete={handleBulkDelete}
+                      searchable={true}
+                      selectable={true}
+                      sortable={true}
+                      pagination={true}
+                      pageSize={10}
+                    />
                   </div>
                 )}
 
-                {activeTab === 'settings' && (
-                  <div>
-                    <div className="text-center py-8">
-                      <Settings className="w-12 h-12 text-dark-300 dark:text-dark-600 mx-auto mb-4" />
-                      <h4 className="text-lg font-semibold text-dark-900 dark:text-white mb-2">
-                        Table Settings
-                      </h4>
-                      <p className="text-dark-600 dark:text-dark-300 mb-4">
-                        Manage table properties and constraints
-                      </p>
-                      <div className="flex items-center justify-center space-x-3">
-                        <AppButton variant="secondary" icon={<Edit3 className="w-4 h-4" />}>
-                          Edit Table
-                        </AppButton>
-                        <AppButton variant="danger" icon={<Trash2 className="w-4 h-4" />}>
-                          Delete Table
-                        </AppButton>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           ) : (
-            <div className="card">
+            <div className="h-full flex items-center justify-center bg-white dark:bg-dark-900">
               <div className="text-center py-12">
                 <Database className="w-16 h-16 text-dark-300 dark:text-dark-600 mx-auto mb-4" />
                 <h4 className="text-lg font-semibold text-dark-900 dark:text-white mb-2">
                   Select a Table
                 </h4>
                 <p className="text-dark-600 dark:text-dark-300">
-                  Choose a table from the list to view its structure and data
+                  Choose a table from the sidebar to view its structure and data
                 </p>
               </div>
             </div>
@@ -563,8 +468,8 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         </div>
       </div>
 
-      {/* Add Row Modal - Now handled by Material Table inline editing */}
-      {currentTable && showAddRowModal && (
+      {/* Add Row Modal */}
+      {currentTable && (
         <AddRowModal
           isOpen={showAddRowModal}
           onClose={() => setShowAddRowModal(false)}
@@ -573,6 +478,22 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
           tableName={currentTable.table_name}
         />
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, type: 'single', loading: false })}
+        onConfirm={confirmDelete}
+        title={deleteModal.type === 'single' ? `Delete Row` : `Delete ${deleteModal.indices?.length || 0} Rows`}
+        message={deleteModal.type === 'single' 
+          ? 'Are you sure you want to delete this row? This action cannot be undone.'
+          : `Are you sure you want to delete ${deleteModal.indices?.length || 0} rows? This action cannot be undone.`
+        }
+        itemName="row"
+        itemCount={deleteModal.indices?.length || 1}
+        loading={deleteModal.loading}
+        variant={deleteModal.type}
+      />
     </div>
   );
 };
