@@ -7,7 +7,7 @@ import {
   CheckCircle,
   Loader2
 } from 'lucide-react';
-import McpService from '../services/McpService';
+import McpService from '../../../services/McpService';
 
 interface ProjectCreationLoadingPageProps {
   projectName: string;

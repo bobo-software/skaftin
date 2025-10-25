@@ -12,3 +12,4 @@ export { default as AppInput } from './forms/AppInput';
 
 // ---------- Modals ---------- //
 export { default as CreateProjectModal } from './modals/CreateProjectModal';
+export { default as DeleteProjectModal } from './modals/DeleteProjectModal';
