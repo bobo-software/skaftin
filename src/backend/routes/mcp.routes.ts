@@ -1,10 +1,21 @@
 import { Router, Request, Response } from 'express';
 import { MCPService } from '../services/mcp.service';
+import SocketService from '../services/socket.service';
 
 const router = Router();
 let mcpService: MCPService;
 
-// Initialize MCP service
+// Initialize MCP service with Socket.IO support
+export const initializeMCPService = (socketService?: SocketService) => {
+  try {
+    mcpService = new MCPService(socketService);
+    console.log('✅ MCP Service initialized successfully with Socket.IO support');
+  } catch (error) {
+    console.error('❌ Failed to initialize MCP Service:', error);
+  }
+};
+
+// Initialize without Socket.IO for now (will be updated when Socket.IO is available)
 try {
   mcpService = new MCPService();
   console.log('✅ MCP Service initialized successfully');

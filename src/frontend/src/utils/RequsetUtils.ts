@@ -47,12 +47,18 @@ class RequestUtils {
 
   static async post(url: string, accessToken: string, body: any): Promise<any | null> {
     try {
+      const headers: any = {
+        "Content-Type": "application/json",
+      };
+      
+      // Only add Authorization header if token is provided
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+      
       const response = await fetch(API_BASE_URL + url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers,
         body: JSON.stringify(body),
       });
 

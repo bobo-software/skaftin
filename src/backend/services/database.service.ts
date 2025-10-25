@@ -1,6 +1,12 @@
 import { pool } from '../db/connection';
+import SocketService from './socket.service';
 
 export class DatabaseService {
+  private socketService: SocketService | undefined;
+
+  constructor(socketService?: SocketService) {
+    this.socketService = socketService;
+  }
   async executeQuery(projectId: string, query: string, parameters: any[] = []): Promise<any> {
     try {
       // Set search path to project schema
@@ -220,6 +226,12 @@ export class DatabaseService {
       `;
       
       const result = await pool.query(query, values);
+      
+      // Emit Socket.IO event for real-time updates
+      if (this.socketService) {
+        this.socketService.emitRowInserted(projectId, tableName, result.rows[0]);
+      }
+      
       return {
         success: true,
         data: result.rows[0],
@@ -249,6 +261,12 @@ export class DatabaseService {
       `;
       
       const result = await pool.query(query, values);
+      
+      // Emit Socket.IO event for real-time updates
+      if (this.socketService && result.rows.length > 0) {
+        this.socketService.emitRowUpdated(projectId, tableName, result.rows, where);
+      }
+      
       return {
         success: true,
         data: result.rows,
@@ -275,6 +293,12 @@ export class DatabaseService {
       `;
       
       const result = await pool.query(query, values);
+      
+      // Emit Socket.IO event for real-time updates
+      if (this.socketService && result.rows.length > 0) {
+        this.socketService.emitRowDeleted(projectId, tableName, result.rows);
+      }
+      
       return {
         success: true,
         data: result.rows,

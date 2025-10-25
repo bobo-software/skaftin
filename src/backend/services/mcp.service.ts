@@ -1,6 +1,7 @@
 import { DatabaseService } from './database.service';
 import { StorageService } from './storage.service';
 import { ProjectService } from './project.service';
+import SocketService from './socket.service';
 
 export interface MCPTool {
   name: string;
@@ -29,8 +30,8 @@ export class MCPService {
   private storageService: StorageService;
   private projectService: ProjectService;
 
-  constructor() {
-    this.databaseService = new DatabaseService();
+  constructor(socketService?: SocketService) {
+    this.databaseService = new DatabaseService(socketService);
     this.storageService = new StorageService();
     this.projectService = new ProjectService();
   }

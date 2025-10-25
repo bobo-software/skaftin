@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { useDatabaseStore } from '../../stores/StoresIndex';
+import { useDatabaseStore, useRealtimeStore } from '../../stores/StoresIndex';
+import McpService from '../../services/McpService';
+import MaterialTable from '@material-table/core';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { 
   Database, 
   Eye, 
@@ -33,21 +36,79 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     clearError 
   } = useDatabaseStore();
   
+  const { joinProject, leaveProject, recentEvents } = useRealtimeStore();
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('structure');
   const [showAddRowModal, setShowAddRowModal] = useState(false);
+  const [tableData, setTableData] = useState<any[]>([]);
+  const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
     if (projectId) {
       fetchTables(projectId);
+      joinProject(projectId);
     }
-  }, [projectId, fetchTables]);
+    
+    return () => {
+      if (projectId) {
+        leaveProject(projectId);
+      }
+    };
+  }, [projectId, fetchTables, joinProject, leaveProject]);
+
+  // Listen for real-time database changes
+  useEffect(() => {
+    const handleDatabaseChange = (event: any) => {
+      console.log('📡 Real-time database change:', event);
+      
+      // Refresh tables if a table was created/deleted
+      if (event.type === 'create_table' || event.type === 'drop_table') {
+        fetchTables(projectId);
+      }
+      
+      // Refresh current table if data was modified
+      if (event.type === 'insert' || event.type === 'update' || event.type === 'delete') {
+        if (selectedTable && event.tableName === selectedTable) {
+          fetchTableDetails(projectId, selectedTable);
+          fetchTableData(selectedTable);
+        }
+      }
+    };
+
+    // This will be handled by the realtime store
+    // The store will automatically call this when events are received
+  }, [projectId, selectedTable, fetchTables, fetchTableDetails]);
+
+  const fetchTableData = async (tableName: string) => {
+    if (!tableName) return;
+    
+    setDataLoading(true);
+    try {
+      const result = await McpService.selectData(projectId, tableName, { limit: 100 });
+      console.log('fetchTableData result:', result);
+      
+      if (result.success && result.result && result.result.success) {
+        setTableData(result.result.data.data || []);
+        console.log('Table data set:', result.result.data.data);
+      } else {
+        console.error('Failed to fetch table data:', result.error);
+        setTableData([]);
+      }
+    } catch (error) {
+      console.error('Error fetching table data:', error);
+      setTableData([]);
+    } finally {
+      setDataLoading(false);
+    }
+  };
 
   const handleTableSelect = async (tableName: string) => {
     setSelectedTable(tableName);
     setCurrentTable(tables.find(t => t.table_name === tableName) || null);
     await fetchTableDetails(projectId, tableName);
+    await fetchTableData(tableName);
   };
 
   const filteredTables = tables.filter(table =>
@@ -60,8 +121,9 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     try {
       const success = await insertData(projectId, selectedTable, data);
       if (success) {
-        // Optionally refresh table data or show success message
         console.log('Row added successfully');
+        // Refresh table data to show the new row
+        await fetchTableData(selectedTable);
       }
       return success;
     } catch (error) {
@@ -319,36 +381,146 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
 
                 {activeTab === 'data' && (
                   <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h4 className="text-lg font-semibold text-dark-900 dark:text-white">
-                          Table Data
+                    {dataLoading ? (
+                      <div className="text-center py-8">
+                        <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                        <p className="text-dark-600 dark:text-dark-300">Loading table data...</p>
+                      </div>
+                    ) : tableData.length > 0 ? (
+                      <div className="bg-white dark:bg-dark-900 rounded-lg">
+                        <ThemeProvider theme={createTheme({
+                          palette: {
+                            mode: 'light',
+                            primary: {
+                              main: '#32A956',
+                            },
+                            secondary: {
+                              main: '#6B7280',
+                            },
+                          },
+                        })}>
+                          <MaterialTable
+                          title=""
+                          data={tableData}
+                          columns={Object.keys(tableData[0] || {}).map(column => ({
+                            title: column,
+                            field: column,
+                            render: (rowData) => {
+                              const value = rowData[column];
+                              if (value === null) {
+                                return <span className="text-gray-400 italic">null</span>;
+                              }
+                              if (typeof value === 'boolean') {
+                                return (
+                                  <span className={`px-2 py-1 rounded-full text-xs ${
+                                    value ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                  }`}>
+                                    {value ? 'true' : 'false'}
+                                  </span>
+                                );
+                              }
+                              return String(value);
+                            }
+                          }))}
+                          options={{
+                            search: true,
+                            paging: true,
+                            addRowPosition: 'first',
+                            headerStyle: {
+                              backgroundColor: '#f8fafc',
+                              color: '#1f2937',
+                              fontWeight: 'bold',
+                              fontSize: '14px'
+                            }
+                          }}
+                          actions={[
+                            {
+                              icon: () => <Plus className="w-4 h-4" />,
+                              tooltip: 'Add Row',
+                              isFreeAction: true,
+                              onClick: () => setShowAddRowModal(true)
+                            },
+                            {
+                              icon: () => <RefreshCw className="w-4 h-4" />,
+                              tooltip: 'Refresh Data',
+                              isFreeAction: true,
+                              onClick: () => selectedTable && fetchTableData(selectedTable)
+                            }
+                          ]}
+                          editable={{
+                            onRowAdd: async (newData) => {
+                              try {
+                                if (!selectedTable) throw new Error('No table selected');
+                                
+                                const result = await McpService.insertData(projectId, selectedTable, newData);
+                                if (result.success) {
+                                  // Refresh table data
+                                  await fetchTableData(selectedTable);
+                                  return newData;
+                                } else {
+                                  throw new Error(result.error || 'Failed to insert data');
+                                }
+                              } catch (error) {
+                                console.error('Error adding row:', error);
+                                throw error;
+                              }
+                            },
+                            onRowUpdate: async (newData, oldData) => {
+                              try {
+                                if (!selectedTable) throw new Error('No table selected');
+                                
+                                // Use the primary key (id) for the where clause
+                                const whereClause = { id: oldData.id };
+                                const result = await McpService.updateData(projectId, selectedTable, newData, whereClause);
+                                if (result.success) {
+                                  // Refresh table data
+                                  await fetchTableData(selectedTable);
+                                  return newData;
+                                } else {
+                                  throw new Error(result.error || 'Failed to update data');
+                                }
+                              } catch (error) {
+                                console.error('Error updating row:', error);
+                                throw error;
+                              }
+                            },
+                            onRowDelete: async (oldData) => {
+                              try {
+                                if (!selectedTable) throw new Error('No table selected');
+                                
+                                // Use the primary key (id) for the where clause
+                                const whereClause = { id: oldData.id };
+                                const result = await McpService.deleteData(projectId, selectedTable, whereClause);
+                                if (result.success) {
+                                  // Refresh table data
+                                  await fetchTableData(selectedTable);
+                                  return oldData;
+                                } else {
+                                  throw new Error(result.error || 'Failed to delete data');
+                                }
+                              } catch (error) {
+                                console.error('Error deleting row:', error);
+                                throw error;
+                              }
+                            },
+                          }}
+                        />
+                        </ThemeProvider>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <List className="w-12 h-12 text-dark-300 dark:text-dark-600 mx-auto mb-4" />
+                        <h4 className="text-lg font-semibold text-dark-900 dark:text-white mb-2">
+                          No Data Found
                         </h4>
-                        <p className="text-sm text-dark-600 dark:text-dark-300">
-                          Browse and manage table data
+                        <p className="text-dark-600 dark:text-dark-300 mb-4">
+                          This table doesn't have any data yet
+                        </p>
+                        <p className="text-sm text-dark-500 dark:text-dark-400">
+                          Use the "Add Row" button to insert new data
                         </p>
                       </div>
-                      <AppButton 
-                        variant="primary" 
-                        icon={<Plus className="w-4 h-4" />}
-                        onClick={() => setShowAddRowModal(true)}
-                      >
-                        Add Row
-                      </AppButton>
-                    </div>
-                    
-                    <div className="text-center py-8">
-                      <List className="w-12 h-12 text-dark-300 dark:text-dark-600 mx-auto mb-4" />
-                      <h4 className="text-lg font-semibold text-dark-900 dark:text-white mb-2">
-                        No Data Displayed
-                      </h4>
-                      <p className="text-dark-600 dark:text-dark-300 mb-4">
-                        Data browsing functionality will be implemented here
-                      </p>
-                      <p className="text-sm text-dark-500 dark:text-dark-400">
-                        Use the "Add Row" button to insert new data
-                      </p>
-                    </div>
+                    )}
                   </div>
                 )}
 
@@ -391,8 +563,8 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         </div>
       </div>
 
-      {/* Add Row Modal */}
-      {currentTable && (
+      {/* Add Row Modal - Now handled by Material Table inline editing */}
+      {currentTable && showAddRowModal && (
         <AddRowModal
           isOpen={showAddRowModal}
           onClose={() => setShowAddRowModal(false)}

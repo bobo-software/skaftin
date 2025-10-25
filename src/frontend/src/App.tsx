@@ -8,7 +8,7 @@ import DashboardPage from './pages/user/dashboard/DashboardPage';
 import AuthService from './services/AuthService';
 import { ROUTES } from './utils/navigation';
 import './index.css';
-import { useAppStore, useProjectStore } from './stores/StoresIndex';
+import { useAppStore, useProjectStore, useRealtimeStore } from './stores/StoresIndex';
 
 
 // Protected Route Component
@@ -104,6 +104,7 @@ const AppRoutes = () => {
 function App() {
   // Stores
   const { theme, setTheme, setUser } = useAppStore();
+  const { initialize: initializeRealtime } = useRealtimeStore();
 
   useEffect(() => {
     // Initialize theme
@@ -132,6 +133,11 @@ function App() {
         });
     }
   }, [setTheme, setUser]);
+
+  useEffect(() => {
+    // Initialize real-time updates
+    initializeRealtime();
+  }, [initializeRealtime]);
 
   useEffect(() => {
     // Apply theme to document
