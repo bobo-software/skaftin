@@ -105,13 +105,13 @@ const ProjectOverviewTab = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-dark-600 dark:text-dark-300">Database Tables</p>
-              <p className="text-2xl font-bold text-dark-900 dark:text-white">
+              <div className="text-2xl font-bold text-dark-900 dark:text-white">
                 {isLoading ? (
                   <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
                 ) : (
                   projectStats?.tableCount || 0
                 )}
-              </p>
+              </div>
             </div>
             <Database className="w-8 h-8 text-primary-500" />
           </div>
@@ -120,13 +120,13 @@ const ProjectOverviewTab = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-dark-600 dark:text-dark-300">Storage Files</p>
-              <p className="text-2xl font-bold text-dark-900 dark:text-white">
+              <div className="text-2xl font-bold text-dark-900 dark:text-white">
                 {isLoading ? (
                   <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
                 ) : (
                   projectStats?.fileCount || 0
                 )}
-              </p>
+              </div>
             </div>
             <Cloud className="w-8 h-8 text-primary-500" />
           </div>
@@ -135,13 +135,13 @@ const ProjectOverviewTab = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-dark-600 dark:text-dark-300">API Calls</p>
-              <p className="text-2xl font-bold text-dark-900 dark:text-white">
+              <div className="text-2xl font-bold text-dark-900 dark:text-white">
                 {isLoading ? (
                   <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
                 ) : (
                   projectStats?.apiCalls || 0
                 )}
-              </p>
+              </div>
             </div>
             <Code className="w-8 h-8 text-primary-500" />
           </div>
