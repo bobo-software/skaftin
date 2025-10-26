@@ -13,6 +13,7 @@ export const SuperTokensConfig: TypeInput = {
     appName: "Skaftin",
     apiDomain: config.backend.url,
     websiteDomain: config.frontend.url,
+    apiGatewayPath: "/auth",
   },
   recipeList: [
     EmailPassword.init(),

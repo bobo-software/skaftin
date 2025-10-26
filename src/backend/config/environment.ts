@@ -75,8 +75,9 @@ export const config = {
       process.env.FRONTEND_URL || `http://localhost:${process.env.FRONTEND_PORT || 3005}`,
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'rid', 'fdi-version', 'anti-csrf', 'st-auth-mode'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'rid', 'fdi-version', 'anti-csrf', 'st-auth-mode', 'Content-Encoding'],
     credentials: true,
+    exposedHeaders: ['Set-Cookie'],
   },
 
   // Security

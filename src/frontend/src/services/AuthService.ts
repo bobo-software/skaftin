@@ -12,25 +12,56 @@ class AuthService {
       
       console.log('📥 Login response:', response);
       
-      // Extract email from response - SuperTokens might store it in different places
-      const userEmail = response.user?.emails?.[0] || response.user?.email || email;
+      // Check if the response has a status field
+      if (response && 'status' in response) {
+        // Success case
+        if (response.status === 'OK' && response.user) {
+          // Extract email from response - SuperTokens might store it in different places
+          const userEmail = response.user.emails?.[0] || response.user.email || email;
+          
+          console.log('👤 User email extracted:', userEmail);
+          
+          return {
+            success: true,
+            user: { email: userEmail, id: response.user.id },
+          };
+        }
+        
+        // Error case: Wrong credentials
+        if (response.status === 'WRONG_CREDENTIALS_ERROR') {
+          return {
+            success: false,
+            error: 'Incorrect email or password. Please try again.',
+          };
+        }
+        
+        // Handle other error statuses
+        return {
+          success: false,
+          error: 'Login failed. Please try again.',
+        };
+      }
       
-      console.log('👤 User email extracted:', userEmail);
+      // Check if response has a user property (success case without status field)
+      if (response && response.user) {
+        // Extract email from response - SuperTokens might store it in different places
+        const userEmail = response.user.emails?.[0] || response.user.email || email;
+        
+        console.log('👤 User email extracted:', userEmail);
+        
+        return {
+          success: true,
+          user: { email: userEmail, id: response.user.id },
+        };
+      }
       
+      // If we get here, something unexpected happened
       return {
-        success: true,
-        user: { email: userEmail, id: response.user.id },
+        success: false,
+        error: 'Login failed. Please try again.',
       };
     } catch (error: any) {
       console.error('❌ Login error:', error);
-      
-      // Handle SuperTokens WRONG_CREDENTIALS_ERROR
-      if (error.type === 'WRONG_CREDENTIALS_ERROR' || error.status === 'WRONG_CREDENTIALS_ERROR') {
-        return {
-          success: false,
-          error: 'Incorrect email or password. Please try again.',
-        };
-      }
       
       // Handle SuperTokens validation errors
       if (error.formFields && error.formFields.length > 0) {
@@ -44,7 +75,7 @@ class AuthService {
       
       return {
         success: false,
-        error: error.message || 'Login failed',
+        error: error.message || 'Login failed. Please try again.',
       };
     }
   }
@@ -58,14 +89,55 @@ class AuthService {
       
       console.log('📥 Register response:', response);
       
-      // Extract email from response - SuperTokens might store it in different places
-      const userEmail = response.user?.emails?.[0] || response.user?.email || email;
+      // Check if the response has a status field
+      if (response && 'status' in response) {
+        // Success case
+        if (response.status === 'OK' && response.user) {
+          // Extract email from response - SuperTokens might store it in different places
+          const userEmail = response.user.emails?.[0] || response.user.email || email;
+          
+          console.log('👤 User email extracted:', userEmail);
+          
+          return {
+            success: true,
+            user: { email: userEmail, id: response.user.id },
+          };
+        }
+        
+        // Field validation errors
+        if (response.status === 'FIELD_ERROR' && response.formFields) {
+          const fieldErrors = response.formFields.map((field: any) => field.error).join(', ');
+          return {
+            success: false,
+            error: fieldErrors,
+            formErrors: response.formFields,
+          };
+        }
+        
+        // Handle other error statuses
+        return {
+          success: false,
+          error: 'Registration failed. Please try again.',
+        };
+      }
       
-      console.log('👤 User email extracted:', userEmail);
+      // Check if response has a user property (success case without status field)
+      if (response && response.user) {
+        // Extract email from response - SuperTokens might store it in different places
+        const userEmail = response.user.emails?.[0] || response.user.email || email;
+        
+        console.log('👤 User email extracted:', userEmail);
+        
+        return {
+          success: true,
+          user: { email: userEmail, id: response.user.id },
+        };
+      }
       
+      // If we get here, something unexpected happened
       return {
-        success: true,
-        user: { email: userEmail, id: response.user.id },
+        success: false,
+        error: 'Registration failed. Please try again.',
       };
     } catch (error: any) {
       console.error('❌ Registration error:', error);
