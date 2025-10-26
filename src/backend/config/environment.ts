@@ -75,7 +75,7 @@ export const config = {
       process.env.FRONTEND_URL || `http://localhost:${process.env.FRONTEND_PORT || 3005}`,
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'rid', 'fdi-version', 'anti-csrf', 'st-auth-mode'],
     credentials: true,
   },
 
@@ -84,6 +84,12 @@ export const config = {
     bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12'),
     rateLimitWindow: parseInt(process.env.RATE_LIMIT_WINDOW || '900000'), // 15 minutes
     rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '100'), // requests per window
+  },
+
+  // SuperTokens Configuration
+  supertokens: {
+    connectionURI: process.env.SUPERTOKENS_CONNECTION_URI || 'http://localhost:3567',
+    apiKey: process.env.SUPERTOKENS_API_KEY || 'dev-api-key-change-in-production',
   },
 };
 

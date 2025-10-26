@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
@@ -13,11 +13,19 @@ import { useAppStore, useProjectStore, useRealtimeStore } from './stores/StoresI
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated } = useAppStore();
   const location = useLocation();
+  const [isAuth, setIsAuth] = useState<boolean | null>(null);
 
-  if (!isAuthenticated) {
-    // Redirect to login with return url
+  useEffect(() => {
+    AuthService.isAuthenticated().then(setIsAuth);
+  }, []);
+
+  if (isAuth === null) {
+    // Loading state
+    return null;
+  }
+
+  if (!isAuth) {
     return <Navigate to={ROUTES.LOGIN} state={{ from: location }} replace />;
   }
 
@@ -26,9 +34,18 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 // Public Route Component (redirects to projects if already authenticated)
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated } = useAppStore();
+  const [isAuth, setIsAuth] = useState<boolean | null>(null);
 
-  if (isAuthenticated) {
+  useEffect(() => {
+    AuthService.isAuthenticated().then(setIsAuth);
+  }, []);
+
+  if (isAuth === null) {
+    // Loading state
+    return null;
+  }
+
+  if (isAuth) {
     return <Navigate to={ROUTES.PROJECTS} replace />;
   }
 
@@ -116,23 +133,14 @@ function App() {
       setTheme('light');
     }
 
-    // Check for existing token
-    const token = AuthService.getStoredToken();
-    if (token) {
-      // Verify token with backend
-      AuthService.verifyToken(token)
-        .then(data => {
-          if (data.success) {
-            setUser(data.user);
-          } else {
-            AuthService.removeToken();
-          }
-        })
-        .catch(() => {
-          AuthService.removeToken();
-        });
-    }
-  }, [setTheme, setUser]);
+    // Check for existing SuperTokens session
+    AuthService.isAuthenticated().then(isAuth => {
+      if (isAuth) {
+        // User is authenticated, session is managed by SuperTokens
+        // You can fetch user info here if needed
+      }
+    });
+  }, [setTheme]);
 
   useEffect(() => {
     // Initialize real-time updates

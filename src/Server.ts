@@ -6,6 +6,11 @@ import { Server as SocketIOServer } from 'socket.io';
 import { config, validateConfig } from './backend/config/environment';
 import { testConnection } from './backend/db/connection';
 
+// SuperTokens imports
+import supertokens from "supertokens-node";
+import { middleware, errorHandler } from "supertokens-node/framework/express";
+import { SuperTokensConfig } from "./backend/config/supertokens";
+
 // ROUTERS
 import healthRoutes from './backend/routes/health.routes';
 import mcpRoutes, { initializeMCPService } from './backend/routes/mcp.routes';
@@ -16,6 +21,9 @@ import SocketService from './backend/services/socket.service';
 
 // Validate configuration on startup
 validateConfig();
+
+// Initialize SuperTokens
+supertokens.init(SuperTokensConfig);
 
 const app = express();
 const server = createServer(app);
@@ -40,6 +48,9 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+
+// Add SuperTokens middleware
+app.use(middleware());
 
 // Routes
 app.use('/api/health', healthRoutes);
@@ -124,6 +135,7 @@ async function startServer() {
       console.log(`🤖 MCP server: http://localhost:${port}/api/mcp`);
       console.log(`🛠️  MCP tools: http://localhost:${port}/api/mcp/tools`);
       console.log(`🔌 WebSocket server: ws://localhost:${port}`);
+      console.log(`🔐 SuperTokens: http://localhost:3567`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
@@ -132,3 +144,6 @@ async function startServer() {
 }
 
 startServer();
+
+// Error handler (should be last)
+app.use(errorHandler());

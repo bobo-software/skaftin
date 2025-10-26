@@ -35,7 +35,8 @@
     "minio": "^8.0.6",
     "multer": "^2.0.2",
     "pg": "^8.16.3",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "supertokens-node": "^23.0.1"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

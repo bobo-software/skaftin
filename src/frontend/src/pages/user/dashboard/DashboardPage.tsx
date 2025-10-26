@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppStore, useProjectStore } from '../../../stores/StoresIndex';
+import AuthService from '../../../services/AuthService';
 import { 
   Database, 
   Cloud, 
@@ -10,7 +12,9 @@ import {
   BarChart3,
   Bell,
   Search,
-  ArrowLeft
+  ArrowLeft,
+  User,
+  LogOut
 } from 'lucide-react';
 import ProjectOverviewTab from './overview/ProjectOverviewTab';
 import ProjectDatabaseTab from './database/ProjectDatabaseTab';
@@ -22,9 +26,24 @@ interface DashboardPageProps {
 }
 
 const DashboardPage = ({ onBackToProjects }: DashboardPageProps) => {
-  const { sidebarOpen, toggleSidebar } = useAppStore();
+  const { sidebarOpen, toggleSidebar, user, logout } = useAppStore();
   const { currentProject } = useProjectStore();
   const [activeSection, setActiveSection] = useState('overview');
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await AuthService.logout();
+      logout();
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Still logout even if there's an error
+      logout();
+      navigate('/login');
+    }
+  };
 
 
   const sidebarItems = [
@@ -157,6 +176,43 @@ const DashboardPage = ({ onBackToProjects }: DashboardPageProps) => {
               <Bell className="w-5 h-5 text-dark-600 dark:text-dark-300" />
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
             </button>
+            
+            {/* User Menu */}
+            <div className="relative">
+              <button
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700 transition-colors"
+              >
+                <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center">
+                  <User className="w-5 h-5 text-white" />
+                </div>
+                <span className="text-sm font-medium text-dark-700 dark:text-dark-300 hidden md:block">
+                  {user?.email || 'User'}
+                </span>
+              </button>
+              
+              {showUserMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowUserMenu(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-dark-800 rounded-lg shadow-lg border border-dark-200 dark:border-dark-700 z-20">
+                    <div className="p-4 border-b border-dark-200 dark:border-dark-700">
+                      <p className="text-sm font-medium text-dark-900 dark:text-white">{user?.email || 'User'}</p>
+                      <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">Signed in</p>
+                    </div>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center px-4 py-3 text-sm text-red-600 dark:text-red-400 hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4 mr-3" />
+                      Sign out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </header>
 

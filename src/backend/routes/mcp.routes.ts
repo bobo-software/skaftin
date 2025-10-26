@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import Session from 'supertokens-node/recipe/session';
 import { MCPService } from '../services/mcp.service';
 import SocketService from '../services/socket.service';
 
@@ -44,10 +45,25 @@ router.post('/tools/execute', async (req: Request, res: Response) => {
       });
     }
 
-    console.log(`🔧 Executing MCP tool: ${tool}`);
+    // Get user ID from SuperTokens session
+    let userId: string | undefined;
+    try {
+      const session = await Session.getSession(req, res);
+      userId = session.getUserId();
+      console.log(`👤 User ID from session: ${userId}`);
+    } catch (error) {
+      console.error('❌ Failed to get session:', error);
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
+    console.log(`🔧 Executing MCP tool: ${tool} for user: ${userId}`);
     console.log(`📊 Parameters:`, parameters);
 
-    const result = await mcpService.executeTool(tool, parameters, projectId);
+    // Pass userId to the MCP service
+    const result = await mcpService.executeTool(tool, parameters, projectId, userId);
 
     res.json({
       success: true,

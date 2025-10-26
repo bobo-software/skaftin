@@ -1,8 +1,10 @@
     import { useAppStore, useProjectStore } from "../../../stores/StoresIndex";
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from 'react-router-dom';
 import { Database, FolderOpen, Plus, User, LogOut, Edit3, Trash2, Calendar } from "lucide-react";
 import { AppButton } from "../../../components/ComponentsIndex";
 import CreateProjectModal from "../../../components/modals/CreateProjectModal";
+import AuthService from '../../../services/AuthService';
 
 interface ProjectsOverviewPageProps {
   onProjectSelect?: (_project: any) => void;
@@ -10,6 +12,8 @@ interface ProjectsOverviewPageProps {
 }
 
 const ProjectsOverviewPage = ({ onProjectSelect, onCreateProject }: ProjectsOverviewPageProps) => {
+const navigate = useNavigate();
+
 // Store variables
 const { user, logout } = useAppStore();
 const { 
@@ -23,6 +27,7 @@ clearError
 
 // State variables
 const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+const [isLoggingOut, setIsLoggingOut] = useState(false);
 
 const loadUserProjects = useCallback(async () => {
 // Use the user ID from the store, or fallback to a known user ID
@@ -58,9 +63,33 @@ const handleProjectSelect = (project: any) => {
 onProjectSelect?.(project);
 };
 
-const handleLogout = () => {
-logout();
-localStorage.removeItem('skaftin-token');
+const handleLogout = async () => {
+console.log('🔓 Logout button clicked');
+setIsLoggingOut(true);
+
+try {
+  console.log('📤 Calling AuthService.logout()...');
+  await AuthService.logout();
+  console.log('✅ AuthService.logout() completed successfully');
+  
+  console.log('🧹 Clearing app state...');
+  logout();
+  
+  console.log('🗑️ Removing token from localStorage...');
+  localStorage.removeItem('skaftin-token');
+  
+  console.log('🚀 Navigating to login page...');
+  navigate('/login');
+  console.log('✅ Logout complete');
+} catch (error) {
+  console.error('❌ Logout error:', error);
+  // Still logout even if there's an error
+  logout();
+  localStorage.removeItem('skaftin-token');
+  navigate('/login');
+} finally {
+  setIsLoggingOut(false);
+}
 };
 
 if (isLoading) {
@@ -106,9 +135,10 @@ return (
           variant="ghost"
           size="sm"
           onClick={handleLogout}
+          disabled={isLoggingOut}
           icon={<LogOut className="w-4 h-4" />}
         >
-          Logout
+          {isLoggingOut ? 'Logging out...' : 'Logout'}
         </AppButton>
       </div>
     </div>
