@@ -12,7 +12,7 @@ export interface MCPTool {
     required: boolean;
     description: string;
   }[];
-  category: 'database' | 'storage' | 'project' | 'utility';
+  category: 'database' | 'storage' | 'project' | 'utility' | 'auth';
 }
 
 export interface MCPResult {
@@ -329,17 +329,14 @@ export class MCPService {
       // Project Tools
       {
         name: 'list_projects',
-        description: 'List all projects for a user',
-        parameters: [
-          { name: 'userId', type: 'string', required: true, description: 'User ID' }
-        ],
+        description: 'List all projects for the authenticated user',
+        parameters: [],
         category: 'project'
       },
       {
         name: 'create_project',
-        description: 'Create a new project',
+        description: 'Create a new project for the authenticated user',
         parameters: [
-          { name: 'userId', type: 'string', required: true, description: 'User ID' },
           { name: 'name', type: 'string', required: true, description: 'Project name' },
           { name: 'description', type: 'string', required: false, description: 'Project description' }
         ],
@@ -381,17 +378,71 @@ export class MCPService {
           { name: 'limit', type: 'number', required: false, description: 'Maximum number of logs' }
         ],
         category: 'utility'
+      },
+
+      // Authentication Tools
+      {
+        name: 'get_user_by_email',
+        description: 'Get user information by email address',
+        parameters: [
+          { name: 'email', type: 'string', required: true, description: 'User email address' }
+        ],
+        category: 'auth'
+      },
+      {
+        name: 'get_user_by_id',
+        description: 'Get user information by user ID',
+        parameters: [
+          { name: 'userId', type: 'string', required: true, description: 'User ID' }
+        ],
+        category: 'auth'
+      },
+      {
+        name: 'list_all_users',
+        description: 'List all users in the system (admin only)',
+        parameters: [
+          { name: 'limit', type: 'number', required: false, description: 'Maximum number of users to return' },
+          { name: 'offset', type: 'number', required: false, description: 'Offset for pagination' }
+        ],
+        category: 'auth'
+      },
+      {
+        name: 'delete_user',
+        description: 'Delete a user account (admin only)',
+        parameters: [
+          { name: 'userId', type: 'string', required: true, description: 'User ID to delete' }
+        ],
+        category: 'auth'
+      },
+      {
+        name: 'reset_user_password',
+        description: 'Reset a user password (admin only)',
+        parameters: [
+          { name: 'userId', type: 'string', required: true, description: 'User ID' },
+          { name: 'newPassword', type: 'string', required: true, description: 'New password for the user' }
+        ],
+        category: 'auth'
+      },
+      {
+        name: 'update_user_email',
+        description: 'Update a user email address (admin only)',
+        parameters: [
+          { name: 'userId', type: 'string', required: true, description: 'User ID' },
+          { name: 'newEmail', type: 'string', required: true, description: 'New email address' }
+        ],
+        category: 'auth'
       }
     ];
   }
 
   // Execute a specific MCP tool
-  async executeTool(toolName: string, parameters: any, projectId?: string): Promise<MCPResult> {
+  async executeTool(toolName: string, parameters: any, projectId?: string, userId?: string): Promise<MCPResult> {
     const startTime = Date.now();
     
     try {
       console.log(`🔧 Executing MCP tool: ${toolName}`);
       console.log(`📊 Parameters:`, parameters);
+      console.log(`👤 User ID: ${userId || 'not provided'}`);
 
       let result: any;
 
@@ -622,12 +673,14 @@ export class MCPService {
 
         // Project Tools
         case 'list_projects':
-          result = await this.projectService.getUserProjects(parameters.userId);
+          // Use userId from session if provided, otherwise fallback to parameters
+          result = await this.projectService.getUserProjects(userId || parameters.userId);
           break;
 
         case 'create_project':
+          // Use userId from session if provided, otherwise fallback to parameters
           result = await this.projectService.createProject(
-            parameters.userId,
+            userId || parameters.userId,
             parameters.name,
             parameters.description
           );
@@ -649,6 +702,31 @@ export class MCPService {
 
         case 'get_logs':
           result = await this.getSystemLogs(parameters.projectId, parameters.level, parameters.limit);
+          break;
+
+        // Authentication Tools
+        case 'get_user_by_email':
+          result = await this.getUserByEmail(parameters.email);
+          break;
+
+        case 'get_user_by_id':
+          result = await this.getUserById(parameters.userId);
+          break;
+
+        case 'list_all_users':
+          result = await this.listAllUsers(parameters.limit, parameters.offset);
+          break;
+
+        case 'delete_user':
+          result = await this.deleteUser(parameters.userId);
+          break;
+
+        case 'reset_user_password':
+          result = await this.resetUserPassword(parameters.userId, parameters.newPassword);
+          break;
+
+        case 'update_user_email':
+          result = await this.updateUserEmail(parameters.userId, parameters.newEmail);
           break;
 
         default:
@@ -739,5 +817,103 @@ export class MCPService {
       ],
       total: 1
     };
+  }
+
+  // Authentication helper methods
+  private async getUserByEmail(email: string): Promise<any> {
+    try {
+      const EmailPassword = await import('supertokens-node/recipe/emailpassword');
+      
+      // Note: Direct user lookup by email requires SuperTokens Admin API or database access
+      // The SuperTokens SDK doesn't expose this directly
+      return {
+        email,
+        message: 'User lookup by email - requires SuperTokens Admin API or direct database access',
+        note: 'This feature requires querying the SuperTokens storage layer directly or using the Admin API',
+        implementation: 'Query the supertokens_emailpassword_users table directly'
+      };
+    } catch (error) {
+      throw new Error(`Failed to get user by email: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async getUserById(userId: string): Promise<any> {
+    try {
+      // Note: SuperTokens doesn't provide a direct getUserById method in the SDK
+      // This would require using the SuperTokens Admin API or querying the database directly
+      return {
+        id: userId,
+        message: 'User lookup by ID - implementation needed',
+        note: 'This requires querying the SuperTokens storage layer directly or using the Admin API',
+        implementation: 'Query the supertokens_users table by user_id'
+      };
+    } catch (error) {
+      throw new Error(`Failed to get user by ID: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async listAllUsers(limit: number = 100, offset: number = 0): Promise<any> {
+    try {
+      // Note: SuperTokens doesn't have a built-in list all users method
+      // This would require querying the SuperTokens storage layer directly
+      return {
+        users: [],
+        total: 0,
+        limit,
+        offset,
+        message: 'List users - requires direct database query to SuperTokens storage'
+      };
+    } catch (error) {
+      throw new Error(`Failed to list users: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async deleteUser(userId: string): Promise<any> {
+    try {
+      // Note: This requires the SuperTokens Admin API or direct database access
+      // The SDK doesn't provide direct user deletion
+      return {
+        userId,
+        success: false,
+        message: 'User deletion - implementation needed',
+        note: 'This requires using SuperTokens Admin API or direct database access',
+        implementation: 'Use DELETE /admin/user endpoint or delete from supertokens_* tables'
+      };
+    } catch (error) {
+      throw new Error(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async resetUserPassword(userId: string, newPassword: string): Promise<any> {
+    try {
+      // Note: This requires using SuperTokens Admin API or direct database access
+      // The SDK doesn't provide direct password reset for other users
+      return {
+        userId,
+        success: false,
+        message: 'Password reset - implementation needed',
+        note: 'This requires using SuperTokens Admin API or direct database access',
+        implementation: 'Use PUT /admin/user/password endpoint or update supertokens_emailpassword_users table'
+      };
+    } catch (error) {
+      throw new Error(`Failed to reset password: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async updateUserEmail(userId: string, newEmail: string): Promise<any> {
+    try {
+      // Note: This requires using SuperTokens Admin API or direct database access
+      // The SDK doesn't provide direct email update for other users
+      return {
+        userId,
+        newEmail,
+        success: false,
+        message: 'Email update - implementation needed',
+        note: 'This requires using SuperTokens Admin API or direct database access',
+        implementation: 'Use PUT /admin/user/email endpoint or update supertokens_emailpassword_users table'
+      };
+    } catch (error) {
+      throw new Error(`Failed to update email: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 }

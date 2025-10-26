@@ -17,10 +17,12 @@ const LoginPage = ({ onSuccess }: LoginPageProps) => {
     confirmPassword: ''
   });
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{[key: string]: string}>({});
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setFieldErrors({});
     setLoading(true);
 
     try {
@@ -30,10 +32,18 @@ const LoginPage = ({ onSuccess }: LoginPageProps) => {
 
       if (response.success) {
         setUser(response.user);
-        AuthService.storeToken(response.token);
         onSuccess?.();
       } else {
         setError(response.error || 'An error occurred');
+        
+        // Handle field-specific errors
+        if (response.formErrors && response.formErrors.length > 0) {
+          const errors: {[key: string]: string} = {};
+          response.formErrors.forEach((fieldError: any) => {
+            errors[fieldError.id] = fieldError.error;
+          });
+          setFieldErrors(errors);
+        }
       }
     } catch (error) {
       setError('Network error. Please try again.');
@@ -81,11 +91,16 @@ const LoginPage = ({ onSuccess }: LoginPageProps) => {
                   name="email"
                   value={formData.email}
                   onChange={handleInputChange}
-                  className="w-full pl-10 pr-4 py-3 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                  className={`w-full pl-10 pr-4 py-3 border rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all ${
+                    fieldErrors.email ? 'border-red-500 dark:border-red-600' : 'border-dark-200 dark:border-dark-700'
+                  }`}
                   placeholder="Enter your email"
                   required
                 />
               </div>
+              {fieldErrors.email && (
+                <p className="text-red-600 dark:text-red-400 text-sm mt-1">{fieldErrors.email}</p>
+              )}
             </div>
 
             {/* Password */}
@@ -100,7 +115,9 @@ const LoginPage = ({ onSuccess }: LoginPageProps) => {
                   name="password"
                   value={formData.password}
                   onChange={handleInputChange}
-                  className="w-full pl-10 pr-12 py-3 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                  className={`w-full pl-10 pr-12 py-3 border rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all ${
+                    fieldErrors.password ? 'border-red-500 dark:border-red-600' : 'border-dark-200 dark:border-dark-700'
+                  }`}
                   placeholder="Enter your password"
                   required
                 />
@@ -112,6 +129,9 @@ const LoginPage = ({ onSuccess }: LoginPageProps) => {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {fieldErrors.password && (
+                <p className="text-red-600 dark:text-red-400 text-sm mt-1">{fieldErrors.password}</p>
+              )}
             </div>
 
             {/* Confirm Password (Register only) */}
