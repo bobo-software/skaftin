@@ -13,7 +13,10 @@ RUN npm ci
 # Copy frontend source
 COPY src/frontend ./src/frontend
 COPY tsconfig.json ./
-COPY .env ./
+
+# Copy .env files (use example as fallback)
+COPY .env.example ./.env.example
+COPY .env* ./
 
 # Build the frontend
 RUN cd src/frontend && npm run build

@@ -22,7 +22,10 @@ RUN npm ci
 COPY src/backend ./src/backend
 COPY src/Server.ts ./src/
 COPY tsconfig.json ./
-COPY .env ./
+
+# Copy .env files (use example as fallback)
+COPY .env.example ./.env.example
+COPY .env* ./
 
 # Build TypeScript
 RUN npm run build
