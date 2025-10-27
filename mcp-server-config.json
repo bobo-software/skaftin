@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "skaftin": {
+      "command": "node",
+      "args": ["src/backend/mcp-server.js"],
+      "env": {
+        "NODE_ENV": "development",
+        "DB_HOST": "localhost",
+        "DB_PORT": "5432",
+        "DB_USER": "postgres",
+        "DB_PASSWORD": "BLUcabish#25",
+        "DB_NAME": "postgres",
+        "SUPERTOKENS_CONNECTION_URI": "http://localhost:3567",
+        "SUPERTOKENS_API_KEY": "dev-api-key-change-in-production",
+        "ENVIRONMENT": "development"
+      }
+    }
+  }
+}

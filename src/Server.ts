@@ -15,6 +15,7 @@ import { SuperTokensConfig } from "./backend/config/supertokens";
 import healthRoutes from './backend/routes/health.routes';
 import mcpRoutes, { initializeMCPService } from './backend/routes/mcp.routes';
 import authRoutes from './backend/routes/auth.routes';
+import apiKeyRoutes from './backend/routes/apiKeys.routes';
 
 // SERVICES
 import SocketService from './backend/services/socket.service';
@@ -56,6 +57,7 @@ app.use(middleware());
 app.use('/api/health', healthRoutes);
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/api-keys', apiKeyRoutes);
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {

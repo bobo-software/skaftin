@@ -431,6 +431,26 @@ export class MCPService {
           { name: 'newEmail', type: 'string', required: true, description: 'New email address' }
         ],
         category: 'auth'
+      },
+
+      // Debug Tools (Development Only)
+      {
+        name: 'debug_execute_sql',
+        description: 'DEBUG: Execute raw SQL queries directly on the database (DEVELOPMENT ONLY)',
+        parameters: [
+          { name: 'query', type: 'string', required: true, description: 'SQL query to execute' },
+          { name: 'parameters', type: 'array', required: false, description: 'Query parameters' }
+        ],
+        category: 'database'
+      },
+      {
+        name: 'debug_skip_auth',
+        description: 'DEBUG: Execute MCP tool without authentication (DEVELOPMENT ONLY)',
+        parameters: [
+          { name: 'tool', type: 'string', required: true, description: 'Tool name to execute' },
+          { name: 'parameters', type: 'object', required: true, description: 'Tool parameters' }
+        ],
+        category: 'utility'
       }
     ];
   }
@@ -727,6 +747,49 @@ export class MCPService {
 
         case 'update_user_email':
           result = await this.updateUserEmail(parameters.userId, parameters.newEmail);
+          break;
+
+        // Debug Tools
+        case 'debug_execute_sql':
+          // Execute raw SQL on the main database (not project-specific)
+          const { Pool } = await import('pg');
+          const pool = new Pool({
+            host: process.env.DB_HOST || 'localhost',
+            port: parseInt(process.env.DB_PORT || '5432'),
+            database: process.env.DB_NAME || 'postgres',
+            user: process.env.DB_USER || 'postgres',
+            password: process.env.DB_PASSWORD || '',
+          });
+          
+          const client = await pool.connect();
+          try {
+            const queryResult = await client.query(parameters.query, parameters.parameters || []);
+            result = {
+              rows: queryResult.rows,
+              rowCount: queryResult.rowCount,
+              command: queryResult.command,
+            };
+          } finally {
+            client.release();
+            await pool.end();
+          }
+          break;
+
+        case 'debug_skip_auth':
+          // This is a placeholder for a development-only tool.
+          // In a real scenario, you would bypass authentication checks here.
+          // For now, we'll just return a placeholder result.
+          result = {
+            success: true,
+            data: {
+              message: `Debug tool '${toolName}' executed. Parameters: ${JSON.stringify(parameters)}.`,
+              note: 'This tool is for development purposes only and bypasses authentication checks.'
+            },
+            metadata: {
+              executionTime: Date.now() - startTime,
+              timestamp: new Date().toISOString()
+            }
+          };
           break;
 
         default:

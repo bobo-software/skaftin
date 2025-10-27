@@ -33,6 +33,43 @@ router.get('/', (req: Request, res: Response) => {
   });
 });
 
+// DEBUG: Development-only endpoint without authentication
+// TODO: Remove this in production
+router.post('/tools/debug-execute', async (req: Request, res: Response) => {
+  try {
+    const { tool, parameters, projectId } = req.body;
+
+    if (!tool) {
+      return res.status(400).json({
+        success: false,
+        error: 'Tool name is required'
+      });
+    }
+
+    console.log(`🔧 [DEBUG] Executing MCP tool: ${tool} (NO AUTH)`);
+    console.log(`📊 Parameters:`, parameters);
+
+    // Execute without authentication check
+    const result = await mcpService.executeTool(tool, parameters, projectId, 'debug-user');
+
+    res.json({
+      success: true,
+      tool,
+      result,
+      debug: true,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('MCP tool execution error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      tool: req.body.tool
+    });
+  }
+});
+
 // MCP Tool execution endpoint
 router.post('/tools/execute', async (req: Request, res: Response) => {
   try {
@@ -45,18 +82,26 @@ router.post('/tools/execute', async (req: Request, res: Response) => {
       });
     }
 
-    // Get user ID from SuperTokens session
+    // Get user ID from SuperTokens session (skip in development)
     let userId: string | undefined;
-    try {
-      const session = await Session.getSession(req, res);
-      userId = session.getUserId();
-      console.log(`👤 User ID from session: ${userId}`);
-    } catch (error) {
-      console.error('❌ Failed to get session:', error);
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
+    const isDevelopment = process.env.ENVIRONMENT === 'development';
+    
+    if (!isDevelopment) {
+      try {
+        const session = await Session.getSession(req, res);
+        userId = session.getUserId();
+        console.log(`👤 User ID from session: ${userId}`);
+      } catch (error) {
+        console.error('❌ Failed to get session:', error);
+        return res.status(401).json({
+          success: false,
+          error: 'Authentication required'
+        });
+      }
+    } else {
+      // Development mode: use debug user
+      userId = 'debug-user';
+      console.log(`🔧 [DEV MODE] Skipping authentication check`);
     }
 
     console.log(`🔧 Executing MCP tool: ${tool} for user: ${userId}`);
