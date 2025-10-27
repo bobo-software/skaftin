@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import ProjectsOverviewPage from './pages/user/projects/ProjectsOverviewPage';
@@ -9,6 +9,8 @@ import AuthService from './services/AuthService';
 import { ROUTES } from './utils/navigation';
 import './index.css';
 import { useAppStore, useProjectStore, useRealtimeStore } from './stores/StoresIndex';
+import ThirdParty from 'supertokens-auth-react/recipe/thirdparty';
+import { LoadingSpinner } from './components/ComponentsIndex';
 
 
 // Protected Route Component
@@ -52,6 +54,65 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// OAuth Callback Component
+const OAuthCallback = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleOAuthCallback = async () => {
+      try {
+        // Complete the OAuth flow using SuperTokens
+        const response = await ThirdParty.redirectToThirdPartyLogin({
+          redirectBack: false,
+        });
+
+        if (response?.status === 'OK') {
+          // OAuth login successful, redirect to projects
+          navigate(ROUTES.PROJECTS, { replace: true });
+        } else {
+          setError('OAuth authentication failed');
+          setTimeout(() => navigate(ROUTES.LOGIN, { replace: true }), 3000);
+        }
+      } catch (err) {
+        console.error('OAuth callback error:', err);
+        setError('OAuth authentication failed');
+        setTimeout(() => navigate(ROUTES.LOGIN, { replace: true }), 3000);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    handleOAuthCallback();
+  }, [navigate]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800">
+        <div className="text-center">
+          <LoadingSpinner size="lg" />
+          <p className="mt-4 text-dark-600 dark:text-dark-300">Completing sign in...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800">
+        <div className="text-center">
+          <div className="text-red-600 dark:text-red-400 mb-4">{error}</div>
+          <p className="text-dark-600 dark:text-dark-300">Redirecting to login...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+};
+
 // App Routes Component
 const AppRoutes = () => {
   const { setCurrentProject } = useProjectStore();
@@ -62,6 +123,10 @@ const AppRoutes = () => {
       {/* Public Routes */}
       <Route path={ROUTES.HOME} element={ <PublicRoute> <HomePage onGetStarted={() => navigate(ROUTES.LOGIN)} /> </PublicRoute>} />
       <Route path={ROUTES.LOGIN}  element={<PublicRoute> <LoginPage onSuccess={() => navigate(ROUTES.PROJECTS)} /></PublicRoute>} />
+      
+      {/* OAuth Callback Routes */}
+      <Route path="/auth/callback/google" element={<OAuthCallback />} />
+      <Route path="/auth/callback/github" element={<OAuthCallback />} />
 
       {/* Protected Routes */}
       <Route 

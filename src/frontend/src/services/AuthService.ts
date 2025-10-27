@@ -1,6 +1,7 @@
 import { signUp, signIn } from "supertokens-auth-react/recipe/emailpassword";
 import { signOut } from "supertokens-auth-react/recipe/session";
-import { doesSessionExist } from "supertokens-auth-react/recipe/session";
+import { doesSessionExist, getUserId } from "supertokens-auth-react/recipe/session";
+import ThirdParty from "supertokens-auth-react/recipe/thirdparty";
 
 class AuthService {
   // Login user
@@ -175,6 +176,68 @@ class AuthService {
   // Check if user is authenticated
   static async isAuthenticated(): Promise<boolean> {
     return await doesSessionExist();
+  }
+
+  // Get current user ID
+  static async getCurrentUserId(): Promise<string | undefined> {
+    try {
+      return await getUserId();
+    } catch (error) {
+      console.error('Error getting user ID:', error);
+      return undefined;
+    }
+  }
+
+  // OAuth sign in with Google
+  static async signInWithGoogle(): Promise<void> {
+    try {
+      await ThirdParty.signInAndUp();
+      // The redirect happens automatically, so this is just a placeholder
+      // The actual redirect happens in the ThirdParty component
+    } catch (error) {
+      console.error('Google sign in error:', error);
+      throw error;
+    }
+  }
+
+  // OAuth sign in with GitHub
+  static async signInWithGithub(): Promise<void> {
+    try {
+      await ThirdParty.signInAndUp();
+      // The redirect happens automatically, so this is just a placeholder
+      // The actual redirect happens in the ThirdParty component
+    } catch (error) {
+      console.error('GitHub sign in error:', error);
+      throw error;
+    }
+  }
+
+  // Handle OAuth callback (automatically handled by SuperTokens)
+  static async handleOAuthCallback(): Promise<any> {
+    try {
+      // This is automatically handled by SuperTokens when the user returns from OAuth
+      // We just need to check if session exists
+      const sessionExists = await doesSessionExist();
+      
+      if (sessionExists) {
+        const userId = await getUserId();
+        return {
+          success: true,
+          userId,
+        };
+      }
+      
+      return {
+        success: false,
+        error: 'OAuth authentication failed',
+      };
+    } catch (error) {
+      console.error('OAuth callback error:', error);
+      return {
+        success: false,
+        error: 'OAuth callback failed',
+      };
+    }
   }
 }
 
