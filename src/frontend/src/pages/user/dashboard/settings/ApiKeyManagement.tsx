@@ -92,7 +92,7 @@ const ApiKeyManagement = () => {
 
     try {
       const token = localStorage.getItem('skaftin-token');
-      const response = await RequestUtils.delete(`/api/api-keys/${id}`, token || '');
+      const response = await RequestUtils.delete(`/api/api-keys/${id}`, token || '', {});
       
       if (response.success) {
         await loadApiKeys();

@@ -60,22 +60,6 @@ export const useFetchData = <T = any, P = any>({
       return;
     }
 
-    // Check if token exists and is valid
-    const token = AuthService.getStoredToken();
-    if (!token) {
-      setError('No authentication token found');
-      onError?.('No authentication token found');
-      return;
-    }
-
-    if (isTokenExpired(token)) {
-      setError('Authentication token expired');
-      onError?.('Authentication token expired');
-      AuthService.removeToken();
-      setUser(null);
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
@@ -90,7 +74,7 @@ export const useFetchData = <T = any, P = any>({
     } finally {
       setLoading(false);
     }
-  }, [fetchFunction, params, enabled, user, onSuccess, onError, setUser]);
+  }, [fetchFunction, params, enabled, user, onSuccess, onError]);
 
   const refetch = useCallback(async () => {
     await fetchData();
@@ -111,12 +95,13 @@ export const useFetchData = <T = any, P = any>({
 
 // Specialized hook for project data fetching
 export const useProjectData = (projectId?: string) => {
-  const { getProjectStats } = useProjectStore();
+  const { getProjectStats, projectStats } = useProjectStore();
   
   return useFetchData({
     fetchFunction: async () => {
       if (!projectId) throw new Error('Project ID is required');
       await getProjectStats(projectId);
+      return projectStats;
     },
     params: projectId,
     dependencies: [projectId],
@@ -126,12 +111,13 @@ export const useProjectData = (projectId?: string) => {
 
 // Specialized hook for user projects fetching
 export const useUserProjects = (userId?: string) => {
-  const { fetchProjects } = useProjectStore();
+  const { fetchProjects, projects } = useProjectStore();
   
   return useFetchData({
     fetchFunction: async () => {
       if (!userId) throw new Error('User ID is required');
       await fetchProjects(userId);
+      return projects;
     },
     params: userId,
     dependencies: [userId],

@@ -99,7 +99,7 @@ const AppLabledAutocomplete: React.FC<AppAutocompleteProps> = ({
     setSearchText('');
     setSelectedOption(null);
     setIsOpen(false);
-    onClear && onClear();
+    onClear?.();
     onChange?.('');
   };
 

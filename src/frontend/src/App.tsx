@@ -66,7 +66,7 @@ const OAuthCallback = () => {
       try {
         // Complete the OAuth flow using SuperTokens
         const response = await ThirdParty.redirectToThirdPartyLogin({
-          redirectBack: false,
+          thirdPartyId: 'google' // or determine from URL params
         });
 
         if (response?.status === 'OK') {

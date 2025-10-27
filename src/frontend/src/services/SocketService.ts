@@ -28,7 +28,7 @@ class SocketService {
   }
 
   private connect() {
-    const serverUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4005';
+    const serverUrl = (import.meta as any).env?.VITE_BACKEND_URL || 'http://localhost:4005';
     
     this.socket = io(serverUrl, {
       transports: ['websocket', 'polling'],

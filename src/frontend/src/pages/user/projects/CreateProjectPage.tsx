@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useAppStore } from '../stores/StoresIndex';
 import { 
   Database, 
   Cloud, 
@@ -10,6 +9,7 @@ import {
   Zap,
   Shield
 } from 'lucide-react';
+import { useAppStore } from '@/stores/StoresIndex';
 
 interface ProjectData {
   name: string;

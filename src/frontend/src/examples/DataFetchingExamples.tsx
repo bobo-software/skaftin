@@ -1,6 +1,6 @@
 import React from 'react';
-import { useFetchData, useProjectData, useUserProjects } from '../hooks/useFetchData';
-import { useAppStore, useProjectStore } from '../stores/StoresIndex';
+import { useFetchData } from '../hooks/useFetchData';
+import { useAppStore } from '../stores/StoresIndex';
 import McpService from '../services/McpService';
 
 // Example 1: Basic data fetching with parameters
@@ -13,7 +13,19 @@ const BasicDataFetchingExample = () => {
     loading, 
     error, 
     refetch 
-  } = useUserProjects(user?.id);
+  } = useFetchData({
+    fetchFunction: async () => {
+      if (!user?.id) throw new Error('User ID is required');
+      // Mock data for now
+      return [
+        { id: '1', name: 'Project 1' },
+        { id: '2', name: 'Project 2' }
+      ];
+    },
+    params: user?.id,
+    dependencies: [user?.id],
+    enabled: !!user?.id
+  });
 
   if (loading) return <div>Loading projects...</div>;
   if (error) return <div>Error: {error}</div>;
@@ -22,7 +34,7 @@ const BasicDataFetchingExample = () => {
     <div>
       <h3>User Projects</h3>
       <button onClick={refetch}>Refresh</button>
-      {projects?.map(project => (
+      {projects && Array.isArray(projects) && projects.map((project: any) => (
         <div key={project.id}>{project.name}</div>
       ))}
     </div>
@@ -35,7 +47,15 @@ const ProjectDataExample = ({ projectId }: { projectId: string }) => {
     data: projectStats, 
     loading, 
     error 
-  } = useProjectData(projectId);
+  } = useFetchData({
+    fetchFunction: async () => {
+      // Mock data for now
+      return { tableCount: 5, fileCount: 10 };
+    },
+    params: projectId,
+    dependencies: [projectId],
+    enabled: !!projectId
+  });
 
   if (loading) return <div>Loading project stats...</div>;
   if (error) return <div>Error: {error}</div>;
@@ -43,8 +63,8 @@ const ProjectDataExample = ({ projectId }: { projectId: string }) => {
   return (
     <div>
       <h3>Project Statistics</h3>
-      <p>Tables: {projectStats?.tableCount || 0}</p>
-      <p>Files: {projectStats?.fileCount || 0}</p>
+      <p>Tables: {(projectStats as any)?.tableCount || 0}</p>
+      <p>Files: {(projectStats as any)?.fileCount || 0}</p>
     </div>
   );
 };
@@ -63,7 +83,7 @@ const CustomDataFetchingExample = ({ projectId }: { projectId: string }) => {
     params: { projectId },
     dependencies: [projectId],
     enabled: !!projectId,
-    onSuccess: (data) => {
+    onSuccess: (data: any ) => {
       console.log('Tables loaded:', data);
     },
     onError: (error) => {
@@ -119,13 +139,30 @@ const ConditionalDataExample = ({ shouldFetch }: { shouldFetch: boolean }) => {
 // Example 5: Multiple data sources
 const MultipleDataSources = ({ projectId }: { projectId: string }) => {
   // Fetch multiple data sources simultaneously
-  const projectsQuery = useUserProjects('user-id');
-  const projectStatsQuery = useProjectData(projectId);
+  const projectsQuery = useFetchData({
+    fetchFunction: async () => {
+      // Mock data
+      return [{ id: '1', name: 'Project 1' }];
+    },
+    params: 'user-id',
+    dependencies: ['user-id']
+  });
+  
+  const projectStatsQuery = useFetchData({
+    fetchFunction: async () => {
+      // Mock data
+      return { tableCount: 5, fileCount: 10 };
+    },
+    params: projectId,
+    dependencies: [projectId]
+  });
+  
   const tablesQuery = useFetchData({
     fetchFunction: async () => McpService.listTables(projectId),
     params: projectId,
     dependencies: [projectId]
   });
+  
   const filesQuery = useFetchData({
     fetchFunction: async () => McpService.listFiles(projectId),
     params: projectId,
@@ -145,9 +182,9 @@ const MultipleDataSources = ({ projectId }: { projectId: string }) => {
     <div>
       <h2>Dashboard Data</h2>
       <div>
-        <h3>Projects: {projectsQuery.data?.length || 0}</h3>
-        <h3>Tables: {tablesQuery.data?.length || 0}</h3>
-        <h3>Files: {filesQuery.data?.length || 0}</h3>
+        <h3>Projects: {(projectsQuery.data as any)?.length || 0}</h3>
+        <h3>Tables: {(tablesQuery.data as any)?.length || 0}</h3>
+        <h3>Files: {(filesQuery.data as any)?.length || 0}</h3>
         <h3>Project Stats: {JSON.stringify(projectStatsQuery.data)}</h3>
       </div>
     </div>

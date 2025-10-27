@@ -16,9 +16,9 @@ class AuthService {
       // Check if the response has a status field
       if (response && 'status' in response) {
         // Success case
-        if (response.status === 'OK' && response.user) {
-          // Extract email from response - SuperTokens might store it in different places
-          const userEmail = response.user.emails?.[0] || response.user.email || email;
+        if (response.status === 'OK' && 'user' in response && response.user) {
+          // Extract email from response - SuperTokens stores it in emails array
+          const userEmail = response.user.emails?.[0] || email;
           
           console.log('👤 User email extracted:', userEmail);
           
@@ -44,9 +44,9 @@ class AuthService {
       }
       
       // Check if response has a user property (success case without status field)
-      if (response && response.user) {
-        // Extract email from response - SuperTokens might store it in different places
-        const userEmail = response.user.emails?.[0] || response.user.email || email;
+      if (response && 'user' in response && response.user) {
+        // Extract email from response - SuperTokens stores it in emails array
+        const userEmail = response.user.emails?.[0] || email;
         
         console.log('👤 User email extracted:', userEmail);
         
@@ -93,9 +93,9 @@ class AuthService {
       // Check if the response has a status field
       if (response && 'status' in response) {
         // Success case
-        if (response.status === 'OK' && response.user) {
-          // Extract email from response - SuperTokens might store it in different places
-          const userEmail = response.user.emails?.[0] || response.user.email || email;
+        if (response.status === 'OK' && 'user' in response && response.user) {
+          // Extract email from response - SuperTokens stores it in emails array
+          const userEmail = response.user.emails?.[0] || email;
           
           console.log('👤 User email extracted:', userEmail);
           
@@ -106,7 +106,7 @@ class AuthService {
         }
         
         // Field validation errors
-        if (response.status === 'FIELD_ERROR' && response.formFields) {
+        if (response.status === 'FIELD_ERROR' && 'formFields' in response && response.formFields) {
           const fieldErrors = response.formFields.map((field: any) => field.error).join(', ');
           return {
             success: false,
@@ -123,9 +123,9 @@ class AuthService {
       }
       
       // Check if response has a user property (success case without status field)
-      if (response && response.user) {
-        // Extract email from response - SuperTokens might store it in different places
-        const userEmail = response.user.emails?.[0] || response.user.email || email;
+      if (response && 'user' in response && response.user) {
+        // Extract email from response - SuperTokens stores it in emails array
+        const userEmail = response.user.emails?.[0] || email;
         
         console.log('👤 User email extracted:', userEmail);
         
@@ -191,9 +191,10 @@ class AuthService {
   // OAuth sign in with Google
   static async signInWithGoogle(): Promise<void> {
     try {
-      await ThirdParty.signInAndUp();
-      // The redirect happens automatically, so this is just a placeholder
-      // The actual redirect happens in the ThirdParty component
+      // Redirect to Google OAuth
+      await ThirdParty.redirectToThirdPartyLogin({
+        thirdPartyId: 'google'
+      });
     } catch (error) {
       console.error('Google sign in error:', error);
       throw error;
@@ -203,9 +204,10 @@ class AuthService {
   // OAuth sign in with GitHub
   static async signInWithGithub(): Promise<void> {
     try {
-      await ThirdParty.signInAndUp();
-      // The redirect happens automatically, so this is just a placeholder
-      // The actual redirect happens in the ThirdParty component
+      // Redirect to GitHub OAuth
+      await ThirdParty.redirectToThirdPartyLogin({
+        thirdPartyId: 'github'
+      });
     } catch (error) {
       console.error('GitHub sign in error:', error);
       throw error;
