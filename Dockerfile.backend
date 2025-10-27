@@ -1,0 +1,37 @@
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache \
+    postgresql-client \
+    curl \
+    git \
+    python3 \
+    make \
+    g++
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy backend source
+COPY src/backend ./src/backend
+COPY tsconfig.json ./
+COPY .env ./
+
+# Build TypeScript
+RUN npm run build
+
+# Expose port
+EXPOSE 4005
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:4005/api/health || exit 1
+
+# Start the application
+CMD ["npm", "run", "start"]

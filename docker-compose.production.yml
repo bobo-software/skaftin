@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  backend:
+    restart: always
+    environment:
+      NODE_ENV: production
+    # Remove dev volumes in production
+    volumes: []
+    # Use production command
+    command: npm run start
+
+  frontend:
+    restart: always
+    environment:
+      NODE_ENV: production
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://api.yourdomain.com}
+    # Remove dev volumes in production
+    volumes: []
+    # Use production command
+    command: npm run start --prefix src/frontend
+
+  postgres:
+    restart: always
+    # Enable WAL for better performance
+    command: postgres -c wal_level=replica -c max_wal_senders=3 -c max_replication_slots=3
+
+  minio:
+    restart: always
+    # Use proper credentials in production
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+
+  supertokens:
+    restart: always
