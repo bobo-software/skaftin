@@ -10,10 +10,9 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-BLUcabish#25}
       POSTGRES_DB: ${DB_NAME:-postgres}
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Use different port to avoid conflict
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./src/backend/db/migrations:/docker-entrypoint-initdb.d
     networks:
       - skaftin-network
     healthcheck:
@@ -30,8 +29,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_user}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-laksdflaksdjflk}
     ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Console
+      - "9002:9000"  # API
+      - "9003:9001"  # Console
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
@@ -67,7 +66,7 @@ services:
       POSTGRESQL_CONNECTION_URI: postgresql://postgres:${DB_PASSWORD:-BLUcabish#25}@postgres:5432/${DB_NAME:-postgres}
       API_KEYS: ${SUPERTOKENS_API_KEY:-dev-api-key-change-in-production}
     ports:
-      - "3567:3567"
+      - "3568:3567"  # Use different port
     depends_on:
       postgres:
         condition: service_healthy
@@ -86,7 +85,7 @@ services:
       dockerfile: Dockerfile.backend
     container_name: skaftin-backend
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: development
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: ${DB_USER:-postgres}
@@ -99,7 +98,7 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio_user}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-laksdflaksdjflk}
-      MINIO_USE_SSL: false
+      MINIO_USE_SSL: "false"
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
@@ -107,11 +106,9 @@ services:
       EMAIL_USER: ${EMAIL_USER:-}
       EMAIL_PASS: ${EMAIL_PASS:-}
     ports:
-      - "4005:4005"
+      - "4006:4005"  # Use different port
     depends_on:
       postgres:
-        condition: service_healthy
-      supertokens:
         condition: service_healthy
       minio:
         condition: service_started
