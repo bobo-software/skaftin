@@ -1,4 +1,4 @@
-name: CI/CD Pipeline with Unified Docker Image
+name: CI/CD Pipeline with Custom Docker Registry
 
 on:
   push:
@@ -6,23 +6,20 @@ on:
       - main  # Trigger the workflow on push to the main branch
     tags:
       - 'v*.*.*'  # Trigger the workflow on tag events matching v*.*.*
-  pull_request:
-    branches:
-      - main
 
 jobs:
-  build-unified:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v1
 
       - name: Login to Custom Docker Registry
-        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login dr.bobosoftware.co.za -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login https://dr.bobosoftware.co.za -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
 
       - name: Extract version from tag
         if: startsWith(github.ref, 'refs/tags/')
@@ -32,35 +29,11 @@ jobs:
         if: startsWith(github.ref, 'refs/heads/')
         run: echo "BRANCH_TAG=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
 
-      - name: Set PR tag
-        if: github.event_name == 'pull_request'
-        run: echo "PR_TAG=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
-
-      - name: Build and push Unified Docker image
-        uses: docker/build-push-action@v4
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
         with:
           context: .
-          file: ./Dockerfile.unified
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: |
-            dr.bobosoftware.co.za/skaftin-app:latest
-            ${{ env.VERSION && format('dr.bobosoftware.co.za/skaftin-app:{0}', env.VERSION) || '' }}
-            ${{ env.BRANCH_TAG && format('dr.bobosoftware.co.za/skaftin-app:{0}', env.BRANCH_TAG) || '' }}
-            ${{ env.PR_TAG && format('dr.bobosoftware.co.za/skaftin-app:{0}', env.PR_TAG) || '' }}
-          cache-from: type=registry,ref=dr.bobosoftware.co.za/skaftin-app:buildcache
-          cache-to: type=registry,ref=dr.bobosoftware.co.za/skaftin-app:buildcache,mode=max
-          platforms: linux/amd64,linux/arm64
-
-  notify:
-    needs: [build-unified]
-    runs-on: ubuntu-latest
-    if: always()
-
-    steps:
-      - name: Notify on success
-        if: success()
-        run: echo "Unified Docker image built and pushed successfully!"
-
-      - name: Notify on failure
-        if: failure()
-        run: echo "Unified Docker image build failed"
+            dr.bobosoftware.co.za/skaftin-platform:latest
+            ${{ env.VERSION && format('dr.bobosoftware.co.za/skaftin-platform:{0}', env.VERSION) || format('dr.bobosoftware.co.za/skafrin-platform:{0}', env.BRANCH_TAG) }}

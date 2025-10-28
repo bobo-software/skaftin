@@ -1,187 +1,58 @@
 import express, { Request, Response } from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
-import { createServer } from 'http';
-import { Server as SocketIOServer } from 'socket.io';
-import { config, validateConfig } from './backend/config/environment';
-import { testConnection } from './backend/db/connection';
+import * as dotenv from 'dotenv';
 
-// SuperTokens imports
-import supertokens from "supertokens-node";
-import { middleware, errorHandler } from "supertokens-node/framework/express";
-import { SuperTokensConfig } from "./backend/config/supertokens";
-
-// ROUTERS
-import healthRoutes from './backend/routes/health.routes';
-import mcpRoutes, { initializeMCPService } from './backend/routes/mcp.routes';
-import authRoutes from './backend/routes/auth.routes';
-import apiKeyRoutes from './backend/routes/apiKeys.routes';
-
-// SERVICES
-import SocketService from './backend/services/socket.service';
-
-// Validate configuration on startup
-validateConfig();
-
-// Add deployment diagnostics
-console.log('🚀 Starting Skaftin server...');
-console.log(`📡 Backend URL: ${config.backend.url}`);
-console.log(`🌐 Frontend URL: ${config.frontend.url}`);
-console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-console.log(`🐳 Docker: ${process.env.DOCKER ? 'Yes' : 'No'}`);
-console.log(`📋 All Environment Variables:`);
-Object.keys(process.env)
-  .filter(key => key.startsWith('DB_') || key.startsWith('NODE_') || key.startsWith('DOCKER'))
-  .forEach(key => console.log(`  ${key}: ${process.env[key]}`));
-
-// Initialize SuperTokens
-supertokens.init(SuperTokensConfig);
+// Load environment variables
+dotenv.config();
 
 const app = express();
-const server = createServer(app);
-const io = new SocketIOServer(server, {
-  cors: {
-    origin: config.cors.origin,
-    methods: config.cors.methods,
-    allowedHeaders: config.cors.allowedHeaders,
-    credentials: config.cors.credentials,
-  },
-});
-const port = config.backend.port;
+const port = parseInt(process.env.BACKEND_PORT || '4005');
 
-// CORS configuration
-const corsOptions = {
-  origin: config.cors.origin,
-  methods: config.cors.methods,
-  allowedHeaders: config.cors.allowedHeaders,
-  credentials: config.cors.credentials,
-};
-
-app.use(cors(corsOptions));
-app.use(bodyParser.json({ limit: '50mb' }));
-app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
-
-// Add SuperTokens middleware BEFORE routes
-app.use(middleware());
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // Routes
-app.use('/api/health', healthRoutes);
-app.use('/api/mcp', mcpRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/api-keys', apiKeyRoutes);
-
-// Socket.IO connection handling
-io.on('connection', (socket) => {
-  console.log(`🔌 Client connected: ${socket.id}`);
-  
-  // Join project-specific rooms
-  socket.on('join-project', (projectId: string) => {
-    socket.join(`project-${projectId}`);
-    console.log(`📁 Client ${socket.id} joined project: ${projectId}`);
-  });
-  
-  // Leave project rooms
-  socket.on('leave-project', (projectId: string) => {
-    socket.leave(`project-${projectId}`);
-    console.log(`📁 Client ${socket.id} left project: ${projectId}`);
-  });
-  
-  socket.on('disconnect', () => {
-    console.log(`🔌 Client disconnected: ${socket.id}`);
-  });
-});
-
-// Initialize Socket.IO service
-const socketService = new SocketService(io);
-
-// Initialize MCP service with Socket.IO support
-initializeMCPService(socketService);
-
-// Export io instance for use in other modules
-export { io };
-
 app.get('/', (req: Request, res: Response) => {
   res.send('Hello from Skaftin ⛪, be blessed!');
 });
 
-// Special endpoint for large SQL dumps
-app.post('/api/parse-sql', (req: Request, res: Response) => {
-  try {
-    const { sql } = req.body;
-    if (!sql) {
-      return res.status(400).json({ error: 'SQL content is required' });
-    }
-    
-    // For now, just return success - the parsing will be done on the frontend
-    res.json({ 
-      success: true, 
-      message: 'SQL received successfully',
-      length: sql.length 
-    });
-  } catch (error) {
-    console.error('Error parsing SQL:', error);
-    res.status(500).json({ error: 'Failed to parse SQL' });
-  }
+app.get('/test', (req: Request, res: Response) => {
+  res.json({
+    status: 'success',
+    message: 'Basic server test endpoint working',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Test database connection on startup
-async function startServer() {
-  try {
-    console.log('🚀 Starting Skaftin server...');
-    console.log(`📡 Backend URL: http://localhost:${port}`);
-    console.log(`🌐 Frontend URL: http://localhost:${config.frontend.port}`);
-    
-    // Check port availability
-    console.log('\n🔍 Checking port availability...');
-    const net = require('net');
-    const checkPort = (port: number): Promise<boolean> => {
-      return new Promise((resolve) => {
-        const server = net.createServer();
-        server.listen(port, () => {
-          server.once('close', () => resolve(true));
-          server.close();
-        });
-        server.on('error', () => resolve(false));
-      });
-    };
-    
-    const backendPortAvailable = await checkPort(port);
-    const frontendPortAvailable = await checkPort(config.frontend.port);
-    
-    console.log(`📡 Backend port ${port}: ${backendPortAvailable ? '✅ Available' : '❌ In use'}`);
-    console.log(`🌐 Frontend port ${config.frontend.port}: ${frontendPortAvailable ? '✅ Available' : '❌ In use'}`);
-    
-    if (!backendPortAvailable) {
-      console.error(`❌ Backend port ${port} is already in use!`);
-      console.error('💡 Try stopping other services or change the port in your configuration');
-    }
-    
-    // Test database connection
-    console.log('\n🔍 Testing database connection...');
-    const dbConnected = await testConnection();
-    
-    if (dbConnected) {
-      console.log('✅ Database connection successful!');
-    } else {
-      console.log('⚠️  Database connection failed - server will start but database features may not work');
-    }
-    
-    server.listen(port, () => {
-      console.log(`\n🎉 Skaftin server running on port: ${port}`);
-      console.log(`📊 Health check: http://localhost:${port}/api/health`);
-      console.log(`🗄️  Database test: http://localhost:${port}/api/health/db`);
-      console.log(`🤖 MCP server: http://localhost:${port}/api/mcp`);
-      console.log(`🛠️  MCP tools: http://localhost:${port}/api/mcp/tools`);
-      console.log(`🔌 WebSocket server: ws://localhost:${port}`);
-      console.log(`🔐 SuperTokens: http://localhost:3567`);
-    });
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  }
-}
+app.get('/api/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    message: 'Skaftin backend is running'
+  });
+});
 
-startServer();
+app.get('/api/health/info', (req: Request, res: Response) => {
+  res.json({
+    status: 'success',
+    message: 'Basic Skaftin server is running',
+    version: '1.0.0',
+    features: {
+      database: false,
+      authentication: false,
+      mcp: false,
+      websocket: false
+    }
+  });
+});
 
-// Error handler (should be last)
-app.use(errorHandler());
+// Start server
+app.listen(port, () => {
+  console.log(`🚀 Skaftin server running on port: ${port}`);
+  console.log(`📊 Health check: http://localhost:${port}/api/health`);
+  console.log(`🧪 Test endpoint: http://localhost:${port}/test`);
+  console.log(`ℹ️  Server info: http://localhost:${port}/api/health/info`);
+});
