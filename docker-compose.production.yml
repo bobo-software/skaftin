@@ -1,36 +1,132 @@
 version: '3.8'
 
 services:
-  backend:
-    restart: always
-    environment:
-      NODE_ENV: production
-    # Remove dev volumes in production
-    volumes: []
-    # Use production command
-    command: npm run start
-
-  frontend:
-    restart: always
-    environment:
-      NODE_ENV: production
-      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://api.yourdomain.com}
-    # Remove dev volumes in production
-    volumes: []
-    # Use production command
-    command: npm run start --prefix src/frontend
-
+  # PostgreSQL Database
   postgres:
-    restart: always
-    # Enable WAL for better performance
-    command: postgres -c wal_level=replica -c max_wal_senders=3 -c max_replication_slots=3
-
-  minio:
-    restart: always
-    # Use proper credentials in production
+    image: postgres:16-alpine
+    container_name: skaftin-postgres
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-BLUcabish#25}
+      POSTGRES_DB: ${DB_NAME:-postgres}
+    ports:
+      - "5433:5432"  # Use different port to avoid conflict
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - skaftin-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: skaftin-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_user}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-laksdflaksdjflk}
+    ports:
+      - "9002:9000"  # API
+      - "9003:9001"  # Console
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - skaftin-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # MinIO Client (for creating buckets)
+  minio-create-bucket:
+    image: minio/mc:latest
+    container_name: skaftin-minio-setup
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc config host add myminio http://minio:9000 minio_user laksdflaksdjflk) do sleep 1; done &&
+      /usr/bin/mc mb myminio/skaftin || true &&
+      /usr/bin/mc policy set public myminio/skaftin || true &&
+      exit 0;
+      "
+    networks:
+      - skaftin-network
+
+  # SuperTokens Core
   supertokens:
-    restart: always
+    image: registry.supertokens.io/supertokens/supertokens-postgresql:latest
+    container_name: skaftin-supertokens
+    environment:
+      POSTGRESQL_CONNECTION_URI: postgresql://postgres:${DB_PASSWORD:-BLUcabish#25}@postgres:5432/${DB_NAME:-postgres}
+      API_KEYS: ${SUPERTOKENS_API_KEY:-dev-api-key-change-in-production}
+    ports:
+      - "3568:3567"  # Use different port
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - skaftin-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3567/hello"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Unified Skaftin Application (Frontend + Backend) - Production
+  skaftin-app:
+    image: dr.bobosoftware.co.za/skaftin-app:latest
+    container_name: skaftin-unified-prod
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-BLUcabish#25}
+      DB_NAME: ${DB_NAME:-postgres}
+      SUPERTOKENS_CONNECTION_URI: http://supertokens:3567
+      SUPERTOKENS_API_KEY: ${SUPERTOKENS_API_KEY:-dev-api-key-change-in-production}
+      BACKEND_PORT: 4005
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3005}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio_user}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-laksdflaksdjflk}
+      MINIO_USE_SSL: "false"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      EMAIL_USER: ${EMAIL_USER:-}
+      EMAIL_PASS: ${EMAIL_PASS:-}
+    ports:
+      - "3005:3005"  # Frontend
+      - "4005:4005"  # Backend API
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      supertokens:
+        condition: service_healthy
+    networks:
+      - skaftin-network
+    volumes:
+      - skaftin_logs:/app/logs
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+  skaftin_logs:
+    driver: local
+
+networks:
+  skaftin-network:
+    driver: bridge
