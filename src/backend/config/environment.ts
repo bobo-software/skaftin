@@ -30,7 +30,7 @@ export const config = {
 
   // JWT Configuration
   jwt: {
-    secret: process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
+    secret: process.env.JWT_SECRET || 'ae009356156f8b4c011d0018de61243f941590087dcde8a93c76e1021d4f04dcbc9a80adf37ce4d75631d530f6c62e1073939419d909fb6e1da9daeec6445957',
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   },
