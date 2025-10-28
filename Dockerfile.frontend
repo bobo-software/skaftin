@@ -3,12 +3,11 @@ FROM node:18-alpine
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy frontend package files
 COPY src/frontend/package*.json ./src/frontend/
 
-# Install dependencies
-RUN npm ci
+# Install frontend dependencies
+RUN cd src/frontend && npm ci
 
 # Copy frontend source
 COPY src/frontend ./src/frontend
