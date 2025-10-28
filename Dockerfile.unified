@@ -77,8 +77,8 @@ COPY --from=base /app/src/Server.ts ./src/
 COPY --from=frontend-builder /app/src/frontend/dist ./src/frontend/dist
 COPY --from=frontend-builder /app/src/frontend/package*.json ./src/frontend/
 
-# Install frontend production dependencies
-RUN cd src/frontend && npm ci --only=production
+# Install frontend dependencies (including dev dependencies for vite preview)
+RUN cd src/frontend && npm ci
 
 # Copy .env files
 COPY .env.example ./.env.example
