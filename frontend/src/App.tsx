@@ -8,6 +8,9 @@ function App() {
   const [healthStatus, setHealthStatus] = useState<any>(null)
   const [stats, setStats] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
+  const [files, setFiles] = useState<any[]>([])
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
 
   const fetchBackendMessage = async () => {
     setLoading(true)
@@ -29,7 +32,7 @@ function App() {
       const data = await response.json()
       setHealthStatus(data)
     } catch (error) {
-      setHealthStatus({ status: 'unhealthy', database: 'disconnected' })
+      setHealthStatus({ status: 'unhealthy', database: 'disconnected', minio: 'disconnected' })
     }
   }
 
@@ -53,18 +56,66 @@ function App() {
     }
   }
 
+  const fetchFiles = async () => {
+    try {
+      const response = await fetch('http://localhost:4006/api/files')
+      const data = await response.json()
+      setFiles(data)
+    } catch (error) {
+      console.error('Error fetching files:', error)
+    }
+  }
+
+  const handleFileUpload = async () => {
+    if (!uploadFile) return
+
+    setUploading(true)
+    const formData = new FormData()
+    formData.append('file', uploadFile)
+
+    try {
+      const response = await fetch('http://localhost:4006/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      const result = await response.json()
+      
+      if (result.success) {
+        alert(`File uploaded successfully: ${result.originalName}`)
+        setUploadFile(null)
+        fetchFiles() // Refresh file list
+      } else {
+        alert('Upload failed')
+      }
+    } catch (error) {
+      console.error('Upload error:', error)
+      alert('Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
   useEffect(() => {
     fetchBackendMessage()
     fetchHealthStatus()
     fetchStats()
     fetchUsers()
+    fetchFiles()
   }, [])
 
   return (
     <>
       <div className="header">
         <h1>🚀 Skaftin Platform</h1>
-        <p>Full-Stack Application with PostgreSQL Database</p>
+        <p>Full-Stack Application with PostgreSQL Database & MinIO File Storage</p>
       </div>
       
       <div className="card">
@@ -88,14 +139,15 @@ function App() {
       </div>
 
       <div className="card">
-        <h2>Database Health Status</h2>
+        <h2>System Health Status</h2>
         <button onClick={fetchHealthStatus}>
-          Check Database Health
+          Check System Health
         </button>
         {healthStatus && (
           <div className={`health-status ${healthStatus.status}`}>
             <p><strong>Status:</strong> {healthStatus.status}</p>
             <p><strong>Database:</strong> {healthStatus.database}</p>
+            <p><strong>MinIO:</strong> {healthStatus.minio}</p>
             {healthStatus.timestamp && (
               <p><strong>Timestamp:</strong> {new Date(healthStatus.timestamp).toLocaleString()}</p>
             )}
@@ -133,10 +185,52 @@ function App() {
         </div>
       </div>
 
+      <div className="card">
+        <h2>File Storage (MinIO)</h2>
+        <div className="file-upload">
+          <input
+            type="file"
+            onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+            className="file-input"
+          />
+          <button 
+            onClick={handleFileUpload} 
+            disabled={!uploadFile || uploading}
+            className="upload-button"
+          >
+            {uploading ? 'Uploading...' : 'Upload File'}
+          </button>
+        </div>
+        
+        <div className="files-section">
+          <button onClick={fetchFiles}>
+            Refresh Files
+          </button>
+          <div className="files-list">
+            {files.map((file, index) => (
+              <div key={index} className="file-item">
+                <div className="file-info">
+                  <p><strong>{file.name}</strong></p>
+                  <p>Size: {formatFileSize(file.size)}</p>
+                  <p>Modified: {new Date(file.lastModified).toLocaleString()}</p>
+                </div>
+                <div className="file-actions">
+                  <a href={file.url} target="_blank" rel="noopener noreferrer" className="download-link">
+                    View
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="info">
         <p>Frontend running on port 3006</p>
         <p>Backend running on port 4006</p>
         <p>PostgreSQL running on port 5450</p>
+        <p>MinIO API running on port 9000</p>
+        <p>MinIO Console running on port 9001</p>
       </div>
     </>
   )

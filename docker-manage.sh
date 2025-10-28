@@ -31,6 +31,8 @@ case "$1" in
         echo "  Frontend:  http://localhost:3006"
         echo "  Backend:   http://localhost:4006"
         echo "  Database:  localhost:5450"
+        echo "  MinIO API: http://localhost:9000"
+        echo "  MinIO UI:  http://localhost:9001"
         ;;
     "dev")
         echo "Starting Skaftin services in development mode..."
