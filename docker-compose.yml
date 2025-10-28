@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: dockerfile
+    ports:
+      - "4006:4006"
+    env_file:
+      - .env
+    volumes:
+      # Mount source code for development (optional - remove in production)
+      - ./src:/app/src
+      - ./package.json:/app/package.json
+      - ./tsconfig.json:/app/tsconfig.json
+    restart: unless-stopped
+    container_name: skaftin-backend
+    networks:
+      - skaftin-network
+
+networks:
+  skaftin-network:
+    driver: bridge
