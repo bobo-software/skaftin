@@ -80,7 +80,7 @@ services:
 
   # Unified Skaftin Application (Frontend + Backend) - Production
   skaftin-app:
-    image: skaftin-unified-debug
+    image: dr.bobosoftware.co.za/skaftin-app:latest
     container_name: skaftin-unified-prod
     environment:
       NODE_ENV: production
