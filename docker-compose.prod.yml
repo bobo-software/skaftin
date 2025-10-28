@@ -37,6 +37,30 @@ services:
       retries: 3
       start_period: 40s
 
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5450:5432"
+    environment:
+      POSTGRES_DB: skaftin_db
+      POSTGRES_USER: skaftin_user
+      POSTGRES_PASSWORD: skaftin_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    container_name: skaftin-postgres
+    networks:
+      - skaftin-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skaftin_user -d skaftin_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
 networks:
   skaftin-network:
     driver: bridge

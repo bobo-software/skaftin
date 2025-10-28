@@ -28,8 +28,9 @@ case "$1" in
         docker-compose ps
         echo ""
         echo "Service URLs:"
-        echo "  Frontend: http://localhost:3006"
-        echo "  Backend:  http://localhost:4006"
+        echo "  Frontend:  http://localhost:3006"
+        echo "  Backend:   http://localhost:4006"
+        echo "  Database:  localhost:5450"
         ;;
     "dev")
         echo "Starting Skaftin services in development mode..."
