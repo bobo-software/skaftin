@@ -29,7 +29,7 @@ jobs:
         if: startsWith(github.ref, 'refs/heads/')
         run: echo "BRANCH_TAG=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
 
-      - name: Build and push Docker image
+      - name: Build and push Backend Docker image
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -37,3 +37,12 @@ jobs:
           tags: |
             dr.bobosoftware.co.za/skaftin-platform:latest
             ${{ env.VERSION && format('dr.bobosoftware.co.za/skaftin-platform:{0}', env.VERSION) || format('dr.bobosoftware.co.za/skaftin-platform:{0}', env.BRANCH_TAG) }}
+
+      - name: Build and push Frontend Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            dr.bobosoftware.co.za/skaftin-frontend:latest
+            ${{ env.VERSION && format('dr.bobosoftware.co.za/skaftin-frontend:{0}', env.VERSION) || format('dr.bobosoftware.co.za/skaftin-frontend:{0}', env.BRANCH_TAG) }}

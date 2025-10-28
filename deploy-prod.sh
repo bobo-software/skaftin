@@ -4,7 +4,8 @@
 # This script handles login to private Docker registry and deployment
 
 REGISTRY_URL="dr.bobosoftware.co.za"
-IMAGE_NAME="skaftin-platform"
+BACKEND_IMAGE="skaftin-platform"
+FRONTEND_IMAGE="skaftin-frontend"
 
 case "$1" in
     "login")
@@ -13,8 +14,9 @@ case "$1" in
         docker login $REGISTRY_URL
         ;;
     "pull")
-        echo "Pulling latest image from registry..."
-        docker pull $REGISTRY_URL/$IMAGE_NAME:latest
+        echo "Pulling latest images from registry..."
+        docker pull $REGISTRY_URL/$BACKEND_IMAGE:latest
+        docker pull $REGISTRY_URL/$FRONTEND_IMAGE:latest
         ;;
     "deploy")
         echo "Deploying Skaftin Platform to production..."
@@ -23,9 +25,10 @@ case "$1" in
         echo "Logging into registry..."
         docker login $REGISTRY_URL
         
-        # Pull latest image
-        echo "Pulling latest image..."
-        docker pull $REGISTRY_URL/$IMAGE_NAME:latest
+        # Pull latest images
+        echo "Pulling latest images..."
+        docker pull $REGISTRY_URL/$BACKEND_IMAGE:latest
+        docker pull $REGISTRY_URL/$FRONTEND_IMAGE:latest
         
         # Stop existing services
         echo "Stopping existing services..."

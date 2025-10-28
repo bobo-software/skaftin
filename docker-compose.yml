@@ -19,6 +19,24 @@ services:
     networks:
       - skaftin-network
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3006:3006"
+    volumes:
+      # Mount source code for development (optional - remove in production)
+      - ./frontend/src:/app/src
+      - ./frontend/package.json:/app/package.json
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+    restart: unless-stopped
+    container_name: skaftin-frontend
+    networks:
+      - skaftin-network
+    depends_on:
+      - backend
+
 networks:
   skaftin-network:
     driver: bridge

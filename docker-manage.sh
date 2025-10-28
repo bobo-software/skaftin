@@ -26,6 +26,10 @@ case "$1" in
     "status")
         echo "Checking status of Skaftin services..."
         docker-compose ps
+        echo ""
+        echo "Service URLs:"
+        echo "  Frontend: http://localhost:3006"
+        echo "  Backend:  http://localhost:4006"
         ;;
     "dev")
         echo "Starting Skaftin services in development mode..."
