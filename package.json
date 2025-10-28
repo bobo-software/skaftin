@@ -1,28 +1,29 @@
 {
   "name": "skaftin",
   "version": "1.0.0",
-  "description": "Skaftin Platform",
-  "main": "src/Server.ts",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "build": "tsc",
-    "dev": "nodemon src/Server.ts",
+    "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node dist/Server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon src/Server.ts"
   },
-  "author": "Gift Sibiya",
+  "keywords": [],
+  "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^5.1.0",
-    "cors": "^2.8.5",
+    "axios": "^1.13.0",
+    "bcrypt": "^6.0.0",
     "body-parser": "^2.2.0",
-    "dotenv": "^17.2.3"
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0"
   },
   "devDependencies": {
+    "@tsconfig/node16": "^16.1.6",
     "@types/body-parser": "^1.19.6",
     "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.4",
-    "@types/node": "^24.9.1",
-    "concurrently": "^8.2.2",
+    "@types/express": "^5.0.5",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",

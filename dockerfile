@@ -1,7 +1,7 @@
 # Stage 1: Build Stage (Uses full Alpine with required build tools)
 FROM node:22-alpine AS builder
 
-# Install dependencies for native modules (if needed in future)
+# Install dependencies for native modules (bcrypt, mysql2, etc.)
 RUN apk add --no-cache python3 g++ make
 
 WORKDIR /app
