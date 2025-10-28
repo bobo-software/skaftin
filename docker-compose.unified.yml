@@ -72,11 +72,13 @@ services:
         condition: service_healthy
     networks:
       - skaftin-network
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3567/hello"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
 
   # Unified Skaftin Application (Frontend + Backend)
   skaftin-app:
