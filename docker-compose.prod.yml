@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  backend:
+    image: dr.bobosoftware.co.za/skaftin-platform:latest
+    ports:
+      - "4006:4006"
+    env_file:
+      - .env
+    restart: unless-stopped
+    container_name: skaftin-backend
+    networks:
+      - skaftin-network
+    # Health check to ensure service is running
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4006/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  skaftin-network:
+    driver: bridge

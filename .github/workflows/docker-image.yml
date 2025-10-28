@@ -36,4 +36,4 @@ jobs:
           push: true
           tags: |
             dr.bobosoftware.co.za/skaftin-platform:latest
-            ${{ env.VERSION && format('dr.bobosoftware.co.za/skaftin-platform:{0}', env.VERSION) || format('dr.bobosoftware.co.za/skafrin-platform:{0}', env.BRANCH_TAG) }}
+            ${{ env.VERSION && format('dr.bobosoftware.co.za/skaftin-platform:{0}', env.VERSION) || format('dr.bobosoftware.co.za/skaftin-platform:{0}', env.BRANCH_TAG) }}
