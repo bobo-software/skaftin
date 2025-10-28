@@ -28,7 +28,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
 # Expose the application port
-EXPOSE 4005
+EXPOSE 4006
 
 # Run the server
 CMD ["node", "dist/Server.js"]
