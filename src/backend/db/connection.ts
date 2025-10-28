@@ -20,6 +20,18 @@ export async function testConnection(): Promise<boolean> {
   try {
     console.log('🔄 Testing database connection...');
     console.log(`📡 Connecting to: ${config.database.host}:${config.database.port}/${config.database.database}`);
+    console.log(`👤 Database user: ${config.database.username}`);
+    console.log(`🔐 Password set: ${config.database.password ? 'Yes' : 'No'}`);
+    console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🐳 Docker environment: ${process.env.DOCKER ? 'Yes' : 'No'}`);
+    
+    // Log all database-related environment variables
+    console.log('📋 Database Environment Variables:');
+    console.log(`  DB_HOST: ${process.env.DB_HOST || 'not set'}`);
+    console.log(`  DB_PORT: ${process.env.DB_PORT || 'not set'}`);
+    console.log(`  DB_USER: ${process.env.DB_USER || 'not set'}`);
+    console.log(`  DB_PASSWORD: ${process.env.DB_PASSWORD ? 'set' : 'not set'}`);
+    console.log(`  DB_NAME: ${process.env.DB_NAME || 'not set'}`);
     
     client = await pool.connect();
     
@@ -35,10 +47,23 @@ export async function testConnection(): Promise<boolean> {
     console.error('❌ Database connection failed:');
     console.error('Error details:', error);
     
+    // Additional diagnostic information
+    console.log('🔍 Diagnostic Information:');
+    console.log(`  Attempted connection: ${config.database.host}:${config.database.port}`);
+    console.log(`  Network interface check: ${config.database.host === 'localhost' ? 'Using localhost - may not work in Docker' : 'Using container name - good for Docker'}`);
+    
+    // Check if we're in Docker
+    if (process.env.NODE_ENV === 'production' || process.env.DOCKER) {
+      console.log('🐳 Running in containerized environment');
+      console.log('💡 Tip: Ensure DB_HOST is set to container name (e.g., "postgres") not "localhost"');
+    }
+    
     // Provide helpful error messages
     if (error instanceof Error) {
       if (error.message.includes('ECONNREFUSED')) {
         console.error('💡 Make sure PostgreSQL is running on the specified host and port');
+        console.error('💡 In Docker: Use container name (e.g., "postgres") instead of "localhost"');
+        console.error('💡 Check if PostgreSQL container is running: docker ps | grep postgres');
       } else if (error.message.includes('password authentication failed')) {
         console.error('💡 Check your database credentials in .env file');
       } else if (error.message.includes('database') && error.message.includes('does not exist')) {

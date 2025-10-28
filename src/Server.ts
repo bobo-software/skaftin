@@ -23,6 +23,17 @@ import SocketService from './backend/services/socket.service';
 // Validate configuration on startup
 validateConfig();
 
+// Add deployment diagnostics
+console.log('🚀 Starting Skaftin server...');
+console.log(`📡 Backend URL: ${config.backend.url}`);
+console.log(`🌐 Frontend URL: ${config.frontend.url}`);
+console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+console.log(`🐳 Docker: ${process.env.DOCKER ? 'Yes' : 'No'}`);
+console.log(`📋 All Environment Variables:`);
+Object.keys(process.env)
+  .filter(key => key.startsWith('DB_') || key.startsWith('NODE_') || key.startsWith('DOCKER'))
+  .forEach(key => console.log(`  ${key}: ${process.env[key]}`));
+
 // Initialize SuperTokens
 supertokens.init(SuperTokensConfig);
 
@@ -119,6 +130,31 @@ async function startServer() {
     console.log('🚀 Starting Skaftin server...');
     console.log(`📡 Backend URL: http://localhost:${port}`);
     console.log(`🌐 Frontend URL: http://localhost:${config.frontend.port}`);
+    
+    // Check port availability
+    console.log('\n🔍 Checking port availability...');
+    const net = require('net');
+    const checkPort = (port: number): Promise<boolean> => {
+      return new Promise((resolve) => {
+        const server = net.createServer();
+        server.listen(port, () => {
+          server.once('close', () => resolve(true));
+          server.close();
+        });
+        server.on('error', () => resolve(false));
+      });
+    };
+    
+    const backendPortAvailable = await checkPort(port);
+    const frontendPortAvailable = await checkPort(config.frontend.port);
+    
+    console.log(`📡 Backend port ${port}: ${backendPortAvailable ? '✅ Available' : '❌ In use'}`);
+    console.log(`🌐 Frontend port ${config.frontend.port}: ${frontendPortAvailable ? '✅ Available' : '❌ In use'}`);
+    
+    if (!backendPortAvailable) {
+      console.error(`❌ Backend port ${port} is already in use!`);
+      console.error('💡 Try stopping other services or change the port in your configuration');
+    }
     
     // Test database connection
     console.log('\n🔍 Testing database connection...');
