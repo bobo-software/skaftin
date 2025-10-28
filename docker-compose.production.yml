@@ -80,7 +80,7 @@ services:
 
   # Unified Skaftin Application (Frontend + Backend) - Production
   skaftin-app:
-    image: dr.bobosoftware.co.za/skaftin-app:latest
+    image: skaftin-unified-debug
     container_name: skaftin-unified-prod
     environment:
       NODE_ENV: production
@@ -92,7 +92,7 @@ services:
       SUPERTOKENS_CONNECTION_URI: http://supertokens:3567
       SUPERTOKENS_API_KEY: ${SUPERTOKENS_API_KEY:-dev-api-key-change-in-production}
       BACKEND_PORT: 4005
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3005}
+      FRONTEND_URL: ${FRONTEND_URL:-http://102.218.215.251:3005}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio_user}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-laksdflaksdjflk}
