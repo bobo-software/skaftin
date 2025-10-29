@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { Upload, X, File, AlertCircle, CheckCircle } from 'lucide-react';
-import { AppButton } from '../ComponentsIndex';
-import McpService from '../../services/McpService';
+import { AppButton } from '@components/ComponentsIndex';
+// import McpService from '../../services/McpService';
 
 interface FileUploadModalProps {
   isOpen: boolean;
@@ -42,7 +42,7 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFiles(Array.from(e.dataTransfer.files));
     }
@@ -56,7 +56,7 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
   const handleFiles = async (fileList: File[]) => {
     const newFiles: UploadedFile[] = [];
-    
+
     for (const file of fileList) {
       // Check file size (limit to 10MB)
       if (file.size > 10 * 1024 * 1024) {
@@ -110,27 +110,27 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
     setUploadProgress(newProgress);
 
     try {
-      for (const file of files) {
-        setUploadProgress(prev => ({ ...prev, [file.name]: 'uploading' }));
-        
-        const result = await McpService.uploadFile(
-          projectId,
-          file.name,
-          file.data,
-          file.type
-        );
+      // for (const file of files) {
+      //   setUploadProgress(prev => ({ ...prev, [file.name]: 'uploading' }));
 
-        if (result.success) {
-          setUploadProgress(prev => ({ ...prev, [file.name]: 'success' }));
-        } else {
-          setUploadProgress(prev => ({ ...prev, [file.name]: 'error' }));
-          console.error('Failed to upload file:', file.name, result.error);
-        }
-      }
+      //   const result = await McpService.uploadFile(
+      //     projectId,
+      //     file.name,
+      //     file.data,
+      //     file.type
+      //   );
+
+      //   if (result.success) {
+      //     setUploadProgress(prev => ({ ...prev, [file.name]: 'success' }));
+      //   } else {
+      //     setUploadProgress(prev => ({ ...prev, [file.name]: 'error' }));
+      //     console.error('Failed to upload file:', file.name, result.error);
+      //   }
+      // }
 
       // Check if all uploads were successful
       const allSuccessful = files.every(file => uploadProgress[file.name] === 'success');
-      
+
       if (allSuccessful) {
         onSuccess();
         setFiles([]);
@@ -202,11 +202,10 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
           {/* Drop Zone */}
           <div
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-              dragActive
+            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${dragActive
                 ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                 : 'border-dark-300 dark:border-dark-600 hover:border-primary-400'
-            }`}
+              }`}
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
@@ -258,7 +257,7 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
                         </p>
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center space-x-2 ml-3">
                       {getProgressIcon(uploadProgress[file.name] || 'pending')}
                       <button

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppButton, AppInput, ErrorMessage } from '../ComponentsIndex';
+import { AppButton, AppInput } from '@components/ComponentsIndex';
 import { Database, X } from 'lucide-react';
 
 interface CreateProjectModalProps {
@@ -64,7 +64,7 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
             label="Project Name"
             placeholder="Enter project name"
             value={projectData.name}
-            onChange={(value) => handleInputChange('name', value)}
+            onChange={(value: string) => handleInputChange('name', value)}
             required
             icon={<Database className="w-4 h-4" />}
           />
@@ -73,16 +73,16 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
             label="Description (Optional)"
             placeholder="Describe your project..."
             value={projectData.description}
-            onChange={(value) => handleInputChange('description', value)}
+            onChange={(value: string) => handleInputChange('description', value)}
           />
 
-          {error && (
+          {/* {error && (
             <ErrorMessage
               message={error}
               type="error"
               onDismiss={() => setError(null)}
             />
-          )}
+          )} */}
 
           <div className="flex space-x-3">
             <AppButton

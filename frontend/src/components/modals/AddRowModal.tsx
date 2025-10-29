@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Loader2 } from 'lucide-react';
-import { AppButton, AppInput } from '../ComponentsIndex';
+import { AppButton, AppInput } from '@components/ComponentsIndex';
 
 interface AddRowModalProps {
   isOpen: boolean;
@@ -16,12 +16,12 @@ interface AddRowModalProps {
   tableName: string;
 }
 
-const AddRowModal = ({ 
-  isOpen, 
-  onClose, 
-  onSave, 
-  columns, 
-  tableName 
+const AddRowModal = ({
+  isOpen,
+  onClose,
+  onSave,
+  columns,
+  tableName
 }: AddRowModalProps) => {
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -35,17 +35,17 @@ const AddRowModal = ({
       const initialData: Record<string, any> = {};
       columns.forEach(column => {
         console.log('Processing column:', column.column_name, 'type:', column.data_type);
-        
+
         // Skip auto-increment fields (SERIAL, BIGSERIAL, etc.)
         if (column.data_type.includes('SERIAL')) {
           return;
         }
-        
+
         // Skip fields with sequence defaults
         if (column.column_default && column.column_default.includes('nextval(')) {
           return;
         }
-        
+
         if (column.column_default) {
           initialData[column.column_name] = column.column_default;
         } else if (column.data_type === 'BOOLEAN') {
@@ -69,7 +69,7 @@ const AddRowModal = ({
       ...prev,
       [columnName]: value
     }));
-    
+
     // Clear error for this field
     if (errors[columnName]) {
       setErrors(prev => {
@@ -82,16 +82,16 @@ const AddRowModal = ({
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    
+
     columns.forEach(column => {
       const value = formData[column.column_name];
-      
+
       // Check required fields (non-nullable without defaults)
       if (!column.is_nullable && !column.column_default && (value === '' || value === null || value === undefined)) {
         newErrors[column.column_name] = `${column.column_name} is required`;
         return;
       }
-      
+
       // Type validation
       if (value !== '' && value !== null && value !== undefined) {
         if (column.data_type.includes('INT') || column.data_type.includes('SERIAL') || column.data_type.includes('NUMERIC') || column.data_type.includes('DECIMAL')) {
@@ -121,7 +121,7 @@ const AddRowModal = ({
         }
       }
     });
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -130,27 +130,27 @@ const AddRowModal = ({
     if (!validateForm()) {
       return;
     }
-    
+
     setIsSaving(true);
     setSaveError(null);
-    
+
     try {
       // Filter out auto-increment fields and empty values
       const dataToSave: Record<string, any> = {};
       Object.keys(formData).forEach(key => {
         const value = formData[key];
         const column = columns.find(col => col.column_name === key);
-        
+
         // Skip auto-increment fields (SERIAL, BIGSERIAL, etc.)
         if (column?.data_type.includes('SERIAL')) {
           return;
         }
-        
+
         // Skip fields with sequence defaults
         if (typeof value === 'string' && value.includes('nextval(')) {
           return;
         }
-        
+
         // Only include non-empty values (unless it's a boolean false)
         if (value !== '' && value !== null && value !== undefined) {
           dataToSave[key] = value;
@@ -158,7 +158,7 @@ const AddRowModal = ({
           dataToSave[key] = false;
         }
       });
-      
+
       console.log('Saving row data:', dataToSave);
       const success = await onSave(dataToSave);
       if (success) {
@@ -177,10 +177,10 @@ const AddRowModal = ({
 
   const getInputType = (dataType: string) => {
     console.log('Getting input type for dataType:', dataType);
-    
+
     // Convert to uppercase for consistent comparison
     const upperDataType = dataType.toUpperCase();
-    
+
     if (upperDataType.includes('INT') || upperDataType.includes('SERIAL') || upperDataType.includes('NUMERIC') || upperDataType.includes('DECIMAL')) {
       return 'number';
     } else if (upperDataType === 'BOOLEAN') {
@@ -203,23 +203,23 @@ const AddRowModal = ({
   const renderInput = (column: any) => {
     const value = formData[column.column_name];
     const inputType = getInputType(column.data_type);
-    
+
     console.log(`Rendering input for ${column.column_name}:`, {
       dataType: column.data_type,
       inputType: inputType,
       value: value
     });
-    
+
     return (
       <AppInput
         type={inputType}
         value={value || (inputType === 'checkbox' ? false : '')}
         onChange={(newValue) => handleInputChange(column.column_name, newValue)}
         placeholder={
-          column.column_default 
-            ? `Default: ${column.column_default}` 
-            : column.is_nullable 
-              ? 'Optional' 
+          column.column_default
+            ? `Default: ${column.column_default}`
+            : column.is_nullable
+              ? 'Optional'
               : 'Required'
         }
         required={!column.is_nullable && !column.column_default}
@@ -262,41 +262,41 @@ const AddRowModal = ({
               <p className="text-red-600 dark:text-red-400 text-sm">{saveError}</p>
             </div>
           )}
-          
+
           <div className="space-y-6">
             {columns.map((column) => {
               // Skip auto-increment fields
-              if (column.data_type.includes('SERIAL') || 
-                  (column.column_default && column.column_default.includes('nextval('))) {
+              if (column.data_type.includes('SERIAL') ||
+                (column.column_default && column.column_default.includes('nextval('))) {
                 return null;
               }
-              
+
               return (
-              <div key={column.column_name} className="space-y-2">
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300">
-                  {column.column_name}
-                  {!column.is_nullable && !column.column_default && (
-                    <span className="text-red-500 ml-1">*</span>
+                <div key={column.column_name} className="space-y-2">
+                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300">
+                    {column.column_name}
+                    {!column.is_nullable && !column.column_default && (
+                      <span className="text-red-500 ml-1">*</span>
+                    )}
+                    {column.column_default && (
+                      <span className="text-green-600 dark:text-green-400 ml-1">(has default)</span>
+                    )}
+                  </label>
+
+                  <div className="text-xs text-dark-500 dark:text-dark-400 mb-2">
+                    Type: {column.data_type}
+                    {column.character_maximum_length && (
+                      <span> (max {column.character_maximum_length} chars)</span>
+                    )}
+                    {column.is_nullable ? ' • Nullable' : ' • Required'}
+                  </div>
+
+                  {renderInput(column)}
+
+                  {errors[column.column_name] && (
+                    <p className="text-red-500 text-sm mt-1">{errors[column.column_name]}</p>
                   )}
-                  {column.column_default && (
-                    <span className="text-green-600 dark:text-green-400 ml-1">(has default)</span>
-                  )}
-                </label>
-                
-                <div className="text-xs text-dark-500 dark:text-dark-400 mb-2">
-                  Type: {column.data_type}
-                  {column.character_maximum_length && (
-                    <span> (max {column.character_maximum_length} chars)</span>
-                  )}
-                  {column.is_nullable ? ' • Nullable' : ' • Required'}
                 </div>
-                
-                {renderInput(column)}
-                
-                {errors[column.column_name] && (
-                  <p className="text-red-500 text-sm mt-1">{errors[column.column_name]}</p>
-                )}
-              </div>
               );
             })}
           </div>
