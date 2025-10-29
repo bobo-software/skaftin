@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.VITE_API_URL || 'http://localhost:4006';
+const API_BASE_URL = process.env.VITE_API_URL || 'http://coolify.bobosoftware.co.za:4006';
 
 interface AuthResponse {
   status: 'success' | 'error';
