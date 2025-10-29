@@ -79,7 +79,7 @@ function App() {
         body: formData,
       })
       const result = await response.json()
-      
+
       if (result.success) {
         alert(`File uploaded successfully: ${result.originalName}`)
         setUploadFile(null)
@@ -117,9 +117,9 @@ function App() {
         <h1>🚀 Skaftin Platform</h1>
         <p>Full-Stack Application with PostgreSQL Database & MinIO File Storage</p>
       </div>
-      
+
       <div className="card">
-        <h2>Frontend Counter</h2>
+        <h2>Frontend Counter updated</h2>
         <button onClick={() => setCount((count) => count + 1)}>
           count is {count}
         </button>
@@ -193,15 +193,15 @@ function App() {
             onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
             className="file-input"
           />
-          <button 
-            onClick={handleFileUpload} 
+          <button
+            onClick={handleFileUpload}
             disabled={!uploadFile || uploading}
             className="upload-button"
           >
             {uploading ? 'Uploading...' : 'Upload File'}
           </button>
         </div>
-        
+
         <div className="files-section">
           <button onClick={fetchFiles}>
             Refresh Files

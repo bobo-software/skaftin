@@ -38,7 +38,7 @@ services:
       start_period: 40s
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     ports:
       - "5450:5432"
     environment:
