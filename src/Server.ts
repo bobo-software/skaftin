@@ -3,6 +3,8 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
 import { Pool } from 'pg';
+import * as Minio from 'minio';
+import multer from 'multer';
 
 // SCHEDULED JOBS
 
@@ -77,6 +79,43 @@ pool.on('error', (err) => {
   console.error('PostgreSQL connection error:', err);
 });
 
+// MinIO client
+const minioClient = new Minio.Client({
+  endPoint: process.env.MINIO_ENDPOINT || 'minio',
+  port: parseInt(process.env.MINIO_PORT || '9000'),
+  useSSL: false,
+  accessKey: process.env.MINIO_ROOT_USER || process.env.MINIO_ACCESS_KEY || 'skaftin_minio',
+  secretKey: process.env.MINIO_ROOT_PASSWORD || process.env.MINIO_SECRET_KEY || 'skaftin_password',
+});
+
+const BUCKET_NAME = process.env.MINIO_BUCKET || 'skaftin-files';
+
+// Initialize MinIO bucket
+const initializeMinIO = async () => {
+  try {
+    const exists = await minioClient.bucketExists(BUCKET_NAME);
+    if (!exists) {
+      await minioClient.makeBucket(BUCKET_NAME, 'us-east-1');
+      console.log(`Created bucket: ${BUCKET_NAME}`);
+    } else {
+      console.log(`Bucket ${BUCKET_NAME} already exists`);
+    }
+  } catch (err) {
+    console.error('MinIO initialization error:', err);
+  }
+};
+
+// Initialize MinIO on startup
+initializeMinIO();
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+});
+
 // CORS configuration
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
@@ -102,6 +141,162 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(bodyParser.json());
+
+// File upload endpoint
+app.post('/api/files/upload', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'No file uploaded',
+      });
+    }
+
+    const fileName = `${Date.now()}-${req.file.originalname}`;
+    const metaData = {
+      'Content-Type': req.file.mimetype,
+      'Original-Name': req.file.originalname,
+    };
+
+    await minioClient.putObject(BUCKET_NAME, fileName, req.file.buffer, req.file.size, metaData);
+
+    res.json({
+      status: 'success',
+      message: 'File uploaded successfully',
+      data: {
+        fileName: fileName,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        contentType: req.file.mimetype,
+      },
+    });
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to upload file',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
+// List files endpoint
+app.get('/api/files', async (req: Request, res: Response) => {
+  try {
+    const objectsList: any[] = [];
+    const stream = minioClient.listObjects(BUCKET_NAME, '', true);
+
+    stream.on('data', (obj) => {
+      objectsList.push({
+        name: obj.name,
+        size: obj.size,
+        lastModified: obj.lastModified,
+      });
+    });
+
+    stream.on('end', () => {
+      res.json({
+        status: 'success',
+        data: objectsList,
+      });
+    });
+
+    stream.on('error', (err) => {
+      console.error('List files error:', err);
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to list files',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to list files',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
+// Download file endpoint
+app.get('/api/files/:fileName', async (req: Request, res: Response) => {
+  try {
+    const fileName = req.params.fileName;
+    const stat = await minioClient.statObject(BUCKET_NAME, fileName);
+
+    res.setHeader('Content-Type', stat.metaData['content-type'] || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${stat.metaData['original-name'] || fileName}"`);
+
+    const stream = await minioClient.getObject(BUCKET_NAME, fileName);
+    stream.pipe(res);
+  } catch (err) {
+    console.error('Download error:', err);
+    res.status(404).json({
+      status: 'error',
+      message: 'File not found',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
+// Delete file endpoint
+app.delete('/api/files/:fileName', async (req: Request, res: Response) => {
+  try {
+    const fileName = req.params.fileName;
+    await minioClient.removeObject(BUCKET_NAME, fileName);
+
+    res.json({
+      status: 'success',
+      message: 'File deleted successfully',
+    });
+  } catch (err) {
+    console.error('Delete error:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to delete file',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
+// MinIO test endpoint
+app.get('/api/test/minio', async (req: Request, res: Response) => {
+  try {
+    const bucketExists = await minioClient.bucketExists(BUCKET_NAME);
+    const objectsList: any[] = [];
+    const stream = minioClient.listObjects(BUCKET_NAME, '', true);
+
+    stream.on('data', (obj) => {
+      objectsList.push(obj.name);
+    });
+
+    stream.on('end', () => {
+      res.json({
+        status: 'success',
+        message: 'MinIO connection successful',
+        data: {
+          bucketExists,
+          bucketName: BUCKET_NAME,
+          fileCount: objectsList.length,
+        },
+      });
+    });
+
+    stream.on('error', (err) => {
+      res.status(500).json({
+        status: 'error',
+        message: 'MinIO connection failed',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'error',
+      message: 'MinIO connection failed',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
 
 app.get('/', (req: Request, res: Response) => {
   res.send('Hello from the Skaftin Platform');
@@ -132,22 +327,27 @@ app.get('/api/test/db', async (req: Request, res: Response) => {
   }
 });
 
-// Health check endpoint with database status
+// Health check endpoint with database and MinIO status
 app.get('/api/health', async (req: Request, res: Response) => {
   try {
     const client = await pool.connect();
     const result = await client.query('SELECT NOW()');
     client.release();
 
+    // Test MinIO connection
+    const bucketExists = await minioClient.bucketExists(BUCKET_NAME);
+
     res.json({
       status: 'healthy',
       database: 'connected',
+      minio: bucketExists ? 'connected' : 'disconnected',
       timestamp: result.rows[0].now,
     });
   } catch (err) {
     res.status(500).json({
       status: 'unhealthy',
       database: 'disconnected',
+      minio: 'disconnected',
       error: err instanceof Error ? err.message : 'Unknown error',
     });
   }
