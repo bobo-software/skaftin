@@ -5,6 +5,8 @@ import * as dotenv from 'dotenv';
 import { Pool } from 'pg';
 import * as Minio from 'minio';
 import multer from 'multer';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 // SCHEDULED JOBS
 
@@ -12,6 +14,7 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 4006;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 // Database connection pool
 const pool = new Pool({
@@ -36,10 +39,22 @@ const initializeDatabase = async () => {
         id SERIAL PRIMARY KEY,
         username VARCHAR(100) UNIQUE NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255),
         full_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    // Add password_hash column if it doesn't exist (migration for existing databases)
+    await client.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                      WHERE table_name='users' AND column_name='password_hash') THEN
+          ALTER TABLE users ADD COLUMN password_hash VARCHAR(255);
+        END IF;
+      END $$;
     `);
 
     // Create index on email
@@ -412,6 +427,172 @@ app.post('/api/users', async (req: Request, res: Response) => {
     res.status(500).json({
       status: 'error',
       message: 'Failed to create user',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
+// Register endpoint
+app.post('/api/auth/register', async (req: Request, res: Response) => {
+  try {
+    const { email, password, full_name } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Email and password are required',
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Password must be at least 6 characters',
+      });
+    }
+
+    const client = await pool.connect();
+    
+    // Check if user already exists
+    const existingUser = await client.query(
+      'SELECT id FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (existingUser.rows.length > 0) {
+      client.release();
+      return res.status(409).json({
+        status: 'error',
+        message: 'Email already registered',
+      });
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 12);
+    
+    // Generate username from email if not provided
+    const username = email.split('@')[0];
+
+    // Create user
+    const result = await client.query(
+      'INSERT INTO users (username, email, password_hash, full_name) VALUES ($1, $2, $3, $4) RETURNING id, username, email, full_name, created_at',
+      [username, email, passwordHash, full_name || null]
+    );
+
+    client.release();
+
+    // Generate JWT token
+    const user = result.rows[0];
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.status(201).json({
+      status: 'success',
+      message: 'User registered successfully',
+      data: {
+        user: {
+          id: user.id.toString(),
+          email: user.email,
+          name: user.full_name || user.username,
+        },
+        token,
+      },
+    });
+  } catch (err: any) {
+    console.error('Register error:', err);
+
+    // Handle unique constraint violations
+    if (err.code === '23505') {
+      return res.status(409).json({
+        status: 'error',
+        message: 'Email already registered',
+      });
+    }
+
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to register user',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
+// Login endpoint
+app.post('/api/auth/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Email and password are required',
+      });
+    }
+
+    const client = await pool.connect();
+    
+    // Find user by email
+    const result = await client.query(
+      'SELECT id, username, email, password_hash, full_name FROM users WHERE email = $1',
+      [email]
+    );
+
+    client.release();
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'Invalid email or password',
+      });
+    }
+
+    const user = result.rows[0];
+
+    // Check if user has a password_hash (for existing users without passwords)
+    if (!user.password_hash) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'Account not set up for password authentication. Please use registration.',
+      });
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.password_hash);
+
+    if (!isValidPassword) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'Invalid email or password',
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      status: 'success',
+      message: 'Login successful',
+      data: {
+        user: {
+          id: user.id.toString(),
+          email: user.email,
+          name: user.full_name || user.username,
+        },
+        token,
+      },
+    });
+  } catch (err: any) {
+    console.error('Login error:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to login',
       error: err instanceof Error ? err.message : 'Unknown error',
     });
   }

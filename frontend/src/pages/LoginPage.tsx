@@ -1,14 +1,12 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Database, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
-// import { useAppStore } from '../stores/StoresIndex';
-// import AuthService from '../services/AuthService';
-
-// interface LoginPageProps {
-//   onSuccess?: () => void;
-// }
+import { useAppStore } from '../stores/state/StoresIndex';
+import AuthService from '../services/AuthService';
 
 const LoginPage = () => {
-  // const { setUser, setLoading } = useAppStore();
+  const { setUser, setLoading, isLoading } = useAppStore();
+  const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -21,25 +19,42 @@ const LoginPage = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    // setLoading(true);
-    // try {
-    //       const response = isLogin 
-    //         ? await AuthService.login(formData.email, formData.password)
-    //         : await AuthService.register(formData.email, formData.password);
 
-    //       if (response.success) {
-    //         setUser(response.user);
-    //         AuthService.storeToken(response.token);
-    //         onSuccess?.();
-    //       } else {
-    //         setError(response.error || 'An error occurred');
-    //       }
-    //     } catch (error) {
-    //       setError('Network error. Please try again.');
-    //       console.error('Auth error:', error);
-    //     } finally {
-    //       setLoading(false);
-    //     }
+    // Validate password confirmation for registration
+    if (!isLogin && formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    // Validate password length
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = isLogin 
+        ? await AuthService.login(formData.email, formData.password)
+        : await AuthService.register(formData.email, formData.password);
+
+      if (response.success && response.user && response.token) {
+        setUser({
+          id: response.user.id,
+          email: response.user.email,
+          name: response.user.name,
+        });
+        // Navigate to home page after successful login/register
+        navigate('/');
+      } else {
+        setError(response.error || 'An error occurred');
+      }
+    } catch (error) {
+      setError('Network error. Please try again.');
+      console.error('Auth error:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -144,10 +159,20 @@ const LoginPage = () => {
             {/* Submit Button */}
             <button
               type="submit"
-              className="w-full btn-primary text-lg py-3 flex items-center justify-center"
+              disabled={isLoading}
+              className="w-full btn-primary text-lg py-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLogin ? 'Sign In' : 'Create Account'}
-              <ArrowRight className="w-5 h-5 ml-2" />
+              {isLoading ? (
+                <>
+                  <span className="animate-spin mr-2">⏳</span>
+                  {isLogin ? 'Signing in...' : 'Creating account...'}
+                </>
+              ) : (
+                <>
+                  {isLogin ? 'Sign In' : 'Create Account'}
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </>
+              )}
             </button>
           </form>
 
