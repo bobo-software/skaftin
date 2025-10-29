@@ -43,6 +43,8 @@ jobs:
         with:
           context: ./frontend
           push: true
+          build-args: |
+            VITE_API_URL=${{ secrets.VITE_API_URL }}
           tags: |
             dr.bobosoftware.co.za/skaftin-frontend:latest
             ${{ env.VERSION && format('dr.bobosoftware.co.za/skaftin-frontend:{0}', env.VERSION) || format('dr.bobosoftware.co.za/skaftin-frontend:{0}', env.BRANCH_TAG) }}

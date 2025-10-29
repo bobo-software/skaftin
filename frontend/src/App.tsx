@@ -9,7 +9,9 @@ function App() {
   const fetchBackendMessage = async () => {
     setLoading(true)
     try {
-      const response = await fetch('http://localhost:4006/')
+      // Use environment variable or fallback to localhost for development
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://coolify.bobosoftware.co.za:4006'
+      const response = await fetch(`${apiUrl}/`)
       const message = await response.text()
       setBackendMessage(message)
     } catch (error) {
@@ -30,7 +32,7 @@ function App() {
         <h1>🚀 Skaftin Platform</h1>
         <p>Frontend + Backend Integration</p>
       </div>
-      
+
       <div className="card">
         <h2>Frontend Counter</h2>
         <button onClick={() => setCount((count) => count + 1)}>
