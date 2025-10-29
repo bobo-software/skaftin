@@ -37,21 +37,21 @@ const AppInput = ({
 }: AppInputProps) => {
   const [showPassword, setShowPassword] = React.useState(false);
   const [isFocused, setIsFocused] = React.useState(false);
-  
+
   const inputType = type === 'password' && showPassword ? 'text' : type;
-  
+
   const baseInputClasses = `
     w-full px-4 py-3 rounded-lg border transition-all duration-200
     ${icon ? 'pl-10' : ''}
     ${showPasswordToggle && type === 'password' ? 'pr-12' : ''}
-    ${error 
-      ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20' 
-      : isFocused 
-        ? 'border-primary-500 ring-2 ring-primary-500/20' 
+    ${error
+      ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
+      : isFocused
+        ? 'border-primary-500 ring-2 ring-primary-500/20'
         : 'border-dark-200 dark:border-dark-700'
     }
-    ${disabled 
-      ? 'bg-dark-50 dark:bg-dark-800 text-dark-400 dark:text-dark-500 cursor-not-allowed' 
+    ${disabled
+      ? 'bg-dark-50 dark:bg-dark-800 text-dark-400 dark:text-dark-500 cursor-not-allowed'
       : 'bg-white dark:bg-dark-700 text-dark-900 dark:text-white'
     }
     focus:outline-none focus:ring-2 focus:ring-primary-500/20
@@ -65,7 +65,7 @@ const AppInput = ({
           <input
             type="checkbox"
             checked={!!value}
-            onChange={(e) => onChange(e.target.checked)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.checked)}
             disabled={disabled}
             className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
           />
@@ -117,7 +117,7 @@ const AppInput = ({
       />
     );
   };
-  
+
   return (
     <div className={`space-y-2 ${className}`}>
       {label && (
@@ -126,16 +126,16 @@ const AppInput = ({
           {required && <span className="text-red-500 ml-1">*</span>}
         </label>
       )}
-      
+
       <div className="relative">
         {icon && (
           <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-dark-400">
             {icon}
           </div>
         )}
-        
+
         {renderInput()}
-        
+
         {showPasswordToggle && type === 'password' && (
           <button
             type="button"
@@ -155,7 +155,7 @@ const AppInput = ({
           </button>
         )}
       </div>
-      
+
       {error && (
         <p className="text-sm text-red-600 dark:text-red-400 flex items-center">
           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
