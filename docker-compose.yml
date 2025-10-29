@@ -2,34 +2,20 @@ version: '3.8'
 
 services:
   backend:
-    build:
-      context: .
-      dockerfile: dockerfile
+    image: dr.bobosoftware.co.za/skaftin-platform:latest
     ports:
       - "4006:4006"
     env_file:
       - .env
-    volumes:
-      # Mount source code for development (optional - remove in production)
-      - ./src:/app/src
-      - ./package.json:/app/package.json
-      - ./tsconfig.json:/app/tsconfig.json
     restart: unless-stopped
     container_name: skaftin-backend
     networks:
       - skaftin-network
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: dr.bobosoftware.co.za/skaftin-frontend:latest
     ports:
       - "3006:3006"
-    volumes:
-      # Mount source code for development (optional - remove in production)
-      - ./frontend/src:/app/src
-      - ./frontend/package.json:/app/package.json
-      - ./frontend/vite.config.ts:/app/vite.config.ts
     restart: unless-stopped
     container_name: skaftin-frontend
     networks:
