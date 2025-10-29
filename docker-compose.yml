@@ -31,7 +31,7 @@ services:
       - "5440:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-skaftin_db}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-skaftin_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skaftin_password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -41,7 +41,7 @@ services:
     networks:
       - skaftin-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-skaftin_user}"]
       interval: 10s
       timeout: 5s
       retries: 5
