@@ -47,7 +47,7 @@ const initializeMinIO = async () => {
       console.log(`Bucket ${BUCKET_NAME} already exists`);
     }
   } catch (err) {
-    console.error('MinIO initialization error:', err);
+    console.error('MinIO initialization error :', err);
   }
 };
 
@@ -92,19 +92,19 @@ app.get('/health', async (req: Request, res: Response) => {
     const client = await pool.connect();
     const result = await client.query('SELECT NOW()');
     client.release();
-    
+
     // Test MinIO connection
     const bucketExists = await minioClient.bucketExists(BUCKET_NAME);
-    
-    res.json({ 
-      status: 'healthy', 
+
+    res.json({
+      status: 'healthy',
       database: 'connected',
       minio: bucketExists ? 'connected' : 'disconnected',
-      timestamp: result.rows[0].now 
+      timestamp: result.rows[0].now
     });
   } catch (err) {
-    res.status(500).json({ 
-      status: 'unhealthy', 
+    res.status(500).json({
+      status: 'unhealthy',
       database: 'disconnected',
       minio: 'disconnected',
       error: err instanceof Error ? err.message : 'Unknown error'
@@ -150,7 +150,7 @@ app.post('/api/upload', upload.single('file'), async (req: Request, res: Respons
     };
 
     await minioClient.putObject(BUCKET_NAME, fileName, req.file.buffer, req.file.size, metaData);
-    
+
     res.json({
       success: true,
       fileName: fileName,
@@ -169,7 +169,7 @@ app.get('/api/files', async (req: Request, res: Response) => {
   try {
     const objectsList: any[] = [];
     const stream = minioClient.listObjects(BUCKET_NAME, '', true);
-    
+
     stream.on('data', (obj) => {
       objectsList.push({
         name: obj.name,
@@ -178,11 +178,11 @@ app.get('/api/files', async (req: Request, res: Response) => {
         url: `http://localhost:9000/${BUCKET_NAME}/${obj.name}`
       });
     });
-    
+
     stream.on('end', () => {
       res.json(objectsList);
     });
-    
+
     stream.on('error', (err) => {
       console.error('List files error:', err);
       res.status(500).json({ error: 'Failed to list files' });
@@ -197,10 +197,10 @@ app.get('/api/files/:fileName', async (req: Request, res: Response) => {
   try {
     const fileName = req.params.fileName;
     const stat = await minioClient.statObject(BUCKET_NAME, fileName);
-    
+
     res.setHeader('Content-Type', stat.metaData['content-type'] || 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${stat.metaData['original-name'] || fileName}"`);
-    
+
     const stream = await minioClient.getObject(BUCKET_NAME, fileName);
     stream.pipe(res);
   } catch (err) {
