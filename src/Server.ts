@@ -88,6 +88,7 @@ const initializeDatabase = async () => {
 pool.on('connect', async () => {
   console.log('Connected to PostgreSQL database');
   await initializeDatabase();
+  await initializeDatabaseWithProjects();
 });
 
 pool.on('error', (err) => {
@@ -593,6 +594,154 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     res.status(500).json({
       status: 'error',
       message: 'Failed to login',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
+// JWT authentication middleware
+const authenticateToken = (req: any, res: Response, next: any) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({
+      status: 'error',
+      message: 'Authentication token required',
+    });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(403).json({
+      status: 'error',
+      message: 'Invalid or expired token',
+    });
+  }
+};
+
+// Initialize database with projects table
+const initializeDatabaseWithProjects = async () => {
+  try {
+    const client = await pool.connect();
+
+    // Create projects table if it doesn't exist
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        schema_name VARCHAR(255) NOT NULL UNIQUE,
+        bucket_name VARCHAR(255) NOT NULL UNIQUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Create index on user_id
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
+    `);
+
+    client.release();
+    console.log('Projects table initialized');
+  } catch (err) {
+    console.error('Projects table initialization error:', err);
+  }
+};
+
+// Get user projects
+app.get('/api/projects', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    
+    const client = await pool.connect();
+    const result = await client.query(
+      'SELECT id, name, description, schema_name, bucket_name, created_at, updated_at FROM projects WHERE user_id = $1 ORDER BY created_at DESC',
+      [userId]
+    );
+    client.release();
+
+    res.json({
+      status: 'success',
+      data: result.rows,
+    });
+  } catch (err) {
+    console.error('Get projects error:', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to fetch projects',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+});
+
+// Create new project
+app.post('/api/projects', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    const { name, description } = req.body;
+
+    if (!name) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Project name is required',
+      });
+    }
+
+    // Generate schema and bucket names
+    const schemaName = `project_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`;
+    const bucketName = `project-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`;
+
+    const client = await pool.connect();
+    
+    // Create project
+    const result = await client.query(
+      'INSERT INTO projects (user_id, name, description, schema_name, bucket_name) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, description, schema_name, bucket_name, created_at, updated_at',
+      [userId, name, description || null, schemaName, bucketName]
+    );
+
+    // Create database schema
+    try {
+      await client.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName}`);
+    } catch (schemaErr) {
+      console.error('Schema creation error:', schemaErr);
+      // Continue even if schema creation fails
+    }
+
+    // Create MinIO bucket
+    try {
+      await minioClient.makeBucket(bucketName, 'us-east-1');
+    } catch (bucketErr) {
+      console.error('Bucket creation error:', bucketErr);
+      // Continue even if bucket creation fails
+    }
+
+    client.release();
+
+    res.status(201).json({
+      status: 'success',
+      message: 'Project created successfully',
+      data: result.rows[0],
+    });
+  } catch (err: any) {
+    console.error('Create project error:', err);
+    
+    // Handle unique constraint violations
+    if (err.code === '23505') {
+      return res.status(409).json({
+        status: 'error',
+        message: 'Project name already exists',
+      });
+    }
+
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to create project',
       error: err instanceof Error ? err.message : 'Unknown error',
     });
   }
