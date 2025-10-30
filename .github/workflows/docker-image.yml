@@ -13,13 +13,17 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to Custom Docker Registry
-        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login https://dr.bobosoftware.co.za -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+        uses: docker/login-action@v3
+        with:
+          registry: https://dr.bobosoftware.co.za
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Extract version from tag
         if: startsWith(github.ref, 'refs/tags/')
@@ -30,19 +34,25 @@ jobs:
         run: echo "BRANCH_TAG=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
 
       - name: Build and push Backend Docker image
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile
           push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
             dr.bobosoftware.co.za/skaftin-platform:latest
             ${{ env.VERSION && format('dr.bobosoftware.co.za/skaftin-platform:{0}', env.VERSION) || format('dr.bobosoftware.co.za/skaftin-platform:{0}', env.BRANCH_TAG) }}
 
       - name: Build and push Frontend Docker image
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v5
         with:
           context: ./frontend
+          file: ./frontend/Dockerfile
           push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
             VITE_API_URL=${{ secrets.VITE_API_URL }}
           tags: |
