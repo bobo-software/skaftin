@@ -717,7 +717,7 @@ app.post('/api/projects', authenticateToken, async (req: Request, res: Response)
     try {
       await minioClient.makeBucket(bucketName, 'us-east-1');
     } catch (bucketErr) {
-      console.error('Bucket creation error:', bucketErr);
+      console.error('MinIO Bucket creation error:', bucketErr);
       // Continue even if bucket creation fails
     }
 
