@@ -3,8 +3,10 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
 import { Pool } from 'pg';
-import * as Minio from 'minio';
+import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, CopyObjectCommand, ListObjectsV2Command, CreateBucketCommand, HeadBucketCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import multer from 'multer';
+import multerS3 from 'multer-s3';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
@@ -95,45 +97,59 @@ pool.on('error', (err) => {
   console.error('PostgreSQL connection error:', err);
 });
 
-// MinIO client configuration
-const minioEndpoint = process.env.MINIO_ENDPOINT || 'localhost:9000';
-const useSSL = process.env.MINIO_USE_SSL === 'true' || process.env.MINIO_ENDPOINT?.includes('https://') || false;
+// MinIO/S3 client configuration
+const accessKeyId = process.env.MINIO_ROOT_USER || process.env.MINIO_ACCESS_KEY;
+const secretAccessKey = process.env.MINIO_ROOT_PASSWORD || process.env.MINIO_SECRET_KEY;
+const endpoint = process.env.MINIO_SERVER_URL || process.env.MINIO_ENDPOINT || 'http://localhost:9000';
 
-// Parse endpoint (could be "hostname:port" or just "hostname")
-// For live HTTPS endpoints, use default port 443 if not specified
-// For local HTTP endpoints, use default port 9000 if not specified
-let minioHost: string;
-let minioPort: number;
-
-if (minioEndpoint.includes(':')) {
-  const parts = minioEndpoint.split(':');
-  minioHost = parts[0];
-  minioPort = parseInt(parts[1]);
-} else {
-  minioHost = minioEndpoint;
-  // Use port from env, or default to 443 for SSL, 9000 for non-SSL
-  minioPort = process.env.MINIO_PORT ? parseInt(process.env.MINIO_PORT) : (useSSL ? 443 : 9000);
+if (!accessKeyId || !secretAccessKey || !endpoint) {
+  throw new Error('MinIO credentials are not properly configured');
 }
 
-const minioClient = new Minio.Client({
-  endPoint: minioHost,
-  port: minioPort,
-  useSSL: useSSL,
-  accessKey: process.env.MINIO_ROOT_USER || process.env.MINIO_ACCESS_KEY || 'skaftin_minio',
-  secretKey: process.env.MINIO_ROOT_PASSWORD || process.env.MINIO_SECRET_KEY || 'skaftin_password',
+// Ensure endpoint has protocol
+let minioEndpoint = endpoint;
+if (!minioEndpoint.startsWith('http://') && !minioEndpoint.startsWith('https://')) {
+  // Default to https if MINIO_USE_SSL is true, otherwise http
+  const useSSL = process.env.MINIO_USE_SSL === 'true';
+  minioEndpoint = useSSL ? `https://${endpoint}` : `http://${endpoint}`;
+}
+
+const s3Client = new S3Client({
+  endpoint: minioEndpoint,
+  region: process.env.MINIO_REGION || 'us-east-1',
+  credentials: {
+    accessKeyId,
+    secretAccessKey,
+  },
+  forcePathStyle: true,
+  tls: process.env.MINIO_USE_SSL === 'true' || minioEndpoint.startsWith('https://'),
 });
 
-const BUCKET_NAME = process.env.MINIO_BUCKET || 'skaftin-files';
+console.log('Initializing MinIO client with config:', {
+  endpoint: minioEndpoint,
+  region: process.env.MINIO_REGION || 'us-east-1',
+  bucket: process.env.MINIO_BUCKET || 'skaftin',
+  accessKeyId: '[REDACTED]',
+  secretAccessKey: '[REDACTED]'
+});
+
+const BUCKET_NAME = process.env.MINIO_BUCKET || 'skaftin';
 
 // Initialize MinIO bucket
 const initializeMinIO = async () => {
   try {
-    const exists = await minioClient.bucketExists(BUCKET_NAME);
-    if (!exists) {
-      await minioClient.makeBucket(BUCKET_NAME, 'us-east-1');
-      console.log(`✓ Created MinIO bucket: ${BUCKET_NAME}`);
-    } else {
+    // Check if bucket exists
+    try {
+      await s3Client.send(new HeadBucketCommand({ Bucket: BUCKET_NAME }));
       console.log(`✓ MinIO bucket already exists: ${BUCKET_NAME}`);
+    } catch (err: any) {
+      // If bucket doesn't exist (404), create it
+      if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+        await s3Client.send(new CreateBucketCommand({ Bucket: BUCKET_NAME }));
+        console.log(`✓ Created MinIO bucket: ${BUCKET_NAME}`);
+      } else {
+        throw err;
+      }
     }
   } catch (err) {
     console.error('✗ MinIO initialization error:', err);
@@ -184,34 +200,42 @@ const performHealthChecks = async () => {
   // Check MinIO
   try {
     const startTime = Date.now();
-    const bucketExists = await minioClient.bucketExists(BUCKET_NAME);
-    const responseTime = Date.now() - startTime;
-    
-    if (bucketExists) {
-      // Try to list buckets to verify full connectivity
-      const buckets = await minioClient.listBuckets();
+    try {
+      await s3Client.send(new HeadBucketCommand({ Bucket: BUCKET_NAME }));
+      const responseTime = Date.now() - startTime;
+      
+      // List objects to verify full connectivity
+      const listCommand = new ListObjectsV2Command({ Bucket: BUCKET_NAME, MaxKeys: 1 });
+      const listResponse = await s3Client.send(listCommand);
+      const fileCount = listResponse.KeyCount || 0;
       
       healthStatus.minio = {
         status: 'healthy',
         message: 'Connected successfully',
-        details: `Response time: ${responseTime}ms | Endpoint: ${minioHost}:${minioPort} | Buckets: ${buckets.length}`,
+        details: `Response time: ${responseTime}ms | Endpoint: ${minioEndpoint} | Bucket: ${BUCKET_NAME}`,
       };
       console.log('✅ MinIO Storage:');
       console.log(`   Status: ${healthStatus.minio.status}`);
       console.log(`   Message: ${healthStatus.minio.message}`);
       console.log(`   Details: ${healthStatus.minio.details}`);
-    } else {
-      healthStatus.minio = {
-        status: 'warning',
-        message: 'Connected but bucket does not exist',
-        details: `Will attempt to create bucket: ${BUCKET_NAME}`,
-      };
-      console.log('⚠️  MinIO Storage:');
-      console.log(`   Status: ${healthStatus.minio.status}`);
-      console.log(`   Message: ${healthStatus.minio.message}`);
-      console.log(`   Details: ${healthStatus.minio.details}`);
-      // Try to create the bucket
-      await initializeMinIO();
+    } catch (err: any) {
+      // If bucket doesn't exist, try to create it
+      if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+        const responseTime = Date.now() - startTime;
+        healthStatus.minio = {
+          status: 'warning',
+          message: 'Connected but bucket does not exist',
+          details: `Will attempt to create bucket: ${BUCKET_NAME}`,
+        };
+        console.log('⚠️  MinIO Storage:');
+        console.log(`   Status: ${healthStatus.minio.status}`);
+        console.log(`   Message: ${healthStatus.minio.message}`);
+        console.log(`   Details: ${healthStatus.minio.details}`);
+        // Try to create the bucket
+        await initializeMinIO();
+      } else {
+        throw err;
+      }
     }
   } catch (err) {
     healthStatus.minio = {
@@ -240,9 +264,20 @@ const performHealthChecks = async () => {
   return healthStatus;
 };
 
-// Configure multer for file uploads
+// Configure multer for file uploads with S3 storage
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multerS3({
+    s3: s3Client,
+    bucket: BUCKET_NAME,
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    metadata: function (req: Request, file: Express.Multer.File, cb: (error: any, metadata?: any) => void) {
+      cb(null, { fieldName: file.fieldname });
+    },
+    key: function (req: Request, file: Express.Multer.File, cb: (error: any, key?: string) => void) {
+      const fileName = `${Date.now()}-${file.originalname}`;
+      cb(null, fileName);
+    },
+  }),
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
@@ -257,7 +292,7 @@ app.use(cors({
 }));
 app.use(bodyParser.json());
 
-// File upload endpoint
+// File upload endpoint (handled by multer-s3, file is already uploaded)
 app.post('/api/files/upload', upload.single('file'), async (req: Request, res: Response) => {
   try {
     if (!req.file) {
@@ -267,13 +302,10 @@ app.post('/api/files/upload', upload.single('file'), async (req: Request, res: R
       });
     }
 
-    const fileName = `${Date.now()}-${req.file.originalname}`;
-    const metaData = {
-      'Content-Type': req.file.mimetype,
-      'Original-Name': req.file.originalname,
-    };
-
-    await minioClient.putObject(BUCKET_NAME, fileName, req.file.buffer, req.file.size, metaData);
+    // With multer-s3, req.file.location contains the S3 URL
+    // req.file.key contains the object key
+    const fileLocation = (req.file as any).location || `${minioEndpoint}/${BUCKET_NAME}/${(req.file as any).key}`;
+    const fileName = (req.file as any).key || req.file.originalname;
 
     res.json({
       status: 'success',
@@ -283,6 +315,7 @@ app.post('/api/files/upload', upload.single('file'), async (req: Request, res: R
         originalName: req.file.originalname,
         size: req.file.size,
         contentType: req.file.mimetype,
+        location: fileLocation,
       },
     });
   } catch (err) {
@@ -299,32 +332,36 @@ app.post('/api/files/upload', upload.single('file'), async (req: Request, res: R
 app.get('/api/files', async (req: Request, res: Response) => {
   try {
     const objectsList: any[] = [];
-    const stream = minioClient.listObjects(BUCKET_NAME, '', true);
+    let continuationToken: string | undefined;
 
-    stream.on('data', (obj) => {
-      objectsList.push({
-        name: obj.name,
-        size: obj.size,
-        lastModified: obj.lastModified,
+    do {
+      const command = new ListObjectsV2Command({
+        Bucket: BUCKET_NAME,
+        ContinuationToken: continuationToken,
+        MaxKeys: 1000,
       });
-    });
 
-    stream.on('end', () => {
-      res.json({
-        status: 'success',
-        data: objectsList,
-      });
-    });
+      const response = await s3Client.send(command);
 
-    stream.on('error', (err) => {
-      console.error('List files error:', err);
-      res.status(500).json({
-        status: 'error',
-        message: 'Failed to list files',
-        error: err instanceof Error ? err.message : 'Unknown error',
-      });
+      if (response.Contents) {
+        for (const obj of response.Contents) {
+          objectsList.push({
+            name: obj.Key,
+            size: obj.Size,
+            lastModified: obj.LastModified,
+          });
+        }
+      }
+
+      continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+
+    res.json({
+      status: 'success',
+      data: objectsList,
     });
   } catch (err) {
+    console.error('List files error:', err);
     res.status(500).json({
       status: 'error',
       message: 'Failed to list files',
@@ -337,20 +374,51 @@ app.get('/api/files', async (req: Request, res: Response) => {
 app.get('/api/files/:fileName', async (req: Request, res: Response) => {
   try {
     const fileName = req.params.fileName;
-    const stat = await minioClient.statObject(BUCKET_NAME, fileName);
 
-    res.setHeader('Content-Type', stat.metaData['content-type'] || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${stat.metaData['original-name'] || fileName}"`);
-
-    const stream = await minioClient.getObject(BUCKET_NAME, fileName);
-    stream.pipe(res);
-  } catch (err) {
-    console.error('Download error:', err);
-    res.status(404).json({
-      status: 'error',
-      message: 'File not found',
-      error: err instanceof Error ? err.message : 'Unknown error',
+    // Get file metadata
+    const headCommand = new HeadObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: fileName,
     });
+
+    const metadata = await s3Client.send(headCommand);
+
+    // Generate a presigned URL for download (valid for 1 hour)
+    const getCommand = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: fileName,
+    });
+
+    const signedUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 3600 });
+
+    // Redirect to the presigned URL, or you can stream the file directly
+    // For now, redirect to the presigned URL
+    res.redirect(signedUrl);
+
+    // Alternative: Stream the file directly (uncomment to use)
+    // const { Readable } = await import('stream');
+    // const response = await s3Client.send(getCommand);
+    // if (response.Body && response.Body instanceof Readable) {
+    //   res.setHeader('Content-Type', metadata.ContentType || 'application/octet-stream');
+    //   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    //   response.Body.pipe(res);
+    // } else {
+    //   throw new Error('File body is not a readable stream');
+    // }
+  } catch (err: any) {
+    console.error('Download error:', err);
+    if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+      res.status(404).json({
+        status: 'error',
+        message: 'File not found',
+      });
+    } else {
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to download file',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+    }
   }
 });
 
@@ -358,7 +426,12 @@ app.get('/api/files/:fileName', async (req: Request, res: Response) => {
 app.delete('/api/files/:fileName', async (req: Request, res: Response) => {
   try {
     const fileName = req.params.fileName;
-    await minioClient.removeObject(BUCKET_NAME, fileName);
+    const command = new DeleteObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: fileName,
+    });
+
+    await s3Client.send(command);
 
     res.json({
       status: 'success',
@@ -377,34 +450,36 @@ app.delete('/api/files/:fileName', async (req: Request, res: Response) => {
 // MinIO test endpoint
 app.get('/api/test/minio', async (req: Request, res: Response) => {
   try {
-    const bucketExists = await minioClient.bucketExists(BUCKET_NAME);
-    const objectsList: any[] = [];
-    const stream = minioClient.listObjects(BUCKET_NAME, '', true);
+    let bucketExists = false;
+    try {
+      await s3Client.send(new HeadBucketCommand({ Bucket: BUCKET_NAME }));
+      bucketExists = true;
+    } catch (err: any) {
+      if (err.name !== 'NotFound' && err.$metadata?.httpStatusCode !== 404) {
+        throw err;
+      }
+    }
 
-    stream.on('data', (obj) => {
-      objectsList.push(obj.name);
+    const command = new ListObjectsV2Command({
+      Bucket: BUCKET_NAME,
+      MaxKeys: 1000,
     });
 
-    stream.on('end', () => {
-      res.json({
-        status: 'success',
-        message: 'MinIO connection successful',
-        data: {
-          bucketExists,
-          bucketName: BUCKET_NAME,
-          fileCount: objectsList.length,
-        },
-      });
-    });
+    const response = await s3Client.send(command);
+    const fileCount = response.Contents?.length || 0;
 
-    stream.on('error', (err) => {
-      res.status(500).json({
-        status: 'error',
-        message: 'MinIO connection failed',
-        error: err instanceof Error ? err.message : 'Unknown error',
-      });
+    res.json({
+      status: 'success',
+      message: 'MinIO connection successful',
+      data: {
+        bucketExists,
+        bucketName: BUCKET_NAME,
+        fileCount,
+        endpoint: minioEndpoint,
+      },
     });
   } catch (err) {
+    console.error('MinIO test error:', err);
     res.status(500).json({
       status: 'error',
       message: 'MinIO connection failed',
@@ -450,7 +525,13 @@ app.get('/api/health', async (req: Request, res: Response) => {
     client.release();
 
     // Test MinIO connection
-    const bucketExists = await minioClient.bucketExists(BUCKET_NAME);
+    let bucketExists = false;
+    try {
+      await s3Client.send(new HeadBucketCommand({ Bucket: BUCKET_NAME }));
+      bucketExists = true;
+    } catch (err) {
+      // Bucket doesn't exist or connection failed
+    }
 
     res.json({
       status: 'healthy',
@@ -814,9 +895,12 @@ app.post('/api/projects', authenticateToken, async (req: Request, res: Response)
 
     // Create MinIO bucket
     try {
-      await minioClient.makeBucket(bucketName, 'us-east-1');
-    } catch (bucketErr) {
-      console.error('MinIO Bucket creation error:', bucketErr);
+      await s3Client.send(new CreateBucketCommand({ Bucket: bucketName }));
+    } catch (bucketErr: any) {
+      // If bucket already exists, that's okay
+      if (bucketErr.name !== 'BucketAlreadyOwnedByYou' && bucketErr.name !== 'BucketAlreadyExists') {
+        console.error('MinIO Bucket creation error:', bucketErr);
+      }
       // Continue even if bucket creation fails
     }
 
@@ -855,7 +939,7 @@ const startServer = async () => {
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔌 Server Port: ${port}`);
   console.log(`📊 Database: ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`);
-  console.log(`📦 MinIO: ${minioHost}:${minioPort}`);
+  console.log(`📦 MinIO: ${minioEndpoint}`);
   console.log('='.repeat(60) + '\n');
 
   // Perform health checks
