@@ -97,15 +97,28 @@ pool.on('error', (err) => {
 
 // MinIO client configuration
 const minioEndpoint = process.env.MINIO_ENDPOINT || 'localhost:9000';
+const useSSL = process.env.MINIO_USE_SSL === 'true' || process.env.MINIO_ENDPOINT?.includes('https://') || false;
+
 // Parse endpoint (could be "hostname:port" or just "hostname")
-const [minioHost, minioPort] = minioEndpoint.includes(':') 
-  ? minioEndpoint.split(':') 
-  : [minioEndpoint, process.env.MINIO_PORT || '9000'];
+// For live HTTPS endpoints, use default port 443 if not specified
+// For local HTTP endpoints, use default port 9000 if not specified
+let minioHost: string;
+let minioPort: number;
+
+if (minioEndpoint.includes(':')) {
+  const parts = minioEndpoint.split(':');
+  minioHost = parts[0];
+  minioPort = parseInt(parts[1]);
+} else {
+  minioHost = minioEndpoint;
+  // Use port from env, or default to 443 for SSL, 9000 for non-SSL
+  minioPort = process.env.MINIO_PORT ? parseInt(process.env.MINIO_PORT) : (useSSL ? 443 : 9000);
+}
 
 const minioClient = new Minio.Client({
   endPoint: minioHost,
-  port: parseInt(minioPort),
-  useSSL: false,
+  port: minioPort,
+  useSSL: useSSL,
   accessKey: process.env.MINIO_ROOT_USER || process.env.MINIO_ACCESS_KEY || 'skaftin_minio',
   secretKey: process.env.MINIO_ROOT_PASSWORD || process.env.MINIO_SECRET_KEY || 'skaftin_password',
 });
