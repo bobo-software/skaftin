@@ -95,10 +95,16 @@ pool.on('error', (err) => {
   console.error('PostgreSQL connection error:', err);
 });
 
-// MinIO client
+// MinIO client configuration
+const minioEndpoint = process.env.MINIO_ENDPOINT || 'localhost:9000';
+// Parse endpoint (could be "hostname:port" or just "hostname")
+const [minioHost, minioPort] = minioEndpoint.includes(':') 
+  ? minioEndpoint.split(':') 
+  : [minioEndpoint, process.env.MINIO_PORT || '9000'];
+
 const minioClient = new Minio.Client({
-  endPoint: process.env.MINIO_ENDPOINT || 'minio',
-  port: parseInt(process.env.MINIO_PORT || '9000'),
+  endPoint: minioHost,
+  port: parseInt(minioPort),
   useSSL: false,
   accessKey: process.env.MINIO_ROOT_USER || process.env.MINIO_ACCESS_KEY || 'skaftin_minio',
   secretKey: process.env.MINIO_ROOT_PASSWORD || process.env.MINIO_SECRET_KEY || 'skaftin_password',
@@ -112,17 +118,114 @@ const initializeMinIO = async () => {
     const exists = await minioClient.bucketExists(BUCKET_NAME);
     if (!exists) {
       await minioClient.makeBucket(BUCKET_NAME, 'us-east-1');
-      console.log(`Created bucket: ${BUCKET_NAME}`);
+      console.log(`✓ Created MinIO bucket: ${BUCKET_NAME}`);
     } else {
-      console.log(`Bucket ${BUCKET_NAME} already exists`);
+      console.log(`✓ MinIO bucket already exists: ${BUCKET_NAME}`);
     }
   } catch (err) {
-    console.error('MinIO initialization error:', err);
+    console.error('✗ MinIO initialization error:', err);
+    throw err;
   }
 };
 
-// Initialize MinIO on startup
-initializeMinIO();
+// Health check function
+const performHealthChecks = async () => {
+  console.log('\n🔍 Performing health checks...\n');
+  
+  const healthStatus = {
+    database: { status: 'pending', message: '', details: '' },
+    minio: { status: 'pending', message: '', details: '' },
+  };
+
+  // Check PostgreSQL Database
+  try {
+    const client = await pool.connect();
+    const startTime = Date.now();
+    const result = await client.query('SELECT NOW(), version(), current_database()');
+    const responseTime = Date.now() - startTime;
+    client.release();
+    
+    healthStatus.database = {
+      status: 'healthy',
+      message: 'Connected successfully',
+      details: `Response time: ${responseTime}ms | DB: ${result.rows[0].current_database} | Version: ${result.rows[0].version.split(',')[0]}`,
+    };
+    console.log('✅ PostgreSQL Database:');
+    console.log(`   Status: ${healthStatus.database.status}`);
+    console.log(`   Message: ${healthStatus.database.message}`);
+    console.log(`   Details: ${healthStatus.database.details}`);
+  } catch (err) {
+    healthStatus.database = {
+      status: 'unhealthy',
+      message: 'Connection failed',
+      details: err instanceof Error ? err.message : 'Unknown error',
+    };
+    console.log('❌ PostgreSQL Database:');
+    console.log(`   Status: ${healthStatus.database.status}`);
+    console.log(`   Message: ${healthStatus.database.message}`);
+    console.log(`   Error: ${healthStatus.database.details}`);
+  }
+
+  console.log('');
+
+  // Check MinIO
+  try {
+    const startTime = Date.now();
+    const bucketExists = await minioClient.bucketExists(BUCKET_NAME);
+    const responseTime = Date.now() - startTime;
+    
+    if (bucketExists) {
+      // Try to list buckets to verify full connectivity
+      const buckets = await minioClient.listBuckets();
+      
+      healthStatus.minio = {
+        status: 'healthy',
+        message: 'Connected successfully',
+        details: `Response time: ${responseTime}ms | Endpoint: ${minioHost}:${minioPort} | Buckets: ${buckets.length}`,
+      };
+      console.log('✅ MinIO Storage:');
+      console.log(`   Status: ${healthStatus.minio.status}`);
+      console.log(`   Message: ${healthStatus.minio.message}`);
+      console.log(`   Details: ${healthStatus.minio.details}`);
+    } else {
+      healthStatus.minio = {
+        status: 'warning',
+        message: 'Connected but bucket does not exist',
+        details: `Will attempt to create bucket: ${BUCKET_NAME}`,
+      };
+      console.log('⚠️  MinIO Storage:');
+      console.log(`   Status: ${healthStatus.minio.status}`);
+      console.log(`   Message: ${healthStatus.minio.message}`);
+      console.log(`   Details: ${healthStatus.minio.details}`);
+      // Try to create the bucket
+      await initializeMinIO();
+    }
+  } catch (err) {
+    healthStatus.minio = {
+      status: 'unhealthy',
+      message: 'Connection failed',
+      details: err instanceof Error ? err.message : 'Unknown error',
+    };
+    console.log('❌ MinIO Storage:');
+    console.log(`   Status: ${healthStatus.minio.status}`);
+    console.log(`   Message: ${healthStatus.minio.message}`);
+    console.log(`   Error: ${healthStatus.minio.details}`);
+  }
+
+  console.log('');
+  
+  // Summary
+  const allHealthy = healthStatus.database.status === 'healthy' && 
+                     (healthStatus.minio.status === 'healthy' || healthStatus.minio.status === 'warning');
+  
+  if (allHealthy) {
+    console.log('✅ All services are ready!\n');
+  } else {
+    console.log('⚠️  Some services have issues. Server will start but some features may not work.\n');
+  }
+
+  return healthStatus;
+};
 
 // Configure multer for file uploads
 const upload = multer({
@@ -730,6 +833,33 @@ app.post('/api/projects', authenticateToken, async (req: Request, res: Response)
   }
 });
 
-app.listen(port, () => {
-  console.log(`Skaftin Platform server running on port:${port}`);
+// Startup function
+const startServer = async () => {
+  // Display startup banner
+  console.log('\n' + '='.repeat(60));
+  console.log('🚀  SKAFTIN PLATFORM - Starting Server');
+  console.log('='.repeat(60));
+  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔌 Server Port: ${port}`);
+  console.log(`📊 Database: ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`);
+  console.log(`📦 MinIO: ${minioHost}:${minioPort}`);
+  console.log('='.repeat(60) + '\n');
+
+  // Perform health checks
+  await performHealthChecks();
+
+  // Start server
+  app.listen(port, () => {
+    console.log('='.repeat(60));
+    console.log(`✅ Skaftin Platform server is running!`);
+    console.log(`🌐 Server URL: http://localhost:${port}`);
+    console.log(`📡 API Base: http://localhost:${port}/api`);
+    console.log('='.repeat(60) + '\n');
+  });
+};
+
+// Start the server
+startServer().catch((err) => {
+  console.error('\n❌ Failed to start server:', err);
+  process.exit(1);
 });
