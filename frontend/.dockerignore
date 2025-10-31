@@ -1,0 +1,12 @@
+node_modules
+dist
+*.log
+.env
+.env.local
+.env.production
+.env.development
+.git
+.gitignore
+.vscode
+.DS_Store
+

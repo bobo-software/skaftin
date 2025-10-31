@@ -9,11 +9,11 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install
 
-# Copy source code
+# Copy source code (excluding files in .dockerignore)
 COPY . .
 
 # Build arguments for environment variables
-ARG VITE_API_URL=http://102.218.215.251:4006
+ARG VITE_API_URL=http://localhost:4006
 ENV VITE_API_URL=$VITE_API_URL
 
 # Build the application
