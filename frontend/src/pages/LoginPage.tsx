@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Database, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
-import { useAppStore } from '../stores/state/StoresIndex';
+import { useAppStore } from '../stores/StoresIndex';
 import AuthService from '../services/AuthService';
 
 const LoginPage = () => {

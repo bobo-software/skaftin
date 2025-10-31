@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Cloud, Upload, Download, Trash2, RefreshCw, FileText, Image, File, Search } from 'lucide-react';
-import { useAppStore } from '../../stores/state/StoresIndex';
+import { useAppStore } from '../../stores/StoresIndex';
 import RequestUtils from '../../utils/RequestUtils';
 import ApiRoutes from '../../constants/ApiRoutes';
 import LoadingSpinner from '../elements/LoadingSpinner';
@@ -35,12 +35,13 @@ const StorageTab = () => {
     setError('');
 
     try {
-      const result = await RequestUtils.get(ApiRoutes.FILES.LIST);
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.get(ApiRoutes.FILES.LIST, token);
 
-      if (result.success && result.data) {
+      if (result.status === 'success' && result.data) {
         setFiles(Array.isArray(result.data) ? result.data : []);
       } else {
-        setError(result.error || 'Failed to load files');
+        setError(result.message || 'Failed to load files');
       }
     } catch (err) {
       setError('Failed to load files');
@@ -70,7 +71,8 @@ const StorageTab = () => {
     setError('');
 
     try {
-      const result = await RequestUtils.delete(ApiRoutes.FILES.DELETE(fileName));
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.delete(ApiRoutes.FILES.DELETE(fileName), token, {});
 
       if (result.success) {
         await fetchFiles(); // Refresh file list

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams, Routes, Route, NavLink } from 'react-router-dom';
+import { useNavigate, useParams, Routes, Route, Navigate, NavLink } from 'react-router-dom';
 import {
   Database,
   Cloud,
@@ -15,25 +15,21 @@ import {
   Code,
   Layers,
 } from 'lucide-react';
-import { useAppStore } from '../stores/state/StoresIndex';
-import AuthService from '../services/AuthService';
-import RequestUtils from '../utils/RequestUtils';
-import ApiRoutes from '../constants/ApiRoutes';
+import { useAppStore, useProjectStore } from '../../../stores/StoresIndex';
+import AuthService from '../../../services/AuthService';
+import RequestUtils from '../../../utils/RequestUtils';
+import ApiRoutes from '../../../constants/ApiRoutes';
 
-import DatabaseTab from '../components/database/DatabaseTab';
-import StorageTab from '../components/storage/StorageTab';
-
-const SettingsTab = () => (
-  <div className="p-6">
-    <h2 className="text-2xl font-bold text-dark-900 dark:text-white mb-4">Settings</h2>
-    <p className="text-dark-600 dark:text-dark-400">Project settings coming soon...</p>
-  </div>
-);
+import ProjectDatabaseTab from './database/ProjectDatabaseTab';
+import ProjectStorageTab from './storage/ProjectStoageTab';
+import ProjectOverviewTab from './overview/ProjectOverviewTab';
+import ProjectSettingsTab from './settings/ProjectSettingsTab';
 
 const ProjectDashboardPage = () => {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
-  const { user, setCurrentProject, currentProject, theme, setTheme, logout, sidebarOpen, toggleSidebar } = useAppStore();
+  const { user, theme, setTheme, logout, sidebarOpen, toggleSidebar } = useAppStore();
+  const { currentProject, setCurrentProject, fetchProjects } = useProjectStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -49,30 +45,23 @@ const ProjectDashboardPage = () => {
   }, [projectId, user, navigate]);
 
   const fetchProject = async () => {
-    if (!projectId) return;
+    if (!projectId || !user?.id) return;
 
     setLoading(true);
     setError('');
 
     try {
-      // Get project info from projects list or fetch directly
-      const result = await RequestUtils.get(ApiRoutes.PROJECTS.GET(projectId));
+      // Fetch projects list first to populate store
+      await fetchProjects(user.id);
       
-      if (result.success && result.data) {
-        setCurrentProject(result.data);
+      // Try to find project in the store after fetching
+      const { projects } = useProjectStore.getState();
+      const project = projects.find(p => p.id === projectId);
+      
+      if (project) {
+        setCurrentProject(project);
       } else {
-        // If direct fetch fails, try to get from projects list
-        const projectsResult = await RequestUtils.get(ApiRoutes.PROJECTS.LIST);
-        if (projectsResult.success && projectsResult.data) {
-          const project = (projectsResult.data as any[]).find((p: any) => p.id.toString() === projectId);
-          if (project) {
-            setCurrentProject(project);
-          } else {
-            setError('Project not found');
-          }
-        } else {
-          setError('Failed to load project');
-        }
+        setError('Project not found');
       }
     } catch (err) {
       setError('Failed to load project');
@@ -89,6 +78,7 @@ const ProjectDashboardPage = () => {
   };
 
   const navItems = [
+    { path: 'overview', icon: Layers, label: 'Overview' },
     { path: 'database', icon: Database, label: 'Database' },
     { path: 'storage', icon: Cloud, label: 'Storage' },
     { path: 'settings', icon: Settings, label: 'Settings' },
@@ -179,11 +169,16 @@ const ProjectDashboardPage = () => {
           <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
             {navItems.map((item) => {
               const Icon = item.icon;
+              // Use absolute paths to prevent URL stacking
+              const to = item.path === 'overview' 
+                ? `/projects/${projectId}` 
+                : `/projects/${projectId}/${item.path}`;
+              
               return (
                 <NavLink
                   key={item.path}
-                  to={item.path}
-                  end={item.path === 'database'}
+                  to={to}
+                  end={item.path === 'overview'}
                   className={({ isActive }) =>
                     `flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                       isActive
@@ -246,12 +241,14 @@ const ProjectDashboardPage = () => {
         </header>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto p-6">
           <Routes>
-            <Route path="database" element={<DatabaseTab />} />
-            <Route path="storage" element={<StorageTab />} />
-            <Route path="settings" element={<SettingsTab />} />
-            <Route path="*" element={<DatabaseTab />} />
+            <Route index element={projectId ? <ProjectOverviewTab /> : null} />
+            <Route path="overview" element={projectId ? <ProjectOverviewTab /> : null} />
+            <Route path="database" element={projectId ? <ProjectDatabaseTab projectId={projectId} /> : null} />
+            <Route path="storage" element={projectId ? <ProjectStorageTab /> : null} />
+            <Route path="settings" element={projectId ? <ProjectSettingsTab /> : null} />
+            <Route path="*" element={projectId ? <Navigate to="" replace /> : null} />
           </Routes>
         </div>
       </main>

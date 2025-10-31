@@ -10,7 +10,7 @@ import {
   Sun,
   Loader,
 } from 'lucide-react';
-import { useAppStore } from '../stores/state/StoresIndex';
+import { useAppStore } from '../stores/StoresIndex';
 import ProjectService from '../services/ProjectService';
 import AuthService from '../services/AuthService';
 

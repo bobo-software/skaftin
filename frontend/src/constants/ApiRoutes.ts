@@ -35,6 +35,7 @@ const ApiRoutes = {
     TOOLS: '/api/mcp/tools',
     INFO: '/api/mcp/info',
     HEALTH: '/api/mcp/health',
+    EXECUTE: '/api/mcp/tools/execute',
   },
   
   // Health routes

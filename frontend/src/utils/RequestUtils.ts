@@ -1,218 +1,135 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4006';
 
-export interface ApiResponse<T = any> {
-  status: 'success' | 'error';
-  message?: string;
-  data?: T;
-  error?: string;
-}
-
 class RequestUtils {
-  private getToken(): string | null {
-    return localStorage.getItem('skaftin_token');
-  }
 
-  private getAuthHeaders(includeContentType: boolean = true): Record<string, string> {
-    const token = this.getToken();
-    const headers: Record<string, string> = {};
-    
-    if (includeContentType) {
-      headers['Content-Type'] = 'application/json';
-    }
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    return headers;
-  }
+  static async fetch(url: string, method: string, body = {}, accessToken?: string): Promise<any | null> {
 
-  async get<T = any>(url: string): Promise<{ success: boolean; data?: T; error?: string }> {
     try {
-      const response = await fetch(`${API_BASE_URL}${url}`, {
-        method: 'GET',
-        headers: this.getAuthHeaders(),
+      const response = await fetch(API_BASE_URL + url, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        ...(method !== "GET" && { body: JSON.stringify(body) })
       });
 
-      const data: ApiResponse<T> = await response.json();
+      const res = await response.json();
+      console.log("response: ", res);
 
-      if (response.ok && data.status === 'success') {
-        return {
-          success: true,
-          data: data.data,
-        };
-      } else {
-        return {
-          success: false,
-          error: data.message || data.error || 'Request failed',
-        };
+      return res;
+
+    } catch (error: Error | any) {
+      console.error(error.message)
+      throw new Error("NetworkError");
+
+    };
+  };
+
+  static async get(url: string, accessToken: string): Promise<any | null> {
+    try {
+      const response = await fetch(API_BASE_URL + url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      const res = await response.json();
+      console.log("Get Response: ", res);
+      return res;
+    } catch (error: Error | any) {
+      console.error(error.message)
+      throw new Error("NetworkError");
+    }
+  }
+
+  static async post(url: string, accessToken: string, body: any): Promise<any | null> {
+    try {
+      const headers: any = {
+        "Content-Type": "application/json",
+      };
+      
+      // Only add Authorization header if token is provided
+      if (accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
       }
-    } catch (error) {
-      console.error('GET request error:', error);
-      return {
-        success: false,
-        error: 'Network error. Please try again.',
-      };
-    }
-  }
-
-  async post<T = any>(url: string, body?: any): Promise<{ success: boolean; data?: T; error?: string }> {
-    try {
-      const response = await fetch(`${API_BASE_URL}${url}`, {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: body ? JSON.stringify(body) : undefined,
+      
+      const response = await fetch(API_BASE_URL + url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
       });
 
-      const data: ApiResponse<T> = await response.json();
-
-      if (response.ok && data.status === 'success') {
-        return {
-          success: true,
-          data: data.data,
-        };
-      } else {
-        return {
-          success: false,
-          error: data.message || data.error || 'Request failed',
-        };
-      }
-    } catch (error) {
-      console.error('POST request error:', error);
-      return {
-        success: false,
-        error: 'Network error. Please try again.',
-      };
+      const res = await response.json();
+      console.log("Post Response: ", res);
+      return res;
+    } catch (error: Error | any) {
+      console.error(error.message)
+      throw new Error("NetworkError");
     }
   }
 
-  async put<T = any>(url: string, body?: any): Promise<{ success: boolean; data?: T; error?: string }> {
+  static async postFormData(url: string, accessToken: string, body: any): Promise<any | null> {
     try {
-      const response = await fetch(`${API_BASE_URL}${url}`, {
-        method: 'PUT',
-        headers: this.getAuthHeaders(),
-        body: body ? JSON.stringify(body) : undefined,
+      const response = await fetch(API_BASE_URL + url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: body,
       });
 
-      const data: ApiResponse<T> = await response.json();
-
-      if (response.ok && data.status === 'success') {
-        return {
-          success: true,
-          data: data.data,
-        };
-      } else {
-        return {
-          success: false,
-          error: data.message || data.error || 'Request failed',
-        };
-      }
-    } catch (error) {
-      console.error('PUT request error:', error);
-      return {
-        success: false,
-        error: 'Network error. Please try again.',
-      };
+      const res = await response.json();
+      console.log("Post Form Data Response: ", res);
+      return res;
+    } catch (error: Error | any) {
+      console.error(error.message)
+      throw new Error("NetworkError on post form data");
     }
   }
 
-  async delete<T = any>(url: string): Promise<{ success: boolean; data?: T; error?: string }> {
+  static async put(url: string, accessToken: string, body: any): Promise<any | null> {
     try {
-      const response = await fetch(`${API_BASE_URL}${url}`, {
-        method: 'DELETE',
-        headers: this.getAuthHeaders(),
+      const response = await fetch(API_BASE_URL + url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(body),
       });
 
-      const data: ApiResponse<T> = await response.json();
-
-      if (response.ok && data.status === 'success') {
-        return {
-          success: true,
-          data: data.data,
-        };
-      } else {
-        return {
-          success: false,
-          error: data.message || data.error || 'Request failed',
-        };
-      }
-    } catch (error) {
-      console.error('DELETE request error:', error);
-      return {
-        success: false,
-        error: 'Network error. Please try again.',
-      };
+      const res = await response.json();
+      console.log("Put Response: ", res);
+      return res;
+    } catch (error: Error | any) {
+      console.error(error.message)
+      throw new Error("NetworkError");
     }
-  }
+  };
 
-  async uploadFile(url: string, file: File, onProgress?: (progress: number) => void): Promise<{ success: boolean; data?: any; error?: string }> {
+  static async delete(url: string, accessToken: string, body: any): Promise<any | null> {
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const xhr = new XMLHttpRequest();
-
-      return new Promise((resolve) => {
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable && onProgress) {
-            const progress = (e.loaded / e.total) * 100;
-            onProgress(progress);
-          }
-        });
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const data = JSON.parse(xhr.responseText);
-              resolve({
-                success: true,
-                data: data.data || data,
-              });
-            } catch {
-              resolve({
-                success: true,
-                data: xhr.responseText,
-              });
-            }
-          } else {
-            try {
-              const data = JSON.parse(xhr.responseText);
-              resolve({
-                success: false,
-                error: data.message || data.error || 'Upload failed',
-              });
-            } catch {
-              resolve({
-                success: false,
-                error: 'Upload failed',
-              });
-            }
-          }
-        });
-
-        xhr.addEventListener('error', () => {
-          resolve({
-            success: false,
-            error: 'Network error during upload',
-          });
-        });
-
-        const token = this.getToken();
-        xhr.open('POST', `${API_BASE_URL}${url}`);
-        if (token) {
-          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-        }
-        xhr.send(formData);
+      const response = await fetch(API_BASE_URL + url, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(body),
       });
-    } catch (error) {
-      console.error('File upload error:', error);
-      return {
-        success: false,
-        error: 'Failed to upload file',
-      };
+
+      const res = await response.json();
+      console.log("Delete Response: ", res);
+      return res;
+    } catch (error: Error | any) {
+      console.error(error.message)
+      throw new Error("NetworkError");
     }
   }
+
 }
 
-export default new RequestUtils();
-
+export default RequestUtils;

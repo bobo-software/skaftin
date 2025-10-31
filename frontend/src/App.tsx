@@ -1,9 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
-import ProjectsPage from './pages/ProjectsPage';
-import ProjectDashboardPage from './pages/ProjectDashboardPage';
-import { useAppStore } from './stores/state/StoresIndex';
+import ProjectsOverviewPage from './pages/user/projects/ProjectsOverviewPage';
+import ProjectDashboardPage from './pages/user/dashboard/ProjectDashboardPage';
+import { useAppStore } from './stores/StoresIndex';
 import './App.css';
 
 // Protected Route Component
@@ -22,7 +22,7 @@ function App() {
           path="/projects" 
           element={
             <ProtectedRoute>
-              <ProjectsPage />
+              <ProjectsOverviewPage />
             </ProtectedRoute>
           } 
         />

@@ -14,7 +14,7 @@ import {
   Star,
   Users,
 } from 'lucide-react';
-import { useAppStore } from '../stores/state/StoresIndex';
+import { useAppStore } from '../stores/StoresIndex';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -68,7 +68,7 @@ const HomePage = () => {
   ];
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen ring">
       {/* Navigation */}
       <nav className="fixed top-0 w-full z-50 bg-white/80 dark:bg-dark-900/80 backdrop-blur-md border-b border-dark-200 dark:border-dark-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

@@ -126,27 +126,86 @@ export function createMCPCallToolHandler(config: MCPHTTPConfig) {
         result = await handleProjectTool(name, args || {}, config, userId || undefined);
       } else {
         return res.status(400).json({
-          error: `Unknown tool: ${name}`,
+          status: 'error',
+          message: `Unknown tool: ${name}`,
+          data: null,
         });
       }
 
-      // Handle MCP response format
+      // Transform MCP response format to standard format
       if (result.isError) {
+        let errorMessage = 'Tool execution failed';
+        let errorData = null;
+
+        // Try to extract error message from content
+        if (result.content && result.content[0]?.text) {
+          try {
+            const parsed = JSON.parse(result.content[0].text);
+            errorMessage = parsed.error || parsed.message || errorMessage;
+            errorData = parsed;
+          } catch {
+            errorMessage = result.content[0].text;
+          }
+        }
+
         return res.status(500).json({
-          error: 'Tool execution failed',
-          content: result.content,
+          status: 'error',
+          message: errorMessage,
+          data: errorData,
         });
+      }
+
+      // Extract data from MCP content format
+      let responseData = null;
+      let responseMessage = 'Operation completed successfully';
+
+      if (result.content && result.content[0]?.text) {
+        try {
+          responseData = JSON.parse(result.content[0].text);
+          
+          // Extract message if present in data
+          if (responseData.message) {
+            responseMessage = responseData.message;
+            delete responseData.message;
+          }
+          
+          // Handle different data structures
+          if (responseData.error) {
+            return res.status(500).json({
+              status: 'error',
+              message: responseData.error,
+              data: responseData,
+            });
+          }
+
+          // If data contains a single key (like 'projects', 'files', etc.), extract it
+          // This handles cases where MCP tools return { projects: [...] } and we want just [...]
+          const keys = Object.keys(responseData);
+          if (keys.length === 1) {
+            const value = responseData[keys[0]];
+            // Extract if it's an array or a non-error object
+            if (Array.isArray(value) || (typeof value === 'object' && value !== null && !value.error)) {
+              responseData = value;
+            }
+          }
+        } catch {
+          // If parsing fails, treat as text response
+          responseData = result.content[0].text;
+          responseMessage = 'Operation completed';
+        }
       }
 
       res.json({
-        content: result.content,
+        status: 'success',
+        message: responseMessage,
+        data: responseData,
       });
     } catch (error: any) {
       console.error('Error executing MCP tool:', error);
       res.status(500).json({
-        error: 'Failed to execute tool',
-        message: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        status: 'error',
+        message: error.message || 'Failed to execute tool',
+        data: process.env.NODE_ENV === 'development' ? { stack: error.stack } : null,
       });
     }
   };
