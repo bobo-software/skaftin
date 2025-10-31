@@ -7,7 +7,7 @@ interface FileUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  projectId: string;
+  projectId?: string; // Optional since it's not currently used in the implementation
 }
 
 interface UploadedFile {
@@ -21,7 +21,6 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  projectId
 }) => {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -38,23 +37,7 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
     }
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFiles(Array.from(e.dataTransfer.files));
-    }
-  }, []);
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      handleFiles(Array.from(e.target.files));
-    }
-  };
-
-  const handleFiles = async (fileList: File[]) => {
+  const handleFiles = useCallback(async (fileList: File[]) => {
     const newFiles: UploadedFile[] = [];
 
     for (const file of fileList) {
@@ -79,6 +62,22 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
     }
 
     setFiles(prev => [...prev, ...newFiles]);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFiles(Array.from(e.dataTransfer.files));
+    }
+  }, [handleFiles]);
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      handleFiles(Array.from(e.target.files));
+    }
   };
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -110,26 +109,47 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
     setUploadProgress(newProgress);
 
     try {
-      // for (const file of files) {
-      //   setUploadProgress(prev => ({ ...prev, [file.name]: 'uploading' }));
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4006';
+      const token = localStorage.getItem('skaftin_token');
 
-      //   const result = await McpService.uploadFile(
-      //     projectId,
-      //     file.name,
-      //     file.data,
-      //     file.type
-      //   );
+      for (const file of files) {
+        setUploadProgress(prev => ({ ...prev, [file.name]: 'uploading' }));
 
-      //   if (result.success) {
-      //     setUploadProgress(prev => ({ ...prev, [file.name]: 'success' }));
-      //   } else {
-      //     setUploadProgress(prev => ({ ...prev, [file.name]: 'error' }));
-      //     console.error('Failed to upload file:', file.name, result.error);
-      //   }
-      // }
+        try {
+          const formData = new FormData();
+          const blob = await fetch(`data:${file.type};base64,${file.data}`).then(r => r.blob());
+          formData.append('file', blob, file.name);
+
+          const response = await fetch(`${API_BASE_URL}/api/files/upload`, {
+            method: 'POST',
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+            body: formData,
+          });
+
+          const result = await response.json();
+
+          if (response.ok && result.status === 'success') {
+            setUploadProgress(prev => ({ ...prev, [file.name]: 'success' }));
+          } else {
+            setUploadProgress(prev => ({ ...prev, [file.name]: 'error' }));
+            console.error('Failed to upload file:', file.name, result.error || result.message);
+          }
+        } catch (error) {
+          setUploadProgress(prev => ({ ...prev, [file.name]: 'error' }));
+          console.error('Error uploading file:', file.name, error);
+        }
+      }
 
       // Check if all uploads were successful
-      const allSuccessful = files.every(file => uploadProgress[file.name] === 'success');
+      await new Promise(resolve => setTimeout(resolve, 100)); // Small delay to ensure state updates
+      const finalProgress = { ...uploadProgress };
+      files.forEach(file => {
+        if (!finalProgress[file.name]) {
+          finalProgress[file.name] = uploadProgress[file.name] || 'pending';
+        }
+      });
+
+      const allSuccessful = files.every(file => finalProgress[file.name] === 'success');
 
       if (allSuccessful) {
         onSuccess();

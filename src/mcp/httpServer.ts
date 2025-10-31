@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { S3Client } from '@aws-sdk/client-s3';
-import { MCPServer } from './MCPServer.js'; 
+import { MCPServer } from './MCPServer';
 import { handleDatabaseTool } from './tools/databaseTools';
 import { handleStorageTool } from './tools/storageTools';
 import { handleProjectTool } from './tools/projectTools';

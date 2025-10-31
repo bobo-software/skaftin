@@ -213,8 +213,7 @@ const ProjectsPage = () => {
                 key={project.id}
                 className="bg-white dark:bg-dark-800 rounded-xl border border-dark-200 dark:border-dark-700 p-6 hover:shadow-lg transition-all duration-300 cursor-pointer group"
                 onClick={() => {
-                  // Navigate to project details
-                  console.log('Navigate to project:', project.id);
+                  navigate(`/projects/${project.id}`);
                 }}
               >
                 <div className="flex items-start justify-between mb-4">

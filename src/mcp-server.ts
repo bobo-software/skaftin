@@ -5,7 +5,7 @@
  * This server uses stdio transport to communicate with MCP clients
  */
 
-import { MCPServer } from './mcp/MCPServer.js';
+import { MCPServer } from './mcp/MCPServer';
 import { Pool } from 'pg';
 import { S3Client } from '@aws-sdk/client-s3';
 import * as dotenv from 'dotenv';
