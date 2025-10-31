@@ -1,4 +1,4 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
@@ -6,9 +6,9 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { Pool } from 'pg';
 import { S3Client } from '@aws-sdk/client-s3';
-import { createDatabaseTools, handleDatabaseTool } from './tools/databaseTools.js';
-import { createStorageTools, handleStorageTool } from './tools/storageTools.js';
-import { createProjectTools, handleProjectTool } from './tools/projectTools.js';
+import { createDatabaseTools, handleDatabaseTool } from './tools/databaseTools';
+import { createStorageTools, handleStorageTool } from './tools/storageTools';
+import { createProjectTools, handleProjectTool } from './tools/projectTools';
 
 export interface MCPServerConfig {
   pool: Pool;

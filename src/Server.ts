@@ -9,7 +9,7 @@ import multer from 'multer';
 import multerS3 from 'multer-s3';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { createMCPRoutes } from './mcp/httpServer.js';
+import { createMCPRoutes } from './mcp/httpServer';
 
 // SCHEDULED JOBS
 

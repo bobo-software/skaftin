@@ -1,13 +1,13 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { S3Client } from '@aws-sdk/client-s3';
-import { MCPServer } from './MCPServer.js';
-import { handleDatabaseTool } from './tools/databaseTools.js';
-import { handleStorageTool } from './tools/storageTools.js';
-import { handleProjectTool } from './tools/projectTools.js';
-import { createDatabaseTools } from './tools/databaseTools.js';
-import { createStorageTools } from './tools/storageTools.js';
-import { createProjectTools } from './tools/projectTools.js';
+import { MCPServer } from './MCPServer.js'; 
+import { handleDatabaseTool } from './tools/databaseTools';
+import { handleStorageTool } from './tools/storageTools';
+import { handleProjectTool } from './tools/projectTools';
+import { createDatabaseTools } from './tools/databaseTools';
+import { createStorageTools } from './tools/storageTools';
+import { createProjectTools } from './tools/projectTools';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
