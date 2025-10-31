@@ -9,6 +9,7 @@ import multer from 'multer';
 import multerS3 from 'multer-s3';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { createMCPRoutes } from './mcp/httpServer.js';
 
 // SCHEDULED JOBS
 
@@ -930,6 +931,27 @@ app.post('/api/projects', authenticateToken, async (req: Request, res: Response)
   }
 });
 
+// MCP routes
+const mcpRoutes = createMCPRoutes({ pool, s3Client });
+
+// MCP endpoint - list tools
+app.get('/api/mcp/tools', mcpRoutes.listTools);
+
+// MCP endpoint - call tool
+app.post('/api/mcp/call', mcpRoutes.callTool);
+
+// Legacy MCP endpoint (for compatibility)
+app.post('/api/mcp', (req: Request, res: Response) => {
+  // Redirect to new endpoint structure
+  if (req.body.method === 'tools/list') {
+    return mcpRoutes.listTools(req, res);
+  } else if (req.body.method === 'tools/call') {
+    return mcpRoutes.callTool(req, res);
+  } else {
+    res.status(400).json({ error: 'Invalid MCP method' });
+  }
+});
+
 // Startup function
 const startServer = async () => {
   // Display startup banner
@@ -951,6 +973,7 @@ const startServer = async () => {
     console.log(`✅ Skaftin Platform server is running!`);
     console.log(`🌐 Server URL: http://localhost:${port}`);
     console.log(`📡 API Base: http://localhost:${port}/api`);
+    console.log(`🔧 MCP Endpoint: http://localhost:${port}/api/mcp`);
     console.log('='.repeat(60) + '\n');
   });
 };
