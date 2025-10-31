@@ -12,10 +12,17 @@ async function getProjectClient(pool: Pool, projectId: string): Promise<PoolClie
   try {
     const client = await pool.connect();
     
-    // Get project schema name
+    // Get project schema name - convert projectId to integer if it's a string
+    const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+    
+    if (isNaN(projectIdInt)) {
+      client.release();
+      return null;
+    }
+    
     const projectResult = await client.query(
       'SELECT schema_name FROM projects WHERE id = $1',
-      [projectId]
+      [projectIdInt]
     );
     
     if (projectResult.rows.length === 0) {
@@ -278,6 +285,74 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
       },
     },
     {
+      name: 'create_table',
+      description: 'Create a new database table with specified columns',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: {
+            type: 'string',
+            description: 'Project ID',
+          },
+          tableName: {
+            type: 'string',
+            description: 'Name of the table to create',
+          },
+          columns: {
+            type: 'array',
+            description: 'Array of column definitions',
+            items: {
+              type: 'object',
+              properties: {
+                name: {
+                  type: 'string',
+                  description: 'Column name',
+                },
+                type: {
+                  type: 'string',
+                  description: 'Column data type (e.g., INTEGER, VARCHAR, TEXT, SERIAL)',
+                },
+                nullable: {
+                  type: 'boolean',
+                  description: 'Whether the column can be NULL',
+                  default: true,
+                },
+                primaryKey: {
+                  type: 'boolean',
+                  description: 'Whether this column is a primary key',
+                  default: false,
+                },
+                defaultValue: {
+                  type: 'string',
+                  description: 'Default value for the column (optional)',
+                },
+              },
+              required: ['name', 'type'],
+            },
+          },
+        },
+        required: ['projectId', 'tableName', 'columns'],
+      },
+    },
+    {
+      name: 'get_table_schema',
+      description: 'Get the schema (column definitions) for a specific table',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: {
+            type: 'string',
+            description: 'Project ID',
+          },
+          tableName: {
+            type: 'string',
+            description: 'Name of the table',
+          },
+        },
+        required: ['projectId', 'tableName'],
+      },
+    },
+    {
       name: 'delete_schema',
       description: 'Remove database schema',
       inputSchema: {
@@ -372,13 +447,26 @@ export async function handleDatabaseTool(
       const client = await pool.connect();
       
       try {
-        // Get project info
+        // Get project info - convert projectId to integer if it's a string
+        const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+        
+        if (isNaN(projectIdInt)) {
+          return { 
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ error: 'Invalid project ID' }, null, 2) 
+            }],
+            isError: true 
+          };
+        }
+        
         const projectResult = await client.query(
           'SELECT schema_name FROM projects WHERE id = $1',
-          [projectId]
+          [projectIdInt]
         );
         
         if (projectResult.rows.length === 0) {
+          console.error(`Project not found for ID: ${projectIdInt} (original: ${projectId})`);
           return { 
             content: [{ 
               type: 'text', 
@@ -480,9 +568,21 @@ export async function handleDatabaseTool(
       
       try {
         // Get project schema
+        const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+        
+        if (isNaN(projectIdInt)) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ error: 'Invalid project ID' }, null, 2) 
+            }],
+            isError: true 
+          };
+        }
+        
         const projectResult = await client.query(
           'SELECT schema_name FROM projects WHERE id = $1',
-          [projectId]
+          [projectIdInt]
         );
         
         if (projectResult.rows.length === 0) {
@@ -565,14 +665,18 @@ export async function handleDatabaseTool(
       try {
         // Get project schema if provided
         if (projectId) {
-          const projectResult = await client.query(
-            'SELECT schema_name FROM projects WHERE id = $1',
-            [projectId]
-          );
+          const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
           
-          if (projectResult.rows.length > 0) {
-            const schemaName = projectResult.rows[0].schema_name;
-            await client.query(`SET search_path TO ${schemaName}, public`);
+          if (!isNaN(projectIdInt)) {
+            const projectResult = await client.query(
+              'SELECT schema_name FROM projects WHERE id = $1',
+              [projectIdInt]
+            );
+            
+            if (projectResult.rows.length > 0) {
+              const schemaName = projectResult.rows[0].schema_name;
+              await client.query(`SET search_path TO ${schemaName}, public`);
+            }
           }
         }
         
@@ -613,9 +717,21 @@ export async function handleDatabaseTool(
       const client = await pool.connect();
       
       try {
+        const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+        
+        if (isNaN(projectIdInt)) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ error: 'Invalid project ID' }, null, 2) 
+            }],
+            isError: true
+          };
+        }
+        
         const projectResult = await client.query(
           'SELECT schema_name FROM projects WHERE id = $1',
-          [projectId]
+          [projectIdInt]
         );
         
         if (projectResult.rows.length === 0) {
@@ -677,9 +793,21 @@ export async function handleDatabaseTool(
       const client = await pool.connect();
       
       try {
+        const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+        
+        if (isNaN(projectIdInt)) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ error: 'Invalid project ID' }, null, 2) 
+            }],
+            isError: true
+          };
+        }
+        
         const projectResult = await client.query(
           'SELECT schema_name FROM projects WHERE id = $1',
-          [projectId]
+          [projectIdInt]
         );
         
         if (projectResult.rows.length === 0) {
@@ -788,6 +916,234 @@ export async function handleDatabaseTool(
               message: `Schema ${schemaName} created successfully` 
             }, null, 2) 
           }] 
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'get_table_schema': {
+      const { projectId, tableName } = args;
+      const client = await getProjectClient(pool, projectId);
+      
+      if (!client) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ error: 'Project not found or failed to get client' }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+      
+      try {
+        // Get column information
+        const result = await client.query(`
+          SELECT 
+            column_name,
+            data_type,
+            character_maximum_length,
+            is_nullable,
+            column_default,
+            ordinal_position
+          FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = $1
+          ORDER BY ordinal_position
+        `, [tableName]);
+        
+        if (result.rows.length === 0) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ error: `Table ${tableName} not found` }, null, 2) 
+            }],
+            isError: true
+          };
+        }
+        
+        // Get primary key information
+        const pkResult = await client.query(`
+          SELECT 
+            a.attname as column_name
+          FROM pg_index i
+          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+          WHERE i.indrelid = $1::regclass
+            AND i.indisprimary = true
+        `, [tableName]);
+        
+        const primaryKeys = new Set(pkResult.rows.map((row: any) => row.column_name));
+        
+        // Format columns
+        const columns = result.rows.map((row: any) => ({
+          column_name: row.column_name,
+          data_type: row.data_type,
+          character_maximum_length: row.character_maximum_length,
+          is_nullable: row.is_nullable === 'YES',
+          column_default: row.column_default,
+          ordinal_position: row.ordinal_position,
+          is_primary_key: primaryKeys.has(row.column_name)
+        }));
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify(columns, null, 2) 
+          }] 
+        };
+      } catch (error: any) {
+        console.error('Error getting table schema:', error);
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              error: error.message || 'Failed to get table schema',
+              details: error.code || 'UNKNOWN_ERROR'
+            }, null, 2) 
+          }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'create_table': {
+      const { projectId, tableName, columns } = args;
+      const client = await getProjectClient(pool, projectId);
+      
+      if (!client) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ error: 'Project not found or failed to get client' }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+      
+      try {
+        // Validate inputs
+        if (!tableName || !columns || !Array.isArray(columns) || columns.length === 0) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ error: 'Table name and at least one column are required' }, null, 2) 
+            }],
+            isError: true
+          };
+        }
+
+        // Validate table name (PostgreSQL identifier rules)
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tableName)) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ error: 'Invalid table name. Must start with a letter or underscore and contain only alphanumeric characters and underscores' }, null, 2) 
+            }],
+            isError: true
+          };
+        }
+
+        // Build column definitions
+        const columnDefinitions: string[] = [];
+        const primaryKeyColumns: string[] = [];
+
+        for (const column of columns) {
+          if (!column.name || !column.type) {
+            return {
+              content: [{ 
+                type: 'text', 
+                text: JSON.stringify({ error: 'Each column must have a name and type' }, null, 2) 
+              }],
+              isError: true
+            };
+          }
+
+          // Validate column name
+          if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(column.name)) {
+            return {
+              content: [{ 
+                type: 'text', 
+                text: JSON.stringify({ error: `Invalid column name: ${column.name}` }, null, 2) 
+              }],
+              isError: true
+            };
+          }
+
+          // Build column definition
+          let colDef = `"${column.name}" ${column.type}`;
+
+          // Add NOT NULL constraint
+          if (column.primaryKey || (!column.nullable && column.type !== 'SERIAL' && column.type !== 'BIGSERIAL')) {
+            colDef += ' NOT NULL';
+          }
+
+          // Add DEFAULT value
+          if (column.defaultValue !== undefined && column.defaultValue !== null && column.defaultValue !== '') {
+            // For SERIAL types, don't add default
+            if (column.type !== 'SERIAL' && column.type !== 'BIGSERIAL') {
+              // Try to determine if it's a number or string
+              const defaultValue = column.defaultValue;
+              if (column.type.includes('INT') || column.type === 'DECIMAL' || column.type === 'NUMERIC' || 
+                  column.type === 'REAL' || column.type === 'DOUBLE PRECISION' || column.type === 'BOOLEAN') {
+                // For numeric types, use value as-is (but validate it's a number for boolean/int)
+                if (column.type === 'BOOLEAN') {
+                  colDef += ` DEFAULT ${defaultValue === 'true' || defaultValue === true ? 'TRUE' : 'FALSE'}`;
+                } else {
+                  colDef += ` DEFAULT ${defaultValue}`;
+                }
+              } else {
+                // For string types, wrap in quotes and escape single quotes
+                const escapedValue = String(defaultValue).replace(/'/g, "''");
+                colDef += ` DEFAULT '${escapedValue}'`;
+              }
+            }
+          }
+
+          columnDefinitions.push(colDef);
+
+          // Track primary key columns
+          if (column.primaryKey) {
+            primaryKeyColumns.push(`"${column.name}"`);
+          }
+        }
+
+        // Build CREATE TABLE statement
+        let createTableSQL = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n  ${columnDefinitions.join(',\n  ')}`;
+        
+        // Add primary key constraint if any columns are marked as primary key
+        if (primaryKeyColumns.length > 0) {
+          createTableSQL += `,\n  PRIMARY KEY (${primaryKeyColumns.join(', ')})`;
+        }
+        
+        createTableSQL += '\n)';
+
+        // Execute CREATE TABLE statement
+        await client.query(createTableSQL);
+
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true,
+              message: `Table ${tableName} created successfully`,
+              tableName,
+              columns: columns.length
+            }, null, 2) 
+          }] 
+        };
+      } catch (error: any) {
+        console.error('Error creating table:', error);
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              error: error.message || 'Failed to create table',
+              details: error.code || 'UNKNOWN_ERROR'
+            }, null, 2) 
+          }],
+          isError: true
         };
       } finally {
         client.release();

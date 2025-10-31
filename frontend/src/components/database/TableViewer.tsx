@@ -11,7 +11,7 @@ import {
   Table,
   List
 } from 'lucide-react';
-import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal } from '../ComponentsIndex';
+import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal } from '../ComponentsIndex';
 
 interface TableViewerProps {
   projectId: string;
@@ -27,6 +27,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     fetchTableDetails, 
     setCurrentTable,
     insertData,
+    createTable,
     clearError 
   } = useDatabaseStore();
   
@@ -37,6 +38,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   const [activeTab, setActiveTab] = useState('data');
   const [showAddRowModal, setShowAddRowModal] = useState(false);
   const [showCsvImportModal, setShowCsvImportModal] = useState(false);
+  const [showCreateTableModal, setShowCreateTableModal] = useState(false);
   const [tableData, setTableData] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState<{
@@ -95,11 +97,12 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
       const result = await McpService.selectData(projectId, tableName, { limit: 100 });
       console.log('fetchTableData result:', result);
       
-      if (result.success && result.result && result.result.success) {
-        setTableData(result.result.data.data || []);
-        console.log('Table data set:', result.result.data.data);
+      if (result.status === 'success' && result.data) {
+        const data = Array.isArray(result.data) ? result.data : (result.data.data || result.data.rows || []);
+        setTableData(data);
+        console.log('Table data set:', data);
       } else {
-        console.error('Failed to fetch table data:', result.error);
+        console.error('Failed to fetch table data:', result.message);
         setTableData([]);
       }
     } catch (error) {
@@ -138,18 +141,35 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     }
   };
 
-  const handleCsvImport = async (dataArray: any[], columnMapping: any) => {
+  const handleCreateTable = async (tableName: string, columns: any[]) => {
+    try {
+      const success = await createTable(projectId, tableName, columns);
+      if (success) {
+        console.log('Table created successfully');
+        // Refresh tables list
+        await fetchTables(projectId);
+        // Select the newly created table
+        await handleTableSelect(tableName);
+      }
+      return success;
+    } catch (error) {
+      console.error('Error creating table:', error);
+      return false;
+    }
+  };
+
+  const handleCsvImport = async (dataArray: any[]) => {
     if (!selectedTable) return;
     
     try {
       const result = await McpService.bulkInsertData(projectId, selectedTable, dataArray);
-      if (result.success) {
+      if (result.status === 'success') {
         console.log(`Successfully imported ${dataArray.length} rows`);
         setShowCsvImportModal(false);
         await fetchTableData(selectedTable);
         alert(`Successfully imported ${dataArray.length} rows from CSV!`);
       } else {
-        console.error('Failed to import CSV:', result.error);
+        console.error('Failed to import CSV:', result.message);
         alert('Failed to import CSV data. Please try again.');
       }
     } catch (error) {
@@ -189,12 +209,12 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         const whereClause = { id: row.id };
         const result = await McpService.deleteData(projectId, selectedTable, whereClause);
         
-        if (result.success) {
+        if (result.status === 'success') {
           console.log('Row deleted successfully');
           await fetchTableData(selectedTable);
           setDeleteModal({ isOpen: false, type: 'single', loading: false });
         } else {
-          console.error('Failed to delete row:', result.error);
+          console.error('Failed to delete row:', result.message);
           alert('Failed to delete row. Please try again.');
         }
       } else {
@@ -207,11 +227,11 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
           const whereClause = { id: row.id };
           const result = await McpService.deleteData(projectId, selectedTable, whereClause);
           
-          if (result.success) {
+          if (result.status === 'success') {
             successCount++;
           } else {
             errorCount++;
-            console.error('Failed to delete row:', row.id, result.error);
+            console.error('Failed to delete row:', row.id, result.message);
           }
         }
         
@@ -290,6 +310,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                   variant="primary"
                   size="sm"
                   icon={<Plus className="w-4 h-4" />}
+                  onClick={() => setShowCreateTableModal(true)}
                 >
                   Create
                 </AppButton>
@@ -446,11 +467,11 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                           
                           const result = await McpService.updateData(projectId, selectedTable, updateData, whereClause);
                           
-                          if (result.success) {
+                          if (result.status === 'success') {
                             console.log('Row updated successfully');
                             await fetchTableData(selectedTable);
                           } else {
-                            console.error('Failed to update row:', result.error);
+                            console.error('Failed to update row:', result.message);
                             alert('Failed to update row. Please try again.');
                           }
                         } catch (error) {
@@ -523,6 +544,13 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
           loading={dataLoading}
         />
       )}
+
+      {/* Create Table Modal */}
+      <CreateTableModal
+        isOpen={showCreateTableModal}
+        onClose={() => setShowCreateTableModal(false)}
+        onCreate={handleCreateTable}
+      />
     </div>
   );
 };

@@ -17,6 +17,7 @@ export { default as DeleteConfirmModal } from './modals/DeleteConfirmModal';
 export { default as AddRowModal } from './modals/AddRowModal';
 export { default as CsvImportModal } from './modals/CsvImportModal';
 export { default as FileUploadModal } from './modals/FileUploadModal';
+export { default as CreateTableModal } from './modals/CreateTableModal';
 
 // ---------- Database Components ---------- //
 export { default as TableViewer } from './database/TableViewer';

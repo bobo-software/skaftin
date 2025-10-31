@@ -70,6 +70,8 @@ export class MCPServer {
           'generate_typescript_types',
           'create_schema',
           'delete_schema',
+          'create_table',
+          'get_table_schema',
         ];
 
         const storageToolNames = [

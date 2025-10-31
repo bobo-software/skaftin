@@ -91,10 +91,11 @@ const useDatabaseStore = create<DatabaseStoreType>()(
         set({ loading: true, error: null });
         try {
           const response = await McpService.listTables(projectId);
-          if (response.success && response.result.success) {
-            set({ tables: response.result.data || [] });
+          if (response.status === 'success' && response.data) {
+            const tables = Array.isArray(response.data) ? response.data : (response.data.tables || []);
+            set({ tables });
           } else {
-            set({ error: 'Failed to fetch tables' });
+            set({ error: response.message || 'Failed to fetch tables' });
           }
         } catch (error) {
           set({ error: error instanceof Error ? error.message : 'Failed to fetch tables' });
@@ -107,8 +108,8 @@ const useDatabaseStore = create<DatabaseStoreType>()(
         set({ loading: true, error: null });
         try {
           const response = await McpService.getTableSchema(projectId, tableName);
-          if (response.success && response.result.success) {
-            const columns = response.result.data || [];
+          if (response.status === 'success' && response.data) {
+            const columns = Array.isArray(response.data) ? response.data : (response.data.columns || []);
             const currentTable = get().tables.find(t => t.table_name === tableName);
             if (currentTable) {
               set({ 
@@ -117,7 +118,7 @@ const useDatabaseStore = create<DatabaseStoreType>()(
               });
             }
           } else {
-            set({ error: 'Failed to fetch table details' });
+            set({ error: response.message || 'Failed to fetch table details' });
           }
         } catch (error) {
           set({ error: error instanceof Error ? error.message : 'Failed to fetch table details' });
@@ -130,17 +131,17 @@ const useDatabaseStore = create<DatabaseStoreType>()(
         set({ loading: true, error: null });
         try {
           const response = await McpService.executeQuery(projectId, query);
-          if (response.success && response.result.success) {
+          if (response.status === 'success' && response.data) {
             const result: QueryResult = {
-              columns: response.result.data.columns || [],
-              rows: response.result.data.rows || [],
-              rowCount: response.result.data.rowCount || 0,
-              executionTime: response.result.data.executionTime || 0
+              columns: response.data.columns || [],
+              rows: response.data.rows || [],
+              rowCount: response.data.rowCount || 0,
+              executionTime: response.data.executionTime || 0
             };
             set({ queryResults: result, loading: false });
             return result;
           } else {
-            set({ error: 'Query execution failed' });
+            set({ error: response.message || 'Query execution failed' });
             return null;
           }
         } catch (error) {
@@ -155,12 +156,12 @@ const useDatabaseStore = create<DatabaseStoreType>()(
         set({ loading: true, error: null });
         try {
           const response = await McpService.createTable(projectId, tableName, columns);
-          if (response.success && response.result.success) {
+          if (response.status === 'success') {
             // Refresh tables list
             await get().fetchTables(projectId);
             return true;
           } else {
-            set({ error: 'Failed to create table' });
+            set({ error: response.message || 'Failed to create table' });
             return false;
           }
         } catch (error) {
@@ -195,10 +196,10 @@ const useDatabaseStore = create<DatabaseStoreType>()(
         set({ loading: true, error: null });
         try {
           const response = await McpService.insertData(projectId, tableName, data);
-          if (response.success && response.result.success) {
+          if (response.status === 'success') {
             return true;
           } else {
-            set({ error: 'Failed to insert data' });
+            set({ error: response.message || 'Failed to insert data' });
             return false;
           }
         } catch (error) {
@@ -213,10 +214,10 @@ const useDatabaseStore = create<DatabaseStoreType>()(
         set({ loading: true, error: null });
         try {
           const response = await McpService.updateData(projectId, tableName, data, where);
-          if (response.success && response.result.success) {
+          if (response.status === 'success') {
             return true;
           } else {
-            set({ error: 'Failed to update data' });
+            set({ error: response.message || 'Failed to update data' });
             return false;
           }
         } catch (error) {
@@ -231,10 +232,10 @@ const useDatabaseStore = create<DatabaseStoreType>()(
         set({ loading: true, error: null });
         try {
           const response = await McpService.deleteData(projectId, tableName, where);
-          if (response.success && response.result.success) {
+          if (response.status === 'success') {
             return true;
           } else {
-            set({ error: 'Failed to delete data' });
+            set({ error: response.message || 'Failed to delete data' });
             return false;
           }
         } catch (error) {
@@ -248,8 +249,8 @@ const useDatabaseStore = create<DatabaseStoreType>()(
       getTableSchema: async (projectId: string, tableName: string) => {
         try {
           const response = await McpService.getTableSchema(projectId, tableName);
-          if (response.success && response.result.success) {
-            return response.result.data || [];
+          if (response.status === 'success' && response.data) {
+            return Array.isArray(response.data) ? response.data : (response.data.columns || []);
           }
           return [];
         } catch (error) {
