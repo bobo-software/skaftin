@@ -44,7 +44,6 @@ const LoginPage = () => {
           email: response.user.email,
           name: response.user.name,
         });
-        // Navigate to projects page after successful login/register
         navigate('/projects');
       } else {
         setError(response.error || 'An error occurred');
