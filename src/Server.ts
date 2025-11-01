@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
+import { createServer } from 'http';
 import { Pool } from 'pg';
 import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, CopyObjectCommand, ListObjectsV2Command, CreateBucketCommand, HeadBucketCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -10,12 +11,14 @@ import multerS3 from 'multer-s3';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { createMCPRoutes } from './mcp/httpServer';
+import { initializeWebSocketService, getWebSocketService } from './services/WebSocketService';
 
 // SCHEDULED JOBS
 
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
 const port = process.env.PORT || 4006;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
@@ -967,13 +970,17 @@ const startServer = async () => {
   // Perform health checks
   await performHealthChecks();
 
+  // Initialize WebSocket service
+  initializeWebSocketService(httpServer);
+
   // Start server
-  app.listen(port, () => {
+  httpServer.listen(port, () => {
     console.log('='.repeat(60));
     console.log(`✅ Skaftin Platform server is running!`);
     console.log(`🌐 Server URL: http://localhost:${port}`);
     console.log(`📡 API Base: http://localhost:${port}/api`);
     console.log(`🔧 MCP Endpoint: http://localhost:${port}/api/mcp`);
+    console.log(`🔌 WebSocket: ws://localhost:${port}`);
     console.log('='.repeat(60) + '\n');
   });
 };

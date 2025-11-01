@@ -101,6 +101,12 @@ export function createMCPCallToolHandler(config: MCPHTTPConfig) {
         'delete_schema',
         'create_table',
         'get_table_schema',
+        'insert_data',
+        'bulk_insert_data',
+        'update_data',
+        'delete_data',
+        'select_data',
+        'drop_table',
       ];
 
       const storageToolNames = [

@@ -375,6 +375,87 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
         required: ['projectId', 'schemaName'],
       },
     },
+    {
+      name: 'insert_data',
+      description: 'Insert data into a table',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          tableName: { type: 'string', description: 'Name of the table' },
+          data: { type: 'object', description: 'Data to insert as key-value pairs' },
+        },
+        required: ['projectId', 'tableName', 'data'],
+      },
+    },
+    {
+      name: 'bulk_insert_data',
+      description: 'Insert multiple rows into a table',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          tableName: { type: 'string', description: 'Name of the table' },
+          dataArray: { type: 'array', description: 'Array of data objects to insert' },
+        },
+        required: ['projectId', 'tableName', 'dataArray'],
+      },
+    },
+    {
+      name: 'update_data',
+      description: 'Update data in a table',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          tableName: { type: 'string', description: 'Name of the table' },
+          data: { type: 'object', description: 'Data to update as key-value pairs' },
+          where: { type: 'object', description: 'WHERE condition as key-value pairs' },
+        },
+        required: ['projectId', 'tableName', 'data', 'where'],
+      },
+    },
+    {
+      name: 'delete_data',
+      description: 'Delete data from a table',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          tableName: { type: 'string', description: 'Name of the table' },
+          where: { type: 'object', description: 'WHERE condition as key-value pairs' },
+        },
+        required: ['projectId', 'tableName', 'where'],
+      },
+    },
+    {
+      name: 'select_data',
+      description: 'Select data from a table',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          tableName: { type: 'string', description: 'Name of the table' },
+          columns: { type: 'array', description: 'Columns to select (optional)' },
+          where: { type: 'object', description: 'WHERE condition as key-value pairs (optional)' },
+          limit: { type: 'number', description: 'Maximum number of rows to return (optional)' },
+          offset: { type: 'number', description: 'Number of rows to skip (optional)' },
+        },
+        required: ['projectId', 'tableName'],
+      },
+    },
+    {
+      name: 'drop_table',
+      description: 'Drop a table from the database',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          tableName: { type: 'string', description: 'Name of the table to drop' },
+        },
+        required: ['projectId', 'tableName'],
+      },
+    },
   ];
 }
 
@@ -1122,6 +1203,10 @@ export async function handleDatabaseTool(
         // Execute CREATE TABLE statement
         await client.query(createTableSQL);
 
+        // Emit WebSocket event
+        const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
+        emitDatabaseChange(projectId, tableName, 'create_table', { tableName, columns: columns.length });
+
         return {
           content: [{ 
             type: 'text', 
@@ -1183,6 +1268,261 @@ export async function handleDatabaseTool(
           };
         }
         throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'insert_data': {
+      const { projectId, tableName, data } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
+        const columns = Object.keys(data);
+        const values = Object.values(data);
+        const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
+        
+        const query = `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders}) RETURNING *`;
+        const result = await client.query(query, values);
+        
+        // Emit WebSocket event
+        emitDatabaseChange(projectId, tableName, 'insert', result.rows[0]);
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ success: true, message: 'Data inserted successfully', data: result.rows[0] }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error inserting data:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'bulk_insert_data': {
+      const { projectId, tableName, dataArray } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
+        const insertedRows = [];
+        
+        for (const data of dataArray) {
+          const columns = Object.keys(data);
+          const values = Object.values(data);
+          const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
+          
+          const query = `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders}) RETURNING *`;
+          const result = await client.query(query, values);
+          insertedRows.push(result.rows[0]);
+        }
+        
+        // Emit WebSocket event
+        emitDatabaseChange(projectId, tableName, 'insert', { count: insertedRows.length });
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ success: true, message: `${insertedRows.length} rows inserted successfully`, data: insertedRows }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error bulk inserting data:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'update_data': {
+      const { projectId, tableName, data, where } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
+        const setColumns = Object.keys(data);
+        const setValues = Object.values(data);
+        const setClause = setColumns.map((col, i) => `"${col}" = $${i + 1}`).join(', ');
+        
+        const whereColumns = Object.keys(where);
+        const whereValues = Object.values(where);
+        const whereClause = whereColumns.map((col, i) => `"${col}" = $${setValues.length + i + 1}`).join(' AND ');
+        
+        const query = `UPDATE "${tableName}" SET ${setClause} WHERE ${whereClause} RETURNING *`;
+        const result = await client.query(query, [...setValues, ...whereValues]);
+        
+        // Emit WebSocket event
+        emitDatabaseChange(projectId, tableName, 'update', result.rows);
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ success: true, message: `${result.rowCount} row(s) updated successfully`, data: result.rows }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error updating data:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'delete_data': {
+      const { projectId, tableName, where } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
+        const whereColumns = Object.keys(where);
+        const whereValues = Object.values(where);
+        const whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
+        
+        const query = `DELETE FROM "${tableName}" WHERE ${whereClause} RETURNING *`;
+        const result = await client.query(query, whereValues);
+        
+        // Emit WebSocket event
+        emitDatabaseChange(projectId, tableName, 'delete', { count: result.rowCount, deletedRows: result.rows });
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ success: true, message: `${result.rowCount} row(s) deleted successfully` }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error deleting data:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'select_data': {
+      const { projectId, tableName, columns, where, limit, offset } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        let selectClause = '*';
+        if (columns && columns.length > 0) {
+          selectClause = columns.map((col: string) => `"${col}"`).join(', ');
+        }
+        
+        let query = `SELECT ${selectClause} FROM "${tableName}"`;
+        const values: any[] = [];
+        
+        if (where && Object.keys(where).length > 0) {
+          const whereColumns = Object.keys(where);
+          const whereValues = Object.values(where);
+          const whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
+          query += ` WHERE ${whereClause}`;
+          values.push(...whereValues);
+        }
+        
+        if (limit) {
+          query += ` LIMIT $${values.length + 1}`;
+          values.push(limit);
+        }
+        
+        if (offset) {
+          query += ` OFFSET $${values.length + 1}`;
+          values.push(offset);
+        }
+        
+        const result = await client.query(query, values);
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify(result.rows, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error selecting data:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'drop_table': {
+      const { projectId, tableName } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
+        await client.query(`DROP TABLE IF EXISTS "${tableName}"`);
+        
+        // Emit WebSocket event
+        emitDatabaseChange(projectId, tableName, 'drop_table', { tableName });
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ success: true, message: `Table ${tableName} dropped successfully` }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error dropping table:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
       } finally {
         client.release();
       }
