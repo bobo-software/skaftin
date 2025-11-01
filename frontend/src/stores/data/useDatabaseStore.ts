@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import McpService from '../../services/McpService';
+import RequestUtils from '../../utils/RequestUtils';
+import ApiRoutes from '../../constants/ApiRoutes';
 
 // Types
 export interface Table {
@@ -90,9 +91,11 @@ const useDatabaseStore = create<DatabaseStoreType>()(
       fetchTables: async (projectId: string) => {
         set({ loading: true, error: null });
         try {
-          const response = await McpService.listTables(projectId);
-          if (response.status === 'success' && response.data) {
-            const tables = Array.isArray(response.data) ? response.data : (response.data.tables || []);
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.get(ApiRoutes.DATABASE.LIST_TABLES(projectId), token);
+          
+          if (response.success) {
+            const tables = Array.isArray(response.data) ? response.data : [];
             set({ tables });
           } else {
             set({ error: response.message || 'Failed to fetch tables' });
@@ -107,14 +110,19 @@ const useDatabaseStore = create<DatabaseStoreType>()(
       fetchTableDetails: async (projectId: string, tableName: string) => {
         set({ loading: true, error: null });
         try {
-          const response = await McpService.getTableSchema(projectId, tableName);
-          if (response.status === 'success' && response.data) {
-            const columns = Array.isArray(response.data) ? response.data : (response.data.columns || []);
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.get(
+            ApiRoutes.DATABASE.GET_TABLE_SCHEMA(projectId, tableName),
+            token
+          );
+          
+          if (response.success) {
+            const columns = Array.isArray(response.data) ? response.data : [];
             const currentTable = get().tables.find(t => t.table_name === tableName);
             if (currentTable) {
-              set({ 
+              set({
                 currentTable: { ...currentTable, columns },
-                loading: false 
+                loading: false
               });
             }
           } else {
@@ -130,8 +138,14 @@ const useDatabaseStore = create<DatabaseStoreType>()(
       executeQuery: async (projectId: string, query: string) => {
         set({ loading: true, error: null });
         try {
-          const response = await McpService.executeQuery(projectId, query);
-          if (response.status === 'success' && response.data) {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.post(
+            ApiRoutes.DATABASE.EXECUTE_QUERY(projectId),
+            token,
+            { query }
+          );
+          
+          if (response.success && response.data) {
             const result: QueryResult = {
               columns: response.data.columns || [],
               rows: response.data.rows || [],
@@ -155,8 +169,14 @@ const useDatabaseStore = create<DatabaseStoreType>()(
       createTable: async (projectId: string, tableName: string, columns: any[]) => {
         set({ loading: true, error: null });
         try {
-          const response = await McpService.createTable(projectId, tableName, columns);
-          if (response.status === 'success') {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.post(
+            ApiRoutes.DATABASE.CREATE_TABLE(projectId),
+            token,
+            { tableName, columns }
+          );
+          
+          if (response.success) {
             // Refresh tables list
             await get().fetchTables(projectId);
             return true;
@@ -175,13 +195,20 @@ const useDatabaseStore = create<DatabaseStoreType>()(
       dropTable: async (projectId: string, tableName: string) => {
         set({ loading: true, error: null });
         try {
-          const response = await McpService.dropTable(projectId, tableName);
-          if (response.success && response.result.success) {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.delete(
+            ApiRoutes.DATABASE.DROP_TABLE(projectId, tableName),
+            token,
+            {}
+          );
+          
+          if (response.success) {
             // Refresh tables list
             await get().fetchTables(projectId);
+            set({ currentTable: null });
             return true;
           } else {
-            set({ error: 'Failed to drop table' });
+            set({ error: response.message || 'Failed to drop table' });
             return false;
           }
         } catch (error) {
@@ -195,8 +222,14 @@ const useDatabaseStore = create<DatabaseStoreType>()(
       insertData: async (projectId: string, tableName: string, data: any) => {
         set({ loading: true, error: null });
         try {
-          const response = await McpService.insertData(projectId, tableName, data);
-          if (response.status === 'success') {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.post(
+            ApiRoutes.DATABASE.INSERT_DATA(projectId, tableName),
+            token,
+            { data }
+          );
+          
+          if (response.success) {
             return true;
           } else {
             set({ error: response.message || 'Failed to insert data' });
@@ -213,8 +246,14 @@ const useDatabaseStore = create<DatabaseStoreType>()(
       updateData: async (projectId: string, tableName: string, data: any, where: any) => {
         set({ loading: true, error: null });
         try {
-          const response = await McpService.updateData(projectId, tableName, data, where);
-          if (response.status === 'success') {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.put(
+            ApiRoutes.DATABASE.UPDATE_DATA(projectId, tableName),
+            token,
+            { data, where }
+          );
+          
+          if (response.success) {
             return true;
           } else {
             set({ error: response.message || 'Failed to update data' });
@@ -231,8 +270,14 @@ const useDatabaseStore = create<DatabaseStoreType>()(
       deleteData: async (projectId: string, tableName: string, where: any) => {
         set({ loading: true, error: null });
         try {
-          const response = await McpService.deleteData(projectId, tableName, where);
-          if (response.status === 'success') {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.delete(
+            ApiRoutes.DATABASE.DELETE_DATA(projectId, tableName),
+            token,
+            { where }
+          );
+          
+          if (response.success) {
             return true;
           } else {
             set({ error: response.message || 'Failed to delete data' });
@@ -248,9 +293,14 @@ const useDatabaseStore = create<DatabaseStoreType>()(
 
       getTableSchema: async (projectId: string, tableName: string) => {
         try {
-          const response = await McpService.getTableSchema(projectId, tableName);
-          if (response.status === 'success' && response.data) {
-            return Array.isArray(response.data) ? response.data : (response.data.columns || []);
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.get(
+            ApiRoutes.DATABASE.GET_TABLE_SCHEMA(projectId, tableName),
+            token
+          );
+          
+          if (response.success && response.data) {
+            return Array.isArray(response.data) ? response.data : [];
           }
           return [];
         } catch (error) {
@@ -279,9 +329,13 @@ const useDatabaseStore = create<DatabaseStoreType>()(
       fetchDatabaseStats: async (projectId: string) => {
         set({ loading: true, error: null });
         try {
-          // This would be a new MCP tool
-          const response = await McpService.getDatabaseStats(projectId);
-          if (response.success && response.result.success) {
+          // This would be a new API endpoint
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.get(
+            `/api/database/${projectId}/stats`,
+            token
+          );
+          if (response.success) {
             set({ databaseStats: response.result.data });
           }
         } catch (error) {

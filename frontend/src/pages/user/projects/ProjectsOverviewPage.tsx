@@ -1,6 +1,7 @@
 import { useAppStore, useProjectStore } from "../../../stores/StoresIndex";
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import ProjectCreationLoadingPage from "./ProjectCreationLoadingPage";
 import { Database, FolderOpen, Plus, User, LogOut, Edit3, Trash2, Calendar } from "lucide-react";
 import { AppButton } from "../../../components/ComponentsIndex";
 import CreateProjectModal from "../../../components/modals/CreateProjectModal";
@@ -25,13 +26,12 @@ clearError
 
 // State variables
 const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+const [showLoadingPage, setShowLoadingPage] = useState(false);
+const [creatingProject, setCreatingProject] = useState<any>(null);
 
 const loadUserProjects = useCallback(async () => {
-// Use the user ID from the store, or fallback to a known user ID
-const userId = user?.id || '550e8400-e29b-41d4-a716-446655440000';
-
-console.log('Loading projects for user:', userId);
-await fetchProjects(userId);
+    console.log('Loading projects for user:', user?.id);
+    await fetchProjects();
 }, [user?.id, fetchProjects]);
 
 useEffect(() => {
@@ -42,24 +42,31 @@ const handleCreateProject = () => {
 setIsCreateModalOpen(true);
 };
 
-const handleProjectCreated = async (projectData: { name: string; description: string }) => {
-setIsCreateModalOpen(false);
+const handleProjectCreated = (project: any) => {
+  console.log('Project created, showing loading page:', project);
+  setIsCreateModalOpen(false);
+  setCreatingProject(project);
+  setShowLoadingPage(true);
+};
 
-// Use the user ID from the store
-const userId = user?.id;
-if (!userId) {
-  console.error('User ID not available');
-  return;
-}
+const handleLoadingComplete = (project: any) => {
+  console.log('Loading complete, navigating to project:', project);
+  setShowLoadingPage(false);
+  setCreatingProject(null);
+  
+  // Ensure project ID exists before navigating
+  if (project && project.id) {
+    console.log('Navigating to project ID:', project.id);
+    navigate(`/projects/${project.id}`);
+  } else {
+    console.error('Project ID is missing:', project);
+  }
+};
 
-const newProject = await createProject(userId, projectData.name, projectData.description);
-
-if (newProject) {
-// Call the parent's onCreateProject callback if provided
-onCreateProject?.(projectData);
-// Navigate to the new project dashboard
-navigate(`/projects/${newProject.id}`);
-}
+const handleLoadingError = (error: string) => {
+  console.error('Project creation error:', error);
+  setShowLoadingPage(false);
+  setCreatingProject(null);
 };
 
 const handleProjectSelect = (project: any) => {
@@ -72,6 +79,17 @@ const handleLogout = () => {
 logout();
 localStorage.removeItem('skaftin-token');
 };
+
+// Show loading page during project creation
+if (showLoadingPage && creatingProject) {
+  return (
+    <ProjectCreationLoadingPage
+      project={creatingProject}
+      onComplete={handleLoadingComplete}
+      onError={handleLoadingError}
+    />
+  );
+}
 
 if (isLoading) {
 return (

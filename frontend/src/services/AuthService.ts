@@ -1,7 +1,7 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4006';
 
 interface AuthResponse {
-  status: 'success' | 'error';
+  success: boolean;
   message?: string;
   data?: {
     user: {
@@ -27,15 +27,15 @@ interface LoginResult {
 
 class AuthService {
   private getToken(): string | null {
-    return localStorage.getItem('skaftin_token');
+    return localStorage.getItem('skaftin-token');
   }
 
   storeToken(token: string): void {
-    localStorage.setItem('skaftin_token', token);
+    localStorage.setItem('skaftin-token', token);
   }
 
   removeToken(): void {
-    localStorage.removeItem('skaftin_token');
+    localStorage.removeItem('skaftin-token');
   }
 
   getAuthHeaders(): Record<string, string> {
@@ -58,7 +58,7 @@ class AuthService {
 
       const data: AuthResponse = await response.json();
 
-      if (response.ok && data.status === 'success' && data.data) {
+      if (response.ok && data.success && data.data) {
         this.storeToken(data.data.token);
         return {
           success: true,
@@ -92,7 +92,7 @@ class AuthService {
 
       const data: AuthResponse = await response.json();
 
-      if (response.ok && data.status === 'success' && data.data) {
+      if (response.ok && data.success && data.data) {
         this.storeToken(data.data.token);
         return {
           success: true,

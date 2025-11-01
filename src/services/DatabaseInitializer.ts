@@ -1,0 +1,139 @@
+import { Pool } from 'pg';
+import { sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/node-postgres';
+
+/**
+ * DatabaseInitializer - Handles database table creation and initialization using Drizzle ORM
+ */
+export class DatabaseInitializer {
+  private pool: Pool;
+  private db: ReturnType<typeof drizzle>;
+
+  constructor(pool: Pool) {
+    this.pool = pool;
+    this.db = drizzle(pool);
+  }
+
+  /**
+   * Initialize users table using Drizzle
+   */
+  async initializeUsersTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          username VARCHAR(100) UNIQUE NOT NULL,
+          email VARCHAR(255) UNIQUE NOT NULL,
+          password_hash VARCHAR(255),
+          full_name VARCHAR(255),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch (err: any) {
+      // Ignore if table/sequence already exists
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Users table creation error:', err.message);
+      }
+    }
+
+    try {
+      // Add password_hash column if it doesn't exist (migration for existing databases)
+      await this.db.execute(sql`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='users' AND column_name='password_hash') THEN
+            ALTER TABLE users ADD COLUMN password_hash VARCHAR(255);
+          END IF;
+        END $$;
+      `);
+    } catch (err: any) {
+      if (err.code !== '42710') {
+        console.error('❌ Users password_hash migration error:', err.message);
+      }
+    }
+
+    try {
+      // Create index on email
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+      `);
+    } catch (err: any) {
+      // Ignore if index already exists
+      if (err.code !== '42P07') {
+        console.error('❌ Users index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Users table initialized');
+  }
+
+  /**
+   * Initialize projects table using Drizzle
+   */
+  async initializeProjectsTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS projects (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          schema_name VARCHAR(255) NOT NULL UNIQUE,
+          bucket_name VARCHAR(255) NOT NULL UNIQUE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch (err: any) {
+      // Ignore if table/sequence already exists
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Projects table creation error:', err.message);
+      }
+    }
+
+    try {
+      // Create index on user_id
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
+      `);
+    } catch (err: any) {
+      // Ignore if index already exists
+      if (err.code !== '42P07') {
+        console.error('❌ Projects index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Projects table initialized');
+  }
+
+  /**
+   * Initialize all database tables
+   */
+  async initializeAllTables(): Promise<void> {
+    await this.initializeUsersTable();
+    await this.initializeProjectsTable();
+  }
+
+  /**
+   * Check if a table exists
+   */
+  async tableExists(tableName: string): Promise<boolean> {
+    try {
+      const result = await this.db.execute(sql`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = ${tableName}
+        );
+      `);
+      return (result.rows[0] as any).exists;
+    } catch (err) {
+      console.error(`Error checking if table ${tableName} exists:`, err);
+      return false;
+    }
+  }
+}
+
+

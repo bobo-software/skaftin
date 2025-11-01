@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import McpService from "../../services/McpService";
+import RequestUtils from "../../utils/RequestUtils";
+import ApiRoutes from "../../constants/ApiRoutes";
 
 interface Project {
   id: string;
@@ -26,14 +27,15 @@ interface ProjectStoreType {
   projectStats: ProjectStats | null;
   loading: boolean;
   error: string | null;
-  
+
   // Actions
-  fetchProjects: (_userId: string) => Promise<void>;
-  createProject: (_userId: string, _name: string, _description?: string) => Promise<Project | null>;
-  updateProject: (_projectId: string, _updates: Partial<Project>) => Promise<Project | null>;
-  deleteProject: (_projectId: string) => Promise<boolean>;
-  setCurrentProject: (_project: Project | null) => void;
-  getProjectStats: (_projectId: string) => Promise<void>;
+  fetchProjects: () => Promise<void>;
+  createProject: (name: string, description?: string) => Promise<Project | null>;
+  updateProject: (projectId: string, updates: Partial<Project>) => Promise<Project | null>;
+  deleteProject: (projectId: string) => Promise<boolean>;
+  setCurrentProject: (project: Project | null) => void;
+  getProjectById: (projectId: string) => Promise<Project | null>;
+  getProjectStats: (projectId: string) => Promise<void>;
   clearError: () => void;
   reset: () => void;
 }
@@ -48,110 +50,135 @@ const useProjectStore = create<ProjectStoreType>()(
       loading: false,
       error: null,
 
-      // Fetch all projects for a user
-      fetchProjects: async (userId: string) => {
+      // Fetch all projects for the authenticated user
+      fetchProjects: async () => {
         set({ loading: true, error: null });
         try {
-          const response = await McpService.listProjects(userId);
-          
-          if (response.status === 'success' && response.data) {
-            // Handle both direct array and wrapped in 'projects' key
-            const projects = Array.isArray(response.data) 
-              ? response.data 
-              : (response.data.projects || []);
-            
-            set({ 
-              projects: projects.map((p: any) => ({
-                id: p.id,
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.get(ApiRoutes.PROJECTS.LIST, token);
+
+          if (response.success) {
+            set({
+              projects: response.data.map((p: any) => ({
+                id: p.id.toString(),
                 name: p.name,
                 description: p.description,
-                schema_name: p.schemaName,
-                bucket_name: p.bucketName,
-                created_at: p.createdAt,
-                updated_at: p.updatedAt,
-                user_id: p.userId,
-              })), 
-              loading: false 
+                schema_name: p.schema_name,
+                bucket_name: p.bucket_name,
+                created_at: p.created_at,
+                updated_at: p.updated_at,
+                user_id: p.user_id.toString(),
+              })),
+              loading: false
             });
           } else {
-            set({ 
-              error: response.message || 'Failed to fetch projects', 
-              loading: false 
+            set({
+              error: response.message || 'Failed to fetch projects',
+              loading: false
             });
           }
         } catch (error) {
           console.error('Error fetching projects:', error);
-          set({ 
-            error: 'Network error while fetching projects', 
-            loading: false 
+          set({
+            error: 'Network error while fetching projects',
+            loading: false
           });
         }
       },
 
       // Create a new project
-      createProject: async (userId: string, name: string, description?: string) => {
+      createProject: async (name: string, description?: string) => {
         set({ loading: true, error: null });
         try {
-          const response = await McpService.createProject(userId, name, description);
-          
-          if (response.status === 'success' && response.data) {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.post( ApiRoutes.PROJECTS.CREATE, token, { name, description }
+          );
+
+          if (response.success) {
             const projectData = response.data;
-            const newProject = {
-              id: projectData.id,
+            const newProject: Project = {
+              id: projectData.id.toString(),
               name: projectData.name,
               description: projectData.description,
-              schema_name: projectData.schemaName,
-              bucket_name: projectData.bucketName,
-              created_at: projectData.createdAt,
-              updated_at: projectData.updatedAt,
-              user_id: projectData.userId,
+              schema_name: projectData.schema_name,
+              bucket_name: projectData.bucket_name,
+              created_at: projectData.created_at,
+              updated_at: projectData.updated_at,
+              user_id: projectData.user_id.toString(),
             };
-            
-            set(state => ({ 
+
+            set(state => ({
               projects: [newProject, ...state.projects],
-              loading: false 
+              loading: false
             }));
+
             return newProject;
           } else {
-            set({ 
-              error: response.message || 'Failed to create project', 
-              loading: false 
+            set({
+              error: response.message || 'Failed to create project',
+              loading: false
             });
             return null;
           }
         } catch (error) {
           console.error('Error creating project:', error);
-          set({ 
-            error: 'Network error while creating project', 
-            loading: false 
+          set({
+            error: 'Network error while creating project',
+            loading: false
           });
           return null;
         }
       },
 
-      // Update an existing project
+      // Update a project
       updateProject: async (projectId: string, updates: Partial<Project>) => {
         set({ loading: true, error: null });
         try {
-          // Note: This would need to be implemented in the backend
-          // For now, we'll update the local state
-          set(state => ({
-            projects: state.projects.map(project => 
-              project.id === projectId 
-                ? { ...project, ...updates, updated_at: new Date().toISOString() }
-                : project
-            ),
-            currentProject: state.currentProject?.id === projectId 
-              ? { ...state.currentProject, ...updates, updated_at: new Date().toISOString() }
-              : state.currentProject,
-            loading: false
-          }));
-          return get().projects.find(p => p.id === projectId) || null;
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.put(
+            ApiRoutes.PROJECTS.UPDATE(projectId),
+            token,
+            updates
+          );
+
+          if (response.success) {
+            const updatedProject = response.data;
+            
+            set(state => ({
+              projects: state.projects.map(p =>
+                p.id === projectId
+                  ? {
+                      ...p,
+                      ...updatedProject,
+                      id: updatedProject.id.toString(),
+                      user_id: updatedProject.user_id.toString(),
+                    }
+                  : p
+              ),
+              currentProject: state.currentProject?.id === projectId
+                ? {
+                    ...state.currentProject,
+                    ...updatedProject,
+                    id: updatedProject.id.toString(),
+                    user_id: updatedProject.user_id.toString(),
+                  }
+                : state.currentProject,
+              loading: false
+            }));
+
+            return updatedProject;
+          } else {
+            set({
+              error: response.message || 'Failed to update project',
+              loading: false
+            });
+            return null;
+          }
         } catch (error) {
           console.error('Error updating project:', error);
-          set({ 
-            error: 'Failed to update project', 
-            loading: false 
+          set({
+            error: 'Network error while updating project',
+            loading: false
           });
           return null;
         }
@@ -161,9 +188,14 @@ const useProjectStore = create<ProjectStoreType>()(
       deleteProject: async (projectId: string) => {
         set({ loading: true, error: null });
         try {
-          const response = await McpService.deleteProject(projectId);
-          
-          if (response.status === 'success') {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.delete(
+            ApiRoutes.PROJECTS.DELETE(projectId),
+            token,
+            {}
+          );
+
+          if (response.success) {
             set(state => ({
               projects: state.projects.filter(project => project.id !== projectId),
               currentProject: state.currentProject?.id === projectId ? null : state.currentProject,
@@ -171,59 +203,101 @@ const useProjectStore = create<ProjectStoreType>()(
             }));
             return true;
           } else {
-            set({ 
-              error: response.message || 'Failed to delete project', 
-              loading: false 
+            set({
+              error: response.message || 'Failed to delete project',
+              loading: false
             });
             return false;
           }
         } catch (error) {
           console.error('Error deleting project:', error);
-          set({ 
-            error: 'Network error while deleting project', 
-            loading: false 
+          set({
+            error: 'Network error while deleting project',
+            loading: false
           });
           return false;
         }
       },
 
-      // Set current project
-      setCurrentProject: (project: Project | null) => {
-        set({ currentProject: project });
+      // Get project by ID
+      getProjectById: async (projectId: string) => {
+        set({ loading: true, error: null });
+        try {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.get(
+            ApiRoutes.PROJECTS.GET(projectId),
+            token
+          );
+
+          if (response.success) {
+            const projectData = response.data;
+            const project: Project = {
+              id: projectData.id.toString(),
+              name: projectData.name,
+              description: projectData.description,
+              schema_name: projectData.schema_name,
+              bucket_name: projectData.bucket_name,
+              created_at: projectData.created_at,
+              updated_at: projectData.updated_at,
+              user_id: projectData.user_id.toString(),
+            };
+
+            set({ currentProject: project, loading: false });
+            return project;
+          } else {
+            set({
+              error: response.message || 'Failed to fetch project',
+              loading: false
+            });
+            return null;
+          }
+        } catch (error) {
+          console.error('Error fetching project:', error);
+          set({
+            error: 'Network error while fetching project',
+            loading: false
+          });
+          return null;
+        }
       },
 
       // Get project statistics
       getProjectStats: async (projectId: string) => {
         set({ loading: true, error: null });
         try {
-          // Fetch tables and files in parallel
-          const [tablesResponse, filesResponse] = await Promise.all([
-            McpService.listTables(projectId),
-            McpService.listFiles(projectId)
-          ]);
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.get(
+            ApiRoutes.PROJECTS.STATS(projectId),
+            token
+          );
 
-          const tableCount = tablesResponse.status === 'success' 
-            ? (Array.isArray(tablesResponse.data) ? tablesResponse.data.length : (tablesResponse.data?.tables?.length || 0))
-            : 0;
-          const fileCount = filesResponse.status === 'success'
-            ? (Array.isArray(filesResponse.data) ? filesResponse.data.length : (filesResponse.data?.files?.length || 0))
-            : 0;
-
-          set({ 
-            projectStats: {
-              tableCount,
-              fileCount,
-              apiCalls: 0 // TODO: Implement API call tracking
-            },
-            loading: false 
-          });
+          if (response.success) {
+            set({
+              projectStats: {
+                tableCount: response.data.tableCount || 0,
+                fileCount: response.data.fileCount || 0,
+                apiCalls: response.data.apiCalls || 0,
+              },
+              loading: false
+            });
+          } else {
+            set({
+              error: response.message || 'Failed to fetch project statistics',
+              loading: false
+            });
+          }
         } catch (error) {
           console.error('Error fetching project stats:', error);
-          set({ 
-            error: 'Failed to fetch project statistics', 
-            loading: false 
+          set({
+            error: 'Failed to fetch project statistics',
+            loading: false
           });
         }
+      },
+
+      // Set current project
+      setCurrentProject: (project: Project | null) => {
+        set({ currentProject: project });
       },
 
       // Clear error
@@ -238,9 +312,9 @@ const useProjectStore = create<ProjectStoreType>()(
           currentProject: null,
           projectStats: null,
           loading: false,
-          error: null
+          error: null,
         });
-      }
+      },
     }),
     {
       name: 'project-store',

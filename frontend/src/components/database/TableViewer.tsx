@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useDatabaseStore, useRealtimeStore } from '../../stores/StoresIndex';
-import McpService from '../../services/McpService';
+import RequestUtils from '../../utils/RequestUtils';
+import ApiRoutes from '../../constants/ApiRoutes';
 import { 
   Database, 
   Plus,
@@ -94,11 +95,16 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     
     setDataLoading(true);
     try {
-      const result = await McpService.selectData(projectId, tableName, { limit: 100 });
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.post(
+        ApiRoutes.DATABASE.SELECT_DATA(projectId, tableName),
+        token,
+        { limit: 100 }
+      );
       console.log('fetchTableData result:', result);
       
-      if (result.status === 'success' && result.data) {
-        const data = Array.isArray(result.data) ? result.data : (result.data.data || result.data.rows || []);
+      if (result.success && result.data) {
+        const data = Array.isArray(result.data) ? result.data : [];
         setTableData(data);
         console.log('Table data set:', data);
       } else {
@@ -162,8 +168,14 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     if (!selectedTable) return;
     
     try {
-      const result = await McpService.bulkInsertData(projectId, selectedTable, dataArray);
-      if (result.status === 'success') {
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.post(
+        ApiRoutes.DATABASE.BULK_INSERT(projectId, selectedTable),
+        token,
+        { dataArray }
+      );
+      
+      if (result.success) {
         console.log(`Successfully imported ${dataArray.length} rows`);
         setShowCsvImportModal(false);
         await fetchTableData(selectedTable);
@@ -203,13 +215,19 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     setDeleteModal(prev => ({ ...prev, loading: true }));
 
     try {
+      const token = localStorage.getItem('skaftin-token') || '';
+      
       if (deleteModal.type === 'single') {
         // Single row delete
         const row = deleteModal.item;
         const whereClause = { id: row.id };
-        const result = await McpService.deleteData(projectId, selectedTable, whereClause);
+        const result = await RequestUtils.delete(
+          ApiRoutes.DATABASE.DELETE_DATA(projectId, selectedTable),
+          token,
+          { where: whereClause }
+        );
         
-        if (result.status === 'success') {
+        if (result.success) {
           console.log('Row deleted successfully');
           await fetchTableData(selectedTable);
           setDeleteModal({ isOpen: false, type: 'single', loading: false });
@@ -225,9 +243,13 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         for (const index of deleteModal.indices!) {
           const row = tableData[index];
           const whereClause = { id: row.id };
-          const result = await McpService.deleteData(projectId, selectedTable, whereClause);
+          const result = await RequestUtils.delete(
+            ApiRoutes.DATABASE.DELETE_DATA(projectId, selectedTable),
+            token,
+            { where: whereClause }
+          );
           
-          if (result.status === 'success') {
+          if (result.success) {
             successCount++;
           } else {
             errorCount++;
@@ -458,6 +480,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                         if (!selectedTable) return;
                         
                         try {
+                          const token = localStorage.getItem('skaftin-token') || '';
                           // Find the original row to get the ID for the where clause
                           const originalRow = tableData[index];
                           const whereClause = { id: originalRow.id };
@@ -465,9 +488,13 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                           // Remove the id from the update data
                           const { id, ...updateData } = updatedRow;
                           
-                          const result = await McpService.updateData(projectId, selectedTable, updateData, whereClause);
+                          const result = await RequestUtils.put(
+                            ApiRoutes.DATABASE.UPDATE_DATA(projectId, selectedTable),
+                            token,
+                            { data: updateData, where: whereClause }
+                          );
                           
-                          if (result.status === 'success') {
+                          if (result.success) {
                             console.log('Row updated successfully');
                             await fetchTableData(selectedTable);
                           } else {

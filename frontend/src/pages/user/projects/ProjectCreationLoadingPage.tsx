@@ -10,13 +10,13 @@ import {
 import McpService from '../../../services/McpService';
 
 interface ProjectCreationLoadingPageProps {
-  projectName: string;
+  project: any;
   onComplete?: (project: any) => void;
   onError?: (error: string) => void;
 }
 
 const ProjectCreationLoadingPage = ({ 
-  projectName, 
+  project, 
   onComplete, 
   onError 
 }: ProjectCreationLoadingPageProps) => {
@@ -61,25 +61,14 @@ const ProjectCreationLoadingPage = ({
       // Simulate each step with a delay
       for (let i = 0; i < steps.length; i++) {
         setCurrentStep(i);
-        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay per step
+        await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5 second delay per step
       }
 
-      // Create project using McpService
-      const response = await McpService.createProject(
-        '550e8400-e29b-41d4-a716-446655440000', // Use test user ID
-        projectName,
-        `Project: ${projectName}`
-      );
-
-      if (response.status === 'success' && response.data) {
-        setIsComplete(true);
-        setTimeout(() => {
-          onComplete?.(response.data);
-        }, 1000);
-      } else {
-        setError(response.message || 'Failed to create project');
-        onError?.(response.message || 'Failed to create project');
-      }
+      // Project is already created by the modal, just show completion
+      setIsComplete(true);
+      setTimeout(() => {
+        onComplete?.(project);
+      }, 1000);
     } catch (err) {
       setError('Network error. Please try again.');
       onError?.('Network error. Please try again.');
@@ -97,7 +86,7 @@ const ProjectCreationLoadingPage = ({
             Creating Your Project
           </h1>
           <p className="text-xl text-dark-600 dark:text-dark-300 mb-2">
-            Setting up <span className="font-semibold text-primary-600 dark:text-primary-400">{projectName}</span>
+            Setting up <span className="font-semibold text-primary-600 dark:text-primary-400">{project.name}</span>
           </p>
           <p className="text-dark-500 dark:text-dark-400">
             This will only take a moment...

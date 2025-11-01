@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { AppButton, AppInput } from '@components/ComponentsIndex';
 import { Database, X } from 'lucide-react';
+import { useProjectStore } from '../../stores/StoresIndex';
 
 interface CreateProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: (projectData: { name: string; description: string }) => void;
+  onSuccess?: (project: any) => void;
 }
 
 const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalProps) => {
+  const { createProject } = useProjectStore();
+  
   // State variables
   const [projectData, setProjectData] = useState({
     name: '',
@@ -24,10 +27,25 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
     setIsCreating(true);
     setError(null);
 
-    // Instead of making API call here, just pass the data to parent
-    // The parent will handle the actual project creation
-    onSuccess?.(projectData);
-    onClose();
+    try {
+      // Make the API call to create the project
+      const newProject = await createProject(projectData.name, projectData.description);
+
+      if (newProject) {
+        // Reset form
+        setProjectData({ name: '', description: '' });
+        // Call success callback with the created project
+        onSuccess?.(newProject);
+        onClose();
+      } else {
+        setError('Failed to create project. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error creating project:', err);
+      setError('Network error. Please try again.');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleInputChange = (field: string, value: string) => {
@@ -68,7 +86,6 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
             required
             icon={<Database className="w-4 h-4" />}
           />
-
           <AppInput
             label="Description (Optional)"
             placeholder="Describe your project..."
@@ -76,13 +93,12 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
             onChange={(value: string) => handleInputChange('description', value)}
           />
 
-          {/* {error && (
-            <ErrorMessage
-              message={error}
-              type="error"
-              onDismiss={() => setError(null)}
-            />
-          )} */}
+
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            </div>
+          )}
 
           <div className="flex space-x-3">
             <AppButton
