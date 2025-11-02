@@ -97,8 +97,6 @@ export class DatabaseInitializer {
     }
 
     try {
-      console.log('🔄 Checking if user_id column needs migration...');
-      
       // Check current column type
       const columnCheck = await this.db.execute(sql`
         SELECT data_type FROM information_schema.columns 
@@ -106,11 +104,8 @@ export class DatabaseInitializer {
       `);
       
       const currentType = (columnCheck.rows[0] as any)?.data_type;
-      console.log(`   Current user_id type: ${currentType}`);
       
       if (currentType === 'integer') {
-        console.log('🔧 Migrating user_id from INTEGER to VARCHAR(255)...');
-        
         // Migrate existing user_id column from INTEGER to VARCHAR
         await this.db.execute(sql`
           DO $$ 
@@ -123,14 +118,10 @@ export class DatabaseInitializer {
           END $$;
         `);
         
-        console.log('✅ user_id column migrated successfully to VARCHAR(255)');
-      } else if (currentType === 'character varying') {
-        console.log('✅ user_id is already VARCHAR - no migration needed');
-      } else {
-        console.log(`⚠️  user_id has unexpected type: ${currentType}`);
+        console.log('✅ user_id column migrated to VARCHAR(255)');
       }
     } catch (err: any) {
-      console.error('❌ Projects user_id migration error:', err);
+      console.error('Projects user_id migration error:', err);
       if (err.code !== '42710') {
         throw err; // Re-throw if not a "duplicate object" error
       }

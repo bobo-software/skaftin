@@ -16,15 +16,6 @@ export function initSuperTokens() {
     cookieDomain: process.env.COOKIE_DOMAIN || undefined, // .bobosoftware.co.za in production
   };
 
-  console.log('🔧 SuperTokens Cookie Configuration:', {
-    environment: isProduction ? 'production' : 'development',
-    cookieSameSite: cookieSettings.cookieSameSite,
-    cookieSecure: cookieSettings.cookieSecure,
-    cookieDomain: cookieSettings.cookieDomain,
-    apiDomain: process.env.SUPERTOKENS_API_DOMAIN || "http://localhost:4006",
-    websiteDomain: process.env.SUPERTOKENS_WEBSITE_DOMAIN || "http://localhost:3005",
-  });
-
   const config: TypeInput = {
     framework: "express",
     supertokens: {

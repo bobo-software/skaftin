@@ -28,8 +28,6 @@ export class WebSocketService {
     ];
     const uniqueOrigins = [...new Set(allowedOrigins.filter(Boolean))];
 
-    console.log('🔌 WebSocket CORS Allowed Origins:', uniqueOrigins);
-
     this.io = new SocketIOServer(httpServer, {
       cors: {
         origin: uniqueOrigins,

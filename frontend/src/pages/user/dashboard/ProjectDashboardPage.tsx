@@ -95,7 +95,7 @@ const ProjectDashboardPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-dark-50 dark:bg-dark-900 flex">
+    <div className="min-h-screen bg-dark-50 dark:bg-dark-900">
       {/* Sidebar Component */}
       <ProjectSidebar
         projectName={currentProject.name}
@@ -111,8 +111,8 @@ const ProjectDashboardPage = () => {
         />
       )}
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0">
+      {/* Main Content - Add left padding to account for collapsed sidebar */}
+      <main className="flex flex-col min-w-0 min-h-screen lg:pl-16">
         {/* Navbar Component */}
         <DashboardNavbar
           projectName={currentProject.name}

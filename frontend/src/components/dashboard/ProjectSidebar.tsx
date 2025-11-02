@@ -18,7 +18,6 @@ const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSide
   const { projectId } = useParams<{ projectId: string }>();
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [isHovering, setIsHovering] = useState(false);
-  const [hoverTimeout, setHoverTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const navItems: NavItem[] = [
     { path: 'overview', icon: Layers, label: 'Overview' },
@@ -34,18 +33,11 @@ const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSide
   };
 
   const handleMouseEnter = () => {
-    if (hoverTimeout) {
-      clearTimeout(hoverTimeout);
-      setHoverTimeout(null);
-    }
     setIsHovering(true);
   };
 
   const handleMouseLeave = () => {
-    const timeout = setTimeout(() => {
-      setIsHovering(false);
-    }, 500);
-    setHoverTimeout(timeout);
+    setIsHovering(false);
   };
 
   return (
@@ -54,9 +46,9 @@ const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSide
       onMouseLeave={handleMouseLeave}
       className={`${
         isOpen ? 'translate-x-0' : '-translate-x-full'
-      } fixed lg:relative lg:translate-x-0 inset-y-0 left-0 z-30 ${
+      } fixed lg:translate-x-0 inset-y-0 left-0 z-30 ${
         shouldShowFull ? 'w-64' : 'w-16'
-      } bg-white dark:bg-dark-800 border-r border-dark-200 dark:border-dark-700 transition-all duration-200 ease-in-out flex flex-col`}
+      } bg-white dark:bg-dark-800 border-r border-dark-200 dark:border-dark-700 transition-all duration-200 ease-in-out flex flex-col shadow-lg`}
     >
       {/* Project Info */}
       <div className="p-4 border-b border-dark-200 dark:border-dark-700 overflow-hidden">
