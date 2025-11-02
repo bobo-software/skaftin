@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # SuperTokens Core Service
+  supertokens:
+    image: registry.supertokens.io/supertokens/supertokens-postgresql:10.0
+    container_name: skaftin-supertokens
+    depends_on:
+      - postgres
+    ports:
+      - "3567:3567"
+    environment:
+      # PostgreSQL connection
+      POSTGRESQL_CONNECTION_URI: "postgresql://postgres:BLUcabish%2325@postgres:5432/skaftin_db"
+      POSTGRESQL_TABLE_SCHEMA: supertokens
+      
+      # API keys (optional but recommended for production)
+      API_KEYS: ${SUPERTOKENS_API_KEY:-your-api-key-change-in-production}
+      
+      # Disable telemetry (optional)
+      DISABLE_TELEMETRY: "true"
+      
+      # Log level
+      LOG_LEVEL: info
+    networks:
+      - skaftin-network
+    restart: unless-stopped
+    healthcheck:
+      test: >
+        bash -c 'exec 3<>/dev/tcp/127.0.0.1/3567 && echo -e "GET /hello HTTP/1.1\r\nhost: 127.0.0.1:3567\r\nConnection: close\r\n\r\n" >&3 && cat <&3 | grep "Hello"'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL Database (if not already running)
+  postgres:
+    image: postgres:16-alpine
+    container_name: skaftin-postgres
+    ports:
+      - "5440:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: BLUcabish#25
+      POSTGRES_DB: skaftin_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - skaftin-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO Storage (if not already running)
+  minio:
+    image: minio/minio:latest
+    container_name: skaftin-minio
+    ports:
+      - "9020:9000"
+      - "9021:9001"
+    environment:
+      MINIO_ROOT_USER: minio_user
+      MINIO_ROOT_PASSWORD: laksdflaksdjflk
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - skaftin-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+networks:
+  skaftin-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
+  minio-data:
+    driver: local
+

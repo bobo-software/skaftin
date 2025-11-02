@@ -1,10 +1,10 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/drizzle.config';
 import ResponseUtils from '../utils/ResponseUtils';
-import CommonUtils from '../utils/CommonUtils';
 import { emitDatabaseChange } from '../utils/websocketEmitter';
 import { Pool } from 'pg';
+import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
 
 class DatabaseController {
   private static pool: Pool;
@@ -44,11 +44,8 @@ class DatabaseController {
   /**
    * List all tables in a project
    */
-  static async listTables(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+  static async listTables(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware (not needed here, just for consistency)
 
     try {
       const { projectId } = req.params;
@@ -80,11 +77,8 @@ class DatabaseController {
   /**
    * Get table schema (columns)
    */
-  static async getTableSchema(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+  static async getTableSchema(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
 
     try {
       const { projectId, tableName } = req.params;
@@ -144,11 +138,8 @@ class DatabaseController {
   /**
    * Create a new table
    */
-  static async createTable(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+  static async createTable(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
 
     try {
       const { projectId } = req.params;
@@ -217,11 +208,8 @@ class DatabaseController {
   /**
    * Execute SQL query
    */
-  static async executeQuery(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+  static async executeQuery(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
 
     try {
       const { projectId } = req.params;
@@ -258,11 +246,8 @@ class DatabaseController {
   /**
    * Select data from a table
    */
-  static async selectData(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+  static async selectData(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
 
     try {
       const { projectId, tableName } = req.params;
@@ -313,11 +298,8 @@ class DatabaseController {
   /**
    * Insert data into a table
    */
-  static async insertData(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+  static async insertData(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
 
     try {
       const { projectId, tableName } = req.params;
@@ -355,11 +337,8 @@ class DatabaseController {
   /**
    * Bulk insert data
    */
-  static async bulkInsertData(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+  static async bulkInsertData(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
 
     try {
       const { projectId, tableName } = req.params;
@@ -402,11 +381,8 @@ class DatabaseController {
   /**
    * Update data in a table
    */
-  static async updateData(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+  static async updateData(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
 
     try {
       const { projectId, tableName } = req.params;
@@ -448,11 +424,8 @@ class DatabaseController {
   /**
    * Delete data from a table
    */
-  static async deleteData(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+  static async deleteData(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
 
     try {
       const { projectId, tableName } = req.params;
@@ -490,11 +463,8 @@ class DatabaseController {
   /**
    * Drop a table
    */
-  static async dropTable(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+  static async dropTable(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
 
     try {
       const { projectId, tableName } = req.params;

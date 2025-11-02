@@ -1,11 +1,11 @@
 import express from 'express';
 import FilesController, { uploadMiddleware } from '../controllers/FilesController';
-import { authenticateToken } from '../middleware/authMiddleware';
+import { authenticateAndAttachUser } from '../middleware/supertokensAuthMiddleware';
 
 const router = express.Router();
 
 // All file routes require authentication
-router.use(authenticateToken);
+router.use(authenticateAndAttachUser);
 
 // GET routes
 router.get('/list', FilesController.list);

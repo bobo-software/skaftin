@@ -1,11 +1,11 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/drizzle.config';
 import { projects } from '../db/schemas/ProjectsSchema';
 import ResponseUtils from '../utils/ResponseUtils';
-import CommonUtils from '../utils/CommonUtils';
 import { emitProjectEvent } from '../utils/websocketEmitter';
 import { S3Client, CreateBucketCommand } from '@aws-sdk/client-s3';
+import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
 
 // Initialize S3 client for MinIO
 const s3Client = new S3Client({
@@ -20,9 +20,9 @@ const s3Client = new S3Client({
 
 class ProjectsController {
   // Get all projects for authenticated user
-  static async getAllProjects(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
+  static async getAllProjects(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
+    if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
@@ -30,7 +30,7 @@ class ProjectsController {
       const results = await db
         .select()
         .from(projects)
-        .where(eq(projects.user_id, decodedToken.userId))
+        .where(eq(projects.user_id, req.user.userId))
         .orderBy(projects.created_at);
 
       ResponseUtils.success(res, 'Projects fetched successfully', results);
@@ -41,9 +41,9 @@ class ProjectsController {
   }
 
   // Get project by ID
-  static async getProjectById(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
+  static async getProjectById(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
+    if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
@@ -52,14 +52,14 @@ class ProjectsController {
       const result = await db
         .select()
         .from(projects)
-        .where(eq(projects.id, parseInt(id)));
+        .where(eq(projects.id, parseInt(id!)));
 
       if (result.length === 0) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
       // Verify ownership
-      if (result[0].user_id !== decodedToken.userId) {
+      if (result[0].user_id !== req.user.userId) {
         return res.status(403).json({ success: false, message: 'Forbidden' });
       }
 
@@ -71,9 +71,9 @@ class ProjectsController {
   }
 
   // Get project statistics
-  static async getProjectStats(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
+  static async getProjectStats(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
+    if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
@@ -90,7 +90,7 @@ class ProjectsController {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      if (projectResult[0].user_id !== decodedToken.userId) {
+      if (projectResult[0].user_id !== req.user.userId) {
         return res.status(403).json({ success: false, message: 'Forbidden' });
       }
 
@@ -117,13 +117,14 @@ class ProjectsController {
   }
 
   // Create new project
-  static async createProject(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
+  static async createProject(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
+    if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
+      const userId = req.user.userId; // SuperTokens user ID (string)
       const { name, description } = req.body;
 
       // Validation
@@ -143,7 +144,7 @@ class ProjectsController {
         .values({
           name: name.trim(),
           description: description?.trim() || null,
-          user_id: decodedToken.userId,
+          user_id: userId,
           schema_name: schemaName,
           bucket_name: bucketName,
         })
@@ -182,9 +183,9 @@ class ProjectsController {
   }
 
   // Update project
-  static async updateProject(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
+  static async updateProject(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
+    if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
@@ -202,7 +203,7 @@ class ProjectsController {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      if (existing[0].user_id !== decodedToken.userId) {
+      if (existing[0].user_id !== req.user.userId) {
         return res.status(403).json({ success: false, message: 'Forbidden' });
       }
 
@@ -236,9 +237,9 @@ class ProjectsController {
   }
 
   // Delete project
-  static async deleteProject(req: Request, res: Response) {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (!decodedToken) {
+  static async deleteProject(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
+    if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
@@ -255,7 +256,7 @@ class ProjectsController {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      if (existing[0].user_id !== decodedToken.userId) {
+      if (existing[0].user_id !== req.user.userId) {
         return res.status(403).json({ success: false, message: 'Forbidden' });
       }
 

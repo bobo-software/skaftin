@@ -1,16 +1,25 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4006';
+// Use empty string to make requests relative (will use Vite proxy)
+// or use full URL for direct requests
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 class RequestUtils {
 
   static async fetch(url: string, method: string, body = {}, accessToken?: string): Promise<any | null> {
 
     try {
+      const headers: any = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Only add Authorization header if token is provided (for backward compatibility)
+      if (accessToken && accessToken !== 'session-managed-by-supertokens') {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+
       const response = await fetch(API_BASE_URL + url, {
         method: method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers,
+        credentials: 'include', // Send cookies for SuperTokens
         ...(method !== "GET" && { body: JSON.stringify(body) })
       });
 
@@ -28,12 +37,19 @@ class RequestUtils {
 
   static async get(url: string, accessToken: string): Promise<any | null> {
     try {
+      const headers: any = {
+        "Content-Type": "application/json",
+      };
+      
+      // Only add Authorization header if token is provided (for backward compatibility)
+      if (accessToken && accessToken !== 'session-managed-by-supertokens') {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+
       const response = await fetch(API_BASE_URL + url, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers,
+        credentials: 'include', // Send cookies for SuperTokens
       });
 
       const res = await response.json();
@@ -51,14 +67,15 @@ class RequestUtils {
         "Content-Type": "application/json",
       };
       
-      // Only add Authorization header if token is provided
-      if (accessToken) {
+      // Only add Authorization header if token is provided (for backward compatibility)
+      if (accessToken && accessToken !== 'session-managed-by-supertokens') {
         headers.Authorization = `Bearer ${accessToken}`;
       }
       
       const response = await fetch(API_BASE_URL + url, {
         method: "POST",
         headers,
+        credentials: 'include', // Send cookies for SuperTokens
         body: JSON.stringify(body),
       });
 
@@ -73,11 +90,17 @@ class RequestUtils {
 
   static async postFormData(url: string, accessToken: string, body: any): Promise<any | null> {
     try {
+      const headers: any = {};
+      
+      // Only add Authorization header if token is provided (for backward compatibility)
+      if (accessToken && accessToken !== 'session-managed-by-supertokens') {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+
       const response = await fetch(API_BASE_URL + url, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers,
+        credentials: 'include', // Send cookies for SuperTokens
         body: body,
       });
 
@@ -92,12 +115,19 @@ class RequestUtils {
 
   static async put(url: string, accessToken: string, body: any): Promise<any | null> {
     try {
+      const headers: any = {
+        "Content-Type": "application/json",
+      };
+      
+      // Only add Authorization header if token is provided (for backward compatibility)
+      if (accessToken && accessToken !== 'session-managed-by-supertokens') {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+
       const response = await fetch(API_BASE_URL + url, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers,
+        credentials: 'include', // Send cookies for SuperTokens
         body: JSON.stringify(body),
       });
 
@@ -112,12 +142,19 @@ class RequestUtils {
 
   static async delete(url: string, accessToken: string, body: any): Promise<any | null> {
     try {
+      const headers: any = {
+        "Content-Type": "application/json",
+      };
+      
+      // Only add Authorization header if token is provided (for backward compatibility)
+      if (accessToken && accessToken !== 'session-managed-by-supertokens') {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+
       const response = await fetch(API_BASE_URL + url, {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers,
+        credentials: 'include', // Send cookies for SuperTokens
         body: JSON.stringify(body),
       });
 

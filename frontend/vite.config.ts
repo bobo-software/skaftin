@@ -17,11 +17,30 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3006,
-    host: true
+    port: 3005,
+    host: true,
+    proxy: {
+      '/auth': {
+        target: 'http://localhost:4006',
+        changeOrigin: true,
+        secure: false,
+        cookieDomainRewrite: 'localhost',
+        cookiePathRewrite: {
+          '/auth/session/refresh': '/auth/session/refresh',
+          '*': '/'
+        },
+      },
+      '/api': {
+        target: 'http://localhost:4006',
+        changeOrigin: true,
+        secure: false,
+        cookieDomainRewrite: 'localhost',
+        cookiePathRewrite: '/',
+      },
+    },
   },
   preview: {
-    port: 3006,
+    port: 3005,
     host: true
   }
 })

@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4006';
+// Use empty string to make requests relative (will use Vite proxy)
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 interface AuthResponse {
   success: boolean;
@@ -53,6 +54,7 @@ class AuthService {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // CRITICAL: Send/receive cookies
         body: JSON.stringify({ email, password }),
       });
 
@@ -87,6 +89,7 @@ class AuthService {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // CRITICAL: Send/receive cookies
         body: JSON.stringify({ email, password, full_name: fullName }),
       });
 

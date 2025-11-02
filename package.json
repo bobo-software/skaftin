@@ -30,7 +30,8 @@
     "multer": "^2.0.2",
     "multer-s3": "^3.0.1",
     "pg": "^8.16.3",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "supertokens-node": "^21.0.0"
   },
   "devDependencies": {
     "@tsconfig/node16": "^16.1.6",

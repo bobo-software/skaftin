@@ -15,9 +15,10 @@ class AuthController {
   /**
    * Generate access token with user info and projects
    */
+  // NOTE: This is legacy code - SuperTokens handles token generation now
   private static async generateAccessToken(userId: number, email: string, role: string = 'user'): Promise<string> {
     // Fetch user's projects
-    const userProjects = await db.select({ id: projects.id }).from(projects).where(eq(projects.user_id, userId));
+    const userProjects = await db.select({ id: projects.id }).from(projects).where(eq(projects.user_id, String(userId)));
     const projectIds = userProjects.map(p => p.id);
 
     return jwt.sign(

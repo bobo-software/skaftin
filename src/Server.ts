@@ -1,10 +1,13 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
 import { createServer } from 'http';
 import { Pool } from 'pg';
 import { S3Client } from '@aws-sdk/client-s3';
+import supertokens from "supertokens-node";
+import { middleware as supertokensMiddleware, errorHandler as supertokensErrorHandler } from "supertokens-node/framework/express";
+import { initSuperTokens } from './config/supertokens';
 import { initializeWebSocketService } from './services/WebSocketService';
 import { DatabaseInitializer } from './services/DatabaseInitializer';
 import { HealthCheckService } from './services/HealthCheckService';
@@ -12,10 +15,13 @@ import { HealthCheckService } from './services/HealthCheckService';
 // Load environment variables
 dotenv.config();
 
+// Initialize SuperTokens
+initSuperTokens();
+
 // Initialize Express app and HTTP server
 const app = express();
 const httpServer = createServer(app);
-const port = process.env.PORT || 4006;
+const port = process.env.BACKEND_PORT || process.env.PORT || 4006;
 
 // ============================================================================
 // DATABASE CONFIGURATION
@@ -78,13 +84,17 @@ const s3Client = new S3Client({
 // MIDDLEWARE CONFIGURATION
 // ============================================================================
 
-// CORS - allow all origins
-app.use(cors({
-  origin: '*',
-  methods: 'GET,POST,PUT,DELETE,OPTIONS',
-  allowedHeaders: 'Content-Type,Authorization',
-  credentials: false,
-}));
+// CORS - SuperTokens requires specific CORS configuration
+app.use(
+  cors({
+    origin: process.env.SUPERTOKENS_WEBSITE_DOMAIN || "http://localhost:3005",
+    allowedHeaders: ["content-type", ...supertokens.getAllCORSHeaders()],
+    credentials: true,
+  })
+);
+
+// SuperTokens middleware - MUST come before your routes
+app.use(supertokensMiddleware());
 
 app.use(bodyParser.json());
 
@@ -93,6 +103,7 @@ app.use(bodyParser.json());
 // ============================================================================
 
 import { router as AuthRouter } from './routers/AuthRouter';
+import { router as AuthCompatibilityRouter } from './routers/AuthCompatibilityRouter';
 import { router as ProjectsRouter } from './routers/ProjectsRouter';
 import { router as FilesRouter } from './routers/FilesRouter';
 import { router as UsersRouter } from './routers/UsersRouter';
@@ -135,13 +146,18 @@ MCPController.initialize(pool, s3Client);
 DatabaseController.initialize(pool);
 
 // Register routers
-app.use('/api/auth', AuthRouter);
+// Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
+// Auth compatibility layer for old frontend routes
+app.use('/api/auth', AuthCompatibilityRouter);
 app.use('/api/projects', ProjectsRouter);
 app.use('/api/files', FilesRouter);
 app.use('/api/users', UsersRouter);
 app.use('/api/database', DatabaseRouter);
 app.use('/api/health', HealthRouter);
 app.use('/api/mcp', MCPRouter);
+
+// SuperTokens error handler - MUST come after your routes
+app.use(supertokensErrorHandler() as ErrorRequestHandler);
 
 // ============================================================================
 // SERVER STARTUP
