@@ -71,13 +71,14 @@ export class DatabaseInitializer {
 
   /**
    * Initialize projects table using Drizzle
+   * NOTE: user_id is now VARCHAR to support SuperTokens UUIDs (not an integer foreign key)
    */
   async initializeProjectsTable(): Promise<void> {
     try {
       await this.db.execute(sql`
         CREATE TABLE IF NOT EXISTS projects (
           id SERIAL PRIMARY KEY,
-          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          user_id VARCHAR(255) NOT NULL,
           name VARCHAR(255) NOT NULL,
           description TEXT,
           schema_name VARCHAR(255) NOT NULL UNIQUE,
@@ -90,6 +91,31 @@ export class DatabaseInitializer {
       // Ignore if table/sequence already exists
       if (err.code !== '23505' && err.code !== '42P07') {
         console.error('❌ Projects table creation error:', err.message);
+      }
+    }
+
+    try {
+      // Migrate existing user_id column from INTEGER to VARCHAR if needed
+      await this.db.execute(sql`
+        DO $$ 
+        BEGIN
+          -- Check if user_id is INTEGER and convert to VARCHAR
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='projects' 
+            AND column_name='user_id' 
+            AND data_type='integer'
+          ) THEN
+            -- Drop foreign key constraint if it exists
+            ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_user_id_fkey;
+            -- Change column type to VARCHAR
+            ALTER TABLE projects ALTER COLUMN user_id TYPE VARCHAR(255);
+          END IF;
+        END $$;
+      `);
+    } catch (err: any) {
+      if (err.code !== '42710') {
+        console.error('❌ Projects user_id migration error:', err.message);
       }
     }
 
