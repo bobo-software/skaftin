@@ -103,6 +103,28 @@ app.use(supertokensMiddleware());
 
 app.use(bodyParser.json());
 
+// Request logging middleware (for debugging)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const timestamp = new Date().toISOString();
+  console.log(`\n📨 [${timestamp}] ${req.method} ${req.path}`);
+  console.log('   Origin:', req.headers.origin || 'Not set');
+  console.log('   Cookies:', req.headers.cookie ? 'Present' : 'None');
+  
+  // Log SuperTokens specific cookies
+  if (req.headers.cookie) {
+    const hasAccessToken = req.headers.cookie.includes('sAccessToken');
+    const hasRefreshToken = req.headers.cookie.includes('sRefreshToken');
+    const hasFrontToken = req.headers.cookie.includes('sFrontToken');
+    console.log('   SuperTokens Cookies:', {
+      sAccessToken: hasAccessToken ? '✓' : '✗',
+      sRefreshToken: hasRefreshToken ? '✓' : '✗',
+      sFrontToken: hasFrontToken ? '✓' : '✗',
+    });
+  }
+  
+  next();
+});
+
 // ============================================================================
 // ROUTERS
 // ============================================================================

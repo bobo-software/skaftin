@@ -7,6 +7,12 @@ class RequestUtils {
   static async fetch(url: string, method: string, body = {}, accessToken?: string): Promise<any | null> {
 
     try {
+      console.log(`🌐 [REQUEST] ${method} ${API_BASE_URL}${url}`, {
+        hasToken: !!accessToken,
+        tokenType: accessToken === 'session-managed-by-supertokens' ? 'SuperTokens' : 'JWT',
+        credentials: 'include',
+      });
+
       const headers: any = {
         'Content-Type': 'application/json',
       };
@@ -23,13 +29,21 @@ class RequestUtils {
         ...(method !== "GET" && { body: JSON.stringify(body) })
       });
 
+      console.log(`📥 [RESPONSE] ${method} ${url}:`, {
+        status: response.status,
+        ok: response.ok,
+        headers: {
+          'set-cookie': response.headers.get('set-cookie'),
+        }
+      });
+
       const res = await response.json();
-      console.log("response: ", res);
+      console.log("📦 [DATA]:", res);
 
       return res;
 
     } catch (error: Error | any) {
-      console.error(error.message)
+      console.error('❌ [REQUEST ERROR]:', error.message)
       throw new Error("NetworkError");
 
     };
@@ -37,6 +51,12 @@ class RequestUtils {
 
   static async get(url: string, accessToken: string): Promise<any | null> {
     try {
+      console.log(`🌐 [GET] ${API_BASE_URL}${url}`, {
+        hasToken: !!accessToken,
+        tokenType: accessToken === 'session-managed-by-supertokens' ? 'SuperTokens' : 'JWT',
+        credentials: 'include',
+      });
+
       const headers: any = {
         "Content-Type": "application/json",
       };
@@ -52,17 +72,29 @@ class RequestUtils {
         credentials: 'include', // Send cookies for SuperTokens
       });
 
+      console.log(`📥 [GET RESPONSE] ${url}:`, {
+        status: response.status,
+        ok: response.ok,
+      });
+
       const res = await response.json();
-      console.log("Get Response: ", res);
+      console.log("📦 [GET DATA]:", res);
       return res;
     } catch (error: Error | any) {
-      console.error(error.message)
+      console.error('❌ [GET ERROR]:', error.message)
       throw new Error("NetworkError");
     }
   }
 
   static async post(url: string, accessToken: string, body: any): Promise<any | null> {
     try {
+      console.log(`🌐 [POST] ${API_BASE_URL}${url}`, {
+        hasToken: !!accessToken,
+        tokenType: accessToken === 'session-managed-by-supertokens' ? 'SuperTokens' : 'JWT',
+        bodyKeys: Object.keys(body),
+        credentials: 'include',
+      });
+
       const headers: any = {
         "Content-Type": "application/json",
       };
@@ -79,11 +111,16 @@ class RequestUtils {
         body: JSON.stringify(body),
       });
 
+      console.log(`📥 [POST RESPONSE] ${url}:`, {
+        status: response.status,
+        ok: response.ok,
+      });
+
       const res = await response.json();
-      console.log("Post Response: ", res);
+      console.log("📦 [POST DATA]:", res);
       return res;
     } catch (error: Error | any) {
-      console.error(error.message)
+      console.error('❌ [POST ERROR]:', error.message)
       throw new Error("NetworkError");
     }
   }
