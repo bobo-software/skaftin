@@ -75,9 +75,12 @@ onProjectSelect?.(project);
 navigate(`/projects/${project.id}`);
 };
 
-const handleLogout = () => {
-logout();
-localStorage.removeItem('skaftin-token');
+const handleLogout = async () => {
+  console.log('🚪 [User Action] Logout button clicked');
+  const { default: AuthService } = await import('../../../services/AuthService');
+  await AuthService.logout();
+  logout();
+  navigate('/login');
 };
 
 // Show loading page during project creation

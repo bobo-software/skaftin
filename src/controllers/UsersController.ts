@@ -4,8 +4,31 @@ import { users } from '../db/schemas/UsersSchema';
 import { eq } from 'drizzle-orm';
 import ResponseUtils from '../utils/ResponseUtils';
 import CommonUtils from '../utils/CommonUtils';
+import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
 
 class UsersController {
+  /**
+   * Get current user info (from SuperTokens session)
+   */
+  static async getCurrentUser(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return ResponseUtils.error(res, 'User not authenticated', null, null, 401);
+      }
+
+      const userData = {
+        id: req.user.userId,
+        email: req.user.email,
+        projectIds: req.user.projectIds,
+        role: req.user.role,
+      };
+
+      ResponseUtils.success(res, 'User info retrieved successfully', { user: userData });
+    } catch (error) {
+      console.error('Get current user error:', error);
+      ResponseUtils.error(res, 'Failed to get user info', error);
+    }
+  }
   /**
    * Get all users
    */

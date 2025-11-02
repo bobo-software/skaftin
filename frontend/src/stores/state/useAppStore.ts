@@ -49,7 +49,7 @@ const useAppStore = create<AppState>()(
       isAuthenticated: false,
       projects: [],
       currentProject: null,
-      isLoading: false,
+      isLoading: true, // Start as true to wait for session check
       theme: 'light',
       sidebarOpen: false,
       

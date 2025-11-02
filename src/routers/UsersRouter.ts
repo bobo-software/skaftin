@@ -4,11 +4,11 @@ import { authenticateAndAttachUser, requireAdmin } from '../middleware/supertoke
 
 const router = express.Router();
 
-// All user management routes require authentication and admin role
-router.use(authenticateAndAttachUser);
-router.use(requireAdmin);
+// Get current user info (requires authentication only)
+router.get('/me', authenticateAndAttachUser, UsersController.getCurrentUser);
 
-router.get('/list', UsersController.getAll);
-router.post('/create', UsersController.create);
+// Admin-only routes
+router.get('/list', authenticateAndAttachUser, requireAdmin, UsersController.getAll);
+router.post('/create', authenticateAndAttachUser, requireAdmin, UsersController.create);
 
 export { router };

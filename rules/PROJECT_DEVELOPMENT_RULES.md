@@ -19,6 +19,7 @@
 - **Code Comments**: Document complex logic and business rules
 - **API Documentation**: Document all API endpoints
 - **Component Documentation**: Document reusable components
+- **NO EXCESSIVE MD FILES**: Do NOT create markdown files for every feature, fix, or issue. Provide explanations inline in responses instead
 
 ## 📁 Project Structure Standards
 
