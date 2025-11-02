@@ -192,119 +192,110 @@ const CreateTableModal = ({ isOpen, onClose, onCreate }: CreateTableModalProps) 
 
           {/* Columns */}
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <label className="block text-sm font-medium text-dark-700 dark:text-dark-300">
-                Columns
-              </label>
-              <AppButton
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={handleAddColumn}
-                icon={<Plus className="w-4 h-4" />}
-              >
-                Add Column
-              </AppButton>
-            </div>
+            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-4">
+              Columns
+            </label>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               {columns.map((column, index) => (
                 <div
                   key={index}
-                  className="p-4 border border-dark-200 dark:border-dark-700 rounded-lg bg-dark-50 dark:bg-dark-700/50"
+                  className="flex items-center gap-2 p-3 border border-dark-200 dark:border-dark-700 rounded-lg bg-dark-50 dark:bg-dark-700/50"
                 >
-                  <div className="grid grid-cols-12 gap-3 items-start">
-                    {/* Column Name */}
-                    <div className="col-span-3">
-                      <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-1">
-                        Name
-                      </label>
+                  {/* Column Name */}
+                  <div className="flex-1 min-w-0">
+                    <input
+                      type="text"
+                      value={column.name}
+                      onChange={(e) => handleColumnChange(index, 'name', e.target.value)}
+                      placeholder="column_name"
+                      className="w-full px-2 py-1.5 text-sm border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      required
+                    />
+                  </div>
+
+                  {/* Data Type */}
+                  <div className="flex-1 min-w-0">
+                    <select
+                      value={column.type}
+                      onChange={(e) => handleColumnChange(index, 'type', e.target.value)}
+                      className="w-full px-2 py-1.5 text-sm border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    >
+                      {dataTypes.map((dt) => (
+                        <option key={dt.value} value={dt.value}>
+                          {dt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Default Value */}
+                  <div className="flex-1 min-w-0">
+                    <input
+                      type="text"
+                      value={column.defaultValue || ''}
+                      onChange={(e) => handleColumnChange(index, 'defaultValue', e.target.value)}
+                      placeholder="default"
+                      disabled={column.type.includes('SERIAL')}
+                      className="w-full px-2 py-1.5 text-sm border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                  </div>
+
+                  {/* Nullable Checkbox */}
+                  <div className="flex-shrink-0">
+                    <label className="flex items-center space-x-1.5 cursor-pointer">
                       <input
-                        type="text"
-                        value={column.name}
-                        onChange={(e) => handleColumnChange(index, 'name', e.target.value)}
-                        placeholder="column_name"
-                        className="w-full px-3 py-2 text-sm border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                        required
+                        type="checkbox"
+                        checked={column.nullable}
+                        onChange={(e) => handleColumnChange(index, 'nullable', e.target.checked)}
+                        disabled={column.type.includes('SERIAL') || column.primaryKey}
+                        className="rounded border-dark-300 dark:border-dark-600 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
                       />
-                    </div>
+                      <span className="text-xs text-dark-700 dark:text-dark-300">Null</span>
+                    </label>
+                  </div>
 
-                    {/* Data Type */}
-                    <div className="col-span-3">
-                      <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-1">
-                        Type
-                      </label>
-                      <select
-                        value={column.type}
-                        onChange={(e) => handleColumnChange(index, 'type', e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      >
-                        {dataTypes.map((dt) => (
-                          <option key={dt.value} value={dt.value}>
-                            {dt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Default Value */}
-                    <div className="col-span-3">
-                      <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-1">
-                        Default (Optional)
-                      </label>
+                  {/* Primary Key Checkbox */}
+                  <div className="flex-shrink-0">
+                    <label className="flex items-center space-x-1.5 cursor-pointer">
                       <input
-                        type="text"
-                        value={column.defaultValue || ''}
-                        onChange={(e) => handleColumnChange(index, 'defaultValue', e.target.value)}
-                        placeholder="default value"
+                        type="checkbox"
+                        checked={column.primaryKey}
+                        onChange={(e) => handleColumnChange(index, 'primaryKey', e.target.checked)}
                         disabled={column.type.includes('SERIAL')}
-                        className="w-full px-3 py-2 text-sm border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="rounded border-dark-300 dark:border-dark-600 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
                       />
-                    </div>
+                      <span className="text-xs text-dark-700 dark:text-dark-300">PK</span>
+                    </label>
+                  </div>
 
-                    {/* Options */}
-                    <div className="col-span-2 flex items-end space-x-2">
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={column.nullable}
-                          onChange={(e) => handleColumnChange(index, 'nullable', e.target.checked)}
-                          disabled={column.type.includes('SERIAL') || column.primaryKey}
-                          className="rounded border-dark-300 dark:border-dark-600 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
-                        />
-                        <span className="text-xs text-dark-700 dark:text-dark-300">Nullable</span>
-                      </label>
-                    </div>
-
-                    {/* Primary Key */}
-                    <div className="col-span-1 flex items-end">
-                      <label className="flex items-center space-x-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={column.primaryKey}
-                          onChange={(e) => handleColumnChange(index, 'primaryKey', e.target.checked)}
-                          disabled={column.type.includes('SERIAL')}
-                          className="rounded border-dark-300 dark:border-dark-600 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
-                        />
-                        <span className="text-xs text-dark-700 dark:text-dark-300">PK</span>
-                      </label>
-                    </div>
-
-                    {/* Remove Button */}
-                    <div className="col-span-1 flex items-end justify-end">
-                      {columns.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveColumn(index)}
-                          className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
+                  {/* Remove Button - Far Right */}
+                  <div className="flex-shrink-0">
+                    {columns.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveColumn(index)}
+                        className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        title="Remove column"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <div className="w-8" />
+                    )}
                   </div>
                 </div>
               ))}
+
+              {/* Add Column Button - At Bottom */}
+              <button
+                type="button"
+                onClick={handleAddColumn}
+                className="w-full flex items-center justify-center gap-2 p-3 border-2 border-dashed border-dark-300 dark:border-dark-600 rounded-lg bg-transparent hover:bg-dark-100 dark:hover:bg-dark-700/50 hover:border-primary-500 dark:hover:border-primary-500 text-dark-600 dark:text-dark-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="text-sm font-medium">Add Column</span>
+              </button>
             </div>
           </div>
 

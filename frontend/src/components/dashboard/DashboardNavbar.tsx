@@ -28,7 +28,7 @@ const DashboardNavbar = ({
   };
 
   return (
-    <div className="h-16 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-800 flex items-center justify-between px-6 flex-shrink-0">
+    <div className="h-14 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-800 flex items-center justify-between px-6 flex-shrink-0">
       <div className="flex items-center space-x-4">
         {/* Sidebar Toggle (Mobile) */}
         <button

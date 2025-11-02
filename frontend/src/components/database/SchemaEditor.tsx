@@ -734,15 +734,6 @@ const SchemaEditor = ({
           <AppButton 
             variant="secondary" 
             size="sm" 
-            icon={<Plus className="w-4 h-4" />}
-            onClick={handleAddColumnClick}
-            disabled={isAddingColumn}
-          >
-            Add Column
-          </AppButton>
-          <AppButton 
-            variant="secondary" 
-            size="sm" 
             icon={<Key className="w-4 h-4" />}
             onClick={() => {
               setShowConstraintsSection(!showConstraintsSection);
@@ -863,6 +854,124 @@ const SchemaEditor = ({
                   )}
                 </React.Fragment>
               ))}
+              
+              {/* Add Column Row */}
+              {showAddColumnForm ? (
+                <tr className="bg-primary-50 dark:bg-primary-900/20">
+                  <td colSpan={5} className="p-4">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h6 className="font-semibold text-primary-900 dark:text-primary-100">
+                          Add New Column
+                        </h6>
+                        <button
+                          onClick={handleCancelAddColumn}
+                          className="text-primary-400 hover:text-primary-600 dark:hover:text-primary-300"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                            Column Name
+                          </label>
+                          <input
+                            type="text"
+                            value={newColumn.name}
+                            onChange={(e) => setNewColumn({ ...newColumn, name: e.target.value })}
+                            placeholder="Enter column name"
+                            className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                            Data Type
+                          </label>
+                          <select
+                            value={newColumn.type}
+                            onChange={(e) => {
+                              const newType = e.target.value;
+                              setNewColumn({ ...newColumn, type: newType, defaultValue: '' });
+                            }}
+                            className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          >
+                            {dataTypes.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                            Length
+                          </label>
+                          <input
+                            type="number"
+                            value={newColumn.length}
+                            onChange={(e) => setNewColumn({ ...newColumn, length: e.target.value })}
+                            placeholder="255"
+                            className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                            Default Value
+                          </label>
+                          {renderDefaultValueInput()}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              checked={newColumn.nullable}
+                              onChange={(e) => setNewColumn({ ...newColumn, nullable: e.target.checked })}
+                              className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            <span className="text-sm text-dark-700 dark:text-dark-300">Nullable</span>
+                          </label>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <AppButton
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleCancelAddColumn}
+                            disabled={isAddingColumn}
+                          >
+                            Cancel
+                          </AppButton>
+                          <AppButton
+                            variant="primary"
+                            size="sm"
+                            onClick={handleSaveNewColumn}
+                            loading={isAddingColumn}
+                            disabled={isAddingColumn || !newColumn.name.trim()}
+                            icon={<Plus className="w-4 h-4" />}
+                          >
+                            Add Column
+                          </AppButton>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                <tr className="hover:bg-dark-50 dark:hover:bg-dark-700 cursor-pointer" onClick={handleAddColumnClick}>
+                  <td colSpan={5} className="py-3 px-4 text-center">
+                    <button className="inline-flex items-center space-x-2 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium text-sm">
+                      <Plus className="w-4 h-4" />
+                      <span>Add Column</span>
+                    </button>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1161,111 +1270,6 @@ const SchemaEditor = ({
         </div>
       )}
 
-      {/* Add Column Form */}
-      {showAddColumnForm && (
-        <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h6 className="font-semibold text-primary-900 dark:text-primary-100">
-              Add New Column
-            </h6>
-            <button
-              onClick={handleCancelAddColumn}
-              className="text-primary-400 hover:text-primary-600 dark:hover:text-primary-300"
-            >
-              ×
-            </button>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                Column Name
-              </label>
-              <input
-                type="text"
-                value={newColumn.name}
-                onChange={(e) => setNewColumn({ ...newColumn, name: e.target.value })}
-                placeholder="Enter column name"
-                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                Data Type
-              </label>
-              <select
-                value={newColumn.type}
-                onChange={(e) => {
-                  const newType = e.target.value;
-                  // Clear default value when type changes to avoid invalid values
-                  setNewColumn({ ...newColumn, type: newType, defaultValue: '' });
-                }}
-                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              >
-                {dataTypes.map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                Length
-              </label>
-              <input
-                type="number"
-                value={newColumn.length}
-                onChange={(e) => setNewColumn({ ...newColumn, length: e.target.value })}
-                placeholder="255"
-                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                Default Value
-              </label>
-              {renderDefaultValueInput()}
-            </div>
-          </div>
-          
-          <div className="flex items-center justify-between mt-4">
-            <div className="flex items-center space-x-4">
-              <label className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={newColumn.nullable}
-                  onChange={(e) => setNewColumn({ ...newColumn, nullable: e.target.checked })}
-                  className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span className="text-sm text-dark-700 dark:text-dark-300">Nullable</span>
-              </label>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <AppButton
-                variant="secondary"
-                size="sm"
-                onClick={handleCancelAddColumn}
-                disabled={isAddingColumn}
-              >
-                Cancel
-              </AppButton>
-              <AppButton
-                variant="primary"
-                size="sm"
-                onClick={handleSaveNewColumn}
-                loading={isAddingColumn}
-                disabled={isAddingColumn || !newColumn.name.trim()}
-                icon={<Plus className="w-4 h-4" />}
-              >
-                Add Column
-              </AppButton>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Modal */}
       <DeleteConfirmModal

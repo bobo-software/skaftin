@@ -3,15 +3,11 @@ import { useProjectStore } from '../../../../stores/StoresIndex';
 import { 
   Database, 
   Code,
-  Table,
-  Wrench,
-  Search
+  Table
 } from 'lucide-react';
 import { 
   TableViewer, 
-  SqlEditor, 
-  SchemaDesigner, 
-  QueryBuilder
+  SqlEditor
 } from '../../../../components/ComponentsIndex';
 
 interface ProjectDatabaseTabProps {
@@ -25,9 +21,7 @@ const ProjectDatabaseTab = ({ projectId }: ProjectDatabaseTabProps) => {
 
   const tabs = [
     { id: 'tables', name: 'Table Viewer', icon: Table, component: TableViewer },
-    { id: 'sql', name: 'SQL Editor', icon: Code, component: SqlEditor },
-    { id: 'designer', name: 'Schema Designer', icon: Wrench, component: SchemaDesigner },
-    { id: 'builder', name: 'Query Builder', icon: Search, component: QueryBuilder }
+    { id: 'sql', name: 'SQL Editor', icon: Code, component: SqlEditor }
   ];
 
   const renderContent = () => {
@@ -53,7 +47,7 @@ const ProjectDatabaseTab = ({ projectId }: ProjectDatabaseTabProps) => {
 
       {/* Tab Navigation */}
       <div className="border-b border-dark-200 dark:border-dark-700">
-        <nav className="flex space-x-8">
+        <nav className="flex space-x-4">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -75,7 +69,7 @@ const ProjectDatabaseTab = ({ projectId }: ProjectDatabaseTabProps) => {
       </div>
 
       {/* Tab Content */}
-      <div className="mt-6">
+      <div className="mt-2">
         {renderContent()}
       </div>
     </div>

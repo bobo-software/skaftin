@@ -5,14 +5,13 @@ import ApiRoutes from '../../constants/ApiRoutes';
 import { 
   Database, 
   Plus,
-  RefreshCw,
   Search,
   Filter,
   Download,
   Table,
   List
 } from 'lucide-react';
-import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal } from '../ComponentsIndex';
+import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem } from '../ComponentsIndex';
 
 interface TableViewerProps {
   projectId: string;
@@ -44,9 +43,10 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   const [dataLoading, setDataLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
-    type: 'single' | 'bulk';
+    type: 'single' | 'bulk' | 'table';
     item?: any;
     indices?: number[];
+    tableName?: string;
     loading: boolean;
   }>({
     isOpen: false,
@@ -209,16 +209,51 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     });
   };
 
-  const confirmDelete = async () => {
-    if (!selectedTable || !deleteModal.indices) return;
+  const handleDeleteTableClick = (tableName: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent table selection
+    setDeleteModal({
+      isOpen: true,
+      type: 'table',
+      tableName,
+      loading: false
+    });
+  };
 
+  const confirmDelete = async () => {
     setDeleteModal(prev => ({ ...prev, loading: true }));
 
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       
-      if (deleteModal.type === 'single') {
+      if (deleteModal.type === 'table') {
+        // Delete entire table
+        const tableNameToDelete = deleteModal.tableName;
+        if (!tableNameToDelete) return;
+
+        const result = await RequestUtils.delete(
+          ApiRoutes.DATABASE.DROP_TABLE(projectId, tableNameToDelete),
+          token,
+          {}
+        );
+        
+        if (result.success) {
+          console.log('Table deleted successfully');
+          // Clear selection if the deleted table was selected
+          if (selectedTable === tableNameToDelete) {
+            setSelectedTable(null);
+            setCurrentTable(null);
+            setTableData([]);
+          }
+          await fetchTables(projectId);
+          setDeleteModal({ isOpen: false, type: 'table', loading: false });
+        } else {
+          console.error('Failed to delete table:', result.message);
+          alert('Failed to delete table. Please try again.');
+          setDeleteModal(prev => ({ ...prev, loading: false }));
+        }
+      } else if (deleteModal.type === 'single') {
         // Single row delete
+        if (!selectedTable || !deleteModal.indices) return;
         const row = deleteModal.item;
         const whereClause = { id: row.id };
         const result = await RequestUtils.delete(
@@ -237,6 +272,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         }
       } else {
         // Bulk delete
+        if (!selectedTable || !deleteModal.indices) return;
         let successCount = 0;
         let errorCount = 0;
         
@@ -267,8 +303,8 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         setDeleteModal({ isOpen: false, type: 'bulk', loading: false });
       }
     } catch (error) {
-      console.error('Error deleting rows:', error);
-      alert('Error deleting rows. Please try again.');
+      console.error('Error deleting:', error);
+      alert('Error deleting. Please try again.');
       setDeleteModal(prev => ({ ...prev, loading: false }));
     }
   };
@@ -288,9 +324,6 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
 
   return (
     <div className="">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-      </div>
 
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
@@ -308,10 +341,10 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
 
       <div className="flex h-screen">
         {/* Tables Sidebar */}
-        <div className="w-80 flex-shrink-0 border-r border-dark-200 dark:border-dark-700 bg-dark-50 dark:bg-dark-800">
+        <div className="w-30 flex-shrink-0 border-r border-dark-200 dark:border-dark-700 bg-dark-50 dark:bg-dark-800">
           <div className="h-full flex flex-col">
             {/* Sidebar Header */}
-            <div className="p-4 border-b border-dark-200 dark:border-dark-700 flex-shrink-0">
+            <div className="border-b border-dark-200 dark:border-dark-700 flex-shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-semibold text-dark-900 dark:text-white">Tables</h4>
                 <span className="text-xs text-dark-500 dark:text-dark-400 bg-dark-100 dark:bg-dark-700 px-2 py-1 rounded">
@@ -320,14 +353,6 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
               </div>
               
               <div className="flex items-center space-x-2 mb-3">
-                <AppButton
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => fetchTables(projectId)}
-                  icon={<RefreshCw className="w-4 h-4" />}
-                >
-                  Refresh
-                </AppButton>
                 <AppButton
                   variant="primary"
                   size="sm"
@@ -351,9 +376,9 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
             </div>
 
             {/* Tables List - Scrollable */}
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex-1 overflow-y-auto p-2">
               {filteredTables.length === 0 ? (
-                <div className="text-center py-8">
+                <div className="text-center">
                   <Database className="w-12 h-12 text-dark-300 dark:text-dark-600 mx-auto mb-3" />
                   <p className="text-sm text-dark-600 dark:text-dark-300">
                     {searchTerm ? 'No tables found' : 'No tables yet'}
@@ -365,27 +390,14 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
               ) : (
                 <div className="space-y-1">
                   {filteredTables.map((table) => (
-                    <div
+                    <TableItem
                       key={table.table_name}
-                      onClick={() => handleTableSelect(table.table_name)}
-                      className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${
-                        selectedTable === table.table_name
-                          ? 'bg-primary-100 dark:bg-primary-900/30 border border-primary-200 dark:border-primary-800 shadow-sm'
-                          : 'bg-white dark:bg-dark-700 hover:bg-dark-50 dark:hover:bg-dark-600 border border-transparent hover:border-dark-200 dark:hover:border-dark-600'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <Database className="w-4 h-4 text-primary-500 flex-shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-dark-900 dark:text-white truncate">
-                            {table.table_name}
-                          </p>
-                          <p className="text-xs text-dark-500 dark:text-dark-400">
-                            {table.table_type}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                      tableName={table.table_name}
+                      tableType={table.table_type}
+                      isSelected={selectedTable === table.table_name}
+                      onSelect={() => handleTableSelect(table.table_name)}
+                      onDelete={(e) => handleDeleteTableClick(table.table_name, e)}
+                    />
                   ))}
                 </div>
               )}
@@ -550,15 +562,24 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         isOpen={deleteModal.isOpen}
         onClose={() => setDeleteModal({ isOpen: false, type: 'single', loading: false })}
         onConfirm={confirmDelete}
-        title={deleteModal.type === 'single' ? `Delete Row` : `Delete ${deleteModal.indices?.length || 0} Rows`}
-        message={deleteModal.type === 'single' 
-          ? 'Are you sure you want to delete this row? This action cannot be undone.'
-          : `Are you sure you want to delete ${deleteModal.indices?.length || 0} rows? This action cannot be undone.`
+        title={
+          deleteModal.type === 'table' 
+            ? `Delete Table "${deleteModal.tableName}"` 
+            : deleteModal.type === 'single' 
+              ? `Delete Row` 
+              : `Delete ${deleteModal.indices?.length || 0} Rows`
         }
-        itemName="row"
-        itemCount={deleteModal.indices?.length || 1}
+        message={
+          deleteModal.type === 'table'
+            ? `Are you sure you want to delete the table "${deleteModal.tableName}"? All data in this table will be permanently deleted. This action cannot be undone.`
+            : deleteModal.type === 'single' 
+              ? 'Are you sure you want to delete this row? This action cannot be undone.'
+              : `Are you sure you want to delete ${deleteModal.indices?.length || 0} rows? This action cannot be undone.`
+        }
+        itemName={deleteModal.type === 'table' ? 'table' : 'row'}
+        itemCount={deleteModal.type === 'table' ? 1 : (deleteModal.indices?.length || 1)}
         loading={deleteModal.loading}
-        variant={deleteModal.type}
+        variant={deleteModal.type === 'table' ? 'single' : deleteModal.type}
       />
 
       {/* CSV Import Modal */}

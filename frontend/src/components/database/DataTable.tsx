@@ -189,7 +189,7 @@ const DataTable = ({
   }
 
   return (
-    <div className={`space-y-4 ${className}`}>
+    <div className={`space-y-4 ${className} p-4`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

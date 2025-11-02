@@ -124,7 +124,7 @@ const ProjectDashboardPage = () => {
         />
 
         {/* Page Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-2">
           <Routes>
             <Route index element={projectId ? <ProjectOverviewTab /> : null} />
             <Route path="overview" element={projectId ? <ProjectOverviewTab /> : null} />
