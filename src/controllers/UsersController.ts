@@ -11,10 +11,25 @@ class UsersController {
    * Get current user info (from SuperTokens session)
    */
   static async getCurrentUser(req: SuperTokensAuthenticatedRequest, res: Response) {
+    console.log('\n👤 [GET /api/users/me] Request received');
+    console.log('================================================');
+    
     try {
+      console.log('🔍 [GET /api/users/me] Checking if user is attached to request...');
+      
       if (!req.user) {
+        console.log('❌ [GET /api/users/me] No user in request - middleware failed');
+        console.log('   This means authenticateAndAttachUser middleware did not set req.user');
+        console.log('   → Returning 401 Unauthorized');
         return ResponseUtils.error(res, 'User not authenticated', null, null, 401);
       }
+
+      console.log('✅ [GET /api/users/me] User found in request:', {
+        userId: req.user.userId,
+        email: req.user.email,
+        projectCount: req.user.projectIds?.length || 0,
+        role: req.user.role,
+      });
 
       const userData = {
         id: req.user.userId,
@@ -23,9 +38,14 @@ class UsersController {
         role: req.user.role,
       };
 
+      console.log('📦 [GET /api/users/me] Sending user data to frontend');
+      console.log('================================================\n');
+      
       ResponseUtils.success(res, 'User info retrieved successfully', { user: userData });
     } catch (error) {
-      console.error('Get current user error:', error);
+      console.error('❌ [GET /api/users/me] Error:', error);
+      console.log('   → Returning error response');
+      console.log('================================================\n');
       ResponseUtils.error(res, 'Failed to get user info', error);
     }
   }

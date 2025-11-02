@@ -97,27 +97,42 @@ export class DatabaseInitializer {
     }
 
     try {
-      // Migrate existing user_id column from INTEGER to VARCHAR if needed
-      await this.db.execute(sql`
-        DO $$ 
-        BEGIN
-          -- Check if user_id is INTEGER and convert to VARCHAR
-          IF EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_schema='public' AND table_name='projects' 
-            AND column_name='user_id' 
-            AND data_type='integer'
-          ) THEN
+      console.log('🔄 Checking if user_id column needs migration...');
+      
+      // Check current column type
+      const columnCheck = await this.db.execute(sql`
+        SELECT data_type FROM information_schema.columns 
+        WHERE table_schema='public' AND table_name='projects' AND column_name='user_id'
+      `);
+      
+      const currentType = (columnCheck.rows[0] as any)?.data_type;
+      console.log(`   Current user_id type: ${currentType}`);
+      
+      if (currentType === 'integer') {
+        console.log('🔧 Migrating user_id from INTEGER to VARCHAR(255)...');
+        
+        // Migrate existing user_id column from INTEGER to VARCHAR
+        await this.db.execute(sql`
+          DO $$ 
+          BEGIN
             -- Drop foreign key constraint if it exists
             ALTER TABLE public.projects DROP CONSTRAINT IF EXISTS projects_user_id_fkey;
             -- Change column type to VARCHAR
             ALTER TABLE public.projects ALTER COLUMN user_id TYPE VARCHAR(255);
-          END IF;
-        END $$;
-      `);
+            RAISE NOTICE 'Successfully migrated user_id to VARCHAR(255)';
+          END $$;
+        `);
+        
+        console.log('✅ user_id column migrated successfully to VARCHAR(255)');
+      } else if (currentType === 'character varying') {
+        console.log('✅ user_id is already VARCHAR - no migration needed');
+      } else {
+        console.log(`⚠️  user_id has unexpected type: ${currentType}`);
+      }
     } catch (err: any) {
+      console.error('❌ Projects user_id migration error:', err);
       if (err.code !== '42710') {
-        console.error('❌ Projects user_id migration error:', err.message);
+        throw err; // Re-throw if not a "duplicate object" error
       }
     }
 
