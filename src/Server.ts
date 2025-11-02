@@ -79,9 +79,20 @@ const s3Client = new S3Client({
 // ============================================================================
 
 // CORS - SuperTokens requires specific CORS configuration
+// Support both development and production URLs
+const allowedOrigins = [
+  process.env.SUPERTOKENS_WEBSITE_DOMAIN || "http://localhost:3005",
+  process.env.FRONTEND_URL || "http://localhost:3005",
+];
+
+// Remove duplicates and filter out empty values
+const uniqueOrigins = [...new Set(allowedOrigins.filter(Boolean))];
+
+console.log('🌐 CORS Allowed Origins:', uniqueOrigins);
+
 app.use(
   cors({
-    origin: process.env.SUPERTOKENS_WEBSITE_DOMAIN || "http://localhost:3005",
+    origin: uniqueOrigins,
     allowedHeaders: ["content-type", ...supertokens.getAllCORSHeaders()],
     credentials: true,
   })

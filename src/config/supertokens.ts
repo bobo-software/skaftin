@@ -5,6 +5,26 @@ import Dashboard from "supertokens-node/recipe/dashboard";
 import { TypeInput } from "supertokens-node/types";
 
 export function initSuperTokens() {
+  // Detect if we're in production
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  // Determine cookie settings based on environment
+  const cookieSettings = {
+    // For production with subdomains (skaftin.bobosoftware.co.za & skaftinplatform.bobosoftware.co.za)
+    cookieSameSite: isProduction ? "none" as const : "lax" as const,
+    cookieSecure: isProduction, // true in production (HTTPS required)
+    cookieDomain: process.env.COOKIE_DOMAIN || undefined, // .bobosoftware.co.za in production
+  };
+
+  console.log('🔧 SuperTokens Cookie Configuration:', {
+    environment: isProduction ? 'production' : 'development',
+    cookieSameSite: cookieSettings.cookieSameSite,
+    cookieSecure: cookieSettings.cookieSecure,
+    cookieDomain: cookieSettings.cookieDomain,
+    apiDomain: process.env.SUPERTOKENS_API_DOMAIN || "http://localhost:4006",
+    websiteDomain: process.env.SUPERTOKENS_WEBSITE_DOMAIN || "http://localhost:3005",
+  });
+
   const config: TypeInput = {
     framework: "express",
     supertokens: {
@@ -72,9 +92,7 @@ export function initSuperTokens() {
         },
       }),
       Session.init({
-        cookieSameSite: "lax", // Required for localhost development
-        cookieSecure: false, // Set to true in production with HTTPS
-        cookieDomain: undefined, // Let browser handle domain (works for localhost)
+        ...cookieSettings,
         sessionExpiredStatusCode: 401,
         getTokenTransferMethod: () => "cookie", // FORCE cookie-based sessions
         override: {

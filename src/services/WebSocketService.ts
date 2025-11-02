@@ -21,9 +21,18 @@ export class WebSocketService {
   private io: SocketIOServer;
 
   constructor(httpServer: HTTPServer) {
+    // Support both development and production URLs
+    const allowedOrigins = [
+      process.env.SUPERTOKENS_WEBSITE_DOMAIN || "http://localhost:3005",
+      process.env.FRONTEND_URL || "http://localhost:3005",
+    ];
+    const uniqueOrigins = [...new Set(allowedOrigins.filter(Boolean))];
+
+    console.log('🔌 WebSocket CORS Allowed Origins:', uniqueOrigins);
+
     this.io = new SocketIOServer(httpServer, {
       cors: {
-        origin: process.env.FRONTEND_URL || 'http://localhost:3006',
+        origin: uniqueOrigins,
         methods: ['GET', 'POST'],
         credentials: true,
       },
