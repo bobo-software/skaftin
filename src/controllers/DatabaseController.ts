@@ -487,6 +487,123 @@ class DatabaseController {
       ResponseUtils.error(res, 'Failed to drop table', error);
     }
   }
+
+  /**
+   * Add a column to a table
+   */
+  static async addColumn(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, tableName } = req.params;
+      const { columnName, columnType, nullable = true, defaultValue } = req.body;
+
+      if (!columnName || !columnType) {
+        return ResponseUtils.error(res, 'Column name and type are required', null, null, 400);
+      }
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      let alterSQL = `ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${columnType}`;
+      
+      if (!nullable) {
+        alterSQL += ' NOT NULL';
+      }
+      
+      if (defaultValue !== undefined && defaultValue !== null && defaultValue !== '') {
+        const escapedValue = String(defaultValue).replace(/'/g, "''");
+        alterSQL += ` DEFAULT '${escapedValue}'`;
+      }
+
+      await client.query(alterSQL);
+      client.release();
+
+      // Emit WebSocket event
+      emitDatabaseChange(projectId, tableName, 'add_column', { columnName, columnType });
+
+      ResponseUtils.success(res, `Column ${columnName} added successfully`, { columnName, columnType });
+    } catch (error) {
+      console.error('Error adding column:', error);
+      ResponseUtils.error(res, 'Failed to add column', error);
+    }
+  }
+
+  /**
+   * Alter/modify a column
+   */
+  static async alterColumn(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, tableName, columnName } = req.params;
+      const { newName, newType, nullable, defaultValue } = req.body;
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Execute alterations in sequence
+      if (newType) {
+        await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${columnName}" TYPE ${newType}`);
+      }
+
+      if (nullable !== undefined) {
+        const nullableSQL = nullable ? 'DROP NOT NULL' : 'SET NOT NULL';
+        await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${columnName}" ${nullableSQL}`);
+      }
+
+      if (defaultValue !== undefined) {
+        if (defaultValue === null || defaultValue === '') {
+          await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${columnName}" DROP DEFAULT`);
+        } else {
+          const escapedValue = String(defaultValue).replace(/'/g, "''");
+          await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${columnName}" SET DEFAULT '${escapedValue}'`);
+        }
+      }
+
+      if (newName && newName !== columnName) {
+        await client.query(`ALTER TABLE "${tableName}" RENAME COLUMN "${columnName}" TO "${newName}"`);
+      }
+
+      client.release();
+
+      // Emit WebSocket event
+      emitDatabaseChange(projectId, tableName, 'alter_column', { columnName, newName });
+
+      ResponseUtils.success(res, `Column ${columnName} altered successfully`);
+    } catch (error) {
+      console.error('Error altering column:', error);
+      ResponseUtils.error(res, 'Failed to alter column', error);
+    }
+  }
+
+  /**
+   * Drop a column from a table
+   */
+  static async dropColumn(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, tableName, columnName } = req.params;
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      await client.query(`ALTER TABLE "${tableName}" DROP COLUMN IF EXISTS "${columnName}"`);
+      client.release();
+
+      // Emit WebSocket event
+      emitDatabaseChange(projectId, tableName, 'drop_column', { columnName });
+
+      ResponseUtils.success(res, `Column ${columnName} dropped successfully`);
+    } catch (error) {
+      console.error('Error dropping column:', error);
+      ResponseUtils.error(res, 'Failed to drop column', error);
+    }
+  }
 }
 
 export default DatabaseController;

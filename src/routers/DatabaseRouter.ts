@@ -14,13 +14,16 @@ router.post('/:projectId/tables/create', authenticateAndVerifyProject, DatabaseC
 router.post('/:projectId/tables/:tableName/select', authenticateAndVerifyProject, DatabaseController.selectData);
 router.post('/:projectId/tables/:tableName/insert', authenticateAndVerifyProject, DatabaseController.insertData);
 router.post('/:projectId/tables/:tableName/bulk-insert', authenticateAndVerifyProject, DatabaseController.bulkInsertData);
+router.post('/:projectId/tables/:tableName/columns', authenticateAndVerifyProject, DatabaseController.addColumn);
 router.post('/:projectId/query', authenticateAndVerifyProject, DatabaseController.executeQuery);
 
 // PUT routes
 router.put('/:projectId/tables/:tableName/update', authenticateAndVerifyProject, DatabaseController.updateData);
+router.put('/:projectId/tables/:tableName/columns/:columnName', authenticateAndVerifyProject, DatabaseController.alterColumn);
 
 // DELETE routes
 router.delete('/:projectId/tables/:tableName/delete', authenticateAndVerifyProject, DatabaseController.deleteData);
+router.delete('/:projectId/tables/:tableName/columns/:columnName', authenticateAndVerifyProject, DatabaseController.dropColumn);
 router.delete('/:projectId/tables/:tableName', authenticateAndVerifyProject, DatabaseController.dropTable);
 
 export { router };

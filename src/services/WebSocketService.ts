@@ -2,7 +2,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 
 export interface DatabaseEvent {
-  type: 'insert' | 'update' | 'delete' | 'create_table' | 'drop_table';
+  type: 'insert' | 'update' | 'delete' | 'create_table' | 'drop_table' | 'add_column' | 'alter_column' | 'drop_column';
   projectId: string;
   tableName: string;
   data?: any;

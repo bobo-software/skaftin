@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { AppButton, DeleteConfirmModal } from '../ComponentsIndex';
 import McpService from '../../services/McpService';
+import DatabaseService from '../../services/DatabaseService';
 
 interface SchemaEditorProps {
   projectId: string;
@@ -336,11 +337,9 @@ const SchemaEditor = ({
         fullColumnType = `${columnType}(${length})`;
       }
       
-      const result = await McpService.addColumn(projectId, tableName, columnName, fullColumnType, nullable);
+      const result = await DatabaseService.addColumn(projectId, tableName, columnName, fullColumnType, nullable, defaultValue);
       if (result.success) {
-        console.log('Column added successfully');
         onSchemaChange?.();
-        // Reset form and hide it
         setNewColumn({ name: '', type: 'VARCHAR', nullable: true, defaultValue: '', length: '' });
         setShowAddColumnForm(false);
       } else {
@@ -428,10 +427,9 @@ const SchemaEditor = ({
         return;
       }
 
-      const result = await McpService.alterColumn(projectId, tableName, editingColumn, changes);
+      const result = await DatabaseService.alterColumn(projectId, tableName, editingColumn, changes);
       
       if (result.success) {
-        console.log('Column altered successfully');
         onSchemaChange?.();
         handleCancelEdit();
       } else {
@@ -690,9 +688,8 @@ const SchemaEditor = ({
 
     try {
       if (deleteModal.type === 'column' && deleteModal.columnName) {
-        const result = await McpService.dropColumn(projectId, tableName, deleteModal.columnName);
+        const result = await DatabaseService.dropColumn(projectId, tableName, deleteModal.columnName);
         if (result.success) {
-          console.log('Column dropped successfully');
           onSchemaChange?.();
           setDeleteModal({ isOpen: false, type: 'column', loading: false });
         } else {
@@ -700,11 +697,9 @@ const SchemaEditor = ({
           alert('Failed to drop column. Please try again.');
         }
       } else if (deleteModal.type === 'table') {
-        const result = await McpService.dropTable(projectId, tableName);
+        const result = await DatabaseService.dropTable(projectId, tableName);
         if (result.success) {
-          console.log('Table dropped successfully');
-          // This will be handled by the parent component
-          window.location.reload(); // Simple refresh for now
+          window.location.reload();
         } else {
           console.error('Failed to drop table:', result.error);
           alert('Failed to drop table. Please try again.');
