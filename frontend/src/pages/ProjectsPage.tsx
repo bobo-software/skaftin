@@ -58,7 +58,6 @@ const ProjectsPage = () => {
   };
 
   const handleLogout = async () => {
-    console.log('🚪 [User Action] Logout button clicked');
     await AuthService.logout();
     logout();
     navigate('/login');

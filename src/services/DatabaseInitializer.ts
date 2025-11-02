@@ -16,11 +16,12 @@ export class DatabaseInitializer {
 
   /**
    * Initialize users table using Drizzle
+   * Always creates in public schema
    */
   async initializeUsersTable(): Promise<void> {
     try {
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE IF NOT EXISTS public.users (
           id SERIAL PRIMARY KEY,
           username VARCHAR(100) UNIQUE NOT NULL,
           email VARCHAR(255) UNIQUE NOT NULL,
@@ -43,8 +44,8 @@ export class DatabaseInitializer {
         DO $$ 
         BEGIN
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                        WHERE table_name='users' AND column_name='password_hash') THEN
-            ALTER TABLE users ADD COLUMN password_hash VARCHAR(255);
+                        WHERE table_schema='public' AND table_name='users' AND column_name='password_hash') THEN
+            ALTER TABLE public.users ADD COLUMN password_hash VARCHAR(255);
           END IF;
         END $$;
       `);
@@ -57,7 +58,7 @@ export class DatabaseInitializer {
     try {
       // Create index on email
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+        CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
       `);
     } catch (err: any) {
       // Ignore if index already exists
@@ -72,11 +73,12 @@ export class DatabaseInitializer {
   /**
    * Initialize projects table using Drizzle
    * NOTE: user_id is now VARCHAR to support SuperTokens UUIDs (not an integer foreign key)
+   * Always creates in public schema
    */
   async initializeProjectsTable(): Promise<void> {
     try {
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS projects (
+        CREATE TABLE IF NOT EXISTS public.projects (
           id SERIAL PRIMARY KEY,
           user_id VARCHAR(255) NOT NULL,
           name VARCHAR(255) NOT NULL,
@@ -102,14 +104,14 @@ export class DatabaseInitializer {
           -- Check if user_id is INTEGER and convert to VARCHAR
           IF EXISTS (
             SELECT 1 FROM information_schema.columns 
-            WHERE table_name='projects' 
+            WHERE table_schema='public' AND table_name='projects' 
             AND column_name='user_id' 
             AND data_type='integer'
           ) THEN
             -- Drop foreign key constraint if it exists
-            ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_user_id_fkey;
+            ALTER TABLE public.projects DROP CONSTRAINT IF EXISTS projects_user_id_fkey;
             -- Change column type to VARCHAR
-            ALTER TABLE projects ALTER COLUMN user_id TYPE VARCHAR(255);
+            ALTER TABLE public.projects ALTER COLUMN user_id TYPE VARCHAR(255);
           END IF;
         END $$;
       `);
@@ -122,7 +124,7 @@ export class DatabaseInitializer {
     try {
       // Create index on user_id
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
+        CREATE INDEX IF NOT EXISTS idx_projects_user_id ON public.projects(user_id);
       `);
     } catch (err: any) {
       // Ignore if index already exists

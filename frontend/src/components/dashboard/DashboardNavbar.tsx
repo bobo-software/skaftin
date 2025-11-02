@@ -22,7 +22,6 @@ const DashboardNavbar = ({
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    console.log('🚪 [User Action] Logout button clicked');
     await AuthService.logout();
     onLogout();
     navigate('/login');

@@ -118,29 +118,18 @@ class AuthService {
   }
 
   async logout(): Promise<void> {
-    console.log('🚪 [Logout] Starting logout process...');
-    
     // Call backend to revoke SuperTokens session
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/logout`, {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: 'POST',
-        credentials: 'include', // Important: Send cookies
+        credentials: 'include',
       });
-      
-      if (response.ok) {
-        console.log('✅ [Logout] Backend session revoked');
-      } else {
-        console.warn('⚠️ [Logout] Backend logout failed:', response.status);
-      }
     } catch (error) {
-      console.error('❌ [Logout] Error revoking session:', error);
+      console.error('Logout error:', error);
     }
     
     // Clear localStorage
     this.removeToken();
-    console.log('✅ [Logout] LocalStorage cleared');
-    
-    console.log('🚪 [Logout] Logout complete');
   }
 
   isAuthenticated(): boolean {

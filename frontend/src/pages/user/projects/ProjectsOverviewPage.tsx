@@ -76,7 +76,6 @@ navigate(`/projects/${project.id}`);
 };
 
 const handleLogout = async () => {
-  console.log('🚪 [User Action] Logout button clicked');
   const { default: AuthService } = await import('../../../services/AuthService');
   await AuthService.logout();
   logout();

@@ -35,14 +35,10 @@ router.post('/register', async (req: Request, res: Response) => {
     if (signUpResponse.status === "OK") {
       // Create a session for the user
       const recipeUserId = convertToRecipeUserId(signUpResponse.user.id);
-      const session = await Session.createNewSession(req, res, "public", recipeUserId, {
+      await Session.createNewSession(req, res, "public", recipeUserId, {
         email: signUpResponse.user.emails[0],
         name: full_name || email.split('@')[0],
       }, {});
-
-      console.log('✅ [Auth] Session created for user:', signUpResponse.user.id);
-      console.log('✅ [Auth] Session handle:', session.getHandle());
-      console.log('✅ [Auth] Response headers set:', res.getHeaders()['set-cookie']);
 
       // Return response in old format for frontend compatibility
       return ResponseUtils.success(res, 'User registered successfully', {
@@ -51,7 +47,7 @@ router.post('/register', async (req: Request, res: Response) => {
           email: signUpResponse.user.emails[0],
           name: full_name || email.split('@')[0],
         },
-        token: 'session-managed-by-supertokens', // Placeholder - sessions are in cookies now
+        token: 'session-managed-by-supertokens',
         accessToken: 'session-managed-by-supertokens',
         refreshToken: 'session-managed-by-supertokens',
       }, 201);
@@ -84,14 +80,10 @@ router.post('/login', async (req: Request, res: Response) => {
     if (signInResponse.status === "OK") {
       // Create a session for the user
       const recipeUserId = convertToRecipeUserId(signInResponse.user.id);
-      const session = await Session.createNewSession(req, res, "public", recipeUserId, {
+      await Session.createNewSession(req, res, "public", recipeUserId, {
         email: signInResponse.user.emails[0],
         name: email.split('@')[0],
       }, {});
-
-      console.log('✅ [Auth] Session created for user:', signInResponse.user.id);
-      console.log('✅ [Auth] Session handle:', session.getHandle());
-      console.log('✅ [Auth] Response headers set:', res.getHeaders()['set-cookie']);
       
       // Return response in old format for frontend compatibility
       return ResponseUtils.success(res, 'Login successful', {
@@ -100,7 +92,7 @@ router.post('/login', async (req: Request, res: Response) => {
           email: signInResponse.user.emails[0],
           name: email.split('@')[0],
         },
-        token: 'session-managed-by-supertokens', // Placeholder - sessions are in cookies now
+        token: 'session-managed-by-supertokens',
         accessToken: 'session-managed-by-supertokens',
         refreshToken: 'session-managed-by-supertokens',
       });

@@ -42,12 +42,6 @@ const pool = new Pool({
 app.locals.pool = pool;
 
 // Database event handlers
-pool.on('connect', async () => {
-  console.log('✅ Connected to PostgreSQL database');
-  const dbInitializer = new DatabaseInitializer(pool);
-  await dbInitializer.initializeAllTables();
-});
-
 pool.on('error', (err) => {
   console.error('❌ PostgreSQL connection error:', err);
 });
@@ -172,6 +166,11 @@ const startServer = async () => {
   console.log(`📊 Database: ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}`);
   console.log(`📦 MinIO: ${minioEndpoint}`);
   console.log('='.repeat(60) + '\n');
+
+  // Initialize database tables (only once on startup, in public schema)
+  console.log('🗄️  Initializing database tables...');
+  const dbInitializer = new DatabaseInitializer(pool);
+  await dbInitializer.initializeAllTables();
 
   // Perform health checks
   const BUCKET_NAME = process.env.MINIO_BUCKET || 'skaftin';
