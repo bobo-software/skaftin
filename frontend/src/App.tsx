@@ -87,8 +87,12 @@ function App() {
           console.log('✅ [SESSION CHECK] Session found! Fetching user data from /api/users/me...');
           
           // Step 2: Fetch user data
-          console.log('📡 [SESSION CHECK] Step 2: Making request to /api/users/me');
-          const response = await fetch('/api/users/me', {
+          const apiUrl = import.meta.env.VITE_API_URL || '';
+          const userMeUrl = `${apiUrl}/api/users/me`;
+          console.log('📡 [SESSION CHECK] Step 2: Making request to', userMeUrl);
+          console.log('   API Base URL:', apiUrl || '(relative - using proxy)');
+          
+          const response = await fetch(userMeUrl, {
             credentials: 'include',
           });
           
@@ -99,6 +103,22 @@ function App() {
           });
           
           if (response.ok) {
+            // Check if response is actually JSON
+            const contentType = response.headers.get('content-type');
+            console.log('📄 [SESSION CHECK] Response Content-Type:', contentType);
+            
+            if (!contentType || !contentType.includes('application/json')) {
+              console.error('❌ [SESSION CHECK] Response is not JSON! Content-Type:', contentType);
+              const text = await response.text();
+              console.error('   Response body (first 200 chars):', text.substring(0, 200));
+              console.error('   This means /api/users/me is returning HTML instead of JSON');
+              console.error('   Possible causes:');
+              console.error('   1. Route not registered in backend');
+              console.error('   2. Falling through to frontend catch-all route');
+              console.error('   3. Wrong API URL');
+              throw new Error('API returned HTML instead of JSON');
+            }
+            
             const data = await response.json();
             console.log('📦 [SESSION CHECK] Response data:', data);
             
