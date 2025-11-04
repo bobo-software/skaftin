@@ -2,19 +2,19 @@ import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 
 export interface DatabaseEvent {
-  type: 'insert' | 'update' | 'delete' | 'create_table' | 'drop_table' | 'add_column' | 'alter_column' | 'drop_column';
+  type: 'insert' | 'update' | 'delete' | 'create_table' | 'rename_table' | 'drop_table' | 'add_column' | 'alter_column' | 'drop_column';
   projectId: string;
   tableName: string;
   data?: any;
   oldData?: any;
-  timestamp: string;
+  timestamp?: string;
 }
 
 export interface ProjectEvent {
   type: string;
   projectId: string;
   data: any;
-  timestamp: string;
+  timestamp?: string;
 }
 
 export class WebSocketService {
@@ -82,8 +82,13 @@ export class WebSocketService {
    */
   emitDatabaseChange(event: DatabaseEvent) {
     const room = `project-${event.projectId}`;
-    this.io.to(room).emit('database-change', event);
-    console.log(`📊 Database change emitted to ${room}:`, event.type, event.tableName);
+    // Ensure timestamp is set
+    const eventWithTimestamp = {
+      ...event,
+      timestamp: event.timestamp || new Date().toISOString()
+    };
+    this.io.to(room).emit('database-change', eventWithTimestamp);
+    console.log(`📊 Database change emitted to ${room}:`, eventWithTimestamp.type, eventWithTimestamp.tableName);
   }
 
   /**
@@ -91,8 +96,13 @@ export class WebSocketService {
    */
   emitProjectEvent(event: ProjectEvent) {
     const room = `project-${event.projectId}`;
-    this.io.to(room).emit('project-event', event);
-    console.log(`📁 Project event emitted to ${room}:`, event.type);
+    // Ensure timestamp is set
+    const eventWithTimestamp = {
+      ...event,
+      timestamp: event.timestamp || new Date().toISOString()
+    };
+    this.io.to(room).emit('project-event', eventWithTimestamp);
+    console.log(`📁 Project event emitted to ${room}:`, eventWithTimestamp.type);
   }
 
   /**

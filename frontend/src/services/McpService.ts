@@ -116,8 +116,24 @@ class McpService {
     return await this.executeTool('list_indexes', { projectId, tableName });
   }
 
-  static async createForeignKey(projectId: string, tableName: string, columnName: string, referencedTable: string, referencedColumn: string): Promise<any> {
-    return await this.executeTool('create_foreign_key', { projectId, tableName, columnName, referencedTable, referencedColumn });
+  static async createForeignKey(
+    projectId: string, 
+    tableName: string, 
+    columnName: string, 
+    referencedTable: string, 
+    referencedColumn: string,
+    onDelete: string = 'RESTRICT',
+    onUpdate: string = 'RESTRICT'
+  ): Promise<any> {
+    return await this.executeTool('create_foreign_key', { 
+      projectId, 
+      tableName, 
+      columnName, 
+      referencedTable, 
+      referencedColumn,
+      onDelete,
+      onUpdate
+    });
   }
 
   static async backupSchema(projectId: string, backupName?: string): Promise<any> {

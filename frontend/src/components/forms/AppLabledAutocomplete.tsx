@@ -156,7 +156,7 @@ const AppLabledAutocomplete: React.FC<AppAutocompleteProps> = ({
         </div>
 
         {isOpen && filteredOptions.length > 0 && (
-          <div className="absolute z-[500] w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+          <div className="absolute z-[900] w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-auto">
             {filteredOptions.map((item, index) => (
               <button
                 key={index}

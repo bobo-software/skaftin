@@ -11,6 +11,7 @@ router.get('/:projectId/tables/:tableName/schema', authenticateAndVerifyProject,
 
 // POST routes
 router.post('/:projectId/tables/create', authenticateAndVerifyProject, DatabaseController.createTable);
+router.post('/:projectId/tables/:tableName/rename', authenticateAndVerifyProject, DatabaseController.renameTable);
 router.post('/:projectId/tables/:tableName/select', authenticateAndVerifyProject, DatabaseController.selectData);
 router.post('/:projectId/tables/:tableName/insert', authenticateAndVerifyProject, DatabaseController.insertData);
 router.post('/:projectId/tables/:tableName/bulk-insert', authenticateAndVerifyProject, DatabaseController.bulkInsertData);
@@ -25,6 +26,12 @@ router.put('/:projectId/tables/:tableName/columns/:columnName', authenticateAndV
 router.delete('/:projectId/tables/:tableName/delete', authenticateAndVerifyProject, DatabaseController.deleteData);
 router.delete('/:projectId/tables/:tableName/columns/:columnName', authenticateAndVerifyProject, DatabaseController.dropColumn);
 router.delete('/:projectId/tables/:tableName', authenticateAndVerifyProject, DatabaseController.dropTable);
+
+// Constraint routes
+router.get('/:projectId/tables/:tableName/constraints', authenticateAndVerifyProject, DatabaseController.listConstraints);
+router.get('/:projectId/tables/:tableName/foreign-keys', authenticateAndVerifyProject, DatabaseController.listForeignKeys);
+router.post('/:projectId/tables/:tableName/constraints/foreign-key', authenticateAndVerifyProject, DatabaseController.createForeignKey);
+router.delete('/:projectId/tables/:tableName/constraints/:constraintName', authenticateAndVerifyProject, DatabaseController.dropConstraint);
 
 export { router };
 

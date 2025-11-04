@@ -456,6 +456,60 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
         required: ['projectId', 'tableName'],
       },
     },
+    {
+      name: 'create_foreign_key',
+      description: 'Create a foreign key constraint on a table',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          tableName: { type: 'string', description: 'Name of the table' },
+          columnName: { type: 'string', description: 'Name of the column' },
+          referencedTable: { type: 'string', description: 'Referenced table name' },
+          referencedColumn: { type: 'string', description: 'Referenced column name' },
+          onDelete: { type: 'string', description: 'ON DELETE action (RESTRICT, CASCADE, SET NULL, SET DEFAULT, NO ACTION)', default: 'RESTRICT' },
+          onUpdate: { type: 'string', description: 'ON UPDATE action (RESTRICT, CASCADE, SET NULL, SET DEFAULT, NO ACTION)', default: 'RESTRICT' },
+        },
+        required: ['projectId', 'tableName', 'columnName', 'referencedTable', 'referencedColumn'],
+      },
+    },
+    {
+      name: 'list_all_constraints',
+      description: 'List all constraints (foreign keys, primary keys, unique, check) for a table',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          tableName: { type: 'string', description: 'Name of the table' },
+        },
+        required: ['projectId', 'tableName'],
+      },
+    },
+    {
+      name: 'drop_constraint',
+      description: 'Drop a constraint from a table',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          tableName: { type: 'string', description: 'Name of the table' },
+          constraintName: { type: 'string', description: 'Name of the constraint to drop' },
+        },
+        required: ['projectId', 'tableName', 'constraintName'],
+      },
+    },
+    {
+      name: 'list_foreign_keys',
+      description: 'List all foreign keys for a table',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          tableName: { type: 'string', description: 'Name of the table' },
+        },
+        required: ['projectId', 'tableName'],
+      },
+    },
   ];
 }
 
@@ -1519,6 +1573,207 @@ export async function handleDatabaseTool(
         };
       } catch (error: any) {
         console.error('Error dropping table:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'create_foreign_key': {
+      const { projectId, tableName, columnName, referencedTable, referencedColumn, onDelete = 'RESTRICT', onUpdate = 'RESTRICT' } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        // Generate constraint name
+        const constraintName = `fk_${tableName}_${columnName}_${referencedTable}_${referencedColumn}`.toLowerCase();
+        
+        // Create foreign key constraint
+        const sql = `
+          ALTER TABLE "${tableName}"
+          ADD CONSTRAINT "${constraintName}"
+          FOREIGN KEY ("${columnName}")
+          REFERENCES "${referencedTable}" ("${referencedColumn}")
+          ON DELETE ${onDelete}
+          ON UPDATE ${onUpdate}
+        `;
+        
+        await client.query(sql);
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true, 
+              message: `Foreign key constraint created successfully`,
+              constraintName,
+              details: {
+                table: tableName,
+                column: columnName,
+                references: `${referencedTable}.${referencedColumn}`,
+                onDelete,
+                onUpdate
+              }
+            }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error creating foreign key:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'list_all_constraints': {
+      const { projectId, tableName } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        const result = await client.query(`
+          SELECT
+            tc.constraint_name,
+            tc.constraint_type,
+            kcu.column_name,
+            ccu.table_name AS referenced_table_name,
+            ccu.column_name AS referenced_column_name,
+            rc.update_rule,
+            rc.delete_rule,
+            cc.check_clause
+          FROM information_schema.table_constraints AS tc
+          LEFT JOIN information_schema.key_column_usage AS kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+          LEFT JOIN information_schema.constraint_column_usage AS ccu
+            ON ccu.constraint_name = tc.constraint_name
+            AND ccu.table_schema = tc.table_schema
+          LEFT JOIN information_schema.referential_constraints AS rc
+            ON tc.constraint_name = rc.constraint_name
+            AND tc.table_schema = rc.constraint_schema
+          LEFT JOIN information_schema.check_constraints AS cc
+            ON tc.constraint_name = cc.constraint_name
+            AND tc.table_schema = cc.constraint_schema
+          WHERE tc.table_schema = current_schema()
+            AND tc.table_name = $1
+          ORDER BY tc.constraint_type, tc.constraint_name
+        `, [tableName]);
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true, 
+              data: result.rows 
+            }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error listing constraints:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'drop_constraint': {
+      const { projectId, tableName, constraintName } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        await client.query(`ALTER TABLE "${tableName}" DROP CONSTRAINT IF EXISTS "${constraintName}"`);
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true, 
+              message: `Constraint ${constraintName} dropped successfully` 
+            }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error dropping constraint:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'list_foreign_keys': {
+      const { projectId, tableName } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        const result = await client.query(`
+          SELECT
+            tc.constraint_name,
+            kcu.column_name,
+            ccu.table_name AS referenced_table_name,
+            ccu.column_name AS referenced_column_name,
+            rc.update_rule,
+            rc.delete_rule
+          FROM information_schema.table_constraints AS tc
+          JOIN information_schema.key_column_usage AS kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+          JOIN information_schema.constraint_column_usage AS ccu
+            ON ccu.constraint_name = tc.constraint_name
+            AND ccu.table_schema = tc.table_schema
+          JOIN information_schema.referential_constraints AS rc
+            ON tc.constraint_name = rc.constraint_name
+            AND tc.table_schema = rc.constraint_schema
+          WHERE tc.table_schema = current_schema()
+            AND tc.table_name = $1
+            AND tc.constraint_type = 'FOREIGN KEY'
+          ORDER BY tc.constraint_name
+        `, [tableName]);
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true, 
+              data: result.rows 
+            }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error listing foreign keys:', error);
         return {
           content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
           isError: true

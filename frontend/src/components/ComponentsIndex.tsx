@@ -22,6 +22,7 @@ export { default as CreateTableModal } from './modals/CreateTableModal';
 // ---------- Database Components ---------- //
 export { default as TableViewer } from './database/TableViewer';
 export { default as TableItem } from './database/TableItem';
+export { default as TableSettingsTab } from './database/TableSettingsTab';
 export { default as DataTable } from './database/DataTable';
 export { default as SqlEditor } from './database/SqlEditor';
 export { default as SchemaDesigner } from './database/SchemaDesigner';

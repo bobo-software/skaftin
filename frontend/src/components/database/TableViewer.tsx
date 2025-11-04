@@ -9,9 +9,10 @@ import {
   Filter,
   Download,
   Table,
-  List
+  List,
+  Settings
 } from 'lucide-react';
-import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem } from '../ComponentsIndex';
+import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem, TableSettingsTab } from '../ComponentsIndex';
 
 interface TableViewerProps {
   projectId: string;
@@ -31,7 +32,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     clearError 
   } = useDatabaseStore();
   
-  const { joinProject, leaveProject, recentEvents } = useRealtimeStore();
+  const { joinProject, leaveProject } = useRealtimeStore();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
@@ -68,27 +69,8 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   }, [projectId, fetchTables, joinProject, leaveProject]);
 
   // Listen for real-time database changes
-  useEffect(() => {
-    const handleDatabaseChange = (event: any) => {
-      console.log('📡 Real-time database change:', event);
-      
-      // Refresh tables if a table was created/deleted
-      if (event.type === 'create_table' || event.type === 'drop_table') {
-        fetchTables(projectId);
-      }
-      
-      // Refresh current table if data was modified
-      if (event.type === 'insert' || event.type === 'update' || event.type === 'delete') {
-        if (selectedTable && event.tableName === selectedTable) {
-          fetchTableDetails(projectId, selectedTable);
-          fetchTableData(selectedTable);
-        }
-      }
-    };
-
-    // This will be handled by the realtime store
-    // The store will automatically call this when events are received
-  }, [projectId, selectedTable, fetchTables, fetchTableDetails]);
+  // This will be handled by the realtime store
+  // The store will automatically call this when events are received
 
   const fetchTableData = async (tableName: string) => {
     if (!tableName) return;
@@ -188,16 +170,6 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
       console.error('Error importing CSV:', error);
       alert('Error importing CSV data. Please try again.');
     }
-  };
-
-  const handleDeleteRow = (row: any, index: number) => {
-    setDeleteModal({
-      isOpen: true,
-      type: 'single',
-      item: row,
-      indices: [index],
-      loading: false
-    });
   };
 
   const handleBulkDelete = (indices: number[]) => {
@@ -309,6 +281,21 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     }
   };
 
+  const handleTableRenamed = async (newTableName: string) => {
+    setSelectedTable(newTableName);
+    await handleTableSelect(newTableName);
+  };
+
+  const handleDeleteTableFromSettings = () => {
+    if (!selectedTable) return;
+    setDeleteModal({
+      isOpen: true,
+      type: 'table',
+      tableName: selectedTable,
+      loading: false
+    });
+  };
+
 
 
   if (loading && tables.length === 0) {
@@ -396,7 +383,6 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                       tableType={table.table_type}
                       isSelected={selectedTable === table.table_name}
                       onSelect={() => handleTableSelect(table.table_name)}
-                      onDelete={(e) => handleDeleteTableClick(table.table_name, e)}
                     />
                   ))}
                 </div>
@@ -437,6 +423,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                   {[
                     { id: 'data', name: 'Data', icon: List },
                     { id: 'schema', name: 'Schema', icon: Table },
+                    { id: 'settings', name: 'Settings', icon: Settings },
                   ].map((tab) => {
                     const Icon = tab.icon;
                     return (
@@ -498,7 +485,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                           const whereClause = { id: originalRow.id };
                           
                           // Remove the id from the update data
-                          const { id, ...updateData } = updatedRow;
+                          const { id, ...updateData } = updatedRow; // eslint-disable-line @typescript-eslint/no-unused-vars
                           
                           const result = await RequestUtils.put(
                             ApiRoutes.DATABASE.UPDATE_DATA(projectId, selectedTable),
@@ -526,6 +513,17 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                       pageSize={10}
                     />
                   </div>
+                )}
+
+                {activeTab === 'settings' && (
+                  <TableSettingsTab
+                    projectId={projectId}
+                    currentTable={currentTable}
+                    tableData={tableData}
+                    onTableRenamed={handleTableRenamed}
+                    onDeleteTable={handleDeleteTableFromSettings}
+                    onRefreshTables={() => fetchTables(projectId)}
+                  />
                 )}
 
               </div>

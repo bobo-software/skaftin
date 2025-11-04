@@ -5,10 +5,9 @@ interface TableItemProps {
   tableType: string;
   isSelected: boolean;
   onSelect: () => void;
-  onDelete: (e: React.MouseEvent) => void;
 }
 
-const TableItem = ({ tableName, tableType, isSelected, onSelect, onDelete }: TableItemProps) => {
+const TableItem = ({ tableName, tableType, isSelected, onSelect }: TableItemProps) => {
   return (
     <div onClick={onSelect}
       className={`group p-3 rounded-lg cursor-pointer transition-all duration-200 ${
@@ -27,13 +26,6 @@ const TableItem = ({ tableName, tableType, isSelected, onSelect, onDelete }: Tab
         
           </div>
         </div>
-        <button
-          onClick={onDelete}
-          className="opacity-0 group-hover:opacity-100 p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-opacity"
-          title="Delete table"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
       </div>
     </div>
   );

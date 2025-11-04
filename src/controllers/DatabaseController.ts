@@ -168,7 +168,11 @@ class DatabaseController {
         
         if (column.defaultValue !== undefined && column.defaultValue !== null && column.defaultValue !== '') {
           if (column.type !== 'SERIAL' && column.type !== 'BIGSERIAL') {
-            if (column.type.includes('INT') || column.type === 'BOOLEAN') {
+            // PostgreSQL functions (NOW, CURRENT_TIMESTAMP, etc.) should not be quoted
+            const postgresqlFunctions = ['CURRENT_TIMESTAMP', 'NOW()', 'CURRENT_DATE', 'CURRENT_TIME', 'LOCALTIMESTAMP', 'LOCALTIME'];
+            const isFunction = postgresqlFunctions.some(func => String(column.defaultValue).toUpperCase().includes(func));
+            
+            if (column.type.includes('INT') || column.type === 'BOOLEAN' || isFunction) {
               colDef += ` DEFAULT ${column.defaultValue}`;
             } else {
               const escapedValue = String(column.defaultValue).replace(/'/g, "''");
@@ -461,6 +465,68 @@ class DatabaseController {
   }
 
   /**
+   * Rename a table
+   */
+  static async renameTable(req: SuperTokensAuthenticatedRequest, res: Response) {
+    // User info is attached by SuperTokens middleware
+
+    try {
+      const { projectId, tableName } = req.params;
+      const { newTableName } = req.body;
+
+      if (!newTableName || !newTableName.trim()) {
+        return ResponseUtils.error(res, 'New table name is required', null, null, 400);
+      }
+
+      // Validate table name (alphanumeric and underscore only)
+      const tableNameRegex = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+      if (!tableNameRegex.test(newTableName)) {
+        return ResponseUtils.error(
+          res, 
+          'Table name must start with a letter or underscore and contain only letters, numbers, and underscores', 
+          null, 
+          null, 
+          400
+        );
+      }
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Check if the new table name already exists
+      const checkResult = await client.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = current_schema() 
+          AND table_name = $1
+      `, [newTableName]);
+
+      if (checkResult.rows.length > 0) {
+        client.release();
+        return ResponseUtils.error(res, `Table "${newTableName}" already exists`, null, null, 409);
+      }
+
+      // Rename the table
+      await client.query(`ALTER TABLE "${tableName}" RENAME TO "${newTableName}"`);
+      client.release();
+
+      // Emit WebSocket event
+      emitDatabaseChange(projectId, newTableName, 'rename_table', { oldName: tableName, newName: newTableName });
+
+      ResponseUtils.success(res, `Table renamed from "${tableName}" to "${newTableName}" successfully`, { 
+        oldName: tableName, 
+        newName: newTableName 
+      });
+    } catch (error) {
+      console.error('Error renaming table:', error);
+      ResponseUtils.error(res, 'Failed to rename table', error);
+    }
+  }
+
+  /**
    * Drop a table
    */
   static async dropTable(req: SuperTokensAuthenticatedRequest, res: Response) {
@@ -513,8 +579,16 @@ class DatabaseController {
       }
       
       if (defaultValue !== undefined && defaultValue !== null && defaultValue !== '') {
-        const escapedValue = String(defaultValue).replace(/'/g, "''");
-        alterSQL += ` DEFAULT '${escapedValue}'`;
+        // PostgreSQL functions (NOW, CURRENT_TIMESTAMP, etc.) should not be quoted
+        const postgresqlFunctions = ['CURRENT_TIMESTAMP', 'NOW()', 'CURRENT_DATE', 'CURRENT_TIME', 'LOCALTIMESTAMP', 'LOCALTIME'];
+        const isFunction = postgresqlFunctions.some(func => defaultValue.toUpperCase().includes(func));
+        
+        if (isFunction) {
+          alterSQL += ` DEFAULT ${defaultValue}`;
+        } else {
+          const escapedValue = String(defaultValue).replace(/'/g, "''");
+          alterSQL += ` DEFAULT '${escapedValue}'`;
+        }
       }
 
       await client.query(alterSQL);
@@ -558,8 +632,16 @@ class DatabaseController {
         if (defaultValue === null || defaultValue === '') {
           await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${columnName}" DROP DEFAULT`);
         } else {
-          const escapedValue = String(defaultValue).replace(/'/g, "''");
-          await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${columnName}" SET DEFAULT '${escapedValue}'`);
+          // PostgreSQL functions (NOW, CURRENT_TIMESTAMP, etc.) should not be quoted
+          const postgresqlFunctions = ['CURRENT_TIMESTAMP', 'NOW()', 'CURRENT_DATE', 'CURRENT_TIME', 'LOCALTIMESTAMP', 'LOCALTIME'];
+          const isFunction = postgresqlFunctions.some(func => String(defaultValue).toUpperCase().includes(func));
+          
+          if (isFunction) {
+            await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${columnName}" SET DEFAULT ${defaultValue}`);
+          } else {
+            const escapedValue = String(defaultValue).replace(/'/g, "''");
+            await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${columnName}" SET DEFAULT '${escapedValue}'`);
+          }
         }
       }
 
@@ -602,6 +684,208 @@ class DatabaseController {
     } catch (error) {
       console.error('Error dropping column:', error);
       ResponseUtils.error(res, 'Failed to drop column', error);
+    }
+  }
+
+  /**
+   * List all constraints for a table
+   */
+  static async listConstraints(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, tableName } = req.params;
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      const result = await client.query(`
+        SELECT
+          tc.constraint_name,
+          tc.constraint_type,
+          kcu.column_name,
+          ccu.table_name AS referenced_table_name,
+          ccu.column_name AS referenced_column_name,
+          rc.update_rule,
+          rc.delete_rule,
+          cc.check_clause
+        FROM information_schema.table_constraints AS tc
+        LEFT JOIN information_schema.key_column_usage AS kcu
+          ON tc.constraint_name = kcu.constraint_name
+          AND tc.table_schema = kcu.table_schema
+        LEFT JOIN information_schema.constraint_column_usage AS ccu
+          ON ccu.constraint_name = tc.constraint_name
+          AND ccu.table_schema = tc.table_schema
+        LEFT JOIN information_schema.referential_constraints AS rc
+          ON tc.constraint_name = rc.constraint_name
+          AND tc.table_schema = rc.constraint_schema
+        LEFT JOIN information_schema.check_constraints AS cc
+          ON tc.constraint_name = cc.constraint_name
+          AND tc.table_schema = cc.constraint_schema
+        WHERE tc.table_schema = current_schema()
+          AND tc.table_name = $1
+        ORDER BY tc.constraint_type, tc.constraint_name
+      `, [tableName]);
+
+      client.release();
+      ResponseUtils.success(res, 'Constraints fetched successfully', result.rows);
+    } catch (error) {
+      console.error('Error listing constraints:', error);
+      ResponseUtils.error(res, 'Failed to list constraints', error);
+    }
+  }
+
+  /**
+   * List foreign keys for a table
+   */
+  static async listForeignKeys(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, tableName } = req.params;
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      const result = await client.query(`
+        SELECT
+          tc.constraint_name,
+          kcu.column_name,
+          ccu.table_name AS referenced_table_name,
+          ccu.column_name AS referenced_column_name,
+          rc.update_rule,
+          rc.delete_rule
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.key_column_usage AS kcu
+          ON tc.constraint_name = kcu.constraint_name
+          AND tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage AS ccu
+          ON ccu.constraint_name = tc.constraint_name
+          AND ccu.table_schema = tc.table_schema
+        JOIN information_schema.referential_constraints AS rc
+          ON tc.constraint_name = rc.constraint_name
+          AND tc.table_schema = rc.constraint_schema
+        WHERE tc.table_schema = current_schema()
+          AND tc.table_name = $1
+          AND tc.constraint_type = 'FOREIGN KEY'
+        ORDER BY tc.constraint_name
+      `, [tableName]);
+
+      client.release();
+      ResponseUtils.success(res, 'Foreign keys fetched successfully', result.rows);
+    } catch (error) {
+      console.error('Error listing foreign keys:', error);
+      ResponseUtils.error(res, 'Failed to list foreign keys', error);
+    }
+  }
+
+  /**
+   * Create a foreign key constraint
+   */
+  static async createForeignKey(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, tableName } = req.params;
+      const { columnName, referencedTable, referencedColumn, onDelete = 'RESTRICT', onUpdate = 'RESTRICT' } = req.body;
+
+      if (!columnName || !referencedTable || !referencedColumn) {
+        return ResponseUtils.error(res, 'Column name, referenced table, and referenced column are required', null, null, 400);
+      }
+
+      // Validate referential actions
+      const validActions = ['RESTRICT', 'CASCADE', 'SET NULL', 'SET DEFAULT', 'NO ACTION'];
+      if (!validActions.includes(onDelete) || !validActions.includes(onUpdate)) {
+        return ResponseUtils.error(res, 'Invalid referential action', null, null, 400);
+      }
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Generate constraint name
+      const constraintName = `fk_${tableName}_${columnName}_${referencedTable}_${referencedColumn}`.toLowerCase();
+
+      // Create foreign key constraint
+      const sql = `
+        ALTER TABLE "${tableName}"
+        ADD CONSTRAINT "${constraintName}"
+        FOREIGN KEY ("${columnName}")
+        REFERENCES "${referencedTable}" ("${referencedColumn}")
+        ON DELETE ${onDelete}
+        ON UPDATE ${onUpdate}
+      `;
+
+      await client.query(sql);
+      client.release();
+
+      ResponseUtils.success(res, 'Foreign key created successfully', {
+        constraintName,
+        tableName,
+        columnName,
+        referencedTable,
+        referencedColumn,
+        onDelete,
+        onUpdate
+      }, 201);
+    } catch (error) {
+      console.error('Error creating foreign key:', error);
+      ResponseUtils.error(res, 'Failed to create foreign key', error);
+    }
+  }
+
+  /**
+   * Drop a constraint from a table
+   */
+  static async dropConstraint(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, tableName, constraintName } = req.params;
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Check if this is a NOT NULL constraint (system-generated CHECK constraint)
+      const constraintCheck = await client.query(`
+        SELECT cc.check_clause, tc.constraint_type
+        FROM information_schema.table_constraints AS tc
+        LEFT JOIN information_schema.check_constraints AS cc
+          ON tc.constraint_name = cc.constraint_name
+          AND tc.table_schema = cc.constraint_schema
+        WHERE tc.table_schema = current_schema()
+          AND tc.table_name = $1
+          AND tc.constraint_name = $2
+      `, [tableName, constraintName]);
+
+      if (constraintCheck.rows.length > 0) {
+        const constraint = constraintCheck.rows[0];
+        
+        // Check if it's a NOT NULL constraint
+        if (constraint.constraint_type === 'CHECK' && 
+            constraint.check_clause && 
+            constraint.check_clause.includes('IS NOT NULL')) {
+          client.release();
+          return ResponseUtils.error(
+            res, 
+            'Cannot drop NOT NULL constraint directly. Please edit the column and change it to nullable instead.',
+            null,
+            null,
+            400
+          );
+        }
+      }
+
+      await client.query(`ALTER TABLE "${tableName}" DROP CONSTRAINT IF EXISTS "${constraintName}"`);
+      client.release();
+
+      ResponseUtils.success(res, `Constraint ${constraintName} dropped successfully`);
+    } catch (error) {
+      console.error('Error dropping constraint:', error);
+      ResponseUtils.error(res, 'Failed to drop constraint', error);
     }
   }
 }

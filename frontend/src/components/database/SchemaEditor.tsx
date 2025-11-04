@@ -11,6 +11,8 @@ import {
 import { AppButton, DeleteConfirmModal } from '../ComponentsIndex';
 import McpService from '../../services/McpService';
 import DatabaseService from '../../services/DatabaseService';
+import RequestUtils from '../../utils/RequestUtils';
+import ApiRoutes from '../../constants/ApiRoutes';
 
 interface SchemaEditorProps {
   projectId: string;
@@ -70,6 +72,8 @@ const SchemaEditor = ({
     onUpdate: 'RESTRICT'
   });
   const [availableTables, setAvailableTables] = useState<any[]>([]);
+  const [foreignKeyRefColumns, setForeignKeyRefColumns] = useState<any[]>([]);
+  const [foreignKeyValidation, setForeignKeyValidation] = useState<string[]>([]);
   const [selectedConstraintTable, setSelectedConstraintTable] = useState<string>('');
   const [selectedConstraintColumns, setSelectedConstraintColumns] = useState<any[]>([]);
   const [constraintForm, setConstraintForm] = useState({
@@ -82,6 +86,8 @@ const SchemaEditor = ({
   const [constraintWarnings, setConstraintWarnings] = useState<string[]>([]);
   const [allConstraints, setAllConstraints] = useState<any[]>([]);
   const [constraintsLoading, setConstraintsLoading] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showEditDatePicker, setShowEditDatePicker] = useState(false);
 
   const dataTypes = [
     'SERIAL', 'INTEGER', 'BIGINT', 'SMALLINT',
@@ -102,7 +108,11 @@ const SchemaEditor = ({
 
   const loadForeignKeys = async () => {
     try {
-      const result = await McpService.listForeignKeys(projectId, tableName);
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.get(
+        ApiRoutes.DATABASE.LIST_FOREIGN_KEYS(projectId, tableName),
+        token
+      );
       if (result.success) {
         setForeignKeys(result.data || []);
       }
@@ -114,49 +124,15 @@ const SchemaEditor = ({
   const loadAllConstraints = useCallback(async () => {
     setConstraintsLoading(true);
     try {
-      const result = await McpService.listAllConstraints(projectId, tableName);
-      console.log('Full MCP response:', result);
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.get(
+        ApiRoutes.DATABASE.LIST_CONSTRAINTS(projectId, tableName),
+        token
+      );
       
       if (result.success) {
-        // Debug the response structure
-        console.log('result.data:', result.data);
-        console.log('result.data.data:', result.data?.data);
-        console.log('result.result:', result.result);
-        console.log('result.result.data:', result.result?.data);
-        
-        // Try different paths to find the actual constraints array
-        let constraints = [];
-        
-        // Based on your earlier message, the structure is: result.data.data
-        if (result.data?.data && Array.isArray(result.data.data)) {
-          constraints = result.data.data;
-        } 
-        // Fallback paths
-        else if (result.data && Array.isArray(result.data)) {
-          constraints = result.data;
-        } else if (result.result?.data?.data && Array.isArray(result.result.data.data)) {
-          constraints = result.result.data.data;
-        } else if (result.result?.data && Array.isArray(result.result.data)) {
-          constraints = result.result.data;
-        } else if (result.result && Array.isArray(result.result)) {
-          constraints = result.result;
-        }
-        
-        // If we still don't have an array, let's look deeper
-        if (!Array.isArray(constraints)) {
-          console.log('No array found, checking deeper...');
-          console.log('result keys:', Object.keys(result));
-          if (result.data) {
-            console.log('result.data keys:', Object.keys(result.data));
-            if (result.data.data) {
-              console.log('result.data.data type:', typeof result.data.data);
-              console.log('result.data.data is array:', Array.isArray(result.data.data));
-            }
-          }
-        }
-        
-        console.log('Extracted constraints:', constraints);
-        setAllConstraints(Array.isArray(constraints) ? constraints : []);
+        console.log('Constraints loaded:', result.data);
+        setAllConstraints(Array.isArray(result.data) ? result.data : []);
       } else {
         console.error('Failed to load constraints:', result.error);
         setAllConstraints([]);
@@ -173,13 +149,19 @@ const SchemaEditor = ({
   useEffect(() => {
     if (projectId && tableName) {
       loadAllConstraints();
+      loadForeignKeys();
     }
   }, [projectId, tableName, loadAllConstraints]);
 
   const loadAvailableTables = async () => {
     try {
-      const result = await McpService.listTables(projectId);
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.get(
+        ApiRoutes.DATABASE.LIST_TABLES(projectId),
+        token
+      );
       if (result.success) {
+        console.log('Available tables loaded:', result.data);
         // Filter out current table
         const otherTables = result.data.filter((table: any) => table.table_name !== tableName);
         setAvailableTables(otherTables);
@@ -189,12 +171,21 @@ const SchemaEditor = ({
     }
   };
 
+  // Helper function to get foreign key for a specific column
+  const getForeignKeyForColumn = (columnName: string) => {
+    return foreignKeys.find(fk => fk.column_name === columnName);
+  };
+
   const handleConstraintTableSelect = async (tableName: string) => {
     setSelectedConstraintTable(tableName);
     setConstraintForm(prev => ({ ...prev, referencedTable: tableName, referencedColumn: '' }));
     
     try {
-      const result = await McpService.getTableSchema(projectId, tableName);
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.get(
+        ApiRoutes.DATABASE.GET_TABLE_SCHEMA(projectId, tableName),
+        token
+      );
       if (result.success) {
         setSelectedConstraintColumns(result.data || []);
         validateConstraintTypes();
@@ -205,6 +196,39 @@ const SchemaEditor = ({
     }
   };
 
+  // Helper function to normalize data types for comparison
+  const normalizeDataType = (dataType: string): string => {
+    const type = dataType.toUpperCase();
+    // Normalize integer types
+    if (['INTEGER', 'INT', 'INT4'].includes(type)) return 'INTEGER';
+    if (['BIGINT', 'INT8'].includes(type)) return 'BIGINT';
+    if (['SMALLINT', 'INT2'].includes(type)) return 'SMALLINT';
+    if (['SERIAL', 'SERIAL4'].includes(type)) return 'INTEGER'; // SERIAL is essentially INTEGER
+    if (['BIGSERIAL', 'SERIAL8'].includes(type)) return 'BIGINT';
+    // Normalize character types
+    if (type.includes('CHARACTER VARYING')) return 'VARCHAR';
+    if (type.includes('CHARACTER')) return 'CHAR';
+    // Normalize timestamp types
+    if (type.includes('TIMESTAMP WITHOUT TIME ZONE')) return 'TIMESTAMP';
+    if (type.includes('TIME WITHOUT TIME ZONE')) return 'TIME';
+    return type;
+  };
+
+  // Get compatible source columns based on referenced column type
+  const getCompatibleSourceColumns = (referencedColumnName: string) => {
+    if (!referencedColumnName || !columns.length) return columns;
+    
+    const referencedColumn = selectedConstraintColumns.find(col => col.column_name === referencedColumnName);
+    if (!referencedColumn) return columns;
+    
+    const referencedType = normalizeDataType(referencedColumn.data_type);
+    
+    return columns.filter(col => {
+      const sourceType = normalizeDataType(col.data_type);
+      return sourceType === referencedType;
+    });
+  };
+
   const validateConstraintTypes = () => {
     const warnings: string[] = [];
     
@@ -213,26 +237,31 @@ const SchemaEditor = ({
       const referencedColumn = selectedConstraintColumns.find(col => col.column_name === constraintForm.referencedColumn);
       
       if (sourceColumn && referencedColumn) {
-        // Check for type compatibility
-        const sourceType = sourceColumn.data_type.toUpperCase();
-        const referencedType = referencedColumn.data_type.toUpperCase();
+        // Check for type compatibility with normalization
+        const sourceType = normalizeDataType(sourceColumn.data_type);
+        const referencedType = normalizeDataType(referencedColumn.data_type);
         
         if (sourceType !== referencedType) {
-          warnings.push(`⚠️ Data type mismatch: ${sourceColumn.column_name} (${sourceType}) vs ${referencedColumn.column_name} (${referencedType})`);
+          warnings.push(`❌ Data type mismatch: ${sourceColumn.column_name} (${sourceColumn.data_type}) cannot reference ${referencedColumn.column_name} (${referencedColumn.data_type})`);
         }
         
         // Check for length differences in VARCHAR
-        if (sourceType.includes('VARCHAR') && referencedType.includes('VARCHAR')) {
+        if (sourceType === 'VARCHAR' && referencedType === 'VARCHAR') {
           const sourceLength = sourceColumn.character_maximum_length || 0;
           const referencedLength = referencedColumn.character_maximum_length || 0;
-          if (sourceLength !== referencedLength) {
-            warnings.push(`⚠️ VARCHAR length mismatch: ${sourceColumn.column_name} (${sourceLength}) vs ${referencedColumn.column_name} (${referencedLength})`);
+          if (sourceLength > referencedLength) {
+            warnings.push(`⚠️ VARCHAR length warning: Source column (${sourceLength}) is larger than referenced column (${referencedLength})`);
           }
         }
         
         // Check for nullable constraints
         if (!sourceColumn.is_nullable && referencedColumn.is_nullable) {
           warnings.push(`⚠️ Source column ${sourceColumn.column_name} is NOT NULL but referenced column ${referencedColumn.column_name} is nullable`);
+        }
+        
+        // Success message if no issues
+        if (warnings.length === 0) {
+          warnings.push(`✅ Types are compatible: ${sourceColumn.data_type} → ${referencedColumn.data_type}`);
         }
       }
     }
@@ -255,13 +284,32 @@ const SchemaEditor = ({
       return;
     }
 
+    // Validate type compatibility before creating
+    const sourceColumn = columns.find(col => col.column_name === constraintForm.sourceColumn);
+    const referencedColumn = selectedConstraintColumns.find(col => col.column_name === constraintForm.referencedColumn);
+    
+    if (sourceColumn && referencedColumn) {
+      const sourceType = normalizeDataType(sourceColumn.data_type);
+      const referencedType = normalizeDataType(referencedColumn.data_type);
+      
+      if (sourceType !== referencedType) {
+        alert(`❌ Cannot create constraint: Data types are incompatible.\n\nSource: ${sourceColumn.column_name} (${sourceColumn.data_type})\nTarget: ${referencedColumn.column_name} (${referencedColumn.data_type})\n\nPlease select columns with matching data types.`);
+        return;
+      }
+    }
+
     try {
-      const result = await McpService.createForeignKey(
-        projectId,
-        tableName,
-        constraintForm.sourceColumn,
-        constraintForm.referencedTable,
-        constraintForm.referencedColumn
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.post(
+        ApiRoutes.DATABASE.CREATE_FOREIGN_KEY(projectId, tableName),
+        token,
+        {
+          columnName: constraintForm.sourceColumn,
+          referencedTable: constraintForm.referencedTable,
+          referencedColumn: constraintForm.referencedColumn,
+          onDelete: constraintForm.onDelete,
+          onUpdate: constraintForm.onUpdate
+        }
       );
       
       if (result.success) {
@@ -279,14 +327,74 @@ const SchemaEditor = ({
         setSelectedConstraintColumns([]);
         setConstraintWarnings([]);
         await loadForeignKeys();
+        await loadAllConstraints(); // Refresh constraints list
+        alert('✅ Foreign key constraint created successfully!');
       } else {
-        console.error('Failed to create constraint:', result.error);
-        alert('Failed to create constraint. Please try again.');
+        console.error('Failed to create constraint:', result.message);
+        alert(`Failed to create constraint: ${result.message || 'Please try again.'}`);
+      }
+    } catch (error: any) {
+      console.error('Error creating constraint:', error);
+      alert(`Error creating constraint: ${error.message || 'Please try again.'}`);
+    }
+  };
+
+  const handleForeignKeyTableSelect = async (tableName: string) => {
+    setNewForeignKey(prev => ({ ...prev, referencedTable: tableName, referencedColumn: '', columnName: '' }));
+    
+    try {
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.get(
+        ApiRoutes.DATABASE.GET_TABLE_SCHEMA(projectId, tableName),
+        token
+      );
+      if (result.success) {
+        setForeignKeyRefColumns(result.data || []);
       }
     } catch (error) {
-      console.error('Error creating constraint:', error);
-      alert('Error creating constraint. Please try again.');
+      console.error('Error loading table schema:', error);
+      setForeignKeyRefColumns([]);
     }
+  };
+
+  const validateForeignKey = () => {
+    const validationMessages: string[] = [];
+    
+    if (newForeignKey.columnName && newForeignKey.referencedColumn && foreignKeyRefColumns.length > 0) {
+      const sourceColumn = columns.find(col => col.column_name === newForeignKey.columnName);
+      const referencedColumn = foreignKeyRefColumns.find(col => col.column_name === newForeignKey.referencedColumn);
+      
+      if (sourceColumn && referencedColumn) {
+        const sourceType = normalizeDataType(sourceColumn.data_type);
+        const referencedType = normalizeDataType(referencedColumn.data_type);
+        
+        if (sourceType !== referencedType) {
+          validationMessages.push(`❌ Type mismatch: ${sourceColumn.column_name} (${sourceColumn.data_type}) cannot reference ${referencedColumn.column_name} (${referencedColumn.data_type})`);
+        } else {
+          validationMessages.push(`✅ Types are compatible: ${sourceColumn.data_type} → ${referencedColumn.data_type}`);
+        }
+        
+        if (!sourceColumn.is_nullable && referencedColumn.is_nullable) {
+          validationMessages.push(`⚠️ Source column is NOT NULL but referenced column is nullable`);
+        }
+      }
+    }
+    
+    setForeignKeyValidation(validationMessages);
+  };
+
+  const getCompatibleSourceColumnsForFK = (referencedColumnName: string) => {
+    if (!referencedColumnName || !foreignKeyRefColumns.length) return columns;
+    
+    const referencedColumn = foreignKeyRefColumns.find(col => col.column_name === referencedColumnName);
+    if (!referencedColumn) return columns;
+    
+    const referencedType = normalizeDataType(referencedColumn.data_type);
+    
+    return columns.filter(col => {
+      const sourceType = normalizeDataType(col.data_type);
+      return sourceType === referencedType;
+    });
   };
 
   const handleCreateForeignKey = async () => {
@@ -295,13 +403,32 @@ const SchemaEditor = ({
       return;
     }
 
+    // Validate type compatibility
+    const sourceColumn = columns.find(col => col.column_name === newForeignKey.columnName);
+    const referencedColumn = foreignKeyRefColumns.find(col => col.column_name === newForeignKey.referencedColumn);
+    
+    if (sourceColumn && referencedColumn) {
+      const sourceType = normalizeDataType(sourceColumn.data_type);
+      const referencedType = normalizeDataType(referencedColumn.data_type);
+      
+      if (sourceType !== referencedType) {
+        alert(`❌ Cannot create foreign key: Data types are incompatible.\n\nSource: ${sourceColumn.column_name} (${sourceColumn.data_type})\nTarget: ${referencedColumn.column_name} (${referencedColumn.data_type})`);
+        return;
+      }
+    }
+
     try {
-      const result = await McpService.createForeignKey(
-        projectId,
-        tableName,
-        newForeignKey.columnName,
-        newForeignKey.referencedTable,
-        newForeignKey.referencedColumn
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.post(
+        ApiRoutes.DATABASE.CREATE_FOREIGN_KEY(projectId, tableName),
+        token,
+        {
+          columnName: newForeignKey.columnName,
+          referencedTable: newForeignKey.referencedTable,
+          referencedColumn: newForeignKey.referencedColumn,
+          onDelete: newForeignKey.onDelete,
+          onUpdate: newForeignKey.onUpdate
+        }
       );
       
       if (result.success) {
@@ -315,14 +442,18 @@ const SchemaEditor = ({
           onDelete: 'RESTRICT',
           onUpdate: 'RESTRICT'
         });
+        setForeignKeyRefColumns([]);
+        setForeignKeyValidation([]);
         await loadForeignKeys();
+        await loadAllConstraints();
+        alert('✅ Foreign key created successfully!');
       } else {
-        console.error('Failed to create foreign key:', result.error);
-        alert('Failed to create foreign key. Please try again.');
+        console.error('Failed to create foreign key:', result.message);
+        alert(`Failed to create foreign key: ${result.message || 'Please try again.'}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating foreign key:', error);
-      alert('Error creating foreign key. Please try again.');
+      alert(`Error creating foreign key: ${error.message || 'Please try again.'}`);
     }
   };
 
@@ -342,6 +473,7 @@ const SchemaEditor = ({
         onSchemaChange?.();
         setNewColumn({ name: '', type: 'VARCHAR', nullable: true, defaultValue: '', length: '' });
         setShowAddColumnForm(false);
+        setShowDatePicker(false);
       } else {
         console.error('Failed to add column:', result.error);
         alert('Failed to add column. Please try again.');
@@ -364,11 +496,17 @@ const SchemaEditor = ({
       return;
     }
     
+    // For date/timestamp types without a specific value set, use PostgreSQL NOW() function
+    let defaultValue = newColumn.defaultValue || undefined;
+    if (!showDatePicker && !defaultValue && (newColumn.type === 'DATE' || newColumn.type === 'TIMESTAMP')) {
+      defaultValue = 'CURRENT_TIMESTAMP';
+    }
+    
     handleAddColumn(
       newColumn.name, 
       newColumn.type, 
       newColumn.nullable, 
-      newColumn.defaultValue || undefined,
+      defaultValue,
       newColumn.length || undefined
     );
   };
@@ -376,6 +514,7 @@ const SchemaEditor = ({
   const handleCancelAddColumn = () => {
     setShowAddColumnForm(false);
     setNewColumn({ name: '', type: 'VARCHAR', nullable: true, defaultValue: '', length: '' });
+    setShowDatePicker(false);
   };
 
   const handleStartEdit = (column: any) => {
@@ -391,6 +530,7 @@ const SchemaEditor = ({
   const handleCancelEdit = () => {
     setEditingColumn(null);
     setEditColumnData({ name: '', type: '', nullable: true, defaultValue: '' });
+    setShowEditDatePicker(false);
   };
 
   const handleSaveEdit = async () => {
@@ -415,9 +555,17 @@ const SchemaEditor = ({
         changes.nullable = editColumnData.nullable;
       }
       
+      // Handle default value changes
       const originalDefault = originalColumn.column_default || '';
-      if (editColumnData.defaultValue !== originalDefault) {
-        changes.defaultValue = editColumnData.defaultValue || null;
+      let newDefaultValue = editColumnData.defaultValue;
+      
+      // For date/timestamp types without a specific value set, use PostgreSQL NOW() function
+      if (!showEditDatePicker && !newDefaultValue && (editColumnData.type === 'DATE' || editColumnData.type.includes('TIMESTAMP'))) {
+        newDefaultValue = 'CURRENT_TIMESTAMP';
+      }
+      
+      if (newDefaultValue !== originalDefault) {
+        changes.defaultValue = newDefaultValue || null;
       }
 
       // Only proceed if there are actual changes
@@ -431,6 +579,7 @@ const SchemaEditor = ({
       
       if (result.success) {
         onSchemaChange?.();
+        setShowEditDatePicker(false);
         handleCancelEdit();
       } else {
         console.error('Failed to alter column:', result.error);
@@ -475,13 +624,51 @@ const SchemaEditor = ({
     }
 
     if (isDate) {
+      if (!showDatePicker) {
+        return (
+          <button
+            type="button"
+            onClick={() => setShowDatePicker(true)}
+            className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-600 dark:text-dark-400 hover:text-dark-900 dark:hover:text-white hover:border-primary-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent text-left transition-colors"
+          >
+            Date.now()
+          </button>
+        );
+      }
+      
       return (
-        <input
-          type={newColumn.type === 'DATE' ? 'date' : 'datetime-local'}
-          value={newColumn.defaultValue}
-          onChange={(e) => setNewColumn({ ...newColumn, defaultValue: e.target.value })}
-          className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-        />
+        <div className="flex items-center space-x-2">
+          <input
+            type={newColumn.type === 'DATE' ? 'date' : 'datetime-local'}
+            value={newColumn.defaultValue}
+            onChange={(e) => setNewColumn({ ...newColumn, defaultValue: e.target.value })}
+            className="flex-1 px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const now = new Date();
+              const value = newColumn.type === 'DATE' 
+                ? now.toISOString().split('T')[0] 
+                : now.toISOString().slice(0, 16);
+              setNewColumn({ ...newColumn, defaultValue: value });
+            }}
+            className="px-3 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 whitespace-nowrap"
+          >
+            Now
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowDatePicker(false);
+              setNewColumn({ ...newColumn, defaultValue: '' });
+            }}
+            className="px-3 py-2 text-sm font-medium text-dark-600 dark:text-dark-400 hover:text-dark-700 dark:hover:text-dark-300 whitespace-nowrap"
+          >
+            Cancel
+          </button>
+        </div>
       );
     }
 
@@ -543,7 +730,10 @@ const SchemaEditor = ({
             </label>
             <select
               value={editColumnData.type}
-              onChange={(e) => setEditColumnData({ ...editColumnData, type: e.target.value, defaultValue: '' })}
+              onChange={(e) => {
+                setEditColumnData({ ...editColumnData, type: e.target.value, defaultValue: '' });
+                setShowEditDatePicker(false);
+              }}
               className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             >
               {dataTypes.map(type => (
@@ -632,13 +822,51 @@ const SchemaEditor = ({
     }
 
     if (isDate) {
+      if (!showEditDatePicker && !editColumnData.defaultValue) {
+        return (
+          <button
+            type="button"
+            onClick={() => setShowEditDatePicker(true)}
+            className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-600 dark:text-dark-400 hover:text-dark-900 dark:hover:text-white hover:border-primary-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent text-left transition-colors"
+          >
+            Date.now()
+          </button>
+        );
+      }
+      
       return (
-        <input
-          type={editColumnData.type === 'DATE' ? 'date' : 'datetime-local'}
-          value={editColumnData.defaultValue}
-          onChange={(e) => setEditColumnData({ ...editColumnData, defaultValue: e.target.value })}
-          className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-        />
+        <div className="flex items-center space-x-2">
+          <input
+            type={editColumnData.type === 'DATE' ? 'date' : 'datetime-local'}
+            value={editColumnData.defaultValue}
+            onChange={(e) => setEditColumnData({ ...editColumnData, defaultValue: e.target.value })}
+            className="flex-1 px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            autoFocus={showEditDatePicker}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const now = new Date();
+              const value = editColumnData.type === 'DATE' 
+                ? now.toISOString().split('T')[0] 
+                : now.toISOString().slice(0, 16);
+              setEditColumnData({ ...editColumnData, defaultValue: value });
+            }}
+            className="px-3 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 whitespace-nowrap"
+          >
+            Now
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowEditDatePicker(false);
+              setEditColumnData({ ...editColumnData, defaultValue: '' });
+            }}
+            className="px-3 py-2 text-sm font-medium text-dark-600 dark:text-dark-400 hover:text-dark-700 dark:hover:text-dark-300 whitespace-nowrap"
+          >
+            Cancel
+          </button>
+        </div>
       );
     }
 
@@ -731,15 +959,28 @@ const SchemaEditor = ({
           Table Schema
         </h5>
         <div className="flex items-center space-x-2">
-          <AppButton 
+            <AppButton 
             variant="secondary" 
             size="sm" 
             icon={<Key className="w-4 h-4" />}
             onClick={() => {
-              setShowConstraintsSection(!showConstraintsSection);
               if (!showConstraintsSection) {
+                // Opening the section
                 loadAvailableTables();
+              } else {
+                // Closing the section - reset form
+                setConstraintForm({
+                  sourceColumn: '',
+                  referencedTable: '',
+                  referencedColumn: '',
+                  onDelete: 'RESTRICT',
+                  onUpdate: 'RESTRICT'
+                });
+                setSelectedConstraintTable('');
+                setSelectedConstraintColumns([]);
+                setConstraintWarnings([]);
               }
+              setShowConstraintsSection(!showConstraintsSection);
             }}
           >
             {showConstraintsSection ? 'Hide Constraints' : 'Constraints'}
@@ -751,6 +992,7 @@ const SchemaEditor = ({
             onClick={() => {
               setShowForeignKeyModal(true);
               loadAvailableTables();
+              loadForeignKeys();
             }}
           >
             Foreign Keys
@@ -780,6 +1022,9 @@ const SchemaEditor = ({
                 </th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-dark-700 dark:text-dark-300">
                   Nullable
+                </th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-dark-700 dark:text-dark-300">
+                  Foreign Key
                 </th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-dark-700 dark:text-dark-300">
                   Default Value
@@ -818,6 +1063,27 @@ const SchemaEditor = ({
                       </span>
                     </td>
                     <td className="py-3 px-4 text-sm text-dark-600 dark:text-dark-300">
+                      {(() => {
+                        const fk = getForeignKeyForColumn(column.column_name);
+                        return fk ? (
+                          <div className="flex items-center space-x-1">
+                            <Link className="w-3 h-3 text-blue-500" />
+                            <span className="text-xs">
+                              <span className="font-medium text-blue-600 dark:text-blue-400">
+                                {fk.referenced_table_name}
+                              </span>
+                              <span className="text-dark-400 dark:text-dark-500 mx-1">→</span>
+                              <span className="font-mono text-blue-600 dark:text-blue-400">
+                                {fk.referenced_column_name}
+                              </span>
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-dark-400 dark:text-dark-500">-</span>
+                        );
+                      })()}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-dark-600 dark:text-dark-300">
                       {column.column_default ? (
                         <span className="font-mono text-xs bg-dark-100 dark:bg-dark-600 px-2 py-1 rounded">
                           {column.column_default}
@@ -847,7 +1113,7 @@ const SchemaEditor = ({
                   </tr>
                   {editingColumn === column.column_name && (
                     <tr>
-                      <td colSpan={5} className="p-0">
+                      <td colSpan={6} className="p-0">
                         {renderEditForm(column)}
                       </td>
                     </tr>
@@ -858,7 +1124,7 @@ const SchemaEditor = ({
               {/* Add Column Row */}
               {showAddColumnForm ? (
                 <tr className="bg-primary-50 dark:bg-primary-900/20">
-                  <td colSpan={5} className="p-4">
+                  <td colSpan={6} className="p-4">
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h6 className="font-semibold text-primary-900 dark:text-primary-100">
@@ -895,6 +1161,7 @@ const SchemaEditor = ({
                             onChange={(e) => {
                               const newType = e.target.value;
                               setNewColumn({ ...newColumn, type: newType, defaultValue: '' });
+                              setShowDatePicker(false);
                             }}
                             className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                           >
@@ -964,7 +1231,7 @@ const SchemaEditor = ({
                 </tr>
               ) : (
                 <tr className="hover:bg-dark-50 dark:hover:bg-dark-700 cursor-pointer" onClick={handleAddColumnClick}>
-                  <td colSpan={5} className="py-3 px-4 text-center">
+                  <td colSpan={6} className="py-3 px-4 text-center">
                     <button className="inline-flex items-center space-x-2 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium text-sm">
                       <Plus className="w-4 h-4" />
                       <span>Add Column</span>
@@ -1062,35 +1329,48 @@ const SchemaEditor = ({
                               {constraint.check_clause}
                             </span>
                           </p>
+                          {constraint.check_clause.includes('IS NOT NULL') && (
+                            <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                              ℹ️ System-generated NOT NULL constraint - Edit column to change
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
                     
                     <div className="flex items-center space-x-1 ml-4">
-                      <button 
-                        className="p-1 text-dark-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                        title="Delete constraint"
-                        onClick={async () => {
-                          if (confirm(`Are you sure you want to delete the constraint "${constraint.constraint_name}"?`)) {
-                            try {
-                              const result = await McpService.dropConstraint(projectId, tableName, constraint.constraint_name);
-                              if (result.success) {
-                                console.log('Constraint deleted successfully');
-                                await loadAllConstraints(); // Refresh the list
-                                onSchemaChange?.(); // Notify parent of schema change
-                              } else {
-                                console.error('Failed to delete constraint:', result.error);
-                                alert('Failed to delete constraint. Please try again.');
+                      {/* Hide delete button for NOT NULL constraints */}
+                      {!(constraint.constraint_type === 'CHECK' && constraint.check_clause?.includes('IS NOT NULL')) && (
+                        <button 
+                          className="p-1 text-dark-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                          title="Delete constraint"
+                          onClick={async () => {
+                            if (confirm(`Are you sure you want to delete the constraint "${constraint.constraint_name}"?`)) {
+                              try {
+                                const token = localStorage.getItem('skaftin-token') || '';
+                                const result = await RequestUtils.delete(
+                                  ApiRoutes.DATABASE.DROP_CONSTRAINT(projectId, tableName, constraint.constraint_name),
+                                  token,
+                                  {}
+                                );
+                                if (result.success) {
+                                  console.log('Constraint deleted successfully');
+                                  await loadAllConstraints(); // Refresh the list
+                                  onSchemaChange?.(); // Notify parent of schema change
+                                } else {
+                                  console.error('Failed to delete constraint:', result.message);
+                                  alert(result.message || 'Failed to delete constraint. Please try again.');
+                                }
+                              } catch (error) {
+                                console.error('Error deleting constraint:', error);
+                                alert('Error deleting constraint. Please try again.');
                               }
-                            } catch (error) {
-                              console.error('Error deleting constraint:', error);
-                              alert('Error deleting constraint. Please try again.');
                             }
-                          }
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1138,59 +1418,87 @@ const SchemaEditor = ({
               </select>
             </div>
 
-            {/* Step 2: Column Mapping */}
+            {/* Step 2: Select Referenced Column */}
             {selectedConstraintTable && (
               <div>
                 <label className="block text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">
-                  2. Map Columns
+                  2. Select Referenced Column
                 </label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
-                      Source Column (from {tableName})
-                    </label>
-                    <select
-                      value={constraintForm.sourceColumn}
-                      onChange={(e) => handleConstraintFormChange('sourceColumn', e.target.value)}
-                      className="w-full px-3 py-2 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-blue-900/50 text-blue-900 dark:text-blue-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="">Select source column</option>
-                      {columns.map(col => (
-                        <option key={col.column_name} value={col.column_name}>
-                          {col.column_name} ({col.data_type})
-                          {!col.is_nullable && ' *'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
-                      Referenced Column (from {selectedConstraintTable})
-                    </label>
-                    <select
-                      value={constraintForm.referencedColumn}
-                      onChange={(e) => handleConstraintFormChange('referencedColumn', e.target.value)}
-                      className="w-full px-3 py-2 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-blue-900/50 text-blue-900 dark:text-blue-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="">Select referenced column</option>
-                      {selectedConstraintColumns.map(col => (
-                        <option key={col.column_name} value={col.column_name}>
-                          {col.column_name} ({col.data_type})
-                          {!col.is_nullable && ' *'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+                    Referenced Column (from {selectedConstraintTable})
+                  </label>
+                  <select
+                    value={constraintForm.referencedColumn}
+                    onChange={(e) => {
+                      handleConstraintFormChange('referencedColumn', e.target.value);
+                      // Reset source column when referenced changes
+                      setConstraintForm(prev => ({ ...prev, referencedColumn: e.target.value, sourceColumn: '' }));
+                    }}
+                    className="w-full px-3 py-2 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-blue-900/50 text-blue-900 dark:text-blue-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Select column from {selectedConstraintTable}...</option>
+                    {selectedConstraintColumns.map(col => (
+                      <option key={col.column_name} value={col.column_name}>
+                        {col.column_name} ({col.data_type})
+                        {!col.is_nullable && ' *'}
+                      </option>
+                    ))}
+                  </select>
+                  {constraintForm.referencedColumn && (
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                      ✅ Selected: {constraintForm.referencedColumn} ({normalizeDataType(selectedConstraintColumns.find(c => c.column_name === constraintForm.referencedColumn)?.data_type || '')})
+                    </p>
+                  )}
                 </div>
               </div>
             )}
 
-            {/* Step 3: Action Configuration */}
+            {/* Step 3: Select Source Column */}
+            {constraintForm.referencedColumn && (
+              <div>
+                <label className="block text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">
+                  3. Select Source Column
+                </label>
+                <div>
+                  <label className="block text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+                    Source Column (from {tableName})
+                    <span className="ml-2 text-xs text-blue-600 dark:text-blue-300">
+                      • Showing compatible types only
+                    </span>
+                  </label>
+                  <select
+                    value={constraintForm.sourceColumn}
+                    onChange={(e) => handleConstraintFormChange('sourceColumn', e.target.value)}
+                    className="w-full px-3 py-2 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-blue-900/50 text-blue-900 dark:text-blue-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Select source column</option>
+                    {getCompatibleSourceColumns(constraintForm.referencedColumn).map(col => (
+                      <option key={col.column_name} value={col.column_name}>
+                        {col.column_name} ({col.data_type})
+                        {!col.is_nullable && ' *'}
+                      </option>
+                    ))}
+                  </select>
+                  <p className={`text-xs mt-1 ${
+                    getCompatibleSourceColumns(constraintForm.referencedColumn).length === 0
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-green-600 dark:text-green-400'
+                  }`}>
+                    {getCompatibleSourceColumns(constraintForm.referencedColumn).length === 0
+                      ? `❌ No compatible columns found in ${tableName}`
+                      : `✅ Found ${getCompatibleSourceColumns(constraintForm.referencedColumn).length} compatible column(s)`
+                    }
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: Action Configuration */}
             {constraintForm.sourceColumn && constraintForm.referencedColumn && (
               <div>
                 <label className="block text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">
-                  3. Configure Actions
+                  4. Configure Actions
                 </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -1208,6 +1516,13 @@ const SchemaEditor = ({
                         </option>
                       ))}
                     </select>
+                    <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                      {constraintForm.onDelete === 'RESTRICT' && 'Prevent deletion if referenced'}
+                      {constraintForm.onDelete === 'CASCADE' && 'Delete this row when referenced row is deleted'}
+                      {constraintForm.onDelete === 'SET NULL' && 'Set to NULL when referenced row is deleted'}
+                      {constraintForm.onDelete === 'SET DEFAULT' && 'Set to default when referenced row is deleted'}
+                      {constraintForm.onDelete === 'NO ACTION' && 'No action (similar to RESTRICT)'}
+                    </p>
                   </div>
 
                   <div>
@@ -1225,6 +1540,43 @@ const SchemaEditor = ({
                         </option>
                       ))}
                     </select>
+                    <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                      {constraintForm.onUpdate === 'RESTRICT' && 'Prevent update if referenced'}
+                      {constraintForm.onUpdate === 'CASCADE' && 'Update this value when referenced value updates'}
+                      {constraintForm.onUpdate === 'SET NULL' && 'Set to NULL when referenced value updates'}
+                      {constraintForm.onUpdate === 'SET DEFAULT' && 'Set to default when referenced value updates'}
+                      {constraintForm.onUpdate === 'NO ACTION' && 'No action (similar to RESTRICT)'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Constraint Preview */}
+            {constraintForm.sourceColumn && constraintForm.referencedColumn && constraintForm.referencedTable && (
+              <div className="bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700 rounded-lg p-4">
+                <h6 className="font-medium text-blue-900 dark:text-blue-100 mb-3">
+                  Constraint Preview
+                </h6>
+                <div className="font-mono text-sm text-blue-800 dark:text-blue-200 bg-white dark:bg-blue-950/30 p-3 rounded border border-blue-200 dark:border-blue-800">
+                  <div className="space-y-1">
+                    <div>
+                      <span className="text-blue-600 dark:text-blue-400">Table:</span> {tableName}
+                    </div>
+                    <div>
+                      <span className="text-blue-600 dark:text-blue-400">Column:</span> {constraintForm.sourceColumn}
+                    </div>
+                    <div className="my-2 text-center text-blue-500">↓ REFERENCES ↓</div>
+                    <div>
+                      <span className="text-blue-600 dark:text-blue-400">Table:</span> {constraintForm.referencedTable}
+                    </div>
+                    <div>
+                      <span className="text-blue-600 dark:text-blue-400">Column:</span> {constraintForm.referencedColumn}
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-800">
+                      <div><span className="text-blue-600 dark:text-blue-400">ON DELETE:</span> {constraintForm.onDelete}</div>
+                      <div><span className="text-blue-600 dark:text-blue-400">ON UPDATE:</span> {constraintForm.onUpdate}</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1232,16 +1584,44 @@ const SchemaEditor = ({
 
             {/* Warnings */}
             {constraintWarnings.length > 0 && (
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <div className={`rounded-lg p-4 border ${
+                constraintWarnings.some(w => w.startsWith('❌'))
+                  ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                  : constraintWarnings.some(w => w.startsWith('✅'))
+                  ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                  : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+              }`}>
                 <div className="flex items-start space-x-2">
-                  <Shield className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5" />
-                  <div>
-                    <h6 className="font-medium text-yellow-800 dark:text-yellow-200 mb-2">
-                      Compatibility Warnings
+                  <Shield className={`w-5 h-5 mt-0.5 ${
+                    constraintWarnings.some(w => w.startsWith('❌'))
+                      ? 'text-red-600 dark:text-red-400'
+                      : constraintWarnings.some(w => w.startsWith('✅'))
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-yellow-600 dark:text-yellow-400'
+                  }`} />
+                  <div className="flex-1">
+                    <h6 className={`font-medium mb-2 ${
+                      constraintWarnings.some(w => w.startsWith('❌'))
+                        ? 'text-red-800 dark:text-red-200'
+                        : constraintWarnings.some(w => w.startsWith('✅'))
+                        ? 'text-green-800 dark:text-green-200'
+                        : 'text-yellow-800 dark:text-yellow-200'
+                    }`}>
+                      {constraintWarnings.some(w => w.startsWith('❌'))
+                        ? 'Type Compatibility Issues'
+                        : constraintWarnings.some(w => w.startsWith('✅'))
+                        ? 'Constraint Validation'
+                        : 'Compatibility Warnings'}
                     </h6>
-                    <ul className="text-sm text-yellow-700 dark:text-yellow-300 space-y-1">
+                    <ul className={`text-sm space-y-1 ${
+                      constraintWarnings.some(w => w.startsWith('❌'))
+                        ? 'text-red-700 dark:text-red-300'
+                        : constraintWarnings.some(w => w.startsWith('✅'))
+                        ? 'text-green-700 dark:text-green-300'
+                        : 'text-yellow-700 dark:text-yellow-300'
+                    }`}>
                       {constraintWarnings.map((warning, index) => (
-                        <li key={index}>• {warning}</li>
+                        <li key={index}>{warning}</li>
                       ))}
                     </ul>
                   </div>
@@ -1253,14 +1633,31 @@ const SchemaEditor = ({
             <div className="flex items-center justify-end space-x-3">
               <AppButton
                 variant="secondary"
-                onClick={() => setShowConstraintsSection(false)}
+                onClick={() => {
+                  setShowConstraintsSection(false);
+                  setConstraintForm({
+                    sourceColumn: '',
+                    referencedTable: '',
+                    referencedColumn: '',
+                    onDelete: 'RESTRICT',
+                    onUpdate: 'RESTRICT'
+                  });
+                  setSelectedConstraintTable('');
+                  setSelectedConstraintColumns([]);
+                  setConstraintWarnings([]);
+                }}
               >
                 Cancel
               </AppButton>
               <AppButton
                 variant="primary"
                 onClick={handleCreateConstraint}
-                disabled={!constraintForm.sourceColumn || !constraintForm.referencedTable || !constraintForm.referencedColumn}
+                disabled={
+                  !constraintForm.sourceColumn || 
+                  !constraintForm.referencedTable || 
+                  !constraintForm.referencedColumn ||
+                  constraintWarnings.some(w => w.startsWith('❌'))
+                }
                 icon={<Key className="w-4 h-4" />}
               >
                 Create Constraint
@@ -1300,7 +1697,18 @@ const SchemaEditor = ({
                 </h3>
               </div>
               <button
-                onClick={() => setShowForeignKeyModal(false)}
+                onClick={() => {
+                  setShowForeignKeyModal(false);
+                  setNewForeignKey({
+                    columnName: '',
+                    referencedTable: '',
+                    referencedColumn: '',
+                    onDelete: 'RESTRICT',
+                    onUpdate: 'RESTRICT'
+                  });
+                  setForeignKeyRefColumns([]);
+                  setForeignKeyValidation([]);
+                }}
                 className="text-dark-400 hover:text-dark-600 dark:hover:text-dark-300 transition-colors"
               >
                 ×
@@ -1315,102 +1723,252 @@ const SchemaEditor = ({
                     Add New Foreign Key
                   </h4>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-4">
+                    {/* Step 1: Referenced Table */}
                     <div>
                       <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                        Column Name
-                      </label>
-                      <select
-                        value={newForeignKey.columnName}
-                        onChange={(e) => setNewForeignKey({ ...newForeignKey, columnName: e.target.value })}
-                        className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      >
-                        <option value="">Select column</option>
-                        {columns.map(col => (
-                          <option key={col.column_name} value={col.column_name}>
-                            {col.column_name} ({col.data_type})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                        Referenced Table
+                        1. Referenced Table
                       </label>
                       <select
                         value={newForeignKey.referencedTable}
-                        onChange={(e) => setNewForeignKey({ ...newForeignKey, referencedTable: e.target.value, referencedColumn: '' })}
+                        onChange={(e) => handleForeignKeyTableSelect(e.target.value)}
                         className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       >
-                        <option value="">Select table</option>
+                        <option value="">Choose a table to reference...</option>
                         {availableTables.map(table => (
                           <option key={table.table_name} value={table.table_name}>
-                            {table.table_name}
+                            {table.table_name} ({table.table_type})
                           </option>
                         ))}
                       </select>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                        Referenced Column
-                      </label>
-                      <input
-                        type="text"
-                        value={newForeignKey.referencedColumn}
-                        onChange={(e) => setNewForeignKey({ ...newForeignKey, referencedColumn: e.target.value })}
-                        placeholder="Enter column name"
-                        className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      />
-                    </div>
+                    {/* Step 2: Referenced Column */}
+                    {newForeignKey.referencedTable && (
+                      <div>
+                        <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                          2. Referenced Column (from {newForeignKey.referencedTable})
+                        </label>
+                        <select
+                          value={newForeignKey.referencedColumn}
+                          onChange={(e) => {
+                            setNewForeignKey({ ...newForeignKey, referencedColumn: e.target.value, columnName: '' });
+                            setTimeout(validateForeignKey, 100);
+                          }}
+                          className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        >
+                          <option value="">Select column from {newForeignKey.referencedTable}...</option>
+                          {foreignKeyRefColumns.map(col => (
+                            <option key={col.column_name} value={col.column_name}>
+                              {col.column_name} ({col.data_type})
+                              {!col.is_nullable && ' *'}
+                            </option>
+                          ))}
+                        </select>
+                        {newForeignKey.referencedColumn && (
+                          <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                            ✅ Selected: {newForeignKey.referencedColumn} ({normalizeDataType(foreignKeyRefColumns.find(c => c.column_name === newForeignKey.referencedColumn)?.data_type || '')})
+                          </p>
+                        )}
+                      </div>
+                    )}
 
-                    <div>
-                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                        On Delete
-                      </label>
-                      <select
-                        value={newForeignKey.onDelete}
-                        onChange={(e) => setNewForeignKey({ ...newForeignKey, onDelete: e.target.value })}
-                        className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      >
-                        {foreignKeyActions.map(action => (
-                          <option key={action.value} value={action.value}>
-                            {action.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {/* Step 3: Source Column */}
+                    {newForeignKey.referencedColumn && (
+                      <div>
+                        <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                          3. Source Column (from {tableName})
+                          <span className="ml-2 text-xs text-primary-600 dark:text-primary-400">
+                            • Showing compatible types only
+                          </span>
+                        </label>
+                        <select
+                          value={newForeignKey.columnName}
+                          onChange={(e) => {
+                            setNewForeignKey({ ...newForeignKey, columnName: e.target.value });
+                            setTimeout(validateForeignKey, 100);
+                          }}
+                          className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        >
+                          <option value="">Select source column...</option>
+                          {getCompatibleSourceColumnsForFK(newForeignKey.referencedColumn).map(col => (
+                            <option key={col.column_name} value={col.column_name}>
+                              {col.column_name} ({col.data_type})
+                              {!col.is_nullable && ' *'}
+                            </option>
+                          ))}
+                        </select>
+                        <p className={`text-xs mt-1 ${
+                          getCompatibleSourceColumnsForFK(newForeignKey.referencedColumn).length === 0
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-green-600 dark:text-green-400'
+                        }`}>
+                          {getCompatibleSourceColumnsForFK(newForeignKey.referencedColumn).length === 0
+                            ? `❌ No compatible columns found in ${tableName}`
+                            : `✅ Found ${getCompatibleSourceColumnsForFK(newForeignKey.referencedColumn).length} compatible column(s)`
+                          }
+                        </p>
+                      </div>
+                    )}
 
-                    <div>
-                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                        On Update
-                      </label>
-                      <select
-                        value={newForeignKey.onUpdate}
-                        onChange={(e) => setNewForeignKey({ ...newForeignKey, onUpdate: e.target.value })}
-                        className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      >
-                        {foreignKeyActions.map(action => (
-                          <option key={action.value} value={action.value}>
-                            {action.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {/* Step 4: Actions */}
+                    {newForeignKey.columnName && newForeignKey.referencedColumn && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                            4a. On Delete
+                          </label>
+                          <select
+                            value={newForeignKey.onDelete}
+                            onChange={(e) => setNewForeignKey({ ...newForeignKey, onDelete: e.target.value })}
+                            className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          >
+                            {foreignKeyActions.map(action => (
+                              <option key={action.value} value={action.value}>
+                                {action.label}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-dark-600 dark:text-dark-400 mt-1">
+                            {newForeignKey.onDelete === 'RESTRICT' && 'Prevent deletion if referenced'}
+                            {newForeignKey.onDelete === 'CASCADE' && 'Delete this row when referenced row is deleted'}
+                            {newForeignKey.onDelete === 'SET NULL' && 'Set to NULL when referenced row is deleted'}
+                            {newForeignKey.onDelete === 'SET DEFAULT' && 'Set to default when referenced row is deleted'}
+                            {newForeignKey.onDelete === 'NO ACTION' && 'No action (similar to RESTRICT)'}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                            4b. On Update
+                          </label>
+                          <select
+                            value={newForeignKey.onUpdate}
+                            onChange={(e) => setNewForeignKey({ ...newForeignKey, onUpdate: e.target.value })}
+                            className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          >
+                            {foreignKeyActions.map(action => (
+                              <option key={action.value} value={action.value}>
+                                {action.label}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-dark-600 dark:text-dark-400 mt-1">
+                            {newForeignKey.onUpdate === 'RESTRICT' && 'Prevent update if referenced'}
+                            {newForeignKey.onUpdate === 'CASCADE' && 'Update this value when referenced value updates'}
+                            {newForeignKey.onUpdate === 'SET NULL' && 'Set to NULL when referenced value updates'}
+                            {newForeignKey.onUpdate === 'SET DEFAULT' && 'Set to default when referenced value updates'}
+                            {newForeignKey.onUpdate === 'NO ACTION' && 'No action (similar to RESTRICT)'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Preview */}
+                    {newForeignKey.columnName && newForeignKey.referencedColumn && newForeignKey.referencedTable && (
+                      <div className="bg-primary-100 dark:bg-primary-900/30 border border-primary-300 dark:border-primary-700 rounded-lg p-4">
+                        <h6 className="font-medium text-primary-900 dark:text-primary-100 mb-3">
+                          Foreign Key Preview
+                        </h6>
+                        <div className="font-mono text-sm text-primary-800 dark:text-primary-200 bg-white dark:bg-primary-950/30 p-3 rounded border border-primary-200 dark:border-primary-800">
+                          <div className="space-y-1">
+                            <div>
+                              <span className="text-primary-600 dark:text-primary-400">Table:</span> {tableName}
+                            </div>
+                            <div>
+                              <span className="text-primary-600 dark:text-primary-400">Column:</span> {newForeignKey.columnName}
+                            </div>
+                            <div className="my-2 text-center text-primary-500">↓ REFERENCES ↓</div>
+                            <div>
+                              <span className="text-primary-600 dark:text-primary-400">Table:</span> {newForeignKey.referencedTable}
+                            </div>
+                            <div>
+                              <span className="text-primary-600 dark:text-primary-400">Column:</span> {newForeignKey.referencedColumn}
+                            </div>
+                            <div className="mt-3 pt-3 border-t border-primary-200 dark:border-primary-800">
+                              <div><span className="text-primary-600 dark:text-primary-400">ON DELETE:</span> {newForeignKey.onDelete}</div>
+                              <div><span className="text-primary-600 dark:text-primary-400">ON UPDATE:</span> {newForeignKey.onUpdate}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Validation Messages */}
+                    {foreignKeyValidation.length > 0 && (
+                      <div className={`rounded-lg p-4 border ${
+                        foreignKeyValidation.some(w => w.startsWith('❌'))
+                          ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                          : foreignKeyValidation.some(w => w.startsWith('✅'))
+                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                          : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+                      }`}>
+                        <div className="flex items-start space-x-2">
+                          <Shield className={`w-5 h-5 mt-0.5 ${
+                            foreignKeyValidation.some(w => w.startsWith('❌'))
+                              ? 'text-red-600 dark:text-red-400'
+                              : foreignKeyValidation.some(w => w.startsWith('✅'))
+                              ? 'text-green-600 dark:text-green-400'
+                              : 'text-yellow-600 dark:text-yellow-400'
+                          }`} />
+                          <div className="flex-1">
+                            <h6 className={`font-medium mb-2 ${
+                              foreignKeyValidation.some(w => w.startsWith('❌'))
+                                ? 'text-red-800 dark:text-red-200'
+                                : foreignKeyValidation.some(w => w.startsWith('✅'))
+                                ? 'text-green-800 dark:text-green-200'
+                                : 'text-yellow-800 dark:text-yellow-200'
+                            }`}>
+                              {foreignKeyValidation.some(w => w.startsWith('❌'))
+                                ? 'Type Compatibility Issues'
+                                : foreignKeyValidation.some(w => w.startsWith('✅'))
+                                ? 'Validation'
+                                : 'Warnings'}
+                            </h6>
+                            <ul className={`text-sm space-y-1 ${
+                              foreignKeyValidation.some(w => w.startsWith('❌'))
+                                ? 'text-red-700 dark:text-red-300'
+                                : foreignKeyValidation.some(w => w.startsWith('✅'))
+                                ? 'text-green-700 dark:text-green-300'
+                                : 'text-yellow-700 dark:text-yellow-300'
+                            }`}>
+                              {foreignKeyValidation.map((msg, index) => (
+                                <li key={index}>{msg}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-end space-x-2 mt-4">
                     <AppButton
                       variant="secondary"
-                      onClick={() => setShowForeignKeyModal(false)}
+                      onClick={() => {
+                        setShowForeignKeyModal(false);
+                        setNewForeignKey({
+                          columnName: '',
+                          referencedTable: '',
+                          referencedColumn: '',
+                          onDelete: 'RESTRICT',
+                          onUpdate: 'RESTRICT'
+                        });
+                        setForeignKeyRefColumns([]);
+                        setForeignKeyValidation([]);
+                      }}
                     >
                       Cancel
                     </AppButton>
                     <AppButton
                       variant="primary"
                       onClick={handleCreateForeignKey}
-                      disabled={!newForeignKey.columnName || !newForeignKey.referencedTable || !newForeignKey.referencedColumn}
+                      disabled={
+                        !newForeignKey.columnName || 
+                        !newForeignKey.referencedTable || 
+                        !newForeignKey.referencedColumn ||
+                        foreignKeyValidation.some(w => w.startsWith('❌'))
+                      }
                       icon={<Link className="w-4 h-4" />}
                     >
                       Create Foreign Key
