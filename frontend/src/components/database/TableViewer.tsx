@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useDatabaseStore, useRealtimeStore } from '../../stores/StoresIndex';
 import RequestUtils from '../../utils/RequestUtils';
 import ApiRoutes from '../../constants/ApiRoutes';
+import ToastUtils from '../../utils/ToastUtils';
 import { 
   Database, 
   Plus,
@@ -161,14 +162,14 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         console.log(`Successfully imported ${dataArray.length} rows`);
         setShowCsvImportModal(false);
         await fetchTableData(selectedTable);
-        alert(`Successfully imported ${dataArray.length} rows from CSV!`);
+        ToastUtils.success(`Successfully imported ${dataArray.length} rows from CSV!`);
       } else {
         console.error('Failed to import CSV:', result.message);
-        alert('Failed to import CSV data. Please try again.');
+        ToastUtils.error('Failed to import CSV data. Please try again.');
       }
     } catch (error) {
       console.error('Error importing CSV:', error);
-      alert('Error importing CSV data. Please try again.');
+      ToastUtils.error('Error importing CSV data. Please try again.');
     }
   };
 
@@ -220,7 +221,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
           setDeleteModal({ isOpen: false, type: 'table', loading: false });
         } else {
           console.error('Failed to delete table:', result.message);
-          alert('Failed to delete table. Please try again.');
+          ToastUtils.error('Failed to delete table. Please try again.');
           setDeleteModal(prev => ({ ...prev, loading: false }));
         }
       } else if (deleteModal.type === 'single') {
@@ -240,7 +241,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
           setDeleteModal({ isOpen: false, type: 'single', loading: false });
         } else {
           console.error('Failed to delete row:', result.message);
-          alert('Failed to delete row. Please try again.');
+          ToastUtils.error('Failed to delete row. Please try again.');
         }
       } else {
         // Bulk delete
@@ -266,9 +267,10 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         }
         
         if (errorCount > 0) {
-          alert(`Deleted ${successCount} rows successfully. ${errorCount} rows failed to delete.`);
+          ToastUtils.warning(`Deleted ${successCount} rows successfully. ${errorCount} rows failed to delete.`);
         } else {
           console.log(`Successfully deleted ${successCount} rows`);
+          ToastUtils.success(`Successfully deleted ${successCount} rows`);
         }
         
         await fetchTableData(selectedTable);
@@ -276,7 +278,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
       }
     } catch (error) {
       console.error('Error deleting:', error);
-      alert('Error deleting. Please try again.');
+      ToastUtils.error('Error deleting. Please try again.');
       setDeleteModal(prev => ({ ...prev, loading: false }));
     }
   };
@@ -406,14 +408,6 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                       {currentTable.table_type} • {currentTable.columns?.length || 0} columns
                     </p>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <AppButton variant="secondary" size="sm" icon={<Filter className="w-4 h-4" />}>
-                      Filter
-                    </AppButton>
-                    <AppButton variant="secondary" size="sm" icon={<Download className="w-4 h-4" />}>
-                      Export
-                    </AppButton>
-                  </div>
                 </div>
               </div>
 
@@ -496,13 +490,14 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                           if (result.success) {
                             console.log('Row updated successfully');
                             await fetchTableData(selectedTable);
+                            ToastUtils.success('Row updated successfully!');
                           } else {
                             console.error('Failed to update row:', result.message);
-                            alert('Failed to update row. Please try again.');
+                            ToastUtils.error('Failed to update row. Please try again.');
                           }
                         } catch (error) {
                           console.error('Error updating row:', error);
-                          alert('Error updating row. Please try again.');
+                          ToastUtils.error('Error updating row. Please try again.');
                         }
                       }}
                       onBulkDelete={handleBulkDelete}

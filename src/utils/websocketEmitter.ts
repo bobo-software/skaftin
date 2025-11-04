@@ -6,7 +6,7 @@ import { getWebSocketService, DatabaseEvent, ProjectEvent } from '../services/We
 export function emitDatabaseChange(
   projectId: string,
   tableName: string,
-  type: 'insert' | 'update' | 'delete' | 'create_table' | 'rename_table' | 'drop_table' | 'add_column' | 'alter_column' | 'drop_column',
+  type: 'insert' | 'update' | 'delete' | 'create_table' | 'rename_table' | 'drop_table' | 'add_column' | 'alter_column' | 'drop_column' | 'create_constraint' | 'drop_constraint',
   data?: any,
   oldData?: any
 ) {

@@ -109,12 +109,14 @@ import { router as AuthRouter } from './routers/AuthRouter';
 import { router as AuthCompatibilityRouter } from './routers/AuthCompatibilityRouter';
 import { router as ProjectsRouter } from './routers/ProjectsRouter';
 import { router as FilesRouter } from './routers/FilesRouter';
+import { router as StorageRouter } from './routers/StorageRouter';
 import { router as UsersRouter } from './routers/UsersRouter';
 import { router as HealthRouter } from './routers/HealthRouter';
 import { router as MCPRouter } from './routers/MCPRouter';
 import { router as DatabaseRouter } from './routers/DatabaseRouter';
 import MCPController from './controllers/MCPController';
 import DatabaseController from './controllers/DatabaseController';
+import StorageController from './controllers/StorageController';
 
 // ============================================================================
 // SERVICE INITIALIZATION
@@ -137,6 +139,8 @@ app.get('/', (req: Request, res: Response) => {
       auth: '/api/auth',
       projects: '/api/projects',
       files: '/api/files',
+      storage: '/api/storage',
+      database: '/api/database',
       users: '/api/users',
       health: '/api/health',
       mcp: '/api/mcp',
@@ -147,6 +151,7 @@ app.get('/', (req: Request, res: Response) => {
 // Initialize controllers
 MCPController.initialize(pool, s3Client);
 DatabaseController.initialize(pool);
+StorageController.initialize({ pool, s3Client });
 
 // Register routers
 // Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
@@ -154,6 +159,7 @@ DatabaseController.initialize(pool);
 app.use('/api/auth', AuthCompatibilityRouter);
 app.use('/api/projects', ProjectsRouter);
 app.use('/api/files', FilesRouter);
+app.use('/api/storage', StorageRouter);
 app.use('/api/users', UsersRouter);
 app.use('/api/database', DatabaseRouter);
 app.use('/api/health', HealthRouter);

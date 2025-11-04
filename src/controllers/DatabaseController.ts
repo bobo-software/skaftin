@@ -888,6 +888,189 @@ class DatabaseController {
       ResponseUtils.error(res, 'Failed to drop constraint', error);
     }
   }
+
+  /**
+   * Create a unique constraint
+   * POST /api/database/:projectId/tables/:tableName/constraints/unique
+   */
+  static async createUniqueConstraint(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, tableName } = req.params;
+      const { columnName, constraintName } = req.body;
+
+      if (!columnName) {
+        return ResponseUtils.error(res, 'Column name is required', null, null, 400);
+      }
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Generate constraint name if not provided
+      const finalConstraintName = constraintName || `${tableName}_${columnName}_unique`;
+
+      await client.query(`
+        ALTER TABLE "${tableName}" 
+        ADD CONSTRAINT "${finalConstraintName}" UNIQUE ("${columnName}")
+      `);
+
+      client.release();
+      
+      // Emit WebSocket event
+      emitDatabaseChange(projectId, tableName, 'create_constraint', {
+        constraintName: finalConstraintName,
+        constraintType: 'UNIQUE',
+        columnName
+      });
+
+      ResponseUtils.success(res, 'Unique constraint created successfully', {
+        constraintName: finalConstraintName,
+        tableName,
+        columnName
+      }, 201);
+    } catch (error: any) {
+      console.error('Error creating unique constraint:', error);
+      
+      if (error.message?.includes('already exists')) {
+        return ResponseUtils.error(res, 'A constraint with this name already exists', error, null, 409);
+      }
+      
+      ResponseUtils.error(res, 'Failed to create unique constraint', error);
+    }
+  }
+
+  /**
+   * Create a primary key constraint
+   * POST /api/database/:projectId/tables/:tableName/constraints/primary-key
+   */
+  static async createPrimaryKeyConstraint(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, tableName } = req.params;
+      const { columnNames, constraintName } = req.body;
+
+      if (!columnNames || !Array.isArray(columnNames) || columnNames.length === 0) {
+        return ResponseUtils.error(res, 'Column names array is required', null, null, 400);
+      }
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Check if table already has a primary key
+      const existingPK = await client.query(`
+        SELECT constraint_name
+        FROM information_schema.table_constraints
+        WHERE table_schema = current_schema()
+          AND table_name = $1
+          AND constraint_type = 'PRIMARY KEY'
+      `, [tableName]);
+
+      if (existingPK.rows.length > 0) {
+        client.release();
+        return ResponseUtils.error(
+          res,
+          'Table already has a primary key. Drop the existing primary key before creating a new one.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Generate constraint name if not provided
+      const finalConstraintName = constraintName || `${tableName}_pkey`;
+
+      // Build column list
+      const columnList = columnNames.map((col: string) => `"${col}"`).join(', ');
+
+      await client.query(`
+        ALTER TABLE "${tableName}" 
+        ADD CONSTRAINT "${finalConstraintName}" PRIMARY KEY (${columnList})
+      `);
+
+      client.release();
+      
+      // Emit WebSocket event
+      emitDatabaseChange(projectId, tableName, 'create_constraint', {
+        constraintName: finalConstraintName,
+        constraintType: 'PRIMARY KEY',
+        columnNames
+      });
+
+      ResponseUtils.success(res, 'Primary key constraint created successfully', {
+        constraintName: finalConstraintName,
+        tableName,
+        columnNames
+      }, 201);
+    } catch (error: any) {
+      console.error('Error creating primary key constraint:', error);
+      
+      if (error.message?.includes('already exists')) {
+        return ResponseUtils.error(res, 'A constraint with this name already exists', error, null, 409);
+      }
+      
+      if (error.message?.includes('contains null values')) {
+        return ResponseUtils.error(res, 'Cannot create primary key on column(s) containing NULL values', error, null, 400);
+      }
+      
+      ResponseUtils.error(res, 'Failed to create primary key constraint', error);
+    }
+  }
+
+  /**
+   * Create a check constraint
+   * POST /api/database/:projectId/tables/:tableName/constraints/check
+   */
+  static async createCheckConstraint(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, tableName } = req.params;
+      const { checkExpression, constraintName } = req.body;
+
+      if (!checkExpression) {
+        return ResponseUtils.error(res, 'Check expression is required', null, null, 400);
+      }
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Generate constraint name if not provided
+      const finalConstraintName = constraintName || `${tableName}_check_${Date.now()}`;
+
+      await client.query(`
+        ALTER TABLE "${tableName}" 
+        ADD CONSTRAINT "${finalConstraintName}" CHECK (${checkExpression})
+      `);
+
+      client.release();
+      
+      // Emit WebSocket event
+      emitDatabaseChange(projectId, tableName, 'create_constraint', {
+        constraintName: finalConstraintName,
+        constraintType: 'CHECK',
+        checkExpression
+      });
+
+      ResponseUtils.success(res, 'Check constraint created successfully', {
+        constraintName: finalConstraintName,
+        tableName,
+        checkExpression
+      }, 201);
+    } catch (error: any) {
+      console.error('Error creating check constraint:', error);
+      
+      if (error.message?.includes('already exists')) {
+        return ResponseUtils.error(res, 'A constraint with this name already exists', error, null, 409);
+      }
+      
+      ResponseUtils.error(res, 'Failed to create check constraint', error);
+    }
+  }
 }
 
 export default DatabaseController;

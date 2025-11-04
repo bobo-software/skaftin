@@ -31,6 +31,9 @@ router.delete('/:projectId/tables/:tableName', authenticateAndVerifyProject, Dat
 router.get('/:projectId/tables/:tableName/constraints', authenticateAndVerifyProject, DatabaseController.listConstraints);
 router.get('/:projectId/tables/:tableName/foreign-keys', authenticateAndVerifyProject, DatabaseController.listForeignKeys);
 router.post('/:projectId/tables/:tableName/constraints/foreign-key', authenticateAndVerifyProject, DatabaseController.createForeignKey);
+router.post('/:projectId/tables/:tableName/constraints/unique', authenticateAndVerifyProject, DatabaseController.createUniqueConstraint);
+router.post('/:projectId/tables/:tableName/constraints/primary-key', authenticateAndVerifyProject, DatabaseController.createPrimaryKeyConstraint);
+router.post('/:projectId/tables/:tableName/constraints/check', authenticateAndVerifyProject, DatabaseController.createCheckConstraint);
 router.delete('/:projectId/tables/:tableName/constraints/:constraintName', authenticateAndVerifyProject, DatabaseController.dropConstraint);
 
 export { router };

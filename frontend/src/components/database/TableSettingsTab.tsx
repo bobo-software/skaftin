@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AppButton } from '../ComponentsIndex';
 import RequestUtils from '../../utils/RequestUtils';
 import ApiRoutes from '../../constants/ApiRoutes';
+import ToastUtils from '../../utils/ToastUtils';
 
 interface TableSettingsTabProps {
   projectId: string;
@@ -119,7 +120,7 @@ const TableSettingsTab = ({
     
     // Don't proceed if there are validation errors
     if (validationError?.type === 'error') {
-      alert(validationError.message);
+      ToastUtils.error(validationError.message);
       return;
     }
     
@@ -140,14 +141,16 @@ const TableSettingsTab = ({
         setValidationError(null);
         await onRefreshTables();
         await onTableRenamed(newTableName.trim());
-        alert(`Table "${oldTableName}" has been renamed to "${newTableName.trim()}"`);
+        ToastUtils.success(`Table "${oldTableName}" renamed to "${newTableName.trim()}"`);
       } else {
         console.error('Failed to rename table:', result.message);
         setValidationError({ type: 'error', message: result.message || 'Failed to rename table' });
+        ToastUtils.error(result.message || 'Failed to rename table');
       }
     } catch (error: any) {
       console.error('Error renaming table:', error);
       setValidationError({ type: 'error', message: error.message || 'Error renaming table' });
+      ToastUtils.error(error.message || 'Error renaming table');
     } finally {
       setRenamingTable(false);
     }

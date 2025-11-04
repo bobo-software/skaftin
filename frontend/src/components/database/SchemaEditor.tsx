@@ -13,6 +13,7 @@ import McpService from '../../services/McpService';
 import DatabaseService from '../../services/DatabaseService';
 import RequestUtils from '../../utils/RequestUtils';
 import ApiRoutes from '../../constants/ApiRoutes';
+import ToastUtils from '../../utils/ToastUtils';
 
 interface SchemaEditorProps {
   projectId: string;
@@ -42,14 +43,18 @@ const SchemaEditor = ({
     type: 'VARCHAR',
     nullable: true,
     defaultValue: '',
-    length: ''
+    length: '',
+    primaryKey: false,
+    unique: false,
+    autoIncrement: false
   });
   const [editingColumn, setEditingColumn] = useState<string | null>(null);
   const [editColumnData, setEditColumnData] = useState({
     name: '',
     type: '',
     nullable: true,
-    defaultValue: ''
+    defaultValue: '',
+    unique: false
   });
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
@@ -88,6 +93,17 @@ const SchemaEditor = ({
   const [constraintsLoading, setConstraintsLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showEditDatePicker, setShowEditDatePicker] = useState(false);
+  const [deleteConstraintModal, setDeleteConstraintModal] = useState<{
+    isOpen: boolean;
+    constraintName: string;
+    constraintType: string;
+    loading: boolean;
+  }>({
+    isOpen: false,
+    constraintName: '',
+    constraintType: '',
+    loading: false
+  });
 
   const dataTypes = [
     'SERIAL', 'INTEGER', 'BIGINT', 'SMALLINT',
@@ -174,6 +190,27 @@ const SchemaEditor = ({
   // Helper function to get foreign key for a specific column
   const getForeignKeyForColumn = (columnName: string) => {
     return foreignKeys.find(fk => fk.column_name === columnName);
+  };
+
+  // Helper function to get all constraints for a specific column
+  const getConstraintsForColumn = (columnName: string) => {
+    return allConstraints.filter(constraint => constraint.column_name === columnName);
+  };
+
+  // Helper function to check if column has unique constraint
+  const hasUniqueConstraint = (columnName: string) => {
+    return allConstraints.some(constraint => 
+      constraint.column_name === columnName && 
+      (constraint.constraint_type === 'UNIQUE' || constraint.constraint_type === 'PRIMARY KEY')
+    );
+  };
+
+  // Helper function to check if column is primary key
+  const isPrimaryKey = (columnName: string) => {
+    return allConstraints.some(constraint => 
+      constraint.column_name === columnName && 
+      constraint.constraint_type === 'PRIMARY KEY'
+    );
   };
 
   const handleConstraintTableSelect = async (tableName: string) => {
@@ -280,7 +317,7 @@ const SchemaEditor = ({
 
   const handleCreateConstraint = async () => {
     if (!constraintForm.sourceColumn || !constraintForm.referencedTable || !constraintForm.referencedColumn) {
-      alert('Please fill in all required fields');
+      ToastUtils.warning('Please fill in all required fields');
       return;
     }
 
@@ -293,7 +330,7 @@ const SchemaEditor = ({
       const referencedType = normalizeDataType(referencedColumn.data_type);
       
       if (sourceType !== referencedType) {
-        alert(`❌ Cannot create constraint: Data types are incompatible.\n\nSource: ${sourceColumn.column_name} (${sourceColumn.data_type})\nTarget: ${referencedColumn.column_name} (${referencedColumn.data_type})\n\nPlease select columns with matching data types.`);
+        ToastUtils.error(`Data types are incompatible: ${sourceColumn.column_name} (${sourceColumn.data_type}) cannot reference ${referencedColumn.column_name} (${referencedColumn.data_type})`);
         return;
       }
     }
@@ -328,14 +365,14 @@ const SchemaEditor = ({
         setConstraintWarnings([]);
         await loadForeignKeys();
         await loadAllConstraints(); // Refresh constraints list
-        alert('✅ Foreign key constraint created successfully!');
+        ToastUtils.success('Foreign key constraint created successfully!');
       } else {
         console.error('Failed to create constraint:', result.message);
-        alert(`Failed to create constraint: ${result.message || 'Please try again.'}`);
+        ToastUtils.error(result.message || 'Failed to create constraint. Please try again.');
       }
     } catch (error: any) {
       console.error('Error creating constraint:', error);
-      alert(`Error creating constraint: ${error.message || 'Please try again.'}`);
+      ToastUtils.error(error.message || 'Error creating constraint. Please try again.');
     }
   };
 
@@ -399,7 +436,7 @@ const SchemaEditor = ({
 
   const handleCreateForeignKey = async () => {
     if (!newForeignKey.columnName || !newForeignKey.referencedTable || !newForeignKey.referencedColumn) {
-      alert('Please fill in all required fields');
+      ToastUtils.warning('Please fill in all required fields');
       return;
     }
 
@@ -412,7 +449,7 @@ const SchemaEditor = ({
       const referencedType = normalizeDataType(referencedColumn.data_type);
       
       if (sourceType !== referencedType) {
-        alert(`❌ Cannot create foreign key: Data types are incompatible.\n\nSource: ${sourceColumn.column_name} (${sourceColumn.data_type})\nTarget: ${referencedColumn.column_name} (${referencedColumn.data_type})`);
+        ToastUtils.error(`Data types are incompatible: ${sourceColumn.column_name} (${sourceColumn.data_type}) cannot reference ${referencedColumn.column_name} (${referencedColumn.data_type})`);
         return;
       }
     }
@@ -446,18 +483,27 @@ const SchemaEditor = ({
         setForeignKeyValidation([]);
         await loadForeignKeys();
         await loadAllConstraints();
-        alert('✅ Foreign key created successfully!');
+        ToastUtils.success('Foreign key created successfully!');
       } else {
         console.error('Failed to create foreign key:', result.message);
-        alert(`Failed to create foreign key: ${result.message || 'Please try again.'}`);
+        ToastUtils.error(result.message || 'Failed to create foreign key. Please try again.');
       }
     } catch (error: any) {
       console.error('Error creating foreign key:', error);
-      alert(`Error creating foreign key: ${error.message || 'Please try again.'}`);
+      ToastUtils.error(error.message || 'Error creating foreign key. Please try again.');
     }
   };
 
-  const handleAddColumn = async (columnName: string, columnType: string, nullable: boolean = true, defaultValue?: string, length?: string) => {
+  const handleAddColumn = async (
+    columnName: string, 
+    columnType: string, 
+    nullable: boolean = true, 
+    defaultValue?: string, 
+    length?: string,
+    primaryKey: boolean = false,
+    unique: boolean = false,
+    autoIncrement: boolean = false
+  ) => {
     if (!tableName) return;
     
     setIsAddingColumn(true);
@@ -468,19 +514,60 @@ const SchemaEditor = ({
         fullColumnType = `${columnType}(${length})`;
       }
       
-      const result = await DatabaseService.addColumn(projectId, tableName, columnName, fullColumnType, nullable, defaultValue);
+      // If auto-increment is selected, use SERIAL type
+      if (autoIncrement && columnType.includes('INT')) {
+        if (columnType === 'BIGINT') {
+          fullColumnType = 'BIGSERIAL';
+        } else if (columnType === 'SMALLINT') {
+          fullColumnType = 'SMALLSERIAL';
+        } else {
+          fullColumnType = 'SERIAL';
+        }
+      }
+      
+      // Build constraints array
+      const constraints: string[] = [];
+      if (primaryKey) {
+        constraints.push('PRIMARY KEY');
+        nullable = false; // Primary keys cannot be null
+      }
+      if (unique && !primaryKey) {
+        constraints.push('UNIQUE');
+      }
+      if (!nullable && !primaryKey) {
+        constraints.push('NOT NULL');
+      }
+      if (defaultValue && !autoIncrement) {
+        constraints.push(`DEFAULT ${defaultValue}`);
+      }
+      
+      // Build the full column definition
+      const constraintString = constraints.length > 0 ? ` ${constraints.join(' ')}` : '';
+      const fullDefinition = `${fullColumnType}${constraintString}`;
+      
+      const result = await DatabaseService.addColumn(projectId, tableName, columnName, fullDefinition, nullable, defaultValue);
       if (result.success) {
         onSchemaChange?.();
-        setNewColumn({ name: '', type: 'VARCHAR', nullable: true, defaultValue: '', length: '' });
+        setNewColumn({ 
+          name: '', 
+          type: 'VARCHAR', 
+          nullable: true, 
+          defaultValue: '', 
+          length: '',
+          primaryKey: false,
+          unique: false,
+          autoIncrement: false
+        });
         setShowAddColumnForm(false);
         setShowDatePicker(false);
+        ToastUtils.success('Column added successfully!');
       } else {
         console.error('Failed to add column:', result.error);
-        alert('Failed to add column. Please try again.');
+        ToastUtils.error('Failed to add column. Please try again.');
       }
     } catch (error) {
       console.error('Error adding column:', error);
-      alert('Error adding column. Please try again.');
+      ToastUtils.error('Error adding column. Please try again.');
     } finally {
       setIsAddingColumn(false);
     }
@@ -492,7 +579,13 @@ const SchemaEditor = ({
 
   const handleSaveNewColumn = () => {
     if (!newColumn.name.trim()) {
-      alert('Please enter a column name');
+      ToastUtils.warning('Please enter a column name');
+      return;
+    }
+    
+    // Validation: Check if trying to make non-integer column auto-increment
+    if (newColumn.autoIncrement && !['INTEGER', 'BIGINT', 'SMALLINT'].includes(newColumn.type)) {
+      ToastUtils.warning('Auto-increment only works with integer types (INTEGER, BIGINT, SMALLINT)');
       return;
     }
     
@@ -507,29 +600,49 @@ const SchemaEditor = ({
       newColumn.type, 
       newColumn.nullable, 
       defaultValue,
-      newColumn.length || undefined
+      newColumn.length || undefined,
+      newColumn.primaryKey,
+      newColumn.unique,
+      newColumn.autoIncrement
     );
   };
 
   const handleCancelAddColumn = () => {
     setShowAddColumnForm(false);
-    setNewColumn({ name: '', type: 'VARCHAR', nullable: true, defaultValue: '', length: '' });
+    setNewColumn({ 
+      name: '', 
+      type: 'VARCHAR', 
+      nullable: true, 
+      defaultValue: '', 
+      length: '',
+      primaryKey: false,
+      unique: false,
+      autoIncrement: false
+    });
     setShowDatePicker(false);
   };
 
   const handleStartEdit = (column: any) => {
     setEditingColumn(column.column_name);
+    
+    // Check if column already has a unique constraint (but not primary key)
+    const hasExistingUnique = allConstraints.some(constraint => 
+      constraint.column_name === column.column_name && 
+      constraint.constraint_type === 'UNIQUE'
+    );
+    
     setEditColumnData({
       name: column.column_name,
       type: column.data_type,
       nullable: column.is_nullable,
-      defaultValue: column.column_default || ''
+      defaultValue: column.column_default || '',
+      unique: hasExistingUnique
     });
   };
 
   const handleCancelEdit = () => {
     setEditingColumn(null);
-    setEditColumnData({ name: '', type: '', nullable: true, defaultValue: '' });
+    setEditColumnData({ name: '', type: '', nullable: true, defaultValue: '', unique: false });
     setShowEditDatePicker(false);
   };
 
@@ -538,6 +651,9 @@ const SchemaEditor = ({
 
     try {
       const changes: any = {};
+      let uniqueConstraintToCreate = false;
+      let uniqueConstraintToDelete = false;
+      let constraintNameToDelete = '';
       
       // Check what has changed
       const originalColumn = columns.find(col => col.column_name === editingColumn);
@@ -568,26 +684,96 @@ const SchemaEditor = ({
         changes.defaultValue = newDefaultValue || null;
       }
 
+      // Check if unique constraint should be added or removed
+      const existingUniqueConstraint = allConstraints.find(constraint => 
+        constraint.column_name === editingColumn && 
+        constraint.constraint_type === 'UNIQUE'
+      );
+      
+      if (editColumnData.unique && !existingUniqueConstraint) {
+        // Need to create unique constraint
+        uniqueConstraintToCreate = true;
+      } else if (!editColumnData.unique && existingUniqueConstraint) {
+        // Need to delete unique constraint
+        uniqueConstraintToDelete = true;
+        constraintNameToDelete = existingUniqueConstraint.constraint_name;
+      }
+
       // Only proceed if there are actual changes
-      if (Object.keys(changes).length === 0) {
-        alert('No changes detected.');
+      if (Object.keys(changes).length === 0 && !uniqueConstraintToCreate && !uniqueConstraintToDelete) {
+        ToastUtils.info('No changes detected');
         handleCancelEdit();
         return;
       }
 
-      const result = await DatabaseService.alterColumn(projectId, tableName, editingColumn, changes);
-      
-      if (result.success) {
-        onSchemaChange?.();
-        setShowEditDatePicker(false);
-        handleCancelEdit();
-      } else {
-        console.error('Failed to alter column:', result.error);
-        alert('Failed to alter column. Please try again.');
+      // Apply column changes first if any
+      if (Object.keys(changes).length > 0) {
+        const result = await DatabaseService.alterColumn(projectId, tableName, editingColumn, changes);
+        
+        if (!result.success) {
+          console.error('Failed to alter column:', result.error);
+          ToastUtils.error('Failed to alter column. Please try again.');
+          return;
+        }
       }
+
+      // Delete unique constraint if requested
+      if (uniqueConstraintToDelete && constraintNameToDelete) {
+        const token = localStorage.getItem('skaftin-token') || '';
+        
+        const deleteResult = await RequestUtils.delete(
+          ApiRoutes.DATABASE.DROP_CONSTRAINT(projectId, tableName, constraintNameToDelete),
+          token,
+          {}
+        );
+        
+        if (!deleteResult.success) {
+          ToastUtils.error(deleteResult.message || 'Failed to delete unique constraint');
+          return;
+        }
+      }
+
+      // Create unique constraint if requested
+      if (uniqueConstraintToCreate) {
+        const token = localStorage.getItem('skaftin-token') || '';
+        const columnNameToUse = editColumnData.name || editingColumn;
+        
+        const uniqueResult = await RequestUtils.post(
+          ApiRoutes.DATABASE.CREATE_UNIQUE_CONSTRAINT(projectId, tableName),
+          token,
+          { 
+            columnName: columnNameToUse,
+            constraintName: `${tableName}_${columnNameToUse}_unique`
+          }
+        );
+        
+        if (!uniqueResult.success) {
+          ToastUtils.error(uniqueResult.message || 'Failed to create unique constraint');
+          return;
+        }
+      }
+
+      // Success!
+      onSchemaChange?.();
+      setShowEditDatePicker(false);
+      handleCancelEdit();
+      
+      // Show appropriate success message
+      const messages: string[] = [];
+      if (Object.keys(changes).length > 0) messages.push('Column updated');
+      if (uniqueConstraintToCreate) messages.push('unique constraint created');
+      if (uniqueConstraintToDelete) messages.push('unique constraint removed');
+      
+      if (messages.length > 0) {
+        ToastUtils.success(messages.join(' and ') + ' successfully!');
+      } else {
+        ToastUtils.success('Changes saved successfully!');
+      }
+      
+      await loadAllConstraints(); // Reload constraints to show changes
     } catch (error) {
       console.error('Error editing column:', error);
-      alert('Error editing column. Please try again.');
+      ToastUtils.error('Error editing column. Please try again.');
     }
   };
 
@@ -751,23 +937,68 @@ const SchemaEditor = ({
           
           <div>
             <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-              Nullable
+              Constraints
             </label>
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={editColumnData.nullable}
-                onChange={(e) => setEditColumnData({ ...editColumnData, nullable: e.target.checked })}
-                className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
-              />
-              <span className="text-sm text-dark-700 dark:text-dark-300">
-                {editColumnData.nullable ? 'Nullable' : 'Required'}
-              </span>
+            <div className="space-y-2">
+              <label className="flex items-center space-x-2 p-2 border border-dark-200 dark:border-dark-700 rounded hover:border-primary-500 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editColumnData.nullable}
+                  onChange={(e) => setEditColumnData({ ...editColumnData, nullable: e.target.checked })}
+                  className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-dark-700 dark:text-dark-300">
+                  {editColumnData.nullable ? 'Nullable' : 'Required'}
+                </span>
+              </label>
+              
+              <label className={`flex items-center space-x-2 p-2 border rounded cursor-pointer ${
+                editColumnData.unique 
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  : 'border-dark-200 dark:border-dark-700 hover:border-primary-500'
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={editColumnData.unique}
+                  onChange={(e) => setEditColumnData({ ...editColumnData, unique: e.target.checked })}
+                  className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-dark-700 dark:text-dark-300 flex items-center space-x-1">
+                  <Shield className="w-3 h-3" />
+                  <span>Unique</span>
+                </span>
+              </label>
             </div>
           </div>
         </div>
         
-        <div className="flex items-center justify-end space-x-2 mt-4">
+        {/* Show info based on unique constraint state */}
+        {(() => {
+          const hasExistingUnique = allConstraints.some(c => c.column_name === editingColumn && c.constraint_type === 'UNIQUE');
+          
+          if (editColumnData.unique && !hasExistingUnique) {
+            return (
+              <div className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-2">
+                ℹ️ This will create a new UNIQUE constraint on this column
+              </div>
+            );
+          } else if (editColumnData.unique && hasExistingUnique) {
+            return (
+              <div className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-2">
+                ✅ This column already has a UNIQUE constraint
+              </div>
+            );
+          } else if (!editColumnData.unique && hasExistingUnique) {
+            return (
+              <div className="text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded p-2">
+                ⚠️ This will remove the existing UNIQUE constraint from this column
+              </div>
+            );
+          }
+          return null;
+        })()}
+        
+        <div className="flex items-center justify-end space-x-2">
           <AppButton
             variant="secondary"
             size="sm"
@@ -911,6 +1142,44 @@ const SchemaEditor = ({
     });
   };
 
+  const handleDeleteConstraintClick = (constraintName: string, constraintType: string) => {
+    setDeleteConstraintModal({
+      isOpen: true,
+      constraintName,
+      constraintType,
+      loading: false
+    });
+  };
+
+  const confirmDeleteConstraint = async () => {
+    setDeleteConstraintModal(prev => ({ ...prev, loading: true }));
+
+    try {
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.delete(
+        ApiRoutes.DATABASE.DROP_CONSTRAINT(projectId, tableName, deleteConstraintModal.constraintName),
+        token,
+        {}
+      );
+      
+      if (result.success) {
+        console.log('Constraint deleted successfully');
+        await loadAllConstraints();
+        onSchemaChange?.();
+        setDeleteConstraintModal({ isOpen: false, constraintName: '', constraintType: '', loading: false });
+        ToastUtils.success('Constraint deleted successfully!');
+      } else {
+        console.error('Failed to delete constraint:', result.message);
+        ToastUtils.error(result.message || 'Failed to delete constraint. Please try again.');
+        setDeleteConstraintModal(prev => ({ ...prev, loading: false }));
+      }
+    } catch (error) {
+      console.error('Error deleting constraint:', error);
+      ToastUtils.error('Error deleting constraint. Please try again.');
+      setDeleteConstraintModal(prev => ({ ...prev, loading: false }));
+    }
+  };
+
   const confirmDelete = async () => {
     setDeleteModal(prev => ({ ...prev, loading: true }));
 
@@ -922,20 +1191,21 @@ const SchemaEditor = ({
           setDeleteModal({ isOpen: false, type: 'column', loading: false });
         } else {
           console.error('Failed to drop column:', result.error);
-          alert('Failed to drop column. Please try again.');
+          ToastUtils.error('Failed to drop column. Please try again.');
         }
       } else if (deleteModal.type === 'table') {
         const result = await DatabaseService.dropTable(projectId, tableName);
         if (result.success) {
-          window.location.reload();
+          ToastUtils.success('Table deleted successfully!');
+          setTimeout(() => window.location.reload(), 1000);
         } else {
           console.error('Failed to drop table:', result.error);
-          alert('Failed to drop table. Please try again.');
+          ToastUtils.error('Failed to drop table. Please try again.');
         }
       }
     } catch (error) {
       console.error('Error deleting:', error);
-      alert('Error deleting. Please try again.');
+      ToastUtils.error('Error deleting. Please try again.');
     } finally {
       setDeleteModal(prev => ({ ...prev, loading: false }));
     }
@@ -1021,7 +1291,7 @@ const SchemaEditor = ({
                   Data Type
                 </th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-dark-700 dark:text-dark-300">
-                  Nullable
+                  Constraints
                 </th>
                 <th className="text-left py-3 px-4 text-sm font-medium text-dark-700 dark:text-dark-300">
                   Foreign Key
@@ -1054,13 +1324,27 @@ const SchemaEditor = ({
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                        column.is_nullable 
-                          ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300'
-                          : 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
-                      }`}>
-                        {column.is_nullable ? 'Nullable' : 'Required'}
-                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {isPrimaryKey(column.column_name) ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300">
+                            <Key className="w-3 h-3 mr-1" />
+                            Primary Key
+                          </span>
+                        ) : hasUniqueConstraint(column.column_name) ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                            <Shield className="w-3 h-3 mr-1" />
+                            Unique
+                          </span>
+                        ) : null}
+                        
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          column.is_nullable 
+                            ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300'
+                            : 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                        }`}>
+                          {column.is_nullable ? 'Nullable' : 'NOT NULL'}
+                        </span>
+                      </div>
                     </td>
                     <td className="py-3 px-4 text-sm text-dark-600 dark:text-dark-300">
                       {(() => {
@@ -1138,93 +1422,164 @@ const SchemaEditor = ({
                         </button>
                       </div>
                       
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                            Column Name
-                          </label>
-                          <input
-                            type="text"
-                            value={newColumn.name}
-                            onChange={(e) => setNewColumn({ ...newColumn, name: e.target.value })}
-                            placeholder="Enter column name"
-                            className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                          />
+                      <div className="space-y-4">
+                        {/* Column Name and Data Type Row */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                              Column Name *
+                            </label>
+                            <input
+                              type="text"
+                              value={newColumn.name}
+                              onChange={(e) => setNewColumn({ ...newColumn, name: e.target.value })}
+                              placeholder="Enter column name"
+                              className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                            />
+                          </div>
+                          
+                          <div>
+                            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                              Data Type
+                            </label>
+                            <select
+                              value={newColumn.type}
+                              onChange={(e) => {
+                                const newType = e.target.value;
+                                setNewColumn({ ...newColumn, type: newType, defaultValue: '' });
+                                setShowDatePicker(false);
+                              }}
+                              className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                            >
+                              {dataTypes.map(type => (
+                                <option key={type} value={type}>{type}</option>
+                              ))}
+                            </select>
+                          </div>
+                          
+                          <div>
+                            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                              Length
+                              <span className="text-xs text-dark-500 ml-1">(for VARCHAR/CHAR)</span>
+                            </label>
+                            <input
+                              type="number"
+                              value={newColumn.length}
+                              onChange={(e) => setNewColumn({ ...newColumn, length: e.target.value })}
+                              placeholder="255"
+                              disabled={!['VARCHAR', 'CHAR'].includes(newColumn.type)}
+                              className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:opacity-50"
+                            />
+                          </div>
                         </div>
                         
-                        <div>
-                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                            Data Type
-                          </label>
-                          <select
-                            value={newColumn.type}
-                            onChange={(e) => {
-                              const newType = e.target.value;
-                              setNewColumn({ ...newColumn, type: newType, defaultValue: '' });
-                              setShowDatePicker(false);
-                            }}
-                            className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                          >
-                            {dataTypes.map(type => (
-                              <option key={type} value={type}>{type}</option>
-                            ))}
-                          </select>
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                            Length
-                          </label>
-                          <input
-                            type="number"
-                            value={newColumn.length}
-                            onChange={(e) => setNewColumn({ ...newColumn, length: e.target.value })}
-                            placeholder="255"
-                            className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                          />
-                        </div>
-                        
+                        {/* Default Value Row */}
                         <div>
                           <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
                             Default Value
                           </label>
                           {renderDefaultValueInput()}
                         </div>
-                      </div>
-                      
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                          <label className="flex items-center space-x-2">
+                        
+                        {/* Constraints Section */}
+                        <div className="border-t border-dark-200 dark:border-dark-700 pt-4">
+                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-3">
+                            Constraints
+                          </label>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <label className="flex items-center space-x-2 p-3 border border-dark-200 dark:border-dark-700 rounded-lg hover:border-primary-500 cursor-pointer transition-colors">
                             <input
                               type="checkbox"
                               checked={newColumn.nullable}
                               onChange={(e) => setNewColumn({ ...newColumn, nullable: e.target.checked })}
+                              disabled={newColumn.primaryKey} // Primary keys cannot be nullable
                               className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
                             />
                             <span className="text-sm text-dark-700 dark:text-dark-300">Nullable</span>
                           </label>
+                          
+                          <label className="flex items-center space-x-2 p-3 border border-dark-200 dark:border-dark-700 rounded-lg hover:border-primary-500 cursor-pointer transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={newColumn.primaryKey}
+                              onChange={(e) => {
+                                const isPrimary = e.target.checked;
+                                setNewColumn({ 
+                                  ...newColumn, 
+                                  primaryKey: isPrimary,
+                                  nullable: !isPrimary, // Primary keys must be NOT NULL
+                                  unique: isPrimary ? false : newColumn.unique // Primary keys are already unique
+                                });
+                              }}
+                              className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            <span className="text-sm text-dark-700 dark:text-dark-300 flex items-center space-x-1">
+                              <Key className="w-3 h-3" />
+                              <span>Primary Key</span>
+                            </span>
+                          </label>
+                          
+                          <label className="flex items-center space-x-2 p-3 border border-dark-200 dark:border-dark-700 rounded-lg hover:border-primary-500 cursor-pointer transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={newColumn.unique}
+                              onChange={(e) => setNewColumn({ ...newColumn, unique: e.target.checked })}
+                              disabled={newColumn.primaryKey} // Primary keys are already unique
+                              className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            <span className="text-sm text-dark-700 dark:text-dark-300 flex items-center space-x-1">
+                              <Shield className="w-3 h-3" />
+                              <span>Unique</span>
+                            </span>
+                          </label>
+                          
+                          <label className="flex items-center space-x-2 p-3 border border-dark-200 dark:border-dark-700 rounded-lg hover:border-primary-500 cursor-pointer transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={newColumn.autoIncrement}
+                              onChange={(e) => setNewColumn({ ...newColumn, autoIncrement: e.target.checked })}
+                              disabled={!['INTEGER', 'BIGINT', 'SMALLINT'].includes(newColumn.type)}
+                              className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            <span className="text-sm text-dark-700 dark:text-dark-300">Auto Increment</span>
+                          </label>
                         </div>
                         
-                        <div className="flex items-center space-x-2">
-                          <AppButton
-                            variant="secondary"
-                            size="sm"
-                            onClick={handleCancelAddColumn}
-                            disabled={isAddingColumn}
-                          >
-                            Cancel
-                          </AppButton>
-                          <AppButton
-                            variant="primary"
-                            size="sm"
-                            onClick={handleSaveNewColumn}
-                            loading={isAddingColumn}
-                            disabled={isAddingColumn || !newColumn.name.trim()}
-                            icon={<Plus className="w-4 h-4" />}
-                          >
-                            Add Column
-                          </AppButton>
+                          {/* Helper text */}
+                          <div className="text-xs text-dark-500 dark:text-dark-400 space-y-1 mt-3">
+                            {newColumn.primaryKey && (
+                              <p className="text-primary-600 dark:text-primary-400">
+                                ℹ️ Primary key columns are automatically unique and non-nullable
+                              </p>
+                            )}
+                            {newColumn.autoIncrement && !['INTEGER', 'BIGINT', 'SMALLINT'].includes(newColumn.type) && (
+                              <p className="text-yellow-600 dark:text-yellow-400">
+                                ⚠️ Auto-increment only works with INTEGER, BIGINT, or SMALLINT types
+                              </p>
+                            )}
+                          </div>
                         </div>
+                      </div>
+                      
+                      <div className="flex items-center justify-end space-x-2">
+                        <AppButton
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleCancelAddColumn}
+                          disabled={isAddingColumn}
+                        >
+                          Cancel
+                        </AppButton>
+                        <AppButton
+                          variant="primary"
+                          size="sm"
+                          onClick={handleSaveNewColumn}
+                          loading={isAddingColumn}
+                          disabled={isAddingColumn || !newColumn.name.trim()}
+                          icon={<Plus className="w-4 h-4" />}
+                        >
+                          Add Column
+                        </AppButton>
                       </div>
                     </div>
                   </td>
@@ -1344,29 +1699,7 @@ const SchemaEditor = ({
                         <button 
                           className="p-1 text-dark-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                           title="Delete constraint"
-                          onClick={async () => {
-                            if (confirm(`Are you sure you want to delete the constraint "${constraint.constraint_name}"?`)) {
-                              try {
-                                const token = localStorage.getItem('skaftin-token') || '';
-                                const result = await RequestUtils.delete(
-                                  ApiRoutes.DATABASE.DROP_CONSTRAINT(projectId, tableName, constraint.constraint_name),
-                                  token,
-                                  {}
-                                );
-                                if (result.success) {
-                                  console.log('Constraint deleted successfully');
-                                  await loadAllConstraints(); // Refresh the list
-                                  onSchemaChange?.(); // Notify parent of schema change
-                                } else {
-                                  console.error('Failed to delete constraint:', result.message);
-                                  alert(result.message || 'Failed to delete constraint. Please try again.');
-                                }
-                              } catch (error) {
-                                console.error('Error deleting constraint:', error);
-                                alert('Error deleting constraint. Please try again.');
-                              }
-                            }
-                          }}
+                          onClick={() => handleDeleteConstraintClick(constraint.constraint_name, constraint.constraint_type)}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1684,6 +2017,18 @@ const SchemaEditor = ({
         variant="single"
       />
 
+      {/* Delete Constraint Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={deleteConstraintModal.isOpen}
+        onClose={() => setDeleteConstraintModal({ isOpen: false, constraintName: '', constraintType: '', loading: false })}
+        onConfirm={confirmDeleteConstraint}
+        title={`Delete ${deleteConstraintModal.constraintType} Constraint`}
+        message={`Are you sure you want to delete the constraint "${deleteConstraintModal.constraintName}"? This action cannot be undone.`}
+        itemName="constraint"
+        itemCount={1}
+        loading={deleteConstraintModal.loading}
+        variant="single"
+      />
 
       {/* Foreign Keys Modal */}
       {showForeignKeyModal && (

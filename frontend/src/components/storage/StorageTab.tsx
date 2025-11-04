@@ -6,6 +6,8 @@ import ApiRoutes from '../../constants/ApiRoutes';
 import LoadingSpinner from '../elements/LoadingSpinner';
 import ErrorMessage from '../elements/ErrorMessage';
 import FileUploadModal from '../modals/FileUploadModal';
+import { DeleteConfirmModal } from '../ComponentsIndex';
+import ToastUtils from '../../utils/ToastUtils';
 
 interface FileItem {
   key: string;
@@ -21,6 +23,15 @@ const StorageTab = () => {
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [deleteFileModal, setDeleteFileModal] = useState<{
+    isOpen: boolean;
+    fileName: string;
+    loading: boolean;
+  }>({
+    isOpen: false,
+    fileName: '',
+    loading: false
+  });
 
   useEffect(() => {
     if (currentProject) {
@@ -64,26 +75,41 @@ const StorageTab = () => {
     window.open(url, '_blank');
   };
 
-  const handleDelete = async (fileName: string) => {
-    if (!currentProject || !confirm(`Are you sure you want to delete ${fileName}?`)) return;
+  const handleDeleteClick = (fileName: string) => {
+    setDeleteFileModal({
+      isOpen: true,
+      fileName,
+      loading: false
+    });
+  };
 
-    setLoading(true);
-    setError('');
+  const confirmDeleteFile = async () => {
+    if (!currentProject) return;
+
+    setDeleteFileModal(prev => ({ ...prev, loading: true }));
 
     try {
       const token = localStorage.getItem('skaftin-token') || '';
-      const result = await RequestUtils.delete(ApiRoutes.FILES.DELETE(fileName), token, {});
+      const result = await RequestUtils.delete(
+        ApiRoutes.FILES.DELETE(deleteFileModal.fileName), 
+        token, 
+        {}
+      );
 
       if (result.success) {
-        await fetchFiles(); // Refresh file list
+        await fetchFiles();
+        setDeleteFileModal({ isOpen: false, fileName: '', loading: false });
+        ToastUtils.success('File deleted successfully!');
       } else {
         setError(result.error || 'Failed to delete file');
+        ToastUtils.error('Failed to delete file. Please try again.');
+        setDeleteFileModal(prev => ({ ...prev, loading: false }));
       }
     } catch (err) {
       setError('Failed to delete file');
       console.error('Delete error:', err);
-    } finally {
-      setLoading(false);
+      ToastUtils.error('Error deleting file. Please try again.');
+      setDeleteFileModal(prev => ({ ...prev, loading: false }));
     }
   };
 
@@ -265,7 +291,7 @@ const StorageTab = () => {
                             <Download className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDelete(file.key)}
+                            onClick={() => handleDeleteClick(file.key)}
                             className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                             title="Delete"
                           >
@@ -291,6 +317,19 @@ const StorageTab = () => {
           projectId={currentProject.id.toString()}
         />
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={deleteFileModal.isOpen}
+        onClose={() => setDeleteFileModal({ isOpen: false, fileName: '', loading: false })}
+        onConfirm={confirmDeleteFile}
+        title={`Delete File "${deleteFileModal.fileName}"`}
+        message={`Are you sure you want to delete "${deleteFileModal.fileName}"? This action cannot be undone.`}
+        itemName="file"
+        itemCount={1}
+        loading={deleteFileModal.loading}
+        variant="single"
+      />
     </div>
   );
 };

@@ -22,12 +22,29 @@ const ApiRoutes = {
     CREATE: '/api/users/create',
   },
   
-  // Files/Storage routes
+  // Files/Storage routes (legacy - use STORAGE for new features)
   FILES: {
     LIST: '/api/files/list',
     UPLOAD: '/api/files/upload',
     DOWNLOAD: (fileName: string) => `/api/files/${fileName}`,
     DELETE: (fileName: string) => `/api/files/${fileName}`,
+  },
+  
+  // Storage routes (project-based bucket isolation)
+  STORAGE: {
+    // Bucket management
+    LIST_BUCKETS: '/api/storage/buckets',
+    CREATE_BUCKET: '/api/storage/buckets',
+    DELETE_BUCKET: (bucketName: string) => `/api/storage/buckets/${bucketName}`,
+    
+    // File operations (project-based)
+    LIST_FILES: (projectId: string) => `/api/storage/${projectId}/files`,
+    SEARCH_FILES: (projectId: string) => `/api/storage/${projectId}/search`,
+    UPLOAD_FILE: (projectId: string) => `/api/storage/${projectId}/upload`,
+    UPLOAD_FILE_MULTIPART: (projectId: string) => `/api/storage/${projectId}/upload-multipart`,
+    DOWNLOAD_FILE: (projectId: string, filePath: string) => `/api/storage/${projectId}/download/${filePath}`,
+    DELETE_FILE: (projectId: string, filePath: string) => `/api/storage/${projectId}/files/${filePath}`,
+    GET_FILE_METADATA: (projectId: string, filePath: string) => `/api/storage/${projectId}/files/${filePath}/metadata`,
   },
   
   // Database routes
@@ -47,6 +64,9 @@ const ApiRoutes = {
     LIST_CONSTRAINTS: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints`,
     LIST_FOREIGN_KEYS: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/foreign-keys`,
     CREATE_FOREIGN_KEY: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/foreign-key`,
+    CREATE_UNIQUE_CONSTRAINT: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/unique`,
+    CREATE_PRIMARY_KEY: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/primary-key`,
+    CREATE_CHECK_CONSTRAINT: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/check`,
     DROP_CONSTRAINT: (projectId: string, tableName: string, constraintName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/${constraintName}`,
   },
   

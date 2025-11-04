@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { Upload, X, File, AlertCircle, CheckCircle } from 'lucide-react';
 import { AppButton } from '@components/ComponentsIndex';
+import ToastUtils from '../../utils/ToastUtils';
 // import McpService from '../../services/McpService';
 
 interface FileUploadModalProps {
@@ -43,7 +44,7 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
     for (const file of fileList) {
       // Check file size (limit to 10MB)
       if (file.size > 10 * 1024 * 1024) {
-        alert(`File "${file.name}" is too large. Maximum size is 10MB.`);
+        ToastUtils.error(`File "${file.name}" is too large. Maximum size is 10MB.`);
         continue;
       }
 
@@ -57,7 +58,7 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
         });
       } catch (error) {
         console.error('Error processing file:', error);
-        alert(`Error processing file "${file.name}"`);
+        ToastUtils.error(`Error processing file "${file.name}"`);
       }
     }
 
@@ -155,12 +156,13 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
         onSuccess();
         setFiles([]);
         setUploadProgress({});
+        ToastUtils.success('All files uploaded successfully!');
       } else {
-        alert('Some files failed to upload. Please try again.');
+        ToastUtils.warning('Some files failed to upload. Please try again.');
       }
     } catch (error) {
       console.error('Error uploading files:', error);
-      alert('Error uploading files. Please try again.');
+      ToastUtils.error('Error uploading files. Please try again.');
     } finally {
       setUploading(false);
     }

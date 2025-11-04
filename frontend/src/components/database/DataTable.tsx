@@ -38,7 +38,7 @@ const DataTable = ({
   selectable = true,
   sortable = true,
   pagination = true,
-  pageSize = 10,
+  pageSize: initialPageSize = 10,
   className = ''
 }: DataTableProps) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,11 +46,18 @@ const DataTable = ({
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
   const [editingCell, setEditingCell] = useState<{rowIndex: number, column: string} | null>(null);
   const [editValue, setEditValue] = useState<string>('');
+  const [jumpToPage, setJumpToPage] = useState('');
 
   // Get columns from data if not provided
   const tableColumns = columns || (data.length > 0 ? Object.keys(data[0]) : []);
+  
+  // Reset to page 1 when page size changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [pageSize]);
   
   // Filter data based on search term
   const filteredData = data.filter(row => {
@@ -115,10 +122,8 @@ const DataTable = ({
     if (selectedRows.size === 0) return;
     
     const selectedIndices = Array.from(selectedRows);
-    if (window.confirm(`Delete ${selectedIndices.length} selected row${selectedIndices.length !== 1 ? 's' : ''}?`)) {
-      onBulkDelete?.(selectedIndices);
-      setSelectedRows(new Set());
-    }
+    onBulkDelete?.(selectedIndices);
+    setSelectedRows(new Set());
   };
 
   const handleCellClick = (rowIndex: number, column: string, value: any) => {
@@ -171,7 +176,54 @@ const DataTable = ({
   // Reset selection when data changes
   useEffect(() => {
     setSelectedRows(new Set());
+    setCurrentPage(1);
   }, [data]);
+  
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
+  };
+  
+  const handleJumpToPage = (e: React.FormEvent) => {
+    e.preventDefault();
+    const pageNum = parseInt(jumpToPage);
+    if (pageNum >= 1 && pageNum <= totalPages) {
+      setCurrentPage(pageNum);
+      setJumpToPage('');
+    }
+  };
+  
+  // Generate page numbers to show
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const maxVisible = 5;
+    
+    if (totalPages <= maxVisible) {
+      // Show all pages
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Show first, last, and pages around current
+      pages.push(1);
+      
+      if (currentPage > 3) {
+        pages.push('...');
+      }
+      
+      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+        pages.push(i);
+      }
+      
+      if (currentPage < totalPages - 2) {
+        pages.push('...');
+      }
+      
+      pages.push(totalPages);
+    }
+    
+    return pages;
+  };
 
   const isAllSelected = paginatedData.length > 0 && 
     paginatedData.every((_, index) => selectedRows.has(startIndex + index));
@@ -399,31 +451,135 @@ const DataTable = ({
       )}
 
       {/* Pagination */}
-      {pagination && totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-dark-600 dark:text-dark-300">
-            Showing {startIndex + 1} to {Math.min(endIndex, sortedData.length)} of {sortedData.length} results
-          </div>
-          <div className="flex items-center space-x-2">
-            <AppButton
-              variant="secondary"
-              size="sm"
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-            >
-              Previous
-            </AppButton>
-            <span className="text-sm text-dark-600 dark:text-dark-300">
-              Page {currentPage} of {totalPages}
-            </span>
-            <AppButton
-              variant="secondary"
-              size="sm"
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-            >
-              Next
-            </AppButton>
+      {pagination && sortedData.length > 0 && (
+        <div className="mt-6 pt-4 border-t border-dark-200 dark:border-dark-700">
+          {/* Pagination Controls */}
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            {/* Left: Results info and page size */}
+            <div className="flex items-center space-x-4">
+              <div className="text-sm text-dark-600 dark:text-dark-300">
+                Showing <span className="font-medium text-dark-900 dark:text-white">{startIndex + 1}</span> to{' '}
+                <span className="font-medium text-dark-900 dark:text-white">{Math.min(endIndex, sortedData.length)}</span> of{' '}
+                <span className="font-medium text-dark-900 dark:text-white">{sortedData.length}</span> results
+              </div>
+              
+              {/* Page size selector */}
+              <div className="flex items-center space-x-2">
+                <label className="text-sm text-dark-600 dark:text-dark-300">
+                  Rows per page:
+                </label>
+                <select
+                  value={pageSize}
+                  onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                  className="px-3 py-1.5 text-sm border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Right: Page navigation */}
+            {totalPages > 1 && (
+              <div className="flex items-center space-x-2">
+                {/* First page */}
+                <AppButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                >
+                  ««
+                </AppButton>
+                
+                {/* Previous page */}
+                <AppButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                >
+                  ‹
+                </AppButton>
+                
+                {/* Page numbers */}
+                <div className="hidden sm:flex items-center space-x-1">
+                  {getPageNumbers().map((page, index) => {
+                    if (page === '...') {
+                      return (
+                        <span key={`ellipsis-${index}`} className="px-2 text-dark-400">
+                          ...
+                        </span>
+                      );
+                    }
+                    
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(Number(page))}
+                        className={`min-w-[2.5rem] px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
+                          currentPage === page
+                            ? 'bg-primary-500 text-white'
+                            : 'bg-white dark:bg-dark-700 text-dark-700 dark:text-dark-300 hover:bg-dark-100 dark:hover:bg-dark-600 border border-dark-200 dark:border-dark-600'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
+                </div>
+                
+                {/* Current page indicator for mobile */}
+                <span className="sm:hidden text-sm text-dark-600 dark:text-dark-300 px-2">
+                  {currentPage} / {totalPages}
+                </span>
+                
+                {/* Next page */}
+                <AppButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  ›
+                </AppButton>
+                
+                {/* Last page */}
+                <AppButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                >
+                  »»
+                </AppButton>
+                
+                {/* Jump to page */}
+                <form onSubmit={handleJumpToPage} className="hidden md:flex items-center space-x-2 ml-4">
+                  <label className="text-sm text-dark-600 dark:text-dark-300 whitespace-nowrap">
+                    Go to:
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max={totalPages}
+                    value={jumpToPage}
+                    onChange={(e) => setJumpToPage(e.target.value)}
+                    placeholder={String(currentPage)}
+                    className="w-16 px-2 py-1.5 text-sm text-center border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  />
+                  <AppButton
+                    variant="secondary"
+                    size="sm"
+                    type="submit"
+                  >
+                    Go
+                  </AppButton>
+                </form>
+              </div>
+            )}
           </div>
         </div>
       )}

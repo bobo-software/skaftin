@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { AppButton, AppInput, DeleteConfirmModal, FileUploadModal } from '../ComponentsIndex';
 import McpService from '../../services/McpService';
+import ToastUtils from '../../utils/ToastUtils';
 
 interface StorageViewerProps {
   projectId: string;
@@ -133,11 +134,11 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
       } else {
-        alert('Failed to download file');
+        ToastUtils.error('Failed to download file');
       }
     } catch (error) {
       console.error('Error downloading file:', error);
-      alert('Error downloading file');
+      ToastUtils.error('Error downloading file');
     }
   };
 
@@ -148,12 +149,13 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
         console.log('File deleted successfully');
         await loadFiles();
         onStorageChange?.();
+        ToastUtils.success('File deleted successfully!');
       } else {
-        alert('Failed to delete file');
+        ToastUtils.error('Failed to delete file');
       }
     } catch (error) {
       console.error('Error deleting file:', error);
-      alert('Error deleting file');
+      ToastUtils.error('Error deleting file');
     }
   };
 
@@ -168,9 +170,10 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
       setSelectedFiles(new Set());
       await loadFiles();
       onStorageChange?.();
+      ToastUtils.success(`${selectedFiles.size} file(s) deleted successfully!`);
     } catch (error) {
       console.error('Error deleting files:', error);
-      alert('Error deleting files');
+      ToastUtils.error('Error deleting files');
     }
   };
 
