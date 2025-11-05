@@ -9,6 +9,7 @@ import {
   HeadObjectCommand,
   DeleteObjectsCommand,
   ListBucketsCommand,
+  CopyObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import ResponseUtils from '../utils/ResponseUtils';
@@ -35,12 +36,21 @@ class StorageController {
    */
   private static async getProjectBucket(projectId: string): Promise<string | null> {
     try {
-      const result = await this.pool.query(
-        'SELECT bucket_name FROM platform.projects WHERE id = $1',
-        [projectId]
+      // Parse project ID to integer (projects.id is serial/integer type)
+      const projectIdInt = parseInt(projectId, 10);
+      
+      if (isNaN(projectIdInt)) {
+        console.error('Invalid project ID:', projectId);
+        return null;
+      }
+      
+      const result = await StorageController.pool.query(
+        'SELECT bucket_name FROM projects WHERE id = $1',
+        [projectIdInt]
       );
 
       if (result.rows.length === 0) {
+        console.log(`Project not found with ID: ${projectIdInt}`);
         return null;
       }
 
@@ -60,7 +70,7 @@ class StorageController {
       const { includeStats = 'false' } = req.query;
 
       const command = new ListBucketsCommand({});
-      const response = await this.s3Client.send(command);
+      const response = await StorageController.s3Client.send(command);
 
       if (!response.Buckets) {
         return ResponseUtils.success(res, 'No buckets found', []);
@@ -80,7 +90,7 @@ class StorageController {
                 Bucket: bucket.Name,
                 MaxKeys: 1000,
               });
-              const objects = await this.s3Client.send(listCommand);
+              const objects = await StorageController.s3Client.send(listCommand);
               
               bucketInfo.fileCount = objects.KeyCount || 0;
               bucketInfo.totalSize = objects.Contents?.reduce((sum, obj) => sum + (obj.Size || 0), 0) || 0;
@@ -119,7 +129,7 @@ class StorageController {
           Bucket: bucketName,
           MaxKeys: 1,
         });
-        await this.s3Client.send(checkCommand);
+        await StorageController.s3Client.send(checkCommand);
         
         return ResponseUtils.success(res, 'Bucket already exists', {
           bucket: bucketName,
@@ -134,7 +144,7 @@ class StorageController {
             Body: Buffer.from(''),
           });
           
-          await this.s3Client.send(createCommand);
+          await StorageController.s3Client.send(createCommand);
           
           // Delete the init file
           const deleteCommand = new DeleteObjectCommand({
@@ -142,12 +152,13 @@ class StorageController {
             Key: '.bucket-init',
           });
           
-          await this.s3Client.send(deleteCommand);
+          await StorageController.s3Client.send(deleteCommand);
 
-          // Update project bucket name in database
-          await this.pool.query(
-            'UPDATE platform.projects SET bucket_name = $1 WHERE id = $2',
-            [bucketName, projectId]
+          // Parse project ID and update project bucket name in database
+          const projectIdInt = parseInt(projectId, 10);
+          await StorageController.pool.query(
+            'UPDATE projects SET bucket_name = $1 WHERE id = $2',
+            [bucketName, projectIdInt]
           );
 
           return ResponseUtils.success(res, 'Bucket created successfully', {
@@ -184,7 +195,7 @@ class StorageController {
         MaxKeys: 1000,
       });
       
-      const objects = await this.s3Client.send(listCommand);
+      const objects = await StorageController.s3Client.send(listCommand);
 
       if (objects.Contents && objects.Contents.length > 0) {
         if (force !== 'true') {
@@ -205,7 +216,7 @@ class StorageController {
           },
         });
 
-        await this.s3Client.send(deleteCommand);
+        await StorageController.s3Client.send(deleteCommand);
       }
 
       ResponseUtils.success(res, 'Bucket deleted successfully', {
@@ -232,7 +243,7 @@ class StorageController {
       const { projectId } = req.params;
       const { prefix, maxKeys = '1000' } = req.query;
 
-      const bucketName = await this.getProjectBucket(projectId);
+      const bucketName = await StorageController.getProjectBucket(projectId);
       if (!bucketName) {
         return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
       }
@@ -243,7 +254,7 @@ class StorageController {
         MaxKeys: parseInt(maxKeys as string),
       });
 
-      const response = await this.s3Client.send(command);
+      const response = await StorageController.s3Client.send(command);
 
       const files = response.Contents?.map((obj) => ({
         key: obj.Key,
@@ -281,7 +292,7 @@ class StorageController {
         return ResponseUtils.error(res, 'query is required', null, null, 400);
       }
 
-      const bucketName = await this.getProjectBucket(projectId);
+      const bucketName = await StorageController.getProjectBucket(projectId);
       if (!bucketName) {
         return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
       }
@@ -291,7 +302,7 @@ class StorageController {
         MaxKeys: 1000,
       });
 
-      const response = await this.s3Client.send(command);
+      const response = await StorageController.s3Client.send(command);
 
       if (!response.Contents) {
         return ResponseUtils.success(res, 'No files found', []);
@@ -354,17 +365,18 @@ class StorageController {
       const { projectId } = req.params;
       const { filePath, fileContent, contentType, metadata } = req.body;
 
-      if (!filePath || !fileContent) {
+      // Validate required fields (allow empty string for fileContent - used for folders)
+      if (!filePath || fileContent === undefined || fileContent === null) {
         return ResponseUtils.error(res, 'filePath and fileContent are required', null, null, 400);
       }
 
-      const bucketName = await this.getProjectBucket(projectId);
+      const bucketName = await StorageController.getProjectBucket(projectId);
       if (!bucketName) {
         return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
       }
 
-      // Decode base64 content
-      const buffer = Buffer.from(fileContent, 'base64');
+      // Decode base64 content (empty string is valid for folder markers)
+      const buffer = fileContent ? Buffer.from(fileContent, 'base64') : Buffer.from('');
 
       const command = new PutObjectCommand({
         Bucket: bucketName,
@@ -374,7 +386,7 @@ class StorageController {
         Metadata: metadata,
       });
 
-      await this.s3Client.send(command);
+      await StorageController.s3Client.send(command);
 
       ResponseUtils.success(res, 'File uploaded successfully', {
         filePath,
@@ -406,7 +418,7 @@ class StorageController {
         return ResponseUtils.error(res, 'No file uploaded', null, null, 400);
       }
 
-      const bucketName = await this.getProjectBucket(projectId);
+      const bucketName = await StorageController.getProjectBucket(projectId);
       if (!bucketName) {
         return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
       }
@@ -420,7 +432,7 @@ class StorageController {
         ContentType: req.file.mimetype,
       });
 
-      await this.s3Client.send(command);
+      await StorageController.s3Client.send(command);
 
       ResponseUtils.success(res, 'File uploaded successfully', {
         fileName,
@@ -437,18 +449,31 @@ class StorageController {
 
   /**
    * Download file from project bucket
-   * GET /api/storage/:projectId/download/:filePath(*)
+   * GET /api/storage/:projectId/download/ * (wildcard path)
    */
   static async downloadFile(req: Request, res: Response) {
     try {
-      const { projectId, filePath } = req.params;
+      let { projectId, filePath } = req.params;
       const { range } = req.query;
+
+      // If filePath is not in params, extract it from the URL path
+      if (!projectId || !filePath) {
+        const pathMatch = req.path.match(/^\/([^\/]+)\/download\/(.+)$/);
+        if (pathMatch) {
+          projectId = pathMatch[1];
+          filePath = decodeURIComponent(pathMatch[2]);
+        }
+      }
+
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
 
       if (!filePath) {
         return ResponseUtils.error(res, 'File path is required', null, null, 400);
       }
 
-      const bucketName = await this.getProjectBucket(projectId);
+      const bucketName = await StorageController.getProjectBucket(projectId);
       if (!bucketName) {
         return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
       }
@@ -459,7 +484,7 @@ class StorageController {
         Key: filePath,
       });
 
-      await this.s3Client.send(headCommand);
+      await StorageController.s3Client.send(headCommand);
 
       // Generate presigned URL for download (valid for 1 hour)
       const getCommand = new GetObjectCommand({
@@ -468,7 +493,7 @@ class StorageController {
         Range: range as string,
       });
 
-      const signedUrl = await getSignedUrl(this.s3Client, getCommand, { expiresIn: 3600 });
+      const signedUrl = await getSignedUrl(StorageController.s3Client, getCommand, { expiresIn: 3600 });
 
       // Return signed URL or redirect
       if (req.query.returnUrl === 'true') {
@@ -493,17 +518,30 @@ class StorageController {
 
   /**
    * Delete file from project bucket
-   * DELETE /api/storage/:projectId/files/:filePath(*)
+   * DELETE /api/storage/:projectId/files/ * (wildcard path)
    */
   static async deleteFile(req: Request, res: Response) {
     try {
-      const { projectId, filePath } = req.params;
+      let { projectId, filePath } = req.params;
+
+      // If filePath is not in params, extract it from the URL path
+      if (!projectId || !filePath) {
+        const pathMatch = req.path.match(/^\/([^\/]+)\/files\/(.+)$/);
+        if (pathMatch) {
+          projectId = pathMatch[1];
+          filePath = decodeURIComponent(pathMatch[2]);
+        }
+      }
+
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
 
       if (!filePath) {
         return ResponseUtils.error(res, 'File path is required', null, null, 400);
       }
 
-      const bucketName = await this.getProjectBucket(projectId);
+      const bucketName = await StorageController.getProjectBucket(projectId);
       if (!bucketName) {
         return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
       }
@@ -513,7 +551,7 @@ class StorageController {
         Key: filePath,
       });
 
-      await this.s3Client.send(command);
+      await StorageController.s3Client.send(command);
 
       ResponseUtils.success(res, 'File deleted successfully', {
         filePath,
@@ -532,17 +570,30 @@ class StorageController {
 
   /**
    * Get file metadata
-   * GET /api/storage/:projectId/files/:filePath(*)/metadata
+   * GET /api/storage/:projectId/files/ * /metadata (wildcard path)
    */
   static async getFileMetadata(req: Request, res: Response) {
     try {
-      const { projectId, filePath } = req.params;
+      let { projectId, filePath } = req.params;
+
+      // If filePath is not in params, extract it from the URL path
+      if (!projectId || !filePath) {
+        const pathMatch = req.path.match(/^\/([^\/]+)\/files\/(.+)\/metadata$/);
+        if (pathMatch) {
+          projectId = pathMatch[1];
+          filePath = decodeURIComponent(pathMatch[2]);
+        }
+      }
+
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
 
       if (!filePath) {
         return ResponseUtils.error(res, 'File path is required', null, null, 400);
       }
 
-      const bucketName = await this.getProjectBucket(projectId);
+      const bucketName = await StorageController.getProjectBucket(projectId);
       if (!bucketName) {
         return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
       }
@@ -552,7 +603,7 @@ class StorageController {
         Key: filePath,
       });
 
-      const response = await this.s3Client.send(command);
+      const response = await StorageController.s3Client.send(command);
 
       ResponseUtils.success(res, 'File metadata retrieved', {
         filePath,
@@ -575,6 +626,143 @@ class StorageController {
       }
       
       ResponseUtils.error(res, 'Failed to get file metadata', error);
+    }
+  }
+
+  /**
+   * Rename folder (copy all files to new location and delete old ones)
+   * PUT /api/storage/:projectId/folders/rename
+   */
+  static async renameFolder(req: Request, res: Response) {
+    try {
+      const { projectId } = req.params;
+      const { oldPath, newPath } = req.body;
+
+      if (!oldPath || !newPath) {
+        return ResponseUtils.error(res, 'oldPath and newPath are required', null, null, 400);
+      }
+
+      const bucketName = await StorageController.getProjectBucket(projectId);
+      if (!bucketName) {
+        return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
+      }
+
+      // Ensure paths end with / for folder operations
+      const oldPrefix = oldPath.endsWith('/') ? oldPath : `${oldPath}/`;
+      const newPrefix = newPath.endsWith('/') ? newPath : `${newPath}/`;
+
+      // List all objects in the old folder
+      const listCommand = new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: oldPrefix,
+      });
+
+      const response = await StorageController.s3Client.send(listCommand);
+
+      if (!response.Contents || response.Contents.length === 0) {
+        return ResponseUtils.error(res, 'Folder not found or is empty', null, null, 404);
+      }
+
+      // Copy each object to the new location
+      const copyPromises = response.Contents.map(async (object) => {
+        if (!object.Key) return;
+
+        const newKey = object.Key.replace(oldPrefix, newPrefix);
+        
+        const copyCommand = new CopyObjectCommand({
+          Bucket: bucketName,
+          CopySource: `${bucketName}/${object.Key}`,
+          Key: newKey,
+        });
+
+        await StorageController.s3Client.send(copyCommand);
+      });
+
+      await Promise.all(copyPromises);
+
+      // Delete all old objects
+      const deleteCommand = new DeleteObjectsCommand({
+        Bucket: bucketName,
+        Delete: {
+          Objects: response.Contents.map((obj) => ({ Key: obj.Key })),
+        },
+      });
+
+      await StorageController.s3Client.send(deleteCommand);
+
+      ResponseUtils.success(res, 'Folder renamed successfully', {
+        oldPath,
+        newPath,
+        filesRenamed: response.Contents.length,
+      });
+    } catch (error: any) {
+      console.error('Rename folder error:', error);
+      ResponseUtils.error(res, 'Failed to rename folder', error);
+    }
+  }
+
+  /**
+   * Delete folder and all its contents
+   * DELETE /api/storage/:projectId/folders/:folderPath
+   */
+  static async deleteFolder(req: Request, res: Response) {
+    try {
+      let { projectId, folderPath } = req.params;
+
+      // If folderPath is not in params, extract it from the URL path
+      if (!projectId || !folderPath) {
+        const pathMatch = req.path.match(/^\/([^\/]+)\/folders\/(.+)$/);
+        if (pathMatch) {
+          projectId = pathMatch[1];
+          folderPath = decodeURIComponent(pathMatch[2]);
+        }
+      }
+
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      if (!folderPath) {
+        return ResponseUtils.error(res, 'Folder path is required', null, null, 400);
+      }
+
+      const bucketName = await StorageController.getProjectBucket(projectId);
+      if (!bucketName) {
+        return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
+      }
+
+      // Ensure path ends with / for folder operations
+      const prefix = folderPath.endsWith('/') ? folderPath : `${folderPath}/`;
+
+      // List all objects in the folder
+      const listCommand = new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: prefix,
+      });
+
+      const response = await StorageController.s3Client.send(listCommand);
+
+      if (!response.Contents || response.Contents.length === 0) {
+        return ResponseUtils.error(res, 'Folder not found or is empty', null, null, 404);
+      }
+
+      // Delete all objects
+      const deleteCommand = new DeleteObjectsCommand({
+        Bucket: bucketName,
+        Delete: {
+          Objects: response.Contents.map((obj) => ({ Key: obj.Key })),
+        },
+      });
+
+      await StorageController.s3Client.send(deleteCommand);
+
+      ResponseUtils.success(res, 'Folder deleted successfully', {
+        folderPath,
+        filesDeleted: response.Contents.length,
+      });
+    } catch (error: any) {
+      console.error('Delete folder error:', error);
+      ResponseUtils.error(res, 'Failed to delete folder', error);
     }
   }
 }

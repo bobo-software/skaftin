@@ -99,7 +99,10 @@ app.use(
 // SuperTokens middleware - MUST come before your routes
 app.use(supertokensMiddleware());
 
-app.use(bodyParser.json());
+// Body parser with increased size limit for file uploads
+// Base64 encoding increases file size by ~33%, so 10MB limit allows ~7.5MB original files
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 
 // ============================================================================
 // ROUTERS

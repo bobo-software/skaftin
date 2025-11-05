@@ -90,54 +90,114 @@ router.post(
 );
 
 /**
- * Download file
- * GET /api/storage/:projectId/download/* (uses regex to capture full path)
+ * Rename folder
+ * PUT /api/storage/:projectId/folders/rename
  */
-router.get(
-  /^\/([^\/]+)\/download\/(.+)$/,
+router.put(
+  '/:projectId/folders/rename',
   authenticateAndAttachUser,
   verifyProjectAccess,
-  (req: Request, res: Response, next: NextFunction) => {
-    // Regex captures: [0] = projectId, [1] = filePath
-    req.params.projectId = req.params[0];
-    req.params.filePath = req.params[1];
-    next();
-  },
+  StorageController.renameFolder
+);
+
+/**
+ * Custom middleware to handle wildcard file paths
+ * Extracts projectId and filePath from the URL for download/delete/metadata operations
+ */
+const handleWildcardPath = (req: Request, res: Response, next: NextFunction) => {
+  // Parse the path after /api/storage/
+  // req.path is relative to the router mount point (e.g., /6/download/file.png)
+  const path = req.path;
+  
+  // Match download pattern: /projectId/download/filePath
+  let match = path.match(/^\/([^\/]+)\/download\/(.+)$/);
+  if (match) {
+    req.params.projectId = match[1];
+    req.params.filePath = decodeURIComponent(match[2]);
+    return next();
+  }
+  
+  // Match folders pattern: /projectId/folders/folderPath
+  match = path.match(/^\/([^\/]+)\/folders\/(.+)$/);
+  if (match) {
+    req.params.projectId = match[1];
+    req.params.folderPath = decodeURIComponent(match[2]);
+    return next();
+  }
+  
+  // Match files pattern: /projectId/files/filePath
+  match = path.match(/^\/([^\/]+)\/files\/(.+)$/);
+  if (match) {
+    req.params.projectId = match[1];
+    const filePathPart = match[2];
+    
+    // Check if this is a metadata request
+    if (filePathPart.endsWith('/metadata')) {
+      req.params.filePath = decodeURIComponent(filePathPart.replace(/\/metadata$/, ''));
+      req.params.isMetadata = 'true';
+    } else {
+      req.params.filePath = decodeURIComponent(filePathPart);
+    }
+    return next();
+  }
+  
+  // If no match, continue to next handler
+  next();
+};
+
+/**
+ * Download file
+ * GET /api/storage/:projectId/download/...
+ */
+router.get(
+  /^\/([^\/]+)\/download\/.+$/,
+  handleWildcardPath,
+  authenticateAndAttachUser,
+  verifyProjectAccess,
   StorageController.downloadFile
 );
 
 /**
- * Get file metadata
- * GET /api/storage/:projectId/files/* /metadata
+ * Delete file
+ * DELETE /api/storage/:projectId/files/...
  */
-router.get(
-  /^\/([^\/]+)\/files\/(.+)\/metadata$/,
+router.delete(
+  /^\/([^\/]+)\/files\/.+$/,
+  handleWildcardPath,
   authenticateAndAttachUser,
   verifyProjectAccess,
   (req: Request, res: Response, next: NextFunction) => {
-    // Regex captures: [0] = projectId, [1] = filePath
-    req.params.projectId = req.params[0];
-    req.params.filePath = req.params[1];
+    // Skip if this is a metadata request
+    if (req.params.isMetadata) {
+      return next('route');
+    }
     next();
   },
+  StorageController.deleteFile
+);
+
+/**
+ * Get file metadata
+ * GET /api/storage/:projectId/files/.../metadata
+ */
+router.get(
+  /^\/([^\/]+)\/files\/.+\/metadata$/,
+  handleWildcardPath,
+  authenticateAndAttachUser,
+  verifyProjectAccess,
   StorageController.getFileMetadata
 );
 
 /**
- * Delete file
- * DELETE /api/storage/:projectId/files/*
+ * Delete folder
+ * DELETE /api/storage/:projectId/folders/:folderPath
  */
 router.delete(
-  /^\/([^\/]+)\/files\/(.+)$/,
+  /^\/([^\/]+)\/folders\/.+$/,
+  handleWildcardPath,
   authenticateAndAttachUser,
   verifyProjectAccess,
-  (req: Request, res: Response, next: NextFunction) => {
-    // Regex captures: [0] = projectId, [1] = filePath
-    req.params.projectId = req.params[0];
-    req.params.filePath = req.params[1];
-    next();
-  },
-  StorageController.deleteFile
+  StorageController.deleteFolder
 );
 
 export { router };

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
-import { Database, Cloud, Settings, Layers, LucideIcon, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Database, Cloud, Settings, Home, Layers, LucideIcon, ChevronRight, ChevronLeft } from 'lucide-react';
 
 interface NavItem {
   path: string;
@@ -20,7 +20,7 @@ const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSide
   const [isHovering, setIsHovering] = useState(false);
 
   const navItems: NavItem[] = [
-    { path: 'overview', icon: Layers, label: 'Overview' },
+    { path: 'overview', icon: Home, label: 'Overview' },
     { path: 'database', icon: Database, label: 'Database' },
     { path: 'storage', icon: Cloud, label: 'Storage' },
     { path: 'settings', icon: Settings, label: 'Settings' },

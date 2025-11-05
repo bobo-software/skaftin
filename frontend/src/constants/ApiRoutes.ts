@@ -45,6 +45,10 @@ const ApiRoutes = {
     DOWNLOAD_FILE: (projectId: string, filePath: string) => `/api/storage/${projectId}/download/${filePath}`,
     DELETE_FILE: (projectId: string, filePath: string) => `/api/storage/${projectId}/files/${filePath}`,
     GET_FILE_METADATA: (projectId: string, filePath: string) => `/api/storage/${projectId}/files/${filePath}/metadata`,
+    
+    // Folder operations
+    RENAME_FOLDER: (projectId: string) => `/api/storage/${projectId}/folders/rename`,
+    DELETE_FOLDER: (projectId: string, folderPath: string) => `/api/storage/${projectId}/folders/${folderPath}`,
   },
   
   // Database routes

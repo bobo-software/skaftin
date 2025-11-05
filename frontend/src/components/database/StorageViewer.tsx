@@ -5,11 +5,16 @@ import {
   File, 
   Folder, 
   RefreshCw,
-  Plus,
-  Search
+  Search,
+  FolderPlus,
+  Upload,
+  ChevronRight,
+  Home,
+  Edit2,
+  FolderMinus
 } from 'lucide-react';
-import { AppButton, AppInput, DeleteConfirmModal, FileUploadModal } from '../ComponentsIndex';
-import McpService from '../../services/McpService';
+import { AppButton, AppInput, DeleteConfirmModal } from '../ComponentsIndex';
+import StorageService from '../../services/StorageService';
 import ToastUtils from '../../utils/ToastUtils';
 
 interface StorageViewerProps {
@@ -17,400 +22,735 @@ interface StorageViewerProps {
   onStorageChange?: () => void;
 }
 
+interface FileItem {
+  key: string;
+  name: string;
+  size?: number;
+  lastModified?: string;
+  isFolder?: boolean;
+}
+
 const StorageViewer: React.FC<StorageViewerProps> = ({ 
   projectId, 
   onStorageChange 
 }) => {
-  console.log('StorageViewer mounted with projectId:', projectId);
-  
-  const [files, setFiles] = useState<any[]>([]);
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [currentPath, setCurrentPath] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState('all');
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
-  const [bulkDelete, setBulkDelete] = useState(false);
+  const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
+  const [showRenameFolderModal, setShowRenameFolderModal] = useState(false);
+  const [folderToRename, setFolderToRename] = useState<string | null>(null);
+  const [newFolderNameForRename, setNewFolderNameForRename] = useState('');
+  const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
 
-  // Load files when component mounts or project changes
+  // Load files for current path
   const loadFiles = useCallback(async () => {
-    if (!projectId) {
-      console.log('No projectId provided');
-      return;
-    }
+    if (!projectId) return;
     
-    console.log('Loading files for projectId:', projectId);
     setLoading(true);
-    
     try {
-      const result = await McpService.listFiles(projectId);
-      console.log('Full MCP response:', JSON.stringify(result, null, 2));
+      const result = await StorageService.listFiles(projectId, currentPath || undefined);
       
-      if (result.success) {
-        // Try multiple paths to find the files array
-        let files = [];
+      if (result.success && result.data) {
+        const filesData = result.data.files || result.data || [];
         
-        if (result.result?.data) {
-          files = result.result.data;
-          console.log('Found files in result.result.data:', files);
-        } else if (result.data) {
-          files = result.data;
-          console.log('Found files in result.data:', files);
-        } else if (result.result) {
-          files = result.result;
-          console.log('Found files in result.result:', files);
-        }
-        
-        console.log('Final extracted files:', files);
-        setFiles(Array.isArray(files) ? files : []);
+        // Process files to identify folders and files
+        const processedFiles = processFilesForCurrentPath(filesData, currentPath);
+        setFiles(processedFiles);
       } else {
-        console.error('MCP request failed:', result.error);
         setFiles([]);
+        if (result.error) {
+          ToastUtils.error(result.message || 'Failed to load files');
+        }
       }
     } catch (error) {
-      console.error('Error calling MCP service:', error);
+      console.error('Error loading files:', error);
       setFiles([]);
+      ToastUtils.error('Error loading files');
     } finally {
-      console.log('Setting loading to false');
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, currentPath]);
 
   useEffect(() => {
     loadFiles();
-    
-    // Fallback timeout to prevent infinite loading
-    const timeout = setTimeout(() => {
-      if (loading) {
-        console.log('Loading timeout reached, forcing loading to false');
-        setLoading(false);
+  }, [loadFiles]);
+
+  // Process files to show only items in current folder
+  const processFilesForCurrentPath = (allFiles: any[], path: string): FileItem[] => {
+    const prefix = path ? `${path}/` : '';
+    const items: FileItem[] = [];
+    const folders = new Set<string>();
+
+    allFiles.forEach((file: any) => {
+      const key = file.key || file.name || '';
+      
+      // Skip if not in current path
+      if (path && !key.startsWith(prefix)) return;
+      
+      // Get the relative path from current location
+      const relativePath = path ? key.substring(prefix.length) : key;
+      
+      // If it contains a slash, extract folder name
+      if (relativePath.includes('/')) {
+        const folderName = relativePath.substring(0, relativePath.indexOf('/'));
+        const fullFolderPath = path ? `${path}/${folderName}` : folderName;
+        
+        if (!folders.has(fullFolderPath)) {
+          folders.add(fullFolderPath);
+          items.push({
+            key: fullFolderPath,
+            name: folderName,
+            isFolder: true
+          });
+        }
+        return; // Don't process the file/marker itself
       }
-    }, 10000); // 10 second timeout
-    
-    return () => clearTimeout(timeout);
-  }, [loadFiles, loading]);
+      
+      // Skip folder markers at current level
+      if (relativePath === '.folder') return;
+      
+      // It's a file in the current directory
+      items.push({
+        key: key,
+        name: relativePath,
+        size: file.size,
+        lastModified: file.lastModified,
+        isFolder: false
+      });
+    });
 
-  // Filter files based on search and type
-  const filteredFiles = files.filter(file => {
-    const matchesSearch = file.name.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    // Determine file type from extension since contentType might not be available
-    const extension = file.name.split('.').pop()?.toLowerCase();
-    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'].includes(extension || '');
-    const isDocument = ['pdf', 'doc', 'docx', 'txt', 'md', 'json', 'csv'].includes(extension || '');
-    
-    const matchesType = filterType === 'all' || 
-      (filterType === 'images' && isImage) ||
-      (filterType === 'documents' && isDocument) ||
-      (filterType === 'other' && !isImage && !isDocument);
-    
-    return matchesSearch && matchesType;
-  });
+    // Sort: folders first, then files alphabetically
+    return items.sort((a, b) => {
+      if (a.isFolder && !b.isFolder) return -1;
+      if (!a.isFolder && b.isFolder) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  };
 
-  const handleFileSelect = (fileName: string) => {
-    const newSelected = new Set(selectedFiles);
-    if (newSelected.has(fileName)) {
-      newSelected.delete(fileName);
+  // Filter files based on search
+  const filteredFiles = files.filter(file => 
+    file.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Navigate to a folder
+  const handleFolderClick = (folderPath: string) => {
+    setCurrentPath(folderPath);
+    setSelectedFiles(new Set());
+  };
+
+  // Navigate to parent folder
+  const handleGoUp = () => {
+    const parts = currentPath.split('/');
+    parts.pop();
+    setCurrentPath(parts.join('/'));
+    setSelectedFiles(new Set());
+  };
+
+  // Navigate to specific breadcrumb
+  const handleBreadcrumbClick = (index: number) => {
+    if (index === -1) {
+      setCurrentPath('');
     } else {
-      newSelected.add(fileName);
+      const parts = currentPath.split('/');
+      setCurrentPath(parts.slice(0, index + 1).join('/'));
+    }
+    setSelectedFiles(new Set());
+  };
+
+  // Get breadcrumb parts
+  const breadcrumbs = currentPath ? currentPath.split('/') : [];
+
+  const handleFileSelect = (filePath: string) => {
+    const newSelected = new Set(selectedFiles);
+    if (newSelected.has(filePath)) {
+      newSelected.delete(filePath);
+    } else {
+      newSelected.add(filePath);
     }
     setSelectedFiles(newSelected);
   };
 
-
-  const handleDownload = async (fileName: string) => {
+  const handleDownload = async (filePath: string) => {
     try {
-      const result = await McpService.downloadFile(projectId, fileName);
-      if (result.success) {
-        // Create a blob and download
-        const blob = new Blob([result.data], { type: 'application/octet-stream' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
+      ToastUtils.info('Generating download link...');
+      const result = await StorageService.downloadFile(projectId, filePath);
+      
+      if (result.success && result.data?.url) {
+        window.open(result.data.url, '_blank');
+        ToastUtils.success('Download started');
       } else {
-        ToastUtils.error('Failed to download file');
+        ToastUtils.error(result.message || 'Failed to download file');
       }
-    } catch (error) {
-      console.error('Error downloading file:', error);
+    } catch {
       ToastUtils.error('Error downloading file');
     }
   };
 
-  const handleDeleteFile = async (fileName: string) => {
+  const handleDelete = async (filePath: string) => {
     try {
-      const result = await McpService.deleteFile(projectId, fileName);
+      const result = await StorageService.deleteFile(projectId, filePath);
+      
       if (result.success) {
-        console.log('File deleted successfully');
-        await loadFiles();
+        ToastUtils.success('File deleted successfully');
+        loadFiles();
         onStorageChange?.();
-        ToastUtils.success('File deleted successfully!');
       } else {
-        ToastUtils.error('Failed to delete file');
+        ToastUtils.error(result.message || 'Failed to delete file');
       }
-    } catch (error) {
-      console.error('Error deleting file:', error);
+    } catch {
       ToastUtils.error('Error deleting file');
+    } finally {
+      setShowDeleteModal(false);
+      setFileToDelete(null);
     }
   };
 
   const handleBulkDelete = async () => {
+    if (selectedFiles.size === 0) return;
+    
     try {
-      const deletePromises = Array.from(selectedFiles).map(fileName => 
-        McpService.deleteFile(projectId, fileName)
+      const deletePromises = Array.from(selectedFiles).map(filePath =>
+        StorageService.deleteFile(projectId, filePath)
       );
       
       await Promise.all(deletePromises);
-      console.log('Files deleted successfully');
+      ToastUtils.success(`Deleted ${selectedFiles.size} file(s)`);
       setSelectedFiles(new Set());
-      await loadFiles();
+      loadFiles();
       onStorageChange?.();
-      ToastUtils.success(`${selectedFiles.size} file(s) deleted successfully!`);
-    } catch (error) {
-      console.error('Error deleting files:', error);
+    } catch {
       ToastUtils.error('Error deleting files');
+    } finally {
+      setShowDeleteModal(false);
     }
   };
 
-  const handleUploadSuccess = () => {
-    setShowUploadModal(false);
+  const handleDeleteFolder = async () => {
+    if (!folderToDelete) return;
+    
+    try {
+      const result = await StorageService.deleteFolder(projectId, folderToDelete);
+      
+      if (result.success) {
+        ToastUtils.success('Folder deleted successfully');
+        loadFiles();
+        onStorageChange?.();
+      } else {
+        ToastUtils.error(result.message || 'Failed to delete folder');
+      }
+    } catch {
+      ToastUtils.error('Error deleting folder');
+    } finally {
+      setShowDeleteModal(false);
+      setFolderToDelete(null);
+    }
+  };
+
+  const handleRenameFolder = async () => {
+    if (!folderToRename || !newFolderNameForRename.trim()) {
+      ToastUtils.error('New folder name is required');
+      return;
+    }
+
+    try {
+      // Calculate new path
+      const pathParts = folderToRename.split('/');
+      pathParts[pathParts.length - 1] = newFolderNameForRename.trim();
+      const newPath = pathParts.join('/');
+      
+      const result = await StorageService.renameFolder(projectId, folderToRename, newPath);
+      
+      if (result.success) {
+        ToastUtils.success('Folder renamed successfully');
+        setNewFolderNameForRename('');
+        setFolderToRename(null);
+        setShowRenameFolderModal(false);
+        loadFiles();
+        onStorageChange?.();
+      } else {
+        ToastUtils.error(result.message || 'Failed to rename folder');
+      }
+    } catch {
+      ToastUtils.error('Error renaming folder');
+    }
+  };
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) {
+      ToastUtils.error('Folder name is required');
+      return;
+    }
+
+    try {
+      const folderPath = currentPath 
+        ? `${currentPath}/${newFolderName.trim()}`
+        : newFolderName.trim();
+      
+      const result = await StorageService.createFolder(projectId, folderPath);
+      
+      if (result.success) {
+        ToastUtils.success('Folder created successfully');
+        setNewFolderName('');
+        setShowCreateFolderModal(false);
+        loadFiles();
+        onStorageChange?.();
+      } else {
+        ToastUtils.error(result.message || 'Failed to create folder');
+      }
+    } catch {
+      ToastUtils.error('Error creating folder');
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = event.target.files;
+    if (!selectedFiles || selectedFiles.length === 0) return;
+
+    const newUploading = new Set(uploadingFiles);
+    
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      const fileName = file.name;
+      const filePath = currentPath ? `${currentPath}/${fileName}` : fileName;
+      
+      newUploading.add(fileName);
+      setUploadingFiles(new Set(newUploading));
+
+      try {
+        const result = await StorageService.uploadFile(projectId, filePath, file);
+        
+        if (result.success) {
+          ToastUtils.success(`${fileName} uploaded successfully`);
+        } else {
+          ToastUtils.error(`Failed to upload ${fileName}`);
+        }
+      } catch {
+        ToastUtils.error(`Error uploading ${fileName}`);
+      } finally {
+        newUploading.delete(fileName);
+        setUploadingFiles(new Set(newUploading));
+      }
+    }
+
     loadFiles();
     onStorageChange?.();
+    setShowUploadModal(false);
+    event.target.value = '';
   };
 
-  const getFileIcon = (fileName: string) => {
-    const extension = fileName.split('.').pop()?.toLowerCase();
-    
-    if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'].includes(extension || '')) {
-      return <File className="w-4 h-4 text-blue-500" />;
-    } else if (['pdf'].includes(extension || '')) {
-      return <File className="w-4 h-4 text-red-500" />;
-    } else if (['txt', 'md', 'json', 'csv', 'js', 'ts', 'html', 'css'].includes(extension || '')) {
-      return <File className="w-4 h-4 text-green-500" />;
-    } else {
-      return <File className="w-4 h-4 text-gray-500" />;
-    }
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return '-';
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return '-';
+    return new Date(dateString).toLocaleDateString();
   };
 
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-dark-800">
+    <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
-      <div className="flex-shrink-0 border-b border-dark-200 dark:border-dark-700">
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-xl font-semibold text-dark-900 dark:text-white">
-                Storage
-              </h2>
-              <p className="text-sm text-dark-600 dark:text-dark-300 mt-1">
-                Manage files and documents for this project
-              </p>
-            </div>
-            <div className="flex items-center space-x-2">
-              <AppButton
-                variant="secondary"
-                size="sm"
-                onClick={loadFiles}
-                disabled={loading}
-              >
-                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                Refresh
-              </AppButton>
-              <AppButton
-                variant="primary"
-                size="sm"
-                onClick={() => setShowUploadModal(true)}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Upload Files
-              </AppButton>
-            </div>
-          </div>
-
-          {/* Search and Filter */}
-          <div className="flex items-center space-x-4">
-            <div className="flex-1 max-w-md">
-              <AppInput
-                type="text"
-                placeholder="Search files..."
-                value={searchTerm}
-                onChange={(value) => setSearchTerm(value as string)}
-                icon={<Search className="w-4 h-4" />}
-              />
-            </div>
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+            Storage Browser
+          </h2>
+          <div className="flex items-center gap-2">
+            <AppButton
+              variant="secondary"
+              size="sm"
+              onClick={loadFiles}
+              disabled={loading}
             >
-              <option value="all">All Files</option>
-              <option value="images">Images</option>
-              <option value="documents">Documents</option>
-              <option value="other">Other</option>
-            </select>
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </AppButton>
+            <AppButton
+              variant="primary"
+              size="sm"
+              onClick={() => setShowCreateFolderModal(true)}
+            >
+              <FolderPlus className="h-4 w-4 mr-2" />
+              New Folder
+            </AppButton>
+            <AppButton
+              variant="primary"
+              size="sm"
+              onClick={() => setShowUploadModal(true)}
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Upload Files
+            </AppButton>
+            {selectedFiles.size > 0 && (
+              <AppButton
+                variant="danger"
+                size="sm"
+                onClick={() => setShowDeleteModal(true)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete ({selectedFiles.size})
+              </AppButton>
+            )}
           </div>
+        </div>
+
+        {/* Breadcrumbs */}
+        <div className="flex items-center gap-2 mb-3 text-sm">
+          <button
+            onClick={() => handleBreadcrumbClick(-1)}
+            className="flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
+          >
+            <Home className="h-4 w-4" />
+            <span>Root</span>
+          </button>
+          {breadcrumbs.map((part, index) => (
+            <React.Fragment key={index}>
+              <ChevronRight className="h-4 w-4 text-gray-400" />
+              <button
+                onClick={() => handleBreadcrumbClick(index)}
+                className="px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
+              >
+                {part}
+              </button>
+            </React.Fragment>
+          ))}
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <AppInput
+            type="text"
+            placeholder="Search files and folders..."
+            value={searchTerm}
+            onChange={(value) => setSearchTerm(String(value))}
+            className="pl-10"
+          />
         </div>
       </div>
 
-      {/* Bulk Actions */}
-      {selectedFiles.size > 0 && (
-        <div className="flex-shrink-0 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800">
-          <div className="p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-blue-800 dark:text-blue-300">
-                {selectedFiles.size} file{selectedFiles.size !== 1 ? 's' : ''} selected
-              </span>
-              <div className="flex items-center space-x-2">
-                <AppButton
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setSelectedFiles(new Set())}
+      {/* File List */}
+      <div className="flex-1 overflow-auto">
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
+          </div>
+        ) : filteredFiles.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
+            <Folder className="h-16 w-16 mb-4 opacity-50" />
+            <p className="text-lg font-medium">No files or folders</p>
+            <p className="text-sm">Upload files or create a folder to get started</p>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
+              <tr>
+                <th className="w-12 px-4 py-3 text-left">
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles.size === filteredFiles.filter(f => !f.isFolder).length && filteredFiles.filter(f => !f.isFolder).length > 0}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedFiles(new Set(filteredFiles.filter(f => !f.isFolder).map(f => f.key)));
+                      } else {
+                        setSelectedFiles(new Set());
+                      }
+                    }}
+                    className="rounded border-gray-300 dark:border-gray-600"
+                  />
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                  Name
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                  Size
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                  Modified
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              {/* Parent folder link */}
+              {currentPath && (
+                <tr className="hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer">
+                  <td className="px-4 py-3"></td>
+                  <td 
+                    className="px-4 py-3"
+                    onClick={handleGoUp}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Folder className="h-5 w-5 text-blue-500" />
+                      <span className="text-gray-900 dark:text-white font-medium">..</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">-</td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">-</td>
+                  <td className="px-4 py-3"></td>
+                </tr>
+              )}
+              
+              {/* Files and folders */}
+              {filteredFiles.map((file) => (
+                <tr 
+                  key={file.key}
+                  className="hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
                 >
-                  Clear Selection
-                </AppButton>
-                <AppButton
-                  variant="danger"
-                  size="sm"
-                  onClick={() => {
-                    setBulkDelete(true);
-                    setShowDeleteModal(true);
-                  }}
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete Selected
-                </AppButton>
-              </div>
+                  <td className="px-4 py-3">
+                    {!file.isFolder && (
+                      <input
+                        type="checkbox"
+                        checked={selectedFiles.has(file.key)}
+                        onChange={() => handleFileSelect(file.key)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded border-gray-300 dark:border-gray-600"
+                      />
+                    )}
+                  </td>
+                  <td 
+                    className="px-4 py-3"
+                    onClick={() => file.isFolder ? handleFolderClick(file.key) : null}
+                  >
+                    <div className="flex items-center gap-2">
+                      {file.isFolder ? (
+                        <Folder className="h-5 w-5 text-blue-500" />
+                      ) : (
+                        <File className="h-5 w-5 text-gray-400" />
+                      )}
+                      <span className="text-gray-900 dark:text-white">
+                        {file.name}
+                        {uploadingFiles.has(file.name) && (
+                          <span className="ml-2 text-xs text-blue-500">(uploading...)</span>
+                        )}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
+                    {file.isFolder ? '-' : formatFileSize(file.size)}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
+                    {file.isFolder ? '-' : formatDate(file.lastModified)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-2">
+                      {file.isFolder ? (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFolderToRename(file.key);
+                              setNewFolderNameForRename(file.name);
+                              setShowRenameFolderModal(true);
+                            }}
+                            className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/20"
+                            title="Rename Folder"
+                          >
+                            <Edit2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFolderToDelete(file.key);
+                              setShowDeleteModal(true);
+                            }}
+                            className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/20"
+                            title="Delete Folder"
+                          >
+                            <FolderMinus className="h-4 w-4 text-red-600 dark:text-red-400" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownload(file.key);
+                            }}
+                            className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                            title="Download"
+                          >
+                            <Download className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFileToDelete(file.key);
+                              setShowDeleteModal(true);
+                            }}
+                            className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/20"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Create Folder Modal */}
+      {showCreateFolderModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-96">
+            <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
+              Create New Folder
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              {currentPath ? `Location: ${currentPath}/` : 'Location: Root'}
+            </p>
+            <AppInput
+              type="text"
+              placeholder="Folder name"
+              value={newFolderName}
+              onChange={(value) => setNewFolderName(String(value))}
+              className="mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <AppButton
+                variant="secondary"
+                onClick={() => {
+                  setShowCreateFolderModal(false);
+                  setNewFolderName('');
+                }}
+              >
+                Cancel
+              </AppButton>
+              <AppButton
+                variant="primary"
+                onClick={handleCreateFolder}
+              >
+                Create
+              </AppButton>
             </div>
           </div>
         </div>
       )}
 
-      {/* Files List */}
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="flex items-center justify-center h-32">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-          </div>
-        ) : filteredFiles.length === 0 ? (
-          <div className="text-center py-12">
-            <Folder className="w-12 h-12 text-dark-300 dark:text-dark-600 mx-auto mb-3" />
-            <p className="text-dark-600 dark:text-dark-300">No files found</p>
-            <p className="text-sm text-dark-500 dark:text-dark-400 mt-1">
-              Upload files to get started
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-96">
+            <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
+              Upload Files
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              {currentPath ? `Uploading to: ${currentPath}/` : 'Uploading to: Root'}
             </p>
-          </div>
-        ) : (
-          <div className="p-4">
-            <div className="space-y-2">
-              {filteredFiles.map((file, index) => (
-                <div
-                  key={index}
-                  className="flex items-center p-3 bg-dark-50 dark:bg-dark-700 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-600 transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedFiles.has(file.name)}
-                    onChange={() => handleFileSelect(file.name)}
-                    className="mr-3 rounded border-dark-300 dark:border-dark-600"
-                  />
-                  
-                  <div className="flex items-center flex-1 min-w-0">
-                    {getFileIcon(file.name)}
-                    <div className="ml-3 flex-1 min-w-0">
-                      <p className="text-sm font-medium text-dark-900 dark:text-white truncate">
-                        {file.name}
-                      </p>
-                      <div className="flex items-center space-x-4 text-xs text-dark-500 dark:text-dark-400">
-                        <span>{formatFileSize(file.size || 0)}</span>
-                        <span>{file.name.split('.').pop()?.toUpperCase() || 'FILE'}</span>
-                        <span>{formatDate(file.lastModified || new Date().toISOString())}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-1 ml-4">
-                    <button
-                      onClick={() => handleDownload(file.name)}
-                      className="p-1 text-dark-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                      title="Download file"
-                    >
-                      <Download className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setFileToDelete(file.name);
-                        setBulkDelete(false);
-                        setShowDeleteModal(true);
-                      }}
-                      className="p-1 text-dark-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                      title="Delete file"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+            <input
+              type="file"
+              multiple
+              onChange={handleFileUpload}
+              className="block w-full text-sm text-gray-500 dark:text-gray-400
+                file:mr-4 file:py-2 file:px-4
+                file:rounded file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-50 file:text-blue-700
+                hover:file:bg-blue-100
+                dark:file:bg-blue-900/20 dark:file:text-blue-400
+                dark:hover:file:bg-blue-900/30
+                mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <AppButton
+                variant="secondary"
+                onClick={() => setShowUploadModal(false)}
+              >
+                Cancel
+              </AppButton>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Modals */}
-      <FileUploadModal
-        isOpen={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
-        onSuccess={handleUploadSuccess}
-        projectId={projectId}
-      />
+      {/* Rename Folder Modal */}
+      {showRenameFolderModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-96">
+            <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
+              Rename Folder
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Current name: {folderToRename?.split('/').pop()}
+            </p>
+            <AppInput
+              type="text"
+              placeholder="New folder name"
+              value={newFolderNameForRename}
+              onChange={(value) => setNewFolderNameForRename(String(value))}
+              className="mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <AppButton
+                variant="secondary"
+                onClick={() => {
+                  setShowRenameFolderModal(false);
+                  setFolderToRename(null);
+                  setNewFolderNameForRename('');
+                }}
+              >
+                Cancel
+              </AppButton>
+              <AppButton
+                variant="primary"
+                onClick={handleRenameFolder}
+              >
+                Rename
+              </AppButton>
+            </div>
+          </div>
+        </div>
+      )}
 
-      <DeleteConfirmModal
-        isOpen={showDeleteModal}
-        onClose={() => {
-          setShowDeleteModal(false);
-          setFileToDelete(null);
-          setBulkDelete(false);
-        }}
-        onConfirm={async () => {
-          if (bulkDelete) {
-            await handleBulkDelete();
-          } else if (fileToDelete) {
-            await handleDeleteFile(fileToDelete);
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <DeleteConfirmModal
+          isOpen={showDeleteModal}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setFileToDelete(null);
+            setFolderToDelete(null);
+          }}
+          onConfirm={() => {
+            if (folderToDelete) {
+              handleDeleteFolder();
+            } else if (fileToDelete) {
+              handleDelete(fileToDelete);
+            } else if (selectedFiles.size > 0) {
+              handleBulkDelete();
+            }
+          }}
+          title={
+            folderToDelete ? 'Delete Folder' : 
+            fileToDelete ? 'Delete File' : 
+            'Delete Files'
           }
-          setShowDeleteModal(false);
-          setFileToDelete(null);
-          setBulkDelete(false);
-        }}
-        title={bulkDelete ? "Delete Selected Files" : "Delete File"}
-        message={
-          bulkDelete 
-            ? `Are you sure you want to delete ${selectedFiles.size} selected files? This action cannot be undone.`
-            : `Are you sure you want to delete "${fileToDelete}"? This action cannot be undone.`
-        }
-        variant="bulk"
-      />
+          message={
+            folderToDelete
+              ? `Are you sure you want to delete the folder "${folderToDelete}" and all its contents?`
+              : fileToDelete
+              ? `Are you sure you want to delete "${fileToDelete}"?`
+              : `Are you sure you want to delete ${selectedFiles.size} selected file(s)?`
+          }
+        />
+      )}
     </div>
   );
 };

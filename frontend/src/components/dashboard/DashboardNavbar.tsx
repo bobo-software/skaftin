@@ -1,32 +1,22 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Menu, X, Moon, Sun, LogOut, Database, Cloud, Layers, Settings, ChevronRight } from 'lucide-react';
-import AuthService from '../../services/AuthService';
+import { ArrowLeft, Menu, X, Database, Cloud, Home, Settings, ChevronRight } from 'lucide-react';
+import AccountDropdown from './AccountDropdown';
 
 interface DashboardNavbarProps {
   projectName: string;
-  theme: string;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
-  onToggleTheme: () => void;
   onLogout: () => void;
 }
 
 const DashboardNavbar = ({
   projectName,
-  theme,
   sidebarOpen,
   onToggleSidebar,
-  onToggleTheme,
   onLogout,
 }: DashboardNavbarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
-
-  const handleLogout = async () => {
-    await AuthService.logout();
-    onLogout();
-    navigate('/login');
-  };
 
   // Get current section from URL
   const getCurrentSection = () => {
@@ -34,7 +24,7 @@ const DashboardNavbar = ({
     if (path.includes('/database')) return { name: 'Database', icon: Database, color: 'text-blue-600 dark:text-blue-400' };
     if (path.includes('/storage')) return { name: 'Storage', icon: Cloud, color: 'text-purple-600 dark:text-purple-400' };
     if (path.includes('/settings')) return { name: 'Settings', icon: Settings, color: 'text-gray-600 dark:text-gray-400' };
-    return { name: 'Overview', icon: Layers, color: 'text-primary-600 dark:text-primary-400' };
+    return { name: 'Overview', icon: Home, color: 'text-primary-600 dark:text-primary-400' };
   };
 
   const currentSection = getCurrentSection();
@@ -92,28 +82,8 @@ const DashboardNavbar = ({
           <SectionIcon className="w-4 h-4" />
         </div>
 
-        {/* Theme Toggle */}
-        <button
-          onClick={onToggleTheme}
-          className="p-2 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700 transition-colors"
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {theme === 'dark' ? (
-            <Sun className="w-5 h-5 text-yellow-500" />
-          ) : (
-            <Moon className="w-5 h-5 text-indigo-600" />
-          )}
-        </button>
-
-        {/* Logout */}
-        <button
-          onClick={handleLogout}
-          className="flex items-center space-x-2 px-2 md:px-3 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-dark-600 dark:text-dark-300 hover:text-red-600 dark:hover:text-red-400"
-          title="Log out"
-        >
-          <LogOut className="w-4 h-4 md:w-5 md:h-5" />
-          <span className="hidden md:inline font-medium text-sm">Logout</span>
-        </button>
+        {/* Account Dropdown */}
+        <AccountDropdown onLogout={onLogout} />
       </div>
     </div>
   );

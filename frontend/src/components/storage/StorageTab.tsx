@@ -223,7 +223,7 @@ const StorageTab = () => {
             <p className="text-dark-600 dark:text-dark-400 mb-6 max-w-md mx-auto">
               {searchQuery
                 ? 'Try adjusting your search query'
-                : 'Upload your first file to get started with storage.'}
+                : 'Upload your first file to get started with storage features.'}
             </p>
             {!searchQuery && (
               <button

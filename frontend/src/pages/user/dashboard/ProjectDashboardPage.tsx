@@ -12,7 +12,7 @@ import ProjectSettingsTab from './settings/ProjectSettingsTab';
 const ProjectDashboardPage = () => {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
-  const { user, theme, setTheme, logout, sidebarOpen, toggleSidebar } = useAppStore();
+  const { user, logout, sidebarOpen, toggleSidebar } = useAppStore();
   const { currentProject, setCurrentProject, fetchProjects } = useProjectStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -116,10 +116,8 @@ const ProjectDashboardPage = () => {
         {/* Navbar Component */}
         <DashboardNavbar
           projectName={currentProject.name}
-          theme={theme}
           sidebarOpen={sidebarOpen}
           onToggleSidebar={toggleSidebar}
-          onToggleTheme={() => setTheme(theme === 'light' ? 'dark' : 'light')}
           onLogout={logout}
         />
 

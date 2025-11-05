@@ -33,3 +33,4 @@ export { default as QueryBuilder } from './database/QueryBuilder';
 // ---------- Dashboard Components ---------- //
 export { default as ProjectSidebar } from './dashboard/ProjectSidebar';
 export { default as DashboardNavbar } from './dashboard/DashboardNavbar';
+export { default as AccountDropdown } from './dashboard/AccountDropdown';
