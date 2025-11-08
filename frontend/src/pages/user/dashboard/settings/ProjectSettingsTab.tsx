@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { useProjectStore } from '../../../../stores/StoresIndex';
 import { useNavigate } from 'react-router-dom';
 import { DeleteProjectModal } from '../../../../components/ComponentsIndex';
-import { Settings, Users } from 'lucide-react';
+import { Settings, Users, Shield } from 'lucide-react';
 import TeamTab from '../../../../components/settings/TeamTab';
+import CredentialsTab from '../../../../components/settings/CredentialsTab';
 
-type SettingsTabType = 'general' | 'team';
+type SettingsTabType = 'general' | 'team' | 'credentials';
 
 const ProjectSettingsTab = () => {
   const { currentProject, deleteProject } = useProjectStore();
@@ -61,6 +62,17 @@ const ProjectSettingsTab = () => {
           >
             <Users className="w-4 h-4 inline mr-2" />
             Team
+          </button>
+          <button
+            onClick={() => setActiveTab('credentials')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'credentials'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-dark-500 hover:text-dark-700 dark:text-dark-400 dark:hover:text-dark-300'
+            }`}
+          >
+            <Shield className="w-4 h-4 inline mr-2" />
+            API Credentials
           </button>
         </nav>
       </div>
@@ -121,6 +133,10 @@ const ProjectSettingsTab = () => {
 
       {activeTab === 'team' && (
         <TeamTab />
+      )}
+
+      {activeTab === 'credentials' && (
+        <CredentialsTab />
       )}
 
       {/* Delete Project Modal */}

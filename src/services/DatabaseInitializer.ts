@@ -371,6 +371,53 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize api_credentials table using Drizzle
+   * Stores API keys and access tokens for external application integration
+   */
+  async initializeApiCredentialsTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.api_credentials (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          name VARCHAR(255) NOT NULL,
+          credential_type VARCHAR(50) NOT NULL CHECK (credential_type IN ('api_key', 'access_token')),
+          token VARCHAR(255) NOT NULL UNIQUE,
+          permissions JSONB NOT NULL DEFAULT '[]',
+          is_active BOOLEAN DEFAULT true,
+          last_used_at TIMESTAMP,
+          created_by VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          expires_at TIMESTAMP,
+          UNIQUE(project_id, name)
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ API credentials table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_api_credentials_project_id ON public.api_credentials(project_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_api_credentials_token ON public.api_credentials(token);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_api_credentials_is_active ON public.api_credentials(is_active);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ API credentials index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ API credentials table initialized');
+  }
+
+  /**
    * Initialize all database tables
    * Order matters: organizations must be created before organization_members and projects
    */
@@ -382,6 +429,7 @@ export class DatabaseInitializer {
     await this.initializeEmailProvidersTable();
     await this.initializeProjectMembersTable();
     await this.initializeProjectInvitationsTable();
+    await this.initializeApiCredentialsTable();
   }
 
   /**

@@ -114,6 +114,15 @@ const ApiRoutes = {
     REMOVE_MEMBER: (projectId: string, memberId: string) => `/api/invitations/${projectId}/members/${memberId}`,
   },
   
+  // API Credentials routes
+  CREDENTIALS: {
+    LIST: (projectId: string) => `/api/credentials/${projectId}/credentials`,
+    CREATE: (projectId: string) => `/api/credentials/${projectId}/credentials`,
+    UPDATE: (projectId: string, credentialId: string) => `/api/credentials/${projectId}/credentials/${credentialId}`,
+    DELETE: (projectId: string, credentialId: string) => `/api/credentials/${projectId}/credentials/${credentialId}`,
+    GET_PERMISSIONS: '/api/credentials/permissions',
+  },
+  
   // MCP routes
   MCP: {
     CALL: '/api/mcp/call',

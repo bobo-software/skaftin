@@ -119,12 +119,14 @@ import { router as MCPRouter } from './routers/MCPRouter';
 import { router as DatabaseRouter } from './routers/DatabaseRouter';
 import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import { createInvitationsRouter } from './routers/InvitationsRouter';
+import { createCredentialsRouter } from './routers/CredentialsRouter';
 import OrganizationsRouter from './routers/OrganizationsRouter';
 import MCPController from './controllers/MCPController';
 import DatabaseController from './controllers/DatabaseController';
 import StorageController from './controllers/StorageController';
 import GraphQLController from './controllers/GraphQLController';
 import CommunicationsController from './controllers/CommunicationsController';
+import { initializeApiKeyMiddleware } from './middleware/apiKeyMiddleware';
 
 // ============================================================================
 // SERVICE INITIALIZATION
@@ -152,6 +154,7 @@ app.get('/', (req: Request, res: Response) => {
       database: '/api/database',
       communications: '/api/communications',
       invitations: '/api/invitations',
+      credentials: '/api/credentials',
       users: '/api/users',
       health: '/api/health',
       mcp: '/api/mcp',
@@ -165,12 +168,18 @@ MCPController.initialize(pool, s3Client);
 DatabaseController.initialize(pool);
 StorageController.initialize({ pool, s3Client });
 
+// Initialize API key middleware
+initializeApiKeyMiddleware(pool);
+
 // Initialize Communications Controller and create router
 const communicationsController = new CommunicationsController(pool);
 const CommunicationsRouter = createCommunicationsRouter(pool);
 
 // Initialize Invitations Router
 const InvitationsRouter = createInvitationsRouter(pool);
+
+// Initialize Credentials Router
+const CredentialsRouter = createCredentialsRouter(pool);
 
 // Register routers
 // Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
@@ -184,6 +193,7 @@ app.use('/api/users', UsersRouter);
 app.use('/api/database', DatabaseRouter);
 app.use('/api/communications', CommunicationsRouter);
 app.use('/api/invitations', InvitationsRouter);
+app.use('/api/credentials', CredentialsRouter);
 app.use('/api/health', HealthRouter);
 app.use('/api/mcp', MCPRouter);
 
