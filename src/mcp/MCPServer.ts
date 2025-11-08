@@ -10,6 +10,7 @@ import { createDatabaseTools, handleDatabaseTool } from './tools/databaseTools';
 import { createStorageTools, handleStorageTool } from './tools/storageTools';
 import { createProjectTools, handleProjectTool } from './tools/projectTools';
 import { createGraphQLTools, handleGraphQLTool } from './tools/graphqlTools';
+import { createCommunicationsTools, handleCommunicationsTool } from './tools/communicationsTools';
 
 export interface MCPServerConfig {
   pool: Pool;
@@ -44,6 +45,7 @@ export class MCPServer {
       const storageTools = createStorageTools(this.config);
       const projectTools = createProjectTools(this.config);
       const graphqlTools = createGraphQLTools(this.config);
+      const communicationsTools = createCommunicationsTools(this.config);
 
       return {
         tools: [
@@ -51,6 +53,7 @@ export class MCPServer {
           ...storageTools,
           ...projectTools,
           ...graphqlTools,
+          ...communicationsTools,
         ],
       };
     });
@@ -117,6 +120,16 @@ export class MCPServer {
           'graphql_introspect_schema',
         ];
 
+        const communicationsToolNames = [
+          'list_email_providers',
+          'get_email_provider',
+          'create_email_provider',
+          'update_email_provider',
+          'delete_email_provider',
+          'test_email_connection',
+          'send_email',
+        ];
+
         // Extract userId from args if available (for authentication)
         const userId = (args as any)?.userId || (args as any)?.authenticatedUserId;
 
@@ -131,6 +144,9 @@ export class MCPServer {
           return result;
         } else if (graphqlToolNames.includes(name)) {
           const result = await handleGraphQLTool(name, args, this.config);
+          return result;
+        } else if (communicationsToolNames.includes(name)) {
+          const result = await handleCommunicationsTool(name, args, this.config);
           return result;
         } else {
           return {
