@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Database, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { useAppStore } from '../stores/StoresIndex';
 import AuthService from '../services/AuthService';
@@ -7,6 +7,7 @@ import AuthService from '../services/AuthService';
 const LoginPage = () => {
   const { setUser, setLoading, isLoading } = useAppStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -15,6 +16,15 @@ const LoginPage = () => {
     confirmPassword: ''
   });
   const [error, setError] = useState('');
+
+  // Check for redirect parameters
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const redirect = params.get('redirect');
+    if (redirect) {
+      sessionStorage.setItem('redirectAfterLogin', redirect);
+    }
+  }, [location]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,9 +54,19 @@ const LoginPage = () => {
           email: response.user.email,
           name: response.user.name,
         });
-        // If registering (not login), redirect to organization creation
-        // If login, redirect to projects
-        navigate(isLogin ? '/projects' : '/organizations/create');
+        
+        // Check for redirect from invite or location state
+        const redirectTo = (location.state as any)?.redirectTo || sessionStorage.getItem('redirectAfterLogin');
+        
+        if (redirectTo) {
+          sessionStorage.removeItem('redirectAfterLogin');
+          navigate(redirectTo);
+        } else {
+          // Default redirects
+          // If registering (not login), redirect to organization creation
+          // If login, redirect to projects
+          navigate(isLogin ? '/projects' : '/organizations/create');
+        }
       } else {
         setError(response.error || 'An error occurred');
       }

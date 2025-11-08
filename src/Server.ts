@@ -118,6 +118,7 @@ import { router as HealthRouter } from './routers/HealthRouter';
 import { router as MCPRouter } from './routers/MCPRouter';
 import { router as DatabaseRouter } from './routers/DatabaseRouter';
 import { createCommunicationsRouter } from './routers/CommunicationsRouter';
+import { createInvitationsRouter } from './routers/InvitationsRouter';
 import OrganizationsRouter from './routers/OrganizationsRouter';
 import MCPController from './controllers/MCPController';
 import DatabaseController from './controllers/DatabaseController';
@@ -150,6 +151,7 @@ app.get('/', (req: Request, res: Response) => {
       storage: '/api/storage',
       database: '/api/database',
       communications: '/api/communications',
+      invitations: '/api/invitations',
       users: '/api/users',
       health: '/api/health',
       mcp: '/api/mcp',
@@ -167,6 +169,9 @@ StorageController.initialize({ pool, s3Client });
 const communicationsController = new CommunicationsController(pool);
 const CommunicationsRouter = createCommunicationsRouter(pool);
 
+// Initialize Invitations Router
+const InvitationsRouter = createInvitationsRouter(pool);
+
 // Register routers
 // Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
 // Auth compatibility layer for old frontend routes
@@ -178,6 +183,7 @@ app.use('/api/storage', StorageRouter);
 app.use('/api/users', UsersRouter);
 app.use('/api/database', DatabaseRouter);
 app.use('/api/communications', CommunicationsRouter);
+app.use('/api/invitations', InvitationsRouter);
 app.use('/api/health', HealthRouter);
 app.use('/api/mcp', MCPRouter);
 

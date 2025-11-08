@@ -102,6 +102,18 @@ const ApiRoutes = {
     SEND_EMAIL: (projectId: string) => `/api/communications/${projectId}/email/send`,
   },
   
+  // Invitations routes
+  INVITATIONS: {
+    LIST: (projectId: string) => `/api/invitations/${projectId}/invitations`,
+    CREATE: (projectId: string) => `/api/invitations/${projectId}/invitations`,
+    REVOKE: (projectId: string, invitationId: string) => `/api/invitations/${projectId}/invitations/${invitationId}`,
+    GET_BY_CODE: (inviteCode: string) => `/api/invitations/code/${inviteCode}`,
+    ACCEPT: (inviteCode: string) => `/api/invitations/accept/${inviteCode}`,
+    // Members
+    LIST_MEMBERS: (projectId: string) => `/api/invitations/${projectId}/members`,
+    REMOVE_MEMBER: (projectId: string, memberId: string) => `/api/invitations/${projectId}/members/${memberId}`,
+  },
+  
   // MCP routes
   MCP: {
     CALL: '/api/mcp/call',
