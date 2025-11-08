@@ -510,6 +510,84 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
         required: ['projectId', 'tableName'],
       },
     },
+    {
+      name: 'list_cron_jobs',
+      description: 'List all scheduled cron jobs in the database',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+        },
+        required: ['projectId'],
+      },
+    },
+    {
+      name: 'create_cron_job',
+      description: 'Create a new cron job to schedule automated tasks',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          jobName: { type: 'string', description: 'Name for the cron job' },
+          schedule: { type: 'string', description: 'Cron schedule expression (e.g., "*/5 * * * *" for every 5 minutes)' },
+          command: { type: 'string', description: 'SQL command to execute' },
+        },
+        required: ['projectId', 'jobName', 'schedule', 'command'],
+      },
+    },
+    {
+      name: 'update_cron_job',
+      description: 'Update an existing cron job',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          jobId: { type: 'string', description: 'Job ID' },
+          jobName: { type: 'string', description: 'New job name (optional)' },
+          schedule: { type: 'string', description: 'New cron schedule expression (optional)' },
+          command: { type: 'string', description: 'New SQL command (optional)' },
+        },
+        required: ['projectId', 'jobId'],
+      },
+    },
+    {
+      name: 'delete_cron_job',
+      description: 'Delete a cron job',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          jobId: { type: 'string', description: 'Job ID to delete' },
+        },
+        required: ['projectId', 'jobId'],
+      },
+    },
+    {
+      name: 'toggle_cron_job',
+      description: 'Enable or disable a cron job',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          jobId: { type: 'string', description: 'Job ID' },
+          active: { type: 'boolean', description: 'Set to true to activate, false to deactivate' },
+        },
+        required: ['projectId', 'jobId', 'active'],
+      },
+    },
+    {
+      name: 'get_cron_job_history',
+      description: 'Get execution history for a cron job',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: { type: 'string', description: 'Project ID' },
+          jobId: { type: 'string', description: 'Job ID' },
+          limit: { type: 'number', description: 'Maximum number of history entries to return', default: 50 },
+        },
+        required: ['projectId', 'jobId'],
+      },
+    },
   ];
 }
 
@@ -1774,6 +1852,295 @@ export async function handleDatabaseTool(
         };
       } catch (error: any) {
         console.error('Error listing foreign keys:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'list_cron_jobs': {
+      const { projectId } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        const result = await client.query(`
+          SELECT 
+            jobid,
+            schedule,
+            command,
+            nodename,
+            nodeport,
+            database,
+            username,
+            active,
+            jobname
+          FROM cron.job
+          ORDER BY jobid DESC
+        `);
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true, 
+              message: 'Cron jobs fetched successfully',
+              data: result.rows 
+            }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error listing cron jobs:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'create_cron_job': {
+      const { projectId, jobName, schedule, command } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        // Get current schema to set search path in cron job
+        const schemaResult = await client.query('SELECT current_schema()');
+        const currentSchema = schemaResult.rows[0].current_schema;
+        
+        // Prefix command with search path
+        const fullCommand = `SET search_path TO ${currentSchema}, public; ${command}`;
+        
+        const result = await client.query(`
+          SELECT cron.schedule($1, $2, $3) as jobid
+        `, [jobName, schedule, fullCommand]);
+        
+        // Emit WebSocket event
+        const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
+        emitDatabaseChange(projectId, 'cron', 'create_cron_job', { jobName, schedule });
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true, 
+              message: 'Cron job created successfully',
+              data: {
+                jobid: result.rows[0].jobid,
+                jobName,
+                schedule,
+                command: fullCommand
+              }
+            }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error creating cron job:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'update_cron_job': {
+      const { projectId, jobId, jobName, schedule, command } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        // Get current schema for command update
+        const schemaResult = await client.query('SELECT current_schema()');
+        const currentSchema = schemaResult.rows[0].current_schema;
+        
+        // Update schedule if provided
+        if (schedule) {
+          await client.query(`
+            UPDATE cron.job SET schedule = $1 WHERE jobid = $2
+          `, [schedule, jobId]);
+        }
+        
+        // Update command if provided
+        if (command) {
+          const fullCommand = `SET search_path TO ${currentSchema}, public; ${command}`;
+          await client.query(`
+            UPDATE cron.job SET command = $1 WHERE jobid = $2
+          `, [fullCommand, jobId]);
+        }
+        
+        // Update job name if provided
+        if (jobName) {
+          await client.query(`
+            UPDATE cron.job SET jobname = $1 WHERE jobid = $2
+          `, [jobName, jobId]);
+        }
+        
+        // Emit WebSocket event
+        const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
+        emitDatabaseChange(projectId, 'cron', 'update_cron_job', { jobId, schedule, command, jobName });
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true, 
+              message: 'Cron job updated successfully',
+              data: { jobId, schedule, command, jobName }
+            }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error updating cron job:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'delete_cron_job': {
+      const { projectId, jobId } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        await client.query(`SELECT cron.unschedule($1)`, [jobId]);
+        
+        // Emit WebSocket event
+        const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
+        emitDatabaseChange(projectId, 'cron', 'delete_cron_job', { jobId });
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true, 
+              message: 'Cron job deleted successfully',
+              data: { jobId }
+            }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error deleting cron job:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'toggle_cron_job': {
+      const { projectId, jobId, active } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        await client.query(`
+          UPDATE cron.job SET active = $1 WHERE jobid = $2
+        `, [active, jobId]);
+        
+        // Emit WebSocket event
+        const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
+        emitDatabaseChange(projectId, 'cron', 'toggle_cron_job', { jobId, active });
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true, 
+              message: `Cron job ${active ? 'activated' : 'deactivated'} successfully`,
+              data: { jobId, active }
+            }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error toggling cron job:', error);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'get_cron_job_history': {
+      const { projectId, jobId, limit = 50 } = args;
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        const result = await client.query(`
+          SELECT 
+            runid,
+            jobid,
+            job_pid,
+            database,
+            username,
+            command,
+            status,
+            return_message,
+            start_time,
+            end_time
+          FROM cron.job_run_details
+          WHERE jobid = $1
+          ORDER BY start_time DESC
+          LIMIT $2
+        `, [jobId, limit]);
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true, 
+              message: 'Cron job history fetched successfully',
+              data: result.rows 
+            }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error fetching cron job history:', error);
         return {
           content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
           isError: true

@@ -4,12 +4,14 @@ import {
   Database, 
   Code,
   Table,
-  Sparkles
+  Sparkles,
+  Clock
 } from 'lucide-react';
 import { 
   TableViewer, 
   SqlEditor,
-  GraphQLEditor
+  GraphQLEditor,
+  CronManager
 } from '../../../../components/ComponentsIndex';
 
 interface ProjectDatabaseTabProps {
@@ -24,7 +26,8 @@ const ProjectDatabaseTab = ({ projectId }: ProjectDatabaseTabProps) => {
   const tabs = [
     { id: 'tables', name: 'Table Viewer', icon: Table, component: TableViewer },
     { id: 'sql', name: 'SQL Editor', icon: Code, component: SqlEditor },
-    { id: 'graphql', name: 'GraphQL Explorer', icon: Sparkles, component: GraphQLEditor }
+    { id: 'graphql', name: 'GraphQL Explorer', icon: Sparkles, component: GraphQLEditor },
+    { id: 'cron', name: 'Cron Jobs', icon: Clock, component: CronManager }
   ];
 
   const renderContent = () => {

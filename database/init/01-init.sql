@@ -1,3 +1,6 @@
+-- Enable pg_cron extension
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
 -- Create users table if it doesn't exist
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,

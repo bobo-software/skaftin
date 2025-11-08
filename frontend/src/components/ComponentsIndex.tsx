@@ -30,6 +30,7 @@ export { default as SchemaDesigner } from './database/SchemaDesigner';
 export { default as SchemaEditor } from './database/SchemaEditor';
 export { default as StorageViewer } from './database/StorageViewer';
 export { default as QueryBuilder } from './database/QueryBuilder';
+export { default as CronManager } from './database/CronManager';
 
 // ---------- Dashboard Components ---------- //
 export { default as ProjectSidebar } from './dashboard/ProjectSidebar';

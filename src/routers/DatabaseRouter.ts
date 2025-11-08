@@ -36,5 +36,13 @@ router.post('/:projectId/tables/:tableName/constraints/primary-key', authenticat
 router.post('/:projectId/tables/:tableName/constraints/check', authenticateAndVerifyProject, DatabaseController.createCheckConstraint);
 router.delete('/:projectId/tables/:tableName/constraints/:constraintName', authenticateAndVerifyProject, DatabaseController.dropConstraint);
 
+// Cron routes
+router.get('/:projectId/cron', authenticateAndVerifyProject, DatabaseController.listCronJobs);
+router.get('/:projectId/cron/:jobId/history', authenticateAndVerifyProject, DatabaseController.getCronJobHistory);
+router.post('/:projectId/cron', authenticateAndVerifyProject, DatabaseController.createCronJob);
+router.put('/:projectId/cron/:jobId', authenticateAndVerifyProject, DatabaseController.updateCronJob);
+router.patch('/:projectId/cron/:jobId/toggle', authenticateAndVerifyProject, DatabaseController.toggleCronJob);
+router.delete('/:projectId/cron/:jobId', authenticateAndVerifyProject, DatabaseController.deleteCronJob);
+
 export { router };
 

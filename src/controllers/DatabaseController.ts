@@ -1071,6 +1071,247 @@ class DatabaseController {
       ResponseUtils.error(res, 'Failed to create check constraint', error);
     }
   }
+
+  /**
+   * List all cron jobs
+   * GET /api/database/:projectId/cron
+   */
+  static async listCronJobs(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId } = req.params;
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      const result = await client.query(`
+        SELECT 
+          jobid,
+          schedule,
+          command,
+          nodename,
+          nodeport,
+          database,
+          username,
+          active,
+          jobname
+        FROM cron.job
+        ORDER BY jobid DESC
+      `);
+
+      client.release();
+      ResponseUtils.success(res, 'Cron jobs fetched successfully', result.rows);
+    } catch (error) {
+      console.error('Error fetching cron jobs:', error);
+      ResponseUtils.error(res, 'Failed to fetch cron jobs', error);
+    }
+  }
+
+  /**
+   * Create a new cron job
+   * POST /api/database/:projectId/cron
+   */
+  static async createCronJob(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId } = req.params;
+      const { jobName, schedule, command } = req.body;
+
+      if (!jobName || !schedule || !command) {
+        return ResponseUtils.error(res, 'Job name, schedule, and command are required', null, null, 400);
+      }
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Get current schema and database info
+      const schemaResult = await client.query('SELECT current_schema(), current_database()');
+      const currentSchema = schemaResult.rows[0].current_schema;
+      const currentDatabase = schemaResult.rows[0].current_database;
+
+      // Set search path in the cron job command
+      const fullCommand = `SET search_path TO ${currentSchema}, public; ${command}`;
+
+      const result = await client.query(`
+        SELECT cron.schedule($1, $2, $3) as jobid
+      `, [jobName, schedule, fullCommand]);
+
+      client.release();
+
+      // Emit WebSocket event
+      emitDatabaseChange(projectId, 'cron', 'create_cron_job', { jobName, schedule });
+
+      ResponseUtils.success(res, 'Cron job created successfully', {
+        jobid: result.rows[0].jobid,
+        jobName,
+        schedule,
+        command: fullCommand
+      }, 201);
+    } catch (error) {
+      console.error('Error creating cron job:', error);
+      ResponseUtils.error(res, 'Failed to create cron job', error);
+    }
+  }
+
+  /**
+   * Update a cron job
+   * PUT /api/database/:projectId/cron/:jobId
+   */
+  static async updateCronJob(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, jobId } = req.params;
+      const { schedule, command, jobName } = req.body;
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Get current schema for command update
+      const schemaResult = await client.query('SELECT current_schema()');
+      const currentSchema = schemaResult.rows[0].current_schema;
+
+      // Update schedule if provided
+      if (schedule) {
+        await client.query(`
+          UPDATE cron.job SET schedule = $1 WHERE jobid = $2
+        `, [schedule, jobId]);
+      }
+
+      // Update command if provided
+      if (command) {
+        const fullCommand = `SET search_path TO ${currentSchema}, public; ${command}`;
+        await client.query(`
+          UPDATE cron.job SET command = $1 WHERE jobid = $2
+        `, [fullCommand, jobId]);
+      }
+
+      // Update job name if provided
+      if (jobName) {
+        await client.query(`
+          UPDATE cron.job SET jobname = $1 WHERE jobid = $2
+        `, [jobName, jobId]);
+      }
+
+      client.release();
+
+      // Emit WebSocket event
+      emitDatabaseChange(projectId, 'cron', 'update_cron_job', { jobId, schedule, command, jobName });
+
+      ResponseUtils.success(res, 'Cron job updated successfully', { jobId, schedule, command, jobName });
+    } catch (error) {
+      console.error('Error updating cron job:', error);
+      ResponseUtils.error(res, 'Failed to update cron job', error);
+    }
+  }
+
+  /**
+   * Delete a cron job
+   * DELETE /api/database/:projectId/cron/:jobId
+   */
+  static async deleteCronJob(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, jobId } = req.params;
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      await client.query(`SELECT cron.unschedule($1)`, [jobId]);
+
+      client.release();
+
+      // Emit WebSocket event
+      emitDatabaseChange(projectId, 'cron', 'delete_cron_job', { jobId });
+
+      ResponseUtils.success(res, 'Cron job deleted successfully', { jobId });
+    } catch (error) {
+      console.error('Error deleting cron job:', error);
+      ResponseUtils.error(res, 'Failed to delete cron job', error);
+    }
+  }
+
+  /**
+   * Get cron job execution history
+   * GET /api/database/:projectId/cron/:jobId/history
+   */
+  static async getCronJobHistory(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, jobId } = req.params;
+      const { limit = 50 } = req.query;
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      const result = await client.query(`
+        SELECT 
+          runid,
+          jobid,
+          job_pid,
+          database,
+          username,
+          command,
+          status,
+          return_message,
+          start_time,
+          end_time
+        FROM cron.job_run_details
+        WHERE jobid = $1
+        ORDER BY start_time DESC
+        LIMIT $2
+      `, [jobId, limit]);
+
+      client.release();
+      ResponseUtils.success(res, 'Cron job history fetched successfully', result.rows);
+    } catch (error) {
+      console.error('Error fetching cron job history:', error);
+      ResponseUtils.error(res, 'Failed to fetch cron job history', error);
+    }
+  }
+
+  /**
+   * Toggle cron job active status
+   * PATCH /api/database/:projectId/cron/:jobId/toggle
+   */
+  static async toggleCronJob(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId, jobId } = req.params;
+      const { active } = req.body;
+
+      if (active === undefined) {
+        return ResponseUtils.error(res, 'Active status is required', null, null, 400);
+      }
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      await client.query(`
+        UPDATE cron.job SET active = $1 WHERE jobid = $2
+      `, [active, jobId]);
+
+      client.release();
+
+      // Emit WebSocket event
+      emitDatabaseChange(projectId, 'cron', 'toggle_cron_job', { jobId, active });
+
+      ResponseUtils.success(res, `Cron job ${active ? 'activated' : 'deactivated'} successfully`, { jobId, active });
+    } catch (error) {
+      console.error('Error toggling cron job:', error);
+      ResponseUtils.error(res, 'Failed to toggle cron job', error);
+    }
+  }
 }
 
 export default DatabaseController;
