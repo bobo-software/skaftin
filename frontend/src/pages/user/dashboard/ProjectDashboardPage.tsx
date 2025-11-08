@@ -8,6 +8,7 @@ import ProjectDatabaseTab from './database/ProjectDatabaseTab';
 import ProjectStorageTab from './storage/ProjectStoageTab';
 import ProjectOverviewTab from './overview/ProjectOverviewTab';
 import ProjectSettingsTab from './settings/ProjectSettingsTab';
+import ProjectCommunicationsTab from './communications/ProjectCommunicationsTab';
 
 const ProjectDashboardPage = () => {
   const navigate = useNavigate();
@@ -128,6 +129,7 @@ const ProjectDashboardPage = () => {
             <Route path="overview" element={projectId ? <ProjectOverviewTab /> : null} />
             <Route path="database" element={projectId ? <ProjectDatabaseTab projectId={projectId} /> : null} />
             <Route path="storage" element={projectId ? <ProjectStorageTab /> : null} />
+            <Route path="communications" element={projectId ? <ProjectCommunicationsTab /> : null} />
             <Route path="settings" element={projectId ? <ProjectSettingsTab /> : null} />
             <Route path="*" element={projectId ? <Navigate to="" replace /> : null} />
           </Routes>

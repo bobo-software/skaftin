@@ -89,6 +89,19 @@ const ApiRoutes = {
     DROP_CONSTRAINT: (projectId: string, tableName: string, constraintName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/${constraintName}`,
   },
   
+  // Communications routes
+  COMMUNICATIONS: {
+    // Email provider management
+    LIST_PROVIDERS: (projectId: string) => `/api/communications/${projectId}/email/providers`,
+    GET_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}`,
+    CREATE_PROVIDER: (projectId: string) => `/api/communications/${projectId}/email/providers`,
+    UPDATE_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}`,
+    DELETE_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}`,
+    TEST_CONNECTION: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}/test`,
+    // Email sending
+    SEND_EMAIL: (projectId: string) => `/api/communications/${projectId}/email/send`,
+  },
+  
   // MCP routes
   MCP: {
     CALL: '/api/mcp/call',

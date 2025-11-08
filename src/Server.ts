@@ -117,11 +117,13 @@ import { router as UsersRouter } from './routers/UsersRouter';
 import { router as HealthRouter } from './routers/HealthRouter';
 import { router as MCPRouter } from './routers/MCPRouter';
 import { router as DatabaseRouter } from './routers/DatabaseRouter';
+import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import OrganizationsRouter from './routers/OrganizationsRouter';
 import MCPController from './controllers/MCPController';
 import DatabaseController from './controllers/DatabaseController';
 import StorageController from './controllers/StorageController';
 import GraphQLController from './controllers/GraphQLController';
+import CommunicationsController from './controllers/CommunicationsController';
 
 // ============================================================================
 // SERVICE INITIALIZATION
@@ -147,6 +149,7 @@ app.get('/', (req: Request, res: Response) => {
       files: '/api/files',
       storage: '/api/storage',
       database: '/api/database',
+      communications: '/api/communications',
       users: '/api/users',
       health: '/api/health',
       mcp: '/api/mcp',
@@ -160,6 +163,10 @@ MCPController.initialize(pool, s3Client);
 DatabaseController.initialize(pool);
 StorageController.initialize({ pool, s3Client });
 
+// Initialize Communications Controller and create router
+const communicationsController = new CommunicationsController(pool);
+const CommunicationsRouter = createCommunicationsRouter(pool);
+
 // Register routers
 // Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
 // Auth compatibility layer for old frontend routes
@@ -170,6 +177,7 @@ app.use('/api/files', FilesRouter);
 app.use('/api/storage', StorageRouter);
 app.use('/api/users', UsersRouter);
 app.use('/api/database', DatabaseRouter);
+app.use('/api/communications', CommunicationsRouter);
 app.use('/api/health', HealthRouter);
 app.use('/api/mcp', MCPRouter);
 

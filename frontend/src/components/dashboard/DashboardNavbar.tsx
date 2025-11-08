@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Menu, X, Database, Cloud, Home, Settings, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Menu, X, Database, Cloud, Home, Settings, ChevronRight, Mail } from 'lucide-react';
 import AccountDropdown from './AccountDropdown';
 import OrganizationSwitcher from './OrganizationSwitcher';
 
@@ -24,6 +24,7 @@ const DashboardNavbar = ({
     const path = location.pathname;
     if (path.includes('/database')) return { name: 'Database', icon: Database, color: 'text-blue-600 dark:text-blue-400' };
     if (path.includes('/storage')) return { name: 'Storage', icon: Cloud, color: 'text-purple-600 dark:text-purple-400' };
+    if (path.includes('/communications')) return { name: 'Communications', icon: Mail, color: 'text-green-600 dark:text-green-400' };
     if (path.includes('/settings')) return { name: 'Settings', icon: Settings, color: 'text-gray-600 dark:text-gray-400' };
     return { name: 'Overview', icon: Home, color: 'text-primary-600 dark:text-primary-400' };
   };

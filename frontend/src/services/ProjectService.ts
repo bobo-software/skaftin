@@ -19,7 +19,7 @@ interface ApiResponse {
 
 class ProjectService {
   private getToken(): string | null {
-    return localStorage.getItem('skaftin_token');
+    return localStorage.getItem('skaftin-token');
   }
 
   private getAuthHeaders(): Record<string, string> {

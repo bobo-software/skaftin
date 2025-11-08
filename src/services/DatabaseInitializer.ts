@@ -236,6 +236,53 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize email_providers table using Drizzle
+   * Always creates in public schema
+   */
+  async initializeEmailProvidersTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.email_providers (
+          id SERIAL PRIMARY KEY,
+          project_id VARCHAR(255) NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('nodemailer', 'mailtrap')),
+          smtp_host VARCHAR(255) NOT NULL,
+          smtp_port INTEGER NOT NULL,
+          smtp_secure BOOLEAN DEFAULT false,
+          smtp_user VARCHAR(255) NOT NULL,
+          smtp_password TEXT NOT NULL,
+          from_email VARCHAR(255) NOT NULL,
+          from_name VARCHAR(255),
+          is_active BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(project_id, name)
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Email providers table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_email_providers_project_id ON public.email_providers(project_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_email_providers_is_active ON public.email_providers(is_active);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ Email providers index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Email providers table initialized');
+  }
+
+  /**
    * Initialize all database tables
    * Order matters: organizations must be created before organization_members and projects
    */
@@ -244,6 +291,7 @@ export class DatabaseInitializer {
     await this.initializeOrganizationsTable();
     await this.initializeOrganizationMembersTable();
     await this.initializeProjectsTable();
+    await this.initializeEmailProvidersTable();
   }
 
   /**
