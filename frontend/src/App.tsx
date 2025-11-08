@@ -5,6 +5,7 @@ import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import ProjectsOverviewPage from './pages/user/projects/ProjectsOverviewPage';
 import ProjectDashboardPage from './pages/user/dashboard/ProjectDashboardPage';
+import CreateOrganizationPage from './pages/user/organizations/CreateOrganizationPage';
 import { useAppStore } from './stores/StoresIndex';
 import { initSuperTokensFrontend, Session } from './config/supertokens';
 import './App.css';
@@ -106,6 +107,14 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route 
+          path="/organizations/create" 
+          element={
+            <ProtectedRoute>
+              <CreateOrganizationPage />
+            </ProtectedRoute>
+          } 
+        />
         <Route 
           path="/projects" 
           element={

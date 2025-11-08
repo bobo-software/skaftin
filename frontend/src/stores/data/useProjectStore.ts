@@ -87,11 +87,14 @@ const useProjectStore = create<ProjectStoreType>()(
       },
 
       // Create a new project
-      createProject: async (name: string, description?: string) => {
+      createProject: async (name: string, description?: string, organization_id?: number) => {
         set({ loading: true, error: null });
         try {
           const token = localStorage.getItem('skaftin-token') || '';
-          const response = await RequestUtils.post( ApiRoutes.PROJECTS.CREATE, token, { name, description }
+          const response = await RequestUtils.post( 
+            ApiRoutes.PROJECTS.CREATE, 
+            token, 
+            { name, description, organization_id }
           );
 
           if (response.success) {
@@ -100,6 +103,7 @@ const useProjectStore = create<ProjectStoreType>()(
               id: projectData.id.toString(),
               name: projectData.name,
               description: projectData.description,
+              organization_id: projectData.organization_id,
               schema_name: projectData.schema_name,
               bucket_name: projectData.bucket_name,
               created_at: projectData.created_at,

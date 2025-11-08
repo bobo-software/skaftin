@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import ProjectCreationLoadingPage from "./ProjectCreationLoadingPage";
 import { Database, FolderOpen, Plus, User, LogOut, Edit3, Trash2, Calendar } from "lucide-react";
-import { AppButton } from "../../../components/ComponentsIndex";
+import { AppButton, OrganizationSwitcher } from "../../../components/ComponentsIndex";
 import CreateProjectModal from "../../../components/modals/CreateProjectModal";
 
 interface ProjectsOverviewPageProps {
@@ -124,7 +124,12 @@ return (
         <div>
           <h1 className="text-2xl font-bold text-dark-900 dark:text-white">Skaftin</h1>
           <p className="text-sm text-dark-600 dark:text-dark-300">Your Projects</p>
-        </div> 
+        </div>
+        
+        {/* Organization Switcher */}
+        <div className="ml-4">
+          <OrganizationSwitcher />
+        </div>
       </div>
       
       <div className="flex items-center space-x-4">

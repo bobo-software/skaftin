@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Menu, X, Database, Cloud, Home, Settings, ChevronRight } from 'lucide-react';
 import AccountDropdown from './AccountDropdown';
+import OrganizationSwitcher from './OrganizationSwitcher';
 
 interface DashboardNavbarProps {
   projectName: string;
@@ -54,6 +55,12 @@ const DashboardNavbar = ({
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
+
+        {/* Organization Switcher */}
+        <OrganizationSwitcher />
+
+        {/* Separator */}
+        <ChevronRight className="w-4 h-4 text-dark-400 dark:text-dark-500 flex-shrink-0 hidden lg:block" />
 
         {/* Breadcrumb with Project Name and Current Section */}
         <div className="flex items-center space-x-2 min-w-0 flex-1">

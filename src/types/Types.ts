@@ -81,6 +81,59 @@ export interface AuthResponse {
 }
 
 // ============================================================================
+// ORGANIZATION TYPES
+// ============================================================================
+
+export type OrganizationRole = 'admin' | 'dev' | 'member' | 'viewer';
+
+export interface Organization {
+  id: number;
+  name: string;
+  description: string | null;
+  owner_id: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface OrganizationMember {
+  id: number;
+  organization_id: number;
+  user_id: string;
+  role: OrganizationRole;
+  joined_at: Date;
+}
+
+export interface OrganizationWithMembers extends Organization {
+  members: OrganizationMemberWithDetails[];
+  memberCount: number;
+  projectCount: number;
+}
+
+export interface OrganizationMemberWithDetails extends OrganizationMember {
+  email?: string;
+  name?: string;
+}
+
+export interface CreateOrganizationDto {
+  name: string;
+  description?: string;
+}
+
+export interface UpdateOrganizationDto {
+  name?: string;
+  description?: string;
+}
+
+export interface AddMemberDto {
+  email: string;
+  role: OrganizationRole;
+}
+
+export interface UpdateMemberRoleDto {
+  role: OrganizationRole;
+}
+
+// ============================================================================
 // PROJECT TYPES
 // ============================================================================
 
@@ -88,7 +141,8 @@ export interface Project {
   id: number;
   name: string;
   description: string | null;
-  user_id: string;
+  organization_id: number;
+  user_id: string; // Creator user ID (for audit)
   schema_name: string;
   bucket_name: string;
   created_at: Date;
@@ -98,6 +152,7 @@ export interface Project {
 export interface CreateProjectDto {
   name: string;
   description?: string;
+  organization_id: number;
 }
 
 export interface UpdateProjectDto {

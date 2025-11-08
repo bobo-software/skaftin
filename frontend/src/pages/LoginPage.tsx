@@ -44,7 +44,9 @@ const LoginPage = () => {
           email: response.user.email,
           name: response.user.name,
         });
-        navigate('/projects');
+        // If registering (not login), redirect to organization creation
+        // If login, redirect to projects
+        navigate(isLogin ? '/projects' : '/organizations/create');
       } else {
         setError(response.error || 'An error occurred');
       }

@@ -1,7 +1,8 @@
 import { Response } from 'express';
-import { eq } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { db } from '../db/drizzle.config';
 import { projects } from '../db/schemas/ProjectsSchema';
+import { organizations, organization_members } from '../db/schemas/OrganizationsSchema';
 import ResponseUtils from '../utils/ResponseUtils';
 import { emitProjectEvent } from '../utils/websocketEmitter';
 import { S3Client, CreateBucketCommand } from '@aws-sdk/client-s3';
@@ -19,7 +20,50 @@ const s3Client = new S3Client({
 });
 
 class ProjectsController {
-  // Get all projects for authenticated user
+  /**
+   * Check if user has access to a project through organization membership
+   */
+  private static async checkProjectAccess(projectId: number, userId: string): Promise<{ hasAccess: boolean; role?: string }> {
+    try {
+      // Get the project
+      const project = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (project.length === 0) {
+        return { hasAccess: false };
+      }
+
+      // Check if project has an organization_id
+      if (!project[0].organization_id) {
+        // Legacy project without organization - check user_id
+        return { hasAccess: project[0].user_id === userId, role: 'admin' };
+      }
+
+      // Check if user is a member of the project's organization
+      const membership = await db
+        .select()
+        .from(organization_members)
+        .where(
+          and(
+            eq(organization_members.organization_id, project[0].organization_id),
+            eq(organization_members.user_id, userId)
+          )
+        );
+
+      if (membership.length === 0) {
+        return { hasAccess: false };
+      }
+
+      return { hasAccess: true, role: membership[0].role };
+    } catch (error) {
+      console.error('Error checking project access:', error);
+      return { hasAccess: false };
+    }
+  }
+
+  // Get all projects for authenticated user (from their organizations)
   static async getAllProjects(req: SuperTokensAuthenticatedRequest, res: Response) {
     // User info is attached by SuperTokens middleware
     if (!req.user || !req.user.userId) {
@@ -27,10 +71,26 @@ class ProjectsController {
     }
 
     try {
+      const userId = req.user.userId;
+
+      // Get all organizations the user is a member of
+      const userOrgs = await db
+        .select({ organization_id: organization_members.organization_id })
+        .from(organization_members)
+        .where(eq(organization_members.user_id, userId));
+
+      if (userOrgs.length === 0) {
+        // User is not a member of any organization
+        return ResponseUtils.success(res, 'Projects fetched successfully', []);
+      }
+
+      const orgIds = userOrgs.map(org => org.organization_id);
+
+      // Get all projects from those organizations
       const results = await db
         .select()
         .from(projects)
-        .where(eq(projects.user_id, req.user.userId))
+        .where(inArray(projects.organization_id, orgIds))
         .orderBy(projects.created_at);
 
       ResponseUtils.success(res, 'Projects fetched successfully', results);
@@ -49,18 +109,22 @@ class ProjectsController {
 
     try {
       const { id } = req.params;
+      const projectId = parseInt(id!);
+
       const result = await db
         .select()
         .from(projects)
-        .where(eq(projects.id, parseInt(id!)));
+        .where(eq(projects.id, projectId));
 
       if (result.length === 0) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      // Verify ownership
-      if (result[0].user_id !== req.user.userId) {
-        return res.status(403).json({ success: false, message: 'Forbidden' });
+      // Check if user has access to this project through organization membership
+      const access = await ProjectsController.checkProjectAccess(projectId, req.user.userId);
+      
+      if (!access.hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have access to this project' });
       }
 
       ResponseUtils.success(res, 'Project fetched successfully', result[0]);
@@ -79,19 +143,23 @@ class ProjectsController {
 
     try {
       const { id } = req.params;
+      const projectId = parseInt(id);
       
-      // Get project to verify ownership
+      // Get project
       const projectResult = await db
         .select()
         .from(projects)
-        .where(eq(projects.id, parseInt(id)));
+        .where(eq(projects.id, projectId));
 
       if (projectResult.length === 0) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      if (projectResult[0].user_id !== req.user.userId) {
-        return res.status(403).json({ success: false, message: 'Forbidden' });
+      // Check if user has access to this project
+      const access = await ProjectsController.checkProjectAccess(projectId, req.user.userId);
+      
+      if (!access.hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have access to this project' });
       }
 
       const project = projectResult[0];
@@ -125,11 +193,36 @@ class ProjectsController {
 
     try {
       const userId = req.user.userId; // SuperTokens user ID (string)
-      const { name, description } = req.body;
+      const { name, description, organization_id } = req.body;
 
       // Validation
       if (!name || name.trim() === '') {
         return ResponseUtils.error(res, 'Project name is required', null, null, 400);
+      }
+
+      if (!organization_id) {
+        return ResponseUtils.error(res, 'Organization ID is required', null, null, 400);
+      }
+
+      // Check if user is a member of the organization (and has permission to create projects)
+      const membership = await db
+        .select()
+        .from(organization_members)
+        .where(
+          and(
+            eq(organization_members.organization_id, organization_id),
+            eq(organization_members.user_id, userId)
+          )
+        );
+
+      if (membership.length === 0) {
+        return ResponseUtils.error(res, 'You are not a member of this organization', null, null, 403);
+      }
+
+      // Check if user has permission (admin or dev can create projects)
+      const role = membership[0].role;
+      if (role !== 'admin' && role !== 'dev') {
+        return ResponseUtils.error(res, 'You do not have permission to create projects in this organization', null, null, 403);
       }
 
       // Generate unique schema and bucket names
@@ -144,7 +237,8 @@ class ProjectsController {
         .values({
           name: name.trim(),
           description: description?.trim() || null,
-          user_id: userId,
+          organization_id: organization_id,
+          user_id: userId, // Store creator for audit purposes
           schema_name: schemaName,
           bucket_name: bucketName,
         })
@@ -191,20 +285,28 @@ class ProjectsController {
 
     try {
       const { id } = req.params;
+      const projectId = parseInt(id);
       const { name, description } = req.body;
 
-      // Get existing project to verify ownership
+      // Get existing project
       const existing = await db
         .select()
         .from(projects)
-        .where(eq(projects.id, parseInt(id)));
+        .where(eq(projects.id, projectId));
 
       if (existing.length === 0) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      if (existing[0].user_id !== req.user.userId) {
-        return res.status(403).json({ success: false, message: 'Forbidden' });
+      // Check if user has access and permission (admin or dev can update)
+      const access = await ProjectsController.checkProjectAccess(projectId, req.user.userId);
+      
+      if (!access.hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have access to this project' });
+      }
+
+      if (access.role !== 'admin' && access.role !== 'dev') {
+        return res.status(403).json({ success: false, message: 'You do not have permission to update this project' });
       }
 
       // Update project
@@ -245,19 +347,27 @@ class ProjectsController {
 
     try {
       const { id } = req.params;
+      const projectId = parseInt(id);
 
-      // Get existing project to verify ownership
+      // Get existing project
       const existing = await db
         .select()
         .from(projects)
-        .where(eq(projects.id, parseInt(id)));
+        .where(eq(projects.id, projectId));
 
       if (existing.length === 0) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      if (existing[0].user_id !== req.user.userId) {
-        return res.status(403).json({ success: false, message: 'Forbidden' });
+      // Check if user has access and permission (only admin can delete)
+      const access = await ProjectsController.checkProjectAccess(projectId, req.user.userId);
+      
+      if (!access.hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have access to this project' });
+      }
+
+      if (access.role !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Only admins can delete projects' });
       }
 
       const project = existing[0];

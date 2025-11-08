@@ -6,6 +6,21 @@ const ApiRoutes = {
     VERIFY: '/api/auth/verify',
   },
   
+  // Organizations routes
+  ORGANIZATIONS: {
+    LIST: '/api/organizations/list',
+    CREATE: '/api/organizations/create',
+    GET: (id: number) => `/api/organizations/${id}`,
+    UPDATE: (id: number) => `/api/organizations/${id}`,
+    DELETE: (id: number) => `/api/organizations/${id}`,
+    // Member management
+    GET_MEMBERS: (id: number) => `/api/organizations/${id}/members`,
+    ADD_MEMBER: (id: number) => `/api/organizations/${id}/members`,
+    ADD_MEMBER_BY_ID: (id: number) => `/api/organizations/${id}/members/by-user-id`,
+    UPDATE_MEMBER: (id: number, memberId: number) => `/api/organizations/${id}/members/${memberId}`,
+    REMOVE_MEMBER: (id: number, memberId: number) => `/api/organizations/${id}/members/${memberId}`,
+  },
+  
   // Projects routes
   PROJECTS: {
     LIST: '/api/projects/list',

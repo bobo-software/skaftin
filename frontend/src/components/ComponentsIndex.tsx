@@ -34,3 +34,4 @@ export { default as QueryBuilder } from './database/QueryBuilder';
 export { default as ProjectSidebar } from './dashboard/ProjectSidebar';
 export { default as DashboardNavbar } from './dashboard/DashboardNavbar';
 export { default as AccountDropdown } from './dashboard/AccountDropdown';
+export { default as OrganizationSwitcher } from './dashboard/OrganizationSwitcher';

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppButton, AppInput } from '@components/ComponentsIndex';
-import { Database, X } from 'lucide-react';
-import { useProjectStore } from '../../stores/StoresIndex';
+import { Database, X, Building2 } from 'lucide-react';
+import { useProjectStore, useOrganizationStore } from '../../stores/StoresIndex';
 
 interface CreateProjectModalProps {
   isOpen: boolean;
@@ -11,29 +11,48 @@ interface CreateProjectModalProps {
 
 const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalProps) => {
   const { createProject } = useProjectStore();
+  const { organizations, fetchOrganizations } = useOrganizationStore();
   
   // State variables
   const [projectData, setProjectData] = useState({
     name: '',
-    description: ''
+    description: '',
+    organization_id: 0
   });
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Fetch organizations when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      fetchOrganizations();
+    }
+  }, [isOpen, fetchOrganizations]);
+
+  // Set default organization when organizations are loaded
+  useEffect(() => {
+    if (organizations.length > 0 && projectData.organization_id === 0) {
+      setProjectData(prev => ({
+        ...prev,
+        organization_id: organizations[0].id
+      }));
+    }
+  }, [organizations, projectData.organization_id]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!projectData.name.trim()) return;
+    if (!projectData.name.trim() || !projectData.organization_id) return;
 
     setIsCreating(true);
     setError(null);
 
     try {
-      // Make the API call to create the project
-      const newProject = await createProject(projectData.name, projectData.description);
+      // Make the API call to create the project with organization_id
+      const newProject = await createProject(projectData.name, projectData.description, projectData.organization_id);
 
       if (newProject) {
         // Reset form
-        setProjectData({ name: '', description: '' });
+        setProjectData({ name: '', description: '', organization_id: organizations.length > 0 ? organizations[0].id : 0 });
         // Call success callback with the created project
         onSuccess?.(newProject);
         onClose();
@@ -78,6 +97,42 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Organization Selection */}
+          <div>
+            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+              Organization *
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Building2 className="w-4 h-4 text-dark-400" />
+              </div>
+              <select
+                value={projectData.organization_id}
+                onChange={(e) => handleInputChange('organization_id', e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 border border-dark-200 dark:border-dark-700 rounded-lg 
+                         bg-white dark:bg-dark-700 text-dark-900 dark:text-white 
+                         focus:ring-2 focus:ring-primary-500 focus:border-transparent
+                         transition-colors"
+                required
+              >
+                {organizations.length === 0 ? (
+                  <option value="">No organizations available</option>
+                ) : (
+                  organizations.map((org) => (
+                    <option key={org.id} value={org.id}>
+                      {org.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+            {organizations.length === 0 && (
+              <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                Please create an organization first before creating a project.
+              </p>
+            )}
+          </div>
+
           <AppInput
             label="Project Name"
             placeholder="Enter project name"
@@ -112,7 +167,7 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
             <AppButton
               type="submit"
               loading={isCreating}
-              disabled={!projectData.name.trim() || isCreating}
+              disabled={!projectData.name.trim() || !projectData.organization_id || isCreating || organizations.length === 0}
               className="flex-1"
             >
               {isCreating ? 'Creating...' : 'Create Project'}

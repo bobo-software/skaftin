@@ -117,6 +117,7 @@ import { router as UsersRouter } from './routers/UsersRouter';
 import { router as HealthRouter } from './routers/HealthRouter';
 import { router as MCPRouter } from './routers/MCPRouter';
 import { router as DatabaseRouter } from './routers/DatabaseRouter';
+import OrganizationsRouter from './routers/OrganizationsRouter';
 import MCPController from './controllers/MCPController';
 import DatabaseController from './controllers/DatabaseController';
 import StorageController from './controllers/StorageController';
@@ -140,6 +141,7 @@ app.get('/', (req: Request, res: Response) => {
     version: '2.0.0',
     endpoints: {
       auth: '/api/auth',
+      organizations: '/api/organizations',
       projects: '/api/projects',
       files: '/api/files',
       storage: '/api/storage',
@@ -160,6 +162,7 @@ StorageController.initialize({ pool, s3Client });
 // Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
 // Auth compatibility layer for old frontend routes
 app.use('/api/auth', AuthCompatibilityRouter);
+app.use('/api/organizations', OrganizationsRouter);
 app.use('/api/projects', ProjectsRouter);
 app.use('/api/files', FilesRouter);
 app.use('/api/storage', StorageRouter);

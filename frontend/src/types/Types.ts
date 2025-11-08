@@ -73,6 +73,64 @@ export interface LoginResult {
 }
 
 // ============================================================================
+// ORGANIZATION TYPES
+// ============================================================================
+
+export type OrganizationRole = 'admin' | 'dev' | 'member' | 'viewer';
+
+export interface Organization {
+  id: number;
+  name: string;
+  description: string | null;
+  owner_id: string;
+  created_at: string;
+  updated_at: string;
+  role?: OrganizationRole;
+  projectCount?: number;
+  memberCount?: number;
+  isOwner?: boolean;
+}
+
+export interface OrganizationMember {
+  id: number;
+  organization_id: number;
+  user_id: string;
+  role: OrganizationRole;
+  joined_at: string;
+  email?: string;
+  name?: string;
+}
+
+export interface OrganizationWithMembers extends Organization {
+  members: OrganizationMember[];
+  userRole?: OrganizationRole;
+}
+
+export interface CreateOrganizationDto {
+  name: string;
+  description?: string;
+}
+
+export interface UpdateOrganizationDto {
+  name?: string;
+  description?: string;
+}
+
+export interface AddMemberDto {
+  email: string;
+  role: OrganizationRole;
+}
+
+export interface AddMemberByIdDto {
+  user_id: string;
+  role: OrganizationRole;
+}
+
+export interface UpdateMemberRoleDto {
+  role: OrganizationRole;
+}
+
+// ============================================================================
 // PROJECT TYPES
 // ============================================================================
 
@@ -80,7 +138,8 @@ export interface Project {
   id: number;
   name: string;
   description: string | null;
-  user_id: string;
+  organization_id: number;
+  user_id: string; // Creator user ID (for audit)
   schema_name: string;
   bucket_name: string;
   created_at: string;
@@ -90,6 +149,7 @@ export interface Project {
 export interface CreateProjectDto {
   name: string;
   description?: string;
+  organization_id: number;
 }
 
 export interface UpdateProjectDto {
@@ -420,6 +480,22 @@ export interface AuthStore {
   register: (_credentials: RegisterCredentials) => Promise<LoginResult>;
   logout: () => void;
   refreshToken: () => Promise<void>;
+}
+
+export interface OrganizationStore {
+  organizations: Organization[];
+  currentOrganization: Organization | null;
+  loading: boolean;
+  error: string | null;
+  fetchOrganizations: () => Promise<void>;
+  getOrganizationById: (_id: number) => Promise<OrganizationWithMembers | null>;
+  setCurrentOrganization: (_org: Organization | null) => void;
+  createOrganization: (_data: CreateOrganizationDto) => Promise<Organization | null>;
+  updateOrganization: (_id: number, _data: UpdateOrganizationDto) => Promise<void>;
+  deleteOrganization: (_id: number) => Promise<void>;
+  addMember: (_orgId: number, _data: AddMemberByIdDto) => Promise<void>;
+  updateMemberRole: (_orgId: number, _memberId: number, _role: OrganizationRole) => Promise<void>;
+  removeMember: (_orgId: number, _memberId: number) => Promise<void>;
 }
 
 export interface ProjectStore {

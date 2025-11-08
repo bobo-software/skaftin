@@ -71,8 +71,81 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize organizations table using Drizzle
+   * Always creates in public schema
+   */
+  async initializeOrganizationsTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.organizations (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          owner_id VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Organizations table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_organizations_owner_id ON public.organizations(owner_id);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ Organizations index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Organizations table initialized');
+  }
+
+  /**
+   * Initialize organization_members table using Drizzle
+   * Always creates in public schema
+   */
+  async initializeOrganizationMembersTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.organization_members (
+          id SERIAL PRIMARY KEY,
+          organization_id INTEGER NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+          user_id VARCHAR(255) NOT NULL,
+          role VARCHAR(50) NOT NULL DEFAULT 'member',
+          joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(organization_id, user_id)
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Organization members table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_organization_members_org_id ON public.organization_members(organization_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_organization_members_user_id ON public.organization_members(user_id);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ Organization members index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Organization members table initialized');
+  }
+
+  /**
    * Initialize projects table using Drizzle
-   * NOTE: user_id is now VARCHAR to support SuperTokens UUIDs (not an integer foreign key)
+   * NOTE: Projects now belong to organizations
    * Always creates in public schema
    */
   async initializeProjectsTable(): Promise<void> {
@@ -128,9 +201,29 @@ export class DatabaseInitializer {
     }
 
     try {
-      // Create index on user_id
+      // Add organization_id column if it doesn't exist
+      await this.db.execute(sql`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                        WHERE table_schema='public' AND table_name='projects' AND column_name='organization_id') THEN
+            ALTER TABLE public.projects ADD COLUMN organization_id INTEGER;
+          END IF;
+        END $$;
+      `);
+    } catch (err: any) {
+      if (err.code !== '42710') {
+        console.error('❌ Projects organization_id migration error:', err.message);
+      }
+    }
+
+    try {
+      // Create indexes
       await this.db.execute(sql`
         CREATE INDEX IF NOT EXISTS idx_projects_user_id ON public.projects(user_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_projects_organization_id ON public.projects(organization_id);
       `);
     } catch (err: any) {
       // Ignore if index already exists
@@ -144,9 +237,12 @@ export class DatabaseInitializer {
 
   /**
    * Initialize all database tables
+   * Order matters: organizations must be created before organization_members and projects
    */
   async initializeAllTables(): Promise<void> {
     await this.initializeUsersTable();
+    await this.initializeOrganizationsTable();
+    await this.initializeOrganizationMembersTable();
     await this.initializeProjectsTable();
   }
 
