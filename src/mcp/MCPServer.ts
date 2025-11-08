@@ -9,6 +9,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { createDatabaseTools, handleDatabaseTool } from './tools/databaseTools';
 import { createStorageTools, handleStorageTool } from './tools/storageTools';
 import { createProjectTools, handleProjectTool } from './tools/projectTools';
+import { createGraphQLTools, handleGraphQLTool } from './tools/graphqlTools';
 
 export interface MCPServerConfig {
   pool: Pool;
@@ -42,12 +43,14 @@ export class MCPServer {
       const databaseTools = createDatabaseTools(this.config);
       const storageTools = createStorageTools(this.config);
       const projectTools = createProjectTools(this.config);
+      const graphqlTools = createGraphQLTools(this.config);
 
       return {
         tools: [
           ...databaseTools,
           ...storageTools,
           ...projectTools,
+          ...graphqlTools,
         ],
       };
     });
@@ -96,6 +99,24 @@ export class MCPServer {
           'list_projects',
         ];
 
+        const graphqlToolNames = [
+          'graphql_query',
+          'graphql_mutation',
+          'graphql_list_tables',
+          'graphql_get_table_schema',
+          'graphql_query_table',
+          'graphql_insert_data',
+          'graphql_bulk_insert',
+          'graphql_update_data',
+          'graphql_delete_data',
+          'graphql_create_table',
+          'graphql_drop_table',
+          'graphql_add_column',
+          'graphql_create_foreign_key',
+          'graphql_get_constraints',
+          'graphql_introspect_schema',
+        ];
+
         // Extract userId from args if available (for authentication)
         const userId = (args as any)?.userId || (args as any)?.authenticatedUserId;
 
@@ -107,6 +128,9 @@ export class MCPServer {
           return result;
         } else if (projectToolNames.includes(name)) {
           const result = await handleProjectTool(name, args, this.config, userId);
+          return result;
+        } else if (graphqlToolNames.includes(name)) {
+          const result = await handleGraphQLTool(name, args, this.config);
           return result;
         } else {
           return {

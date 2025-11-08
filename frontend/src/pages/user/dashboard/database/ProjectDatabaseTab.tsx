@@ -3,11 +3,13 @@ import { useProjectStore } from '../../../../stores/StoresIndex';
 import { 
   Database, 
   Code,
-  Table
+  Table,
+  Sparkles
 } from 'lucide-react';
 import { 
   TableViewer, 
-  SqlEditor
+  SqlEditor,
+  GraphQLEditor
 } from '../../../../components/ComponentsIndex';
 
 interface ProjectDatabaseTabProps {
@@ -21,7 +23,8 @@ const ProjectDatabaseTab = ({ projectId }: ProjectDatabaseTabProps) => {
 
   const tabs = [
     { id: 'tables', name: 'Table Viewer', icon: Table, component: TableViewer },
-    { id: 'sql', name: 'SQL Editor', icon: Code, component: SqlEditor }
+    { id: 'sql', name: 'SQL Editor', icon: Code, component: SqlEditor },
+    { id: 'graphql', name: 'GraphQL Explorer', icon: Sparkles, component: GraphQLEditor }
   ];
 
   const renderContent = () => {

@@ -121,6 +121,7 @@ import OrganizationsRouter from './routers/OrganizationsRouter';
 import MCPController from './controllers/MCPController';
 import DatabaseController from './controllers/DatabaseController';
 import StorageController from './controllers/StorageController';
+import GraphQLController from './controllers/GraphQLController';
 
 // ============================================================================
 // SERVICE INITIALIZATION
@@ -149,6 +150,7 @@ app.get('/', (req: Request, res: Response) => {
       users: '/api/users',
       health: '/api/health',
       mcp: '/api/mcp',
+      graphql: '/api/graphql',
     },
   });
 });
@@ -198,6 +200,10 @@ const startServer = async () => {
   const healthCheck = new HealthCheckService(pool, s3Client, BUCKET_NAME, minioEndpoint);
   await healthCheck.performHealthChecks();
 
+  // Initialize GraphQL server
+  console.log('🔧 Initializing GraphQL server...');
+  await GraphQLController.initialize(pool, app);
+
   // Initialize WebSocket service
   initializeWebSocketService(httpServer);
 
@@ -211,6 +217,7 @@ const startServer = async () => {
     console.log(`📁 Projects: http://localhost:${port}/api/projects`);
     console.log(`📄 Files: http://localhost:${port}/api/files`);
     console.log(`🔧 MCP: http://localhost:${port}/api/mcp`);
+    console.log(`🔬 GraphQL: http://localhost:${port}/api/graphql`);
     console.log(`🔌 WebSocket: ws://localhost:${port}`);
     console.log('='.repeat(60) + '\n');
   });
