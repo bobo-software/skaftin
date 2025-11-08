@@ -1,4 +1,4 @@
-import axios from 'axios';
+import RequestUtils from '../utils/RequestUtils';
 import ApiRoutes from '../constants/ApiRoutes';
 
 export interface EmailProvider {
@@ -60,12 +60,8 @@ export interface SendEmailRequest {
 }
 
 class CommunicationsService {
-  private getAuthHeaders() {
-    // For SuperTokens, we don't need to manually add Authorization header
-    // SuperTokens handles authentication via cookies and axios interceptors
-    return {
-      'Content-Type': 'application/json',
-    };
+  private getToken(): string {
+    return localStorage.getItem('skaftin-token') || 'session-managed-by-supertokens';
   }
 
   /**
@@ -73,19 +69,19 @@ class CommunicationsService {
    */
   async listEmailProviders(projectId: string): Promise<EmailProvider[]> {
     try {
-      const response = await axios.get(ApiRoutes.COMMUNICATIONS.LIST_PROVIDERS(projectId), {
-        headers: this.getAuthHeaders(),
-        withCredentials: true, // Required for SuperTokens to send cookies
-      });
+      const response = await RequestUtils.get(
+        ApiRoutes.COMMUNICATIONS.LIST_PROVIDERS(projectId),
+        this.getToken()
+      );
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to list email providers');
+      throw new Error(response.error || 'Failed to list email providers');
     } catch (error: any) {
       console.error('Error listing email providers:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to list email providers');
+      throw new Error(error.message || 'Failed to list email providers');
     }
   }
 
@@ -94,19 +90,19 @@ class CommunicationsService {
    */
   async getEmailProvider(projectId: string, providerId: string): Promise<EmailProvider> {
     try {
-      const response = await axios.get(ApiRoutes.COMMUNICATIONS.GET_PROVIDER(projectId, providerId), {
-        headers: this.getAuthHeaders(),
-        withCredentials: true,
-      });
+      const response = await RequestUtils.get(
+        ApiRoutes.COMMUNICATIONS.GET_PROVIDER(projectId, providerId),
+        this.getToken()
+      );
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to get email provider');
+      throw new Error(response.error || 'Failed to get email provider');
     } catch (error: any) {
       console.error('Error getting email provider:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to get email provider');
+      throw new Error(error.message || 'Failed to get email provider');
     }
   }
 
@@ -115,23 +111,20 @@ class CommunicationsService {
    */
   async createEmailProvider(projectId: string, data: CreateEmailProviderRequest): Promise<EmailProvider> {
     try {
-      const response = await axios.post(
+      const response = await RequestUtils.post(
         ApiRoutes.COMMUNICATIONS.CREATE_PROVIDER(projectId),
-        data,
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        data
       );
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to create email provider');
+      throw new Error(response.error || 'Failed to create email provider');
     } catch (error: any) {
       console.error('Error creating email provider:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to create email provider');
+      throw new Error(error.message || 'Failed to create email provider');
     }
   }
 
@@ -144,23 +137,20 @@ class CommunicationsService {
     data: UpdateEmailProviderRequest
   ): Promise<EmailProvider> {
     try {
-      const response = await axios.put(
+      const response = await RequestUtils.put(
         ApiRoutes.COMMUNICATIONS.UPDATE_PROVIDER(projectId, providerId),
-        data,
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        data
       );
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to update email provider');
+      throw new Error(response.error || 'Failed to update email provider');
     } catch (error: any) {
       console.error('Error updating email provider:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to update email provider');
+      throw new Error(error.message || 'Failed to update email provider');
     }
   }
 
@@ -169,20 +159,18 @@ class CommunicationsService {
    */
   async deleteEmailProvider(projectId: string, providerId: string): Promise<void> {
     try {
-      const response = await axios.delete(
+      const response = await RequestUtils.delete(
         ApiRoutes.COMMUNICATIONS.DELETE_PROVIDER(projectId, providerId),
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        {}
       );
 
-      if (!response.data.success) {
-        throw new Error(response.data.error || 'Failed to delete email provider');
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to delete email provider');
       }
     } catch (error: any) {
       console.error('Error deleting email provider:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to delete email provider');
+      throw new Error(error.message || 'Failed to delete email provider');
     }
   }
 
@@ -191,19 +179,16 @@ class CommunicationsService {
    */
   async testConnection(projectId: string, providerId: string): Promise<boolean> {
     try {
-      const response = await axios.post(
+      const response = await RequestUtils.post(
         ApiRoutes.COMMUNICATIONS.TEST_CONNECTION(projectId, providerId),
-        {},
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        {}
       );
 
-      return response.data.success;
+      return response.success;
     } catch (error: any) {
       console.error('Error testing email connection:', error);
-      throw new Error(error.response?.data?.message || error.message || 'Connection test failed');
+      throw new Error(error.message || 'Connection test failed');
     }
   }
 
@@ -212,23 +197,20 @@ class CommunicationsService {
    */
   async sendEmail(projectId: string, data: SendEmailRequest): Promise<any> {
     try {
-      const response = await axios.post(
+      const response = await RequestUtils.post(
         ApiRoutes.COMMUNICATIONS.SEND_EMAIL(projectId),
-        data,
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        data
       );
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to send email');
+      throw new Error(response.error || 'Failed to send email');
     } catch (error: any) {
       console.error('Error sending email:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to send email');
+      throw new Error(error.message || 'Failed to send email');
     }
   }
 }
