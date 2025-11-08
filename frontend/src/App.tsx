@@ -6,6 +6,8 @@ import LoginPage from './pages/LoginPage';
 import ProjectsOverviewPage from './pages/user/projects/ProjectsOverviewPage';
 import ProjectDashboardPage from './pages/user/dashboard/ProjectDashboardPage';
 import CreateOrganizationPage from './pages/user/organizations/CreateOrganizationPage';
+import InviteAcceptPage from './pages/public/InviteAcceptPage';
+import InviteRegisterPage from './pages/public/InviteRegisterPage';
 import { useAppStore } from './stores/StoresIndex';
 import { initSuperTokensFrontend, Session } from './config/supertokens';
 import './App.css';
@@ -107,6 +109,8 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/invite/:inviteCode" element={<InviteAcceptPage />} />
+        <Route path="/invite/:inviteCode/register" element={<InviteRegisterPage />} />
         <Route 
           path="/organizations/create" 
           element={

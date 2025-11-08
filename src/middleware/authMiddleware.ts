@@ -20,19 +20,31 @@ export interface AuthenticatedRequest extends Request {
  */
 export const authenticateToken = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
+    console.log('🔐 [authenticateToken] Starting token verification');
+    console.log('  └─ URL:', req.originalUrl);
+    
     const authHeader = req.headers.authorization;
+    console.log('  └─ Auth Header:', authHeader ? `${authHeader.substring(0, 20)}...` : 'MISSING');
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('  └─ ❌ No Bearer token found');
       return ResponseUtils.error(res, 'Authentication token required', null, null, 401);
     }
 
     const token = authHeader.split(' ')[1];
+    console.log('  └─ Token extracted:', token ? `${token.substring(0, 20)}...` : 'EMPTY');
     
     if (!token) {
+      console.log('  └─ ❌ Token is empty after split');
       return ResponseUtils.error(res, 'Authentication token required', null, null, 401);
     }
 
+    console.log('  └─ Attempting to verify token with JWT_SECRET');
     const decoded = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
+    console.log('  └─ ✅ Token decoded successfully');
+    console.log('  └─ User ID:', decoded.userId);
+    console.log('  └─ Email:', decoded.email);
+    console.log('  └─ Project IDs:', decoded.projectIds);
     
     req.user = {
       userId: decoded.userId,
@@ -45,6 +57,10 @@ export const authenticateToken = (req: AuthenticatedRequest, res: Response, next
 
     next();
   } catch (error: any) {
+    console.log('  └─ ❌ Token verification failed');
+    console.log('  └─ Error name:', error.name);
+    console.log('  └─ Error message:', error.message);
+    
     if (error.name === 'TokenExpiredError') {
       return ResponseUtils.error(res, 'Token has expired', error, null, 403);
     } else if (error.name === 'JsonWebTokenError') {
@@ -59,38 +75,49 @@ export const authenticateToken = (req: AuthenticatedRequest, res: Response, next
  */
 export const verifyProjectAccess = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
+    console.log('🔑 [verifyProjectAccess] Checking project access');
+    console.log('  └─ User:', req.user ? `ID ${req.user.userId}, Email: ${req.user.email}` : 'NOT FOUND');
+    
     if (!req.user) {
+      console.log('  └─ ❌ No user object found');
       return ResponseUtils.error(res, 'Authentication required', null, null, 401);
     }
 
     // Try to get projectId from params (could be :id or :projectId) or body
     const projectId = req.params?.projectId || req.params?.id || req.body?.projectId;
+    console.log('  └─ Project ID requested:', projectId);
+    console.log('  └─ Request params:', JSON.stringify(req.params));
     
     if (!projectId) {
-      console.error('Project ID not found in params or body:', { params: req.params, body: req.body });
+      console.error('  └─ ❌ Project ID not found in params or body:', { params: req.params, body: req.body });
       return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
     }
 
     const projectIdInt = parseInt(projectId, 10);
+    console.log('  └─ Project ID (parsed):', projectIdInt);
 
     if (isNaN(projectIdInt)) {
+      console.log('  └─ ❌ Invalid project ID format');
       return ResponseUtils.error(res, 'Invalid project ID', null, null, 400);
     }
 
     // Admin users have access to all projects
     if (req.user.role === 'admin') {
+      console.log('  └─ ✅ Admin user - access granted');
       return next();
     }
 
     // Check if user has access to this project
+    console.log('  └─ User\'s project IDs:', req.user.projectIds);
     if (!req.user.projectIds || !req.user.projectIds.includes(projectIdInt)) {
-      console.log(`Access denied: User ${req.user.userId} tried to access project ${projectIdInt}. User's projects: ${req.user.projectIds}`);
+      console.log(`  └─ ❌ Access denied: User ${req.user.userId} tried to access project ${projectIdInt}. User's projects: ${req.user.projectIds}`);
       return ResponseUtils.error(res, 'Access denied: You do not have permission to access this project', null, null, 403);
     }
 
+    console.log('  └─ ✅ Access granted');
     next();
   } catch (error) {
-    console.error('Project access verification error:', error);
+    console.error('  └─ ❌ Project access verification error:', error);
     return ResponseUtils.error(res, 'Failed to verify project access', error);
   }
 };

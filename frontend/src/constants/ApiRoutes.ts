@@ -89,6 +89,40 @@ const ApiRoutes = {
     DROP_CONSTRAINT: (projectId: string, tableName: string, constraintName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/${constraintName}`,
   },
   
+  // Communications routes
+  COMMUNICATIONS: {
+    // Email provider management
+    LIST_PROVIDERS: (projectId: string) => `/api/communications/${projectId}/email/providers`,
+    GET_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}`,
+    CREATE_PROVIDER: (projectId: string) => `/api/communications/${projectId}/email/providers`,
+    UPDATE_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}`,
+    DELETE_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}`,
+    TEST_CONNECTION: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}/test`,
+    // Email sending
+    SEND_EMAIL: (projectId: string) => `/api/communications/${projectId}/email/send`,
+  },
+  
+  // Invitations routes
+  INVITATIONS: {
+    LIST: (projectId: string) => `/api/invitations/${projectId}/invitations`,
+    CREATE: (projectId: string) => `/api/invitations/${projectId}/invitations`,
+    REVOKE: (projectId: string, invitationId: string) => `/api/invitations/${projectId}/invitations/${invitationId}`,
+    GET_BY_CODE: (inviteCode: string) => `/api/invitations/code/${inviteCode}`,
+    ACCEPT: (inviteCode: string) => `/api/invitations/accept/${inviteCode}`,
+    // Members
+    LIST_MEMBERS: (projectId: string) => `/api/invitations/${projectId}/members`,
+    REMOVE_MEMBER: (projectId: string, memberId: string) => `/api/invitations/${projectId}/members/${memberId}`,
+  },
+  
+  // API Credentials routes
+  CREDENTIALS: {
+    LIST: (projectId: string) => `/api/credentials/${projectId}/credentials`,
+    CREATE: (projectId: string) => `/api/credentials/${projectId}/credentials`,
+    UPDATE: (projectId: string, credentialId: string) => `/api/credentials/${projectId}/credentials/${credentialId}`,
+    DELETE: (projectId: string, credentialId: string) => `/api/credentials/${projectId}/credentials/${credentialId}`,
+    GET_PERMISSIONS: '/api/credentials/permissions',
+  },
+  
   // MCP routes
   MCP: {
     CALL: '/api/mcp/call',

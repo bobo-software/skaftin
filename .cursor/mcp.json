@@ -5,6 +5,9 @@
       "args": ["tsx", "src/mcp-server.ts"],
       "env": {
         "NODE_ENV": "development"
+      },
+      "headers": {
+        "Authorization": "Bearer skaftin-token"
       }
     }
   }

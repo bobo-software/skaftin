@@ -111,7 +111,7 @@ const FileUploadModal: React.FC<FileUploadModalProps> = ({
 
     try {
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4006';
-      const token = localStorage.getItem('skaftin_token');
+      const token = localStorage.getItem('skaftin-token');
 
       for (const file of files) {
         setUploadProgress(prev => ({ ...prev, [file.name]: 'uploading' }));

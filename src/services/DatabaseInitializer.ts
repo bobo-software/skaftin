@@ -236,6 +236,188 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize email_providers table using Drizzle
+   * Always creates in public schema
+   */
+  async initializeEmailProvidersTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.email_providers (
+          id SERIAL PRIMARY KEY,
+          project_id VARCHAR(255) NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('nodemailer', 'mailtrap')),
+          smtp_host VARCHAR(255) NOT NULL,
+          smtp_port INTEGER NOT NULL,
+          smtp_secure BOOLEAN DEFAULT false,
+          smtp_user VARCHAR(255) NOT NULL,
+          smtp_password TEXT NOT NULL,
+          from_email VARCHAR(255) NOT NULL,
+          from_name VARCHAR(255),
+          is_active BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(project_id, name)
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Email providers table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_email_providers_project_id ON public.email_providers(project_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_email_providers_is_active ON public.email_providers(is_active);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ Email providers index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Email providers table initialized');
+  }
+
+  /**
+   * Initialize project_members table using Drizzle
+   * Links users to specific projects they have access to
+   */
+  async initializeProjectMembersTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.project_members (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          user_id VARCHAR(255) NOT NULL,
+          role VARCHAR(50) NOT NULL DEFAULT 'member',
+          invited_by VARCHAR(255),
+          joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(project_id, user_id)
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Project members table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_project_members_project_id ON public.project_members(project_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON public.project_members(user_id);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ Project members index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Project members table initialized');
+  }
+
+  /**
+   * Initialize project_invitations table using Drizzle
+   * Stores pending invitations to projects
+   */
+  async initializeProjectInvitationsTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.project_invitations (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          email VARCHAR(255) NOT NULL,
+          invite_code VARCHAR(255) NOT NULL UNIQUE,
+          role VARCHAR(50) NOT NULL DEFAULT 'member',
+          status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'expired')),
+          invited_by VARCHAR(255) NOT NULL,
+          expires_at TIMESTAMP NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          accepted_at TIMESTAMP,
+          UNIQUE(project_id, email)
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Project invitations table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_project_invitations_project_id ON public.project_invitations(project_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_project_invitations_email ON public.project_invitations(email);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_project_invitations_code ON public.project_invitations(invite_code);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_project_invitations_status ON public.project_invitations(status);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ Project invitations index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Project invitations table initialized');
+  }
+
+  /**
+   * Initialize api_credentials table using Drizzle
+   * Stores API keys and access tokens for external application integration
+   */
+  async initializeApiCredentialsTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.api_credentials (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          name VARCHAR(255) NOT NULL,
+          credential_type VARCHAR(50) NOT NULL CHECK (credential_type IN ('api_key', 'access_token')),
+          token VARCHAR(255) NOT NULL UNIQUE,
+          permissions JSONB NOT NULL DEFAULT '[]',
+          is_active BOOLEAN DEFAULT true,
+          last_used_at TIMESTAMP,
+          created_by VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          expires_at TIMESTAMP,
+          UNIQUE(project_id, name)
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ API credentials table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_api_credentials_project_id ON public.api_credentials(project_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_api_credentials_token ON public.api_credentials(token);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_api_credentials_is_active ON public.api_credentials(is_active);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ API credentials index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ API credentials table initialized');
+  }
+
+  /**
    * Initialize all database tables
    * Order matters: organizations must be created before organization_members and projects
    */
@@ -244,6 +426,10 @@ export class DatabaseInitializer {
     await this.initializeOrganizationsTable();
     await this.initializeOrganizationMembersTable();
     await this.initializeProjectsTable();
+    await this.initializeEmailProvidersTable();
+    await this.initializeProjectMembersTable();
+    await this.initializeProjectInvitationsTable();
+    await this.initializeApiCredentialsTable();
   }
 
   /**

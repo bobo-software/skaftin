@@ -25,10 +25,12 @@ export { default as TableItem } from './database/TableItem';
 export { default as TableSettingsTab } from './database/TableSettingsTab';
 export { default as DataTable } from './database/DataTable';
 export { default as SqlEditor } from './database/SqlEditor';
+export { default as GraphQLEditor } from './database/GraphQLEditor';
 export { default as SchemaDesigner } from './database/SchemaDesigner';
 export { default as SchemaEditor } from './database/SchemaEditor';
 export { default as StorageViewer } from './database/StorageViewer';
 export { default as QueryBuilder } from './database/QueryBuilder';
+export { default as CronManager } from './database/CronManager';
 
 // ---------- Dashboard Components ---------- //
 export { default as ProjectSidebar } from './dashboard/ProjectSidebar';

@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, or, sql } from 'drizzle-orm';
 import { db } from '../db/drizzle.config';
 import { projects } from '../db/schemas/ProjectsSchema';
 import { organizations, organization_members } from '../db/schemas/OrganizationsSchema';
@@ -63,7 +63,7 @@ class ProjectsController {
     }
   }
 
-  // Get all projects for authenticated user (from their organizations)
+  // Get all projects for authenticated user (from their organizations + direct membership)
   static async getAllProjects(req: SuperTokensAuthenticatedRequest, res: Response) {
     // User info is attached by SuperTokens middleware
     if (!req.user || !req.user.userId) {
@@ -79,19 +79,37 @@ class ProjectsController {
         .from(organization_members)
         .where(eq(organization_members.user_id, userId));
 
-      if (userOrgs.length === 0) {
-        // User is not a member of any organization
-        return ResponseUtils.success(res, 'Projects fetched successfully', []);
-      }
-
       const orgIds = userOrgs.map(org => org.organization_id);
 
-      // Get all projects from those organizations
-      const results = await db
-        .select()
-        .from(projects)
-        .where(inArray(projects.organization_id, orgIds))
-        .orderBy(projects.created_at);
+      // Get projects from organizations
+      let orgProjects: any[] = [];
+      if (orgIds.length > 0) {
+        orgProjects = await db
+          .select()
+          .from(projects)
+          .where(inArray(projects.organization_id, orgIds))
+          .orderBy(projects.created_at);
+      }
+
+      // Get projects where user is a direct member (via invitations)
+      const memberProjects = await db.execute(sql`
+        SELECT DISTINCT p.* 
+        FROM projects p
+        INNER JOIN project_members pm ON p.id = pm.project_id
+        WHERE pm.user_id = ${userId}
+        ORDER BY p.created_at
+      `);
+
+      // Combine and deduplicate projects by ID
+      const projectMap = new Map();
+      
+      [...orgProjects, ...(memberProjects.rows as any[])].forEach((project) => {
+        if (!projectMap.has(project.id)) {
+          projectMap.set(project.id, project);
+        }
+      });
+
+      const results = Array.from(projectMap.values());
 
       ResponseUtils.success(res, 'Projects fetched successfully', results);
     } catch (error) {

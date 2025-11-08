@@ -1,0 +1,567 @@
+# ============================================================================
+# SKAFTIN PLATFORM - GRAPHQL EXAMPLE QUERIES
+# ============================================================================
+# Import this file into your GraphQL client (Apollo Studio, Postman, etc.)
+# Endpoint: http://localhost:4006/api/graphql
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# QUERIES
+# ----------------------------------------------------------------------------
+
+# Get all tables in a project
+query GetAllTables {
+  tables(projectId: 1) {
+    table_name
+    table_schema
+    table_type
+  }
+}
+
+# Get schema for a specific table
+query GetTableSchema {
+  tableSchema(projectId: 1, tableName: "users") {
+    column_name
+    data_type
+    character_maximum_length
+    is_nullable
+    column_default
+    ordinal_position
+    is_primary_key
+  }
+}
+
+# Query data from a table (basic)
+query QueryTableBasic {
+  queryTable(
+    projectId: 1
+    tableName: "users"
+    limit: 10
+  ) {
+    rows {
+      data
+    }
+    rowCount
+    columns
+    executionTime
+  }
+}
+
+# Query data with specific columns
+query QueryTableWithColumns {
+  queryTable(
+    projectId: 1
+    tableName: "users"
+    columns: ["id", "name", "email", "created_at"]
+    limit: 50
+    offset: 0
+  ) {
+    rows {
+      data
+    }
+    rowCount
+  }
+}
+
+# Query data with WHERE clause
+query QueryTableWithWhere {
+  queryTable(
+    projectId: 1
+    tableName: "users"
+    where: { status: "active" }
+    limit: 100
+  ) {
+    rows {
+      data
+    }
+    rowCount
+  }
+}
+
+# Query with ordering
+query QueryTableWithOrdering {
+  queryTable(
+    projectId: 1
+    tableName: "users"
+    orderBy: [
+      { field: "created_at", direction: "DESC" }
+    ]
+    limit: 20
+  ) {
+    rows {
+      data
+    }
+  }
+}
+
+# Execute raw SQL query
+query ExecuteRawQuery {
+  executeQuery(
+    projectId: 1
+    query: "SELECT * FROM users WHERE created_at > $1 LIMIT 10"
+    parameters: ["2024-01-01"]
+  ) {
+    rows {
+      data
+    }
+    rowCount
+    columns
+    executionTime
+  }
+}
+
+# Get all constraints for a table
+query GetTableConstraints {
+  tableConstraints(projectId: 1, tableName: "users") {
+    constraint_name
+    constraint_type
+    column_name
+    referenced_table_name
+    referenced_column_name
+    update_rule
+    delete_rule
+    check_clause
+  }
+}
+
+# Get foreign keys for a table
+query GetTableForeignKeys {
+  tableForeignKeys(projectId: 1, tableName: "orders") {
+    constraint_name
+    column_name
+    referenced_table_name
+    referenced_column_name
+    update_rule
+    delete_rule
+  }
+}
+
+# Complex query - multiple operations
+query CompleteTableInfo {
+  tables(projectId: 1) {
+    table_name
+    table_type
+  }
+  
+  userSchema: tableSchema(projectId: 1, tableName: "users") {
+    column_name
+    data_type
+    is_primary_key
+  }
+  
+  userData: queryTable(
+    projectId: 1
+    tableName: "users"
+    limit: 5
+  ) {
+    rows {
+      data
+    }
+    rowCount
+  }
+}
+
+# ----------------------------------------------------------------------------
+# MUTATIONS
+# ----------------------------------------------------------------------------
+
+# Create a new table
+mutation CreateTable {
+  createTable(
+    projectId: 1
+    input: {
+      tableName: "products"
+      columns: [
+        {
+          name: "id"
+          type: "SERIAL"
+          primaryKey: true
+        }
+        {
+          name: "name"
+          type: "VARCHAR(255)"
+          nullable: false
+        }
+        {
+          name: "description"
+          type: "TEXT"
+          nullable: true
+        }
+        {
+          name: "price"
+          type: "DECIMAL(10,2)"
+          nullable: false
+        }
+        {
+          name: "stock"
+          type: "INTEGER"
+          defaultValue: "0"
+        }
+        {
+          name: "created_at"
+          type: "TIMESTAMP"
+          defaultValue: "CURRENT_TIMESTAMP"
+        }
+      ]
+    }
+  ) {
+    success
+    message
+    data
+  }
+}
+
+# Insert single row
+mutation InsertData {
+  insertData(
+    projectId: 1
+    tableName: "products"
+    data: {
+      name: "Laptop"
+      description: "High-performance laptop"
+      price: 999.99
+      stock: 50
+    }
+  ) {
+    success
+    message
+    data
+    rowCount
+  }
+}
+
+# Bulk insert multiple rows
+mutation BulkInsertData {
+  bulkInsertData(
+    projectId: 1
+    tableName: "products"
+    dataArray: [
+      {
+        name: "Keyboard"
+        description: "Mechanical keyboard"
+        price: 79.99
+        stock: 100
+      }
+      {
+        name: "Mouse"
+        description: "Wireless mouse"
+        price: 29.99
+        stock: 150
+      }
+      {
+        name: "Monitor"
+        description: "27-inch 4K monitor"
+        price: 399.99
+        stock: 25
+      }
+    ]
+  ) {
+    success
+    message
+    data
+    rowCount
+  }
+}
+
+# Update data
+mutation UpdateData {
+  updateData(
+    projectId: 1
+    tableName: "products"
+    data: {
+      price: 899.99
+      stock: 45
+    }
+    where: {
+      name: "Laptop"
+    }
+  ) {
+    success
+    message
+    data
+    rowCount
+  }
+}
+
+# Delete data
+mutation DeleteData {
+  deleteData(
+    projectId: 1
+    tableName: "products"
+    where: {
+      stock: 0
+    }
+  ) {
+    success
+    message
+    rowCount
+  }
+}
+
+# Add column to table
+mutation AddColumn {
+  addColumn(
+    projectId: 1
+    tableName: "products"
+    input: {
+      columnName: "category"
+      columnType: "VARCHAR(100)"
+      nullable: true
+      defaultValue: "General"
+    }
+  ) {
+    success
+    message
+    data
+  }
+}
+
+# Drop column from table
+mutation DropColumn {
+  dropColumn(
+    projectId: 1
+    tableName: "products"
+    columnName: "category"
+  ) {
+    success
+    message
+  }
+}
+
+# Create foreign key
+mutation CreateForeignKey {
+  createForeignKey(
+    projectId: 1
+    tableName: "orders"
+    input: {
+      columnName: "user_id"
+      referencedTable: "users"
+      referencedColumn: "id"
+      onDelete: "CASCADE"
+      onUpdate: "RESTRICT"
+    }
+  ) {
+    success
+    message
+    data
+  }
+}
+
+# Create unique constraint
+mutation CreateUniqueConstraint {
+  createUniqueConstraint(
+    projectId: 1
+    tableName: "users"
+    columnName: "email"
+    constraintName: "users_email_unique"
+  ) {
+    success
+    message
+    data
+  }
+}
+
+# Drop constraint
+mutation DropConstraint {
+  dropConstraint(
+    projectId: 1
+    tableName: "users"
+    constraintName: "users_email_unique"
+  ) {
+    success
+    message
+  }
+}
+
+# Rename table
+mutation RenameTable {
+  renameTable(
+    projectId: 1
+    tableName: "old_products"
+    newTableName: "products_archive"
+  ) {
+    success
+    message
+    data
+  }
+}
+
+# Drop table
+mutation DropTable {
+  dropTable(
+    projectId: 1
+    tableName: "temporary_table"
+  ) {
+    success
+    message
+  }
+}
+
+# Execute raw SQL mutation
+mutation ExecuteRawMutation {
+  executeMutation(
+    projectId: 1
+    query: "UPDATE products SET price = price * 0.9 WHERE stock > $1"
+    parameters: [100]
+  ) {
+    success
+    message
+    data
+    rowCount
+  }
+}
+
+# ----------------------------------------------------------------------------
+# BATCH OPERATIONS
+# ----------------------------------------------------------------------------
+
+# Multiple operations in a single request
+mutation BatchInsertAndUpdate {
+  product1: insertData(
+    projectId: 1
+    tableName: "products"
+    data: {
+      name: "Headphones"
+      price: 59.99
+      stock: 75
+    }
+  ) {
+    success
+    data
+  }
+  
+  product2: insertData(
+    projectId: 1
+    tableName: "products"
+    data: {
+      name: "Webcam"
+      price: 89.99
+      stock: 30
+    }
+  ) {
+    success
+    data
+  }
+  
+  updateStock: updateData(
+    projectId: 1
+    tableName: "products"
+    data: { stock: 200 }
+    where: { name: "Keyboard" }
+  ) {
+    success
+    rowCount
+  }
+}
+
+# ----------------------------------------------------------------------------
+# QUERIES WITH VARIABLES
+# ----------------------------------------------------------------------------
+
+# Query with variables (use Variables tab in GraphQL client)
+query GetTableDataWithVariables(
+  $projectId: Int!
+  $tableName: String!
+  $limit: Int
+  $offset: Int
+) {
+  queryTable(
+    projectId: $projectId
+    tableName: $tableName
+    limit: $limit
+    offset: $offset
+  ) {
+    rows {
+      data
+    }
+    rowCount
+    executionTime
+  }
+}
+
+# Variables for above query:
+# {
+#   "projectId": 1,
+#   "tableName": "users",
+#   "limit": 20,
+#   "offset": 0
+# }
+
+# Insert with variables
+mutation InsertDataWithVariables(
+  $projectId: Int!
+  $tableName: String!
+  $data: JSON!
+) {
+  insertData(
+    projectId: $projectId
+    tableName: $tableName
+    data: $data
+  ) {
+    success
+    message
+    data
+  }
+}
+
+# Variables for above mutation:
+# {
+#   "projectId": 1,
+#   "tableName": "products",
+#   "data": {
+#     "name": "USB Cable",
+#     "price": 9.99,
+#     "stock": 500
+#   }
+# }
+
+# ----------------------------------------------------------------------------
+# SCHEMA INTROSPECTION
+# ----------------------------------------------------------------------------
+
+# Get all available types
+query GetSchemaTypes {
+  __schema {
+    types {
+      name
+      kind
+      description
+    }
+  }
+}
+
+# Get details about a specific type
+query GetTypeDetails {
+  __type(name: "Query") {
+    name
+    kind
+    fields {
+      name
+      description
+      type {
+        name
+        kind
+      }
+    }
+  }
+}
+
+# Get all available mutations
+query GetAvailableMutations {
+  __schema {
+    mutationType {
+      fields {
+        name
+        description
+        args {
+          name
+          type {
+            name
+            kind
+          }
+        }
+      }
+    }
+  }
+}
+

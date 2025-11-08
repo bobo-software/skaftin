@@ -4,7 +4,7 @@ import { SessionRequest } from "supertokens-node/framework/express";
 import ResponseUtils from '../utils/ResponseUtils';
 import { db } from '../db/drizzle.config';
 import { projects } from '../db/schemas/ProjectsSchema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 export interface SuperTokensAuthenticatedRequest extends SessionRequest {
   user?: {
@@ -36,12 +36,24 @@ export const attachUserInfo = async (req: SuperTokensAuthenticatedRequest, res: 
     const sessionData = req.session.getAccessTokenPayload();
 
     // Fetch user's projects from database (user_id is now VARCHAR for SuperTokens)
-    const userProjects = await db
+    // Include both owned projects and projects they're members of
+    const ownedProjectsQuery = await db
       .select({ id: projects.id })
       .from(projects)
       .where(eq(projects.user_id, userId));
     
-    const projectIds = userProjects.map(p => p.id);
+    // Fetch projects user is a member of
+    const memberProjectsQuery = await db.execute(sql`
+      SELECT DISTINCT project_id as id 
+      FROM project_members 
+      WHERE user_id = ${userId}
+    `);
+    
+    const ownedProjectIds = ownedProjectsQuery.map(p => p.id);
+    const memberProjectIds = (memberProjectsQuery.rows as any[]).map(p => p.id);
+    
+    // Combine both lists and remove duplicates
+    const projectIds = [...new Set([...ownedProjectIds, ...memberProjectIds])];
 
     // Attach user info to request
     req.user = {
