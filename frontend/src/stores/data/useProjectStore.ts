@@ -7,6 +7,7 @@ interface Project {
   id: string;
   name: string;
   description?: string;
+  organization_id?: number;
   schema_name: string;
   bucket_name: string;
   created_at: string;
@@ -30,7 +31,7 @@ interface ProjectStoreType {
 
   // Actions
   fetchProjects: () => Promise<void>;
-  createProject: (name: string, description?: string) => Promise<Project | null>;
+  createProject: (name: string, description?: string, organization_id?: number) => Promise<Project | null>;
   updateProject: (projectId: string, updates: Partial<Project>) => Promise<Project | null>;
   deleteProject: (projectId: string) => Promise<boolean>;
   setCurrentProject: (project: Project | null) => void;
@@ -63,6 +64,7 @@ const useProjectStore = create<ProjectStoreType>()(
                 id: p.id.toString(),
                 name: p.name,
                 description: p.description,
+                organization_id: p.organization_id,
                 schema_name: p.schema_name,
                 bucket_name: p.bucket_name,
                 created_at: p.created_at,

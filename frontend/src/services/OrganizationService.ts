@@ -7,7 +7,6 @@ import {
   UpdateOrganizationDto,
   AddMemberByIdDto,
   OrganizationRole,
-  ApiResponse,
 } from '../types/Types';
 
 class OrganizationService {
@@ -25,7 +24,7 @@ class OrganizationService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const response = await RequestUtils.get<ApiResponse<Organization[]>>(
+      const response = await RequestUtils.get(
         ApiRoutes.ORGANIZATIONS.LIST,
         token
       );
@@ -51,7 +50,7 @@ class OrganizationService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const response = await RequestUtils.get<ApiResponse<OrganizationWithMembers>>(
+      const response = await RequestUtils.get(
         ApiRoutes.ORGANIZATIONS.GET(id),
         token
       );
@@ -77,7 +76,7 @@ class OrganizationService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const response = await RequestUtils.post<ApiResponse<Organization>>(
+      const response = await RequestUtils.post(
         ApiRoutes.ORGANIZATIONS.CREATE,
         token,
         data
@@ -104,7 +103,7 @@ class OrganizationService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const response = await RequestUtils.put<ApiResponse<Organization>>(
+      const response = await RequestUtils.put(
         ApiRoutes.ORGANIZATIONS.UPDATE(id),
         token,
         data
@@ -131,9 +130,10 @@ class OrganizationService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const response = await RequestUtils.delete<ApiResponse>(
+      const response = await RequestUtils.delete(
         ApiRoutes.ORGANIZATIONS.DELETE(id),
-        token
+        token,
+        {}
       );
 
       if (response.success) {
@@ -157,7 +157,7 @@ class OrganizationService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const response = await RequestUtils.post<ApiResponse>(
+      const response = await RequestUtils.post(
         ApiRoutes.ORGANIZATIONS.ADD_MEMBER_BY_ID(orgId),
         token,
         data
@@ -184,7 +184,7 @@ class OrganizationService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const response = await RequestUtils.put<ApiResponse>(
+      const response = await RequestUtils.put(
         ApiRoutes.ORGANIZATIONS.UPDATE_MEMBER(orgId, memberId),
         token,
         { role }
@@ -211,9 +211,10 @@ class OrganizationService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const response = await RequestUtils.delete<ApiResponse>(
+      const response = await RequestUtils.delete(
         ApiRoutes.ORGANIZATIONS.REMOVE_MEMBER(orgId, memberId),
-        token
+        token,
+        {}
       );
 
       if (response.success) {

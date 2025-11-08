@@ -141,7 +141,7 @@ const CredentialsTab = () => {
     } else {
       setFormData((prev) => ({
         ...prev,
-        permissions: [...new Set([...prev.permissions, ...category])],
+        permissions: Array.from(new Set([...prev.permissions, ...category])),
       }));
     }
   };
