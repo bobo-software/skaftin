@@ -78,21 +78,50 @@ const s3Client = new S3Client({
 // MIDDLEWARE CONFIGURATION
 // ============================================================================
 
-// CORS - SuperTokens requires specific CORS configuration
-// Support both development and production URLs
+// CORS Configuration
+// For SuperTokens (Skaftin UI) - use specific origins
+// For API clients - allow all origins with API key authentication
 const allowedOrigins = [
   process.env.SUPERTOKENS_WEBSITE_DOMAIN || "http://localhost:3005",
   process.env.FRONTEND_URL || "http://localhost:3005",
 ];
+
+// Add client app origins from environment (comma-separated)
+if (process.env.CLIENT_ALLOWED_ORIGINS) {
+  const clientOrigins = process.env.CLIENT_ALLOWED_ORIGINS.split(',').map(o => o.trim());
+  allowedOrigins.push(...clientOrigins);
+}
 
 // Remove duplicates and filter out empty values
 const uniqueOrigins = [...new Set(allowedOrigins.filter(Boolean))];
 
 app.use(
   cors({
-    origin: uniqueOrigins,
-    allowedHeaders: ["content-type", ...supertokens.getAllCORSHeaders()],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, Postman, etc.)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Allow Skaftin UI origins (for SuperTokens with credentials)
+      if (uniqueOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow other origins for API key authenticated requests
+      // API key middleware will validate authentication
+      return callback(null, true);
+    },
+    allowedHeaders: [
+      "content-type",
+      "x-api-key",
+      "x-access-token", 
+      "x-project-id",
+      "authorization",
+      ...supertokens.getAllCORSHeaders()
+    ],
     credentials: true,
+    exposedHeaders: ["content-disposition"], // For file downloads
   })
 );
 
@@ -172,6 +201,10 @@ StorageController.initialize({ pool, s3Client });
 
 // Initialize API key middleware
 initializeApiKeyMiddleware(pool);
+
+// Initialize hybrid auth middleware (for client apps + Skaftin UI)
+import { initializeHybridAuthMiddleware } from './middleware/hybridAuthMiddleware';
+initializeHybridAuthMiddleware(pool);
 
 // Initialize Communications Controller and create router
 const communicationsController = new CommunicationsController(pool);
