@@ -11,9 +11,10 @@ import {
   Download,
   Table,
   List,
-  Settings
+  Settings,
+  Upload
 } from 'lucide-react';
-import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem, TableSettingsTab } from '../ComponentsIndex';
+import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem, TableSettingsTab, DatabaseImportModal } from '../ComponentsIndex';
 
 interface TableViewerProps {
   projectId: string;
@@ -30,6 +31,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     setCurrentTable,
     insertData,
     createTable,
+    importDatabaseDump,
     clearError 
   } = useDatabaseStore();
   
@@ -41,8 +43,10 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   const [showAddRowModal, setShowAddRowModal] = useState(false);
   const [showCsvImportModal, setShowCsvImportModal] = useState(false);
   const [showCreateTableModal, setShowCreateTableModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [tableData, setTableData] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
     type: 'single' | 'bulk' | 'table';
@@ -298,7 +302,52 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     });
   };
 
-
+  const handleDatabaseImport = async (sqlContent: string, dropExisting: boolean) => {
+    setImportLoading(true);
+    try {
+      const result = await importDatabaseDump(projectId, sqlContent, dropExisting);
+      
+      if (result.success && result.result) {
+        const { successCount, errorCount, droppedTablesCount, errors } = result.result;
+        
+        if (errorCount === 0) {
+          let message = `Successfully imported ${successCount} SQL statements!`;
+          if (dropExisting && droppedTablesCount > 0) {
+            message += ` Dropped ${droppedTablesCount} existing tables.`;
+          }
+          ToastUtils.success(message);
+        } else {
+          let message = `Imported ${successCount} statements with ${errorCount} errors.`;
+          if (dropExisting && droppedTablesCount > 0) {
+            message += ` Dropped ${droppedTablesCount} existing tables.`;
+          }
+          ToastUtils.warning(message);
+          
+          // Log errors to console for debugging
+          if (errors && errors.length > 0) {
+            console.error('Import errors:', errors);
+          }
+        }
+        
+        setShowImportModal(false);
+        
+        // Refresh tables list
+        await fetchTables(projectId);
+        
+        // Clear selected table
+        setSelectedTable(null);
+        setCurrentTable(null);
+        setTableData([]);
+      } else {
+        ToastUtils.error('Failed to import database dump. Please check the SQL content and console for errors.');
+      }
+    } catch (error) {
+      console.error('Error importing database dump:', error);
+      ToastUtils.error('Error importing database dump. Please try again.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
 
   if (loading && tables.length === 0) {
     return (
@@ -349,6 +398,15 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                   onClick={() => setShowCreateTableModal(true)}
                 >
                   Create
+                </AppButton>
+                <AppButton
+                  variant="secondary"
+                  size="sm"
+                  icon={<Upload className="w-4 h-4" />}
+                  onClick={() => setShowImportModal(true)}
+                  title="Import PostgreSQL dump"
+                >
+                  Import
                 </AppButton>
               </div>
               
@@ -591,6 +649,14 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         isOpen={showCreateTableModal}
         onClose={() => setShowCreateTableModal(false)}
         onCreate={handleCreateTable}
+      />
+
+      {/* Database Import Modal */}
+      <DatabaseImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImport={handleDatabaseImport}
+        loading={importLoading}
       />
     </div>
   );

@@ -79,6 +79,7 @@ const ApiRoutes = {
     DELETE_DATA: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/delete`,
     DROP_TABLE: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}`,
     EXECUTE_QUERY: (projectId: string) => `/api/database/${projectId}/query`,
+    IMPORT_DUMP: (projectId: string) => `/api/database/${projectId}/import`,
     // Constraint routes
     LIST_CONSTRAINTS: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints`,
     LIST_FOREIGN_KEYS: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/foreign-keys`,

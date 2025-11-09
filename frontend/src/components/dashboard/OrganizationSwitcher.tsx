@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Building2, ChevronDown, Check, Plus } from 'lucide-react';
 import { useOrganizationStore } from '../../stores/StoresIndex';
+import AppText from '../forms/AppText';
 
 const OrganizationSwitcher = () => {
   const navigate = useNavigate();
@@ -68,12 +69,21 @@ const OrganizationSwitcher = () => {
             <Building2 className="w-4 h-4 text-white" />
           </div>
           <div className="hidden md:flex flex-col items-start min-w-0">
-            <span className="text-xs text-dark-500 dark:text-dark-400 font-medium">
-              Organization
-            </span>
-            <span className="text-sm font-semibold text-dark-900 dark:text-white truncate max-w-[150px]">
-              {currentOrganization.name}
-            </span>
+            <AppText
+              children="Organization"
+              size="xs"
+              color="white"
+              weight="thin"
+              align="left"
+            />
+            <AppText
+              children={currentOrganization.name}
+              size="xs"
+              color="white"
+              weight="medium"
+              align="left"
+              truncate={true}
+            />
           </div>
         </div>
         <ChevronDown 

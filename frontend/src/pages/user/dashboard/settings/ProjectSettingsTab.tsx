@@ -1,18 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useProjectStore } from '../../../../stores/StoresIndex';
 import { useNavigate } from 'react-router-dom';
 import { DeleteProjectModal } from '../../../../components/ComponentsIndex';
-import { Settings, Users, Shield } from 'lucide-react';
+import { Settings, Users, Shield, Loader2 } from 'lucide-react';
 import TeamTab from '../../../../components/settings/TeamTab';
 import CredentialsTab from '../../../../components/settings/CredentialsTab';
+import ToastUtils from '../../../../utils/ToastUtils';
 
 type SettingsTabType = 'general' | 'team' | 'credentials';
 
 const ProjectSettingsTab = () => {
-  const { currentProject, deleteProject } = useProjectStore();
+  const { currentProject, updateProject, deleteProject, loading } = useProjectStore();
   const navigate = useNavigate();
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTabType>('general');
+  const [projectName, setProjectName] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Initialize form with current project data
+  useEffect(() => {
+    if (currentProject) {
+      setProjectName(currentProject.name);
+      setProjectDescription(currentProject.description || '');
+    }
+  }, [currentProject]);
 
   const handleDeleteProject = async () => {
     if (!currentProject) return;
@@ -29,9 +41,38 @@ const ProjectSettingsTab = () => {
     }
   };
 
+  const handleSaveChanges = async () => {
+    if (!currentProject) return;
+
+    if (!projectName.trim()) {
+      ToastUtils.error('Project name cannot be empty');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const result = await updateProject(currentProject.id, {
+        name: projectName.trim(),
+        description: projectDescription.trim() || undefined,
+      });
+
+      if (result) {
+        ToastUtils.success('Project updated successfully!');
+      } else {
+        ToastUtils.error('Failed to update project');
+      }
+    } catch (error) {
+      console.error('Error updating project:', error);
+      ToastUtils.error('Error updating project');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleResetDatabase = () => {
     // TODO: Implement database reset functionality
     console.log('Reset database functionality not implemented yet');
+    ToastUtils.warning('Database reset functionality coming soon');
   };
 
   return (
@@ -89,9 +130,11 @@ const ProjectSettingsTab = () => {
               </label>
               <input
                 type="text"
-                defaultValue={currentProject?.name || ''}
-                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 placeholder="Enter project name"
+                disabled={isSaving}
               />
             </div>
             <div>
@@ -100,13 +143,50 @@ const ProjectSettingsTab = () => {
               </label>
               <textarea
                 rows={3}
-                defaultValue={currentProject?.description || ''}
-                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                value={projectDescription}
+                onChange={(e) => setProjectDescription(e.target.value)}
+                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
                 placeholder="Enter project description"
+                disabled={isSaving}
               />
             </div>
-            <button className="btn-primary">
-              Save Changes
+            <div>
+              <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                Database Schema
+              </label>
+              <input
+                type="text"
+                value={currentProject?.schema_name || ''}
+                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-dark-100 dark:bg-dark-800 text-dark-600 dark:text-dark-400"
+                disabled
+                readOnly
+              />
+              <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                This is the PostgreSQL schema name for your project database
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                Storage Bucket
+              </label>
+              <input
+                type="text"
+                value={currentProject?.bucket_name || ''}
+                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-dark-100 dark:bg-dark-800 text-dark-600 dark:text-dark-400"
+                disabled
+                readOnly
+              />
+              <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                This is the MinIO bucket name for your project files
+              </p>
+            </div>
+            <button 
+              onClick={handleSaveChanges}
+              disabled={isSaving || !projectName.trim()}
+              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+            >
+              {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>{isSaving ? 'Saving...' : 'Save Changes'}</span>
             </button>
           </div>
         </div>

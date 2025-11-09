@@ -2,6 +2,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Menu, X, Database, Cloud, Home, Settings, ChevronRight, Mail } from 'lucide-react';
 import AccountDropdown from './AccountDropdown';
 import OrganizationSwitcher from './OrganizationSwitcher';
+import AppText from '../forms/AppText';
 
 interface DashboardNavbarProps {
   projectName: string;
@@ -33,7 +34,7 @@ const DashboardNavbar = ({
   const SectionIcon = currentSection.icon;
 
   return (
-    <div className="h-16 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-800 flex items-center justify-between px-4 md:px-6 flex-shrink-0 shadow-sm">
+    <div className="h-12 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-800 flex items-center justify-between px-4 md:px-6 flex-shrink-0 shadow-sm">
       <div className="flex items-center space-x-3 md:space-x-4 flex-1 min-w-0">
         {/* Sidebar Toggle (Mobile) */}
         <button
@@ -67,16 +68,28 @@ const DashboardNavbar = ({
         <div className="flex items-center space-x-2 min-w-0 flex-1">
           {/* Project Name */}
           <div className="flex items-center space-x-2 min-w-0">
-            <h1 className="text-base md:text-lg font-semibold text-dark-900 dark:text-white truncate">
-              {projectName}
-            </h1>
+            <AppText
+              children={projectName}
+              size="xs"
+              color="white"
+              weight="medium"
+              align="left"
+              truncate={true}
+            />
             
             {/* Separator and Current Section (Desktop) */}
             <div className="hidden sm:flex items-center space-x-2">
               <ChevronRight className="w-4 h-4 text-dark-400 dark:text-dark-500 flex-shrink-0" />
               <div className={`flex items-center space-x-2 ${currentSection.color}`}>
                 <SectionIcon className="w-4 h-4 flex-shrink-0" />
-                <span className="font-medium text-sm">{currentSection.name}</span>
+                <AppText
+                  children={currentSection.name}
+                  size="xs"
+                  color="white"
+                  weight="medium"
+                  align="left"
+                  truncate={true}
+                />
               </div>
             </div>
           </div>

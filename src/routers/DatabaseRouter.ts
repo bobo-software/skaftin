@@ -44,5 +44,8 @@ router.put('/:projectId/cron/:jobId', authenticateAndVerifyProject, DatabaseCont
 router.patch('/:projectId/cron/:jobId/toggle', authenticateAndVerifyProject, DatabaseController.toggleCronJob);
 router.delete('/:projectId/cron/:jobId', authenticateAndVerifyProject, DatabaseController.deleteCronJob);
 
+// Import/Export routes
+router.post('/:projectId/import', authenticateAndVerifyProject, DatabaseController.importDatabaseDump);
+
 export { router };
 

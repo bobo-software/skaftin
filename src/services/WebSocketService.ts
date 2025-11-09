@@ -2,7 +2,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 
 export interface DatabaseEvent {
-  type: 'insert' | 'update' | 'delete' | 'create_table' | 'rename_table' | 'drop_table' | 'add_column' | 'alter_column' | 'drop_column' | 'create_constraint' | 'drop_constraint' | 'create_cron_job' | 'update_cron_job' | 'delete_cron_job' | 'toggle_cron_job';
+  type: 'insert' | 'update' | 'delete' | 'create_table' | 'rename_table' | 'drop_table' | 'add_column' | 'alter_column' | 'drop_column' | 'create_constraint' | 'drop_constraint' | 'create_cron_job' | 'update_cron_job' | 'delete_cron_job' | 'toggle_cron_job' | 'import_dump';
   projectId: string;
   tableName: string;
   data?: any;

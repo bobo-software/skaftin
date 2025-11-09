@@ -67,6 +67,7 @@ interface DatabaseStoreType {
   updateData: (projectId: string, tableName: string, data: any, where: any) => Promise<boolean>;
   deleteData: (projectId: string, tableName: string, where: any) => Promise<boolean>;
   getTableSchema: (projectId: string, tableName: string) => Promise<Column[]>;
+  importDatabaseDump: (projectId: string, sqlContent: string, dropExisting: boolean) => Promise<{success: boolean, result?: any}>;
   saveQuery: (query: Omit<SqlQuery, 'id' | 'createdAt'>) => void;
   deleteQuery: (queryId: string) => void;
   fetchDatabaseStats: (projectId: string) => Promise<void>;
@@ -306,6 +307,33 @@ const useDatabaseStore = create<DatabaseStoreType>()(
         } catch (error) {
           console.error('Failed to get table schema:', error);
           return [];
+        }
+      },
+
+      importDatabaseDump: async (projectId: string, sqlContent: string, dropExisting: boolean) => {
+        set({ loading: true, error: null });
+        try {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.post(
+            ApiRoutes.DATABASE.IMPORT_DUMP(projectId),
+            token,
+            { sqlContent, dropExisting }
+          );
+          
+          if (response.success) {
+            // Refresh tables list after import
+            await get().fetchTables(projectId);
+            return { success: true, result: response.data };
+          } else {
+            set({ error: response.message || 'Failed to import database dump' });
+            return { success: false };
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Failed to import database dump';
+          set({ error: errorMsg });
+          return { success: false };
+        } finally {
+          set({ loading: false });
         }
       },
 
