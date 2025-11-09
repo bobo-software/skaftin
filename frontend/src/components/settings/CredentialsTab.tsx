@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Key, Plus, Trash2, Eye, EyeOff, Copy, Check, Power, PowerOff, X, Shield, RefreshCw, Sparkles } from 'lucide-react';
+import { Key, Plus, Trash2, Eye, EyeOff, Copy, Check, Power, PowerOff, X, Shield, RefreshCw, Sparkles, Code } from 'lucide-react';
 import CredentialsService, {
   ApiCredential,
   CreateCredentialRequest,
   AvailablePermissions,
 } from '../../services/CredentialsService';
 import ToastUtils from '../../utils/ToastUtils';
+import { ConfirmModal, CursorIntegrationModal } from '../ComponentsIndex';
 
 const CredentialsTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -21,6 +22,8 @@ const CredentialsTab = () => {
   const [copiedToken, setCopiedToken] = useState<number | null>(null);
   const [copiedMcpKey, setCopiedMcpKey] = useState(false);
   const [newCredential, setNewCredential] = useState<ApiCredential | null>(null);
+  const [showMcpConfirm, setShowMcpConfirm] = useState(false);
+  const [showCursorIntegration, setShowCursorIntegration] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -113,15 +116,12 @@ const CredentialsTab = () => {
   };
 
   const handleRegenerateMcpKey = async () => {
-    if (!window.confirm('Are you sure you want to regenerate the MCP key? The old key will stop working immediately.')) {
-      return;
-    }
-
     try {
       setMcpKeyLoading(true);
       const newMcpKey = await CredentialsService.regenerateMcpKey(projectId!);
       setMcpKey(newMcpKey);
       setShowMcpKey(true);
+      setShowMcpConfirm(false);
       ToastUtils.success('MCP key regenerated successfully!');
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to regenerate MCP key');
@@ -267,7 +267,7 @@ const CredentialsTab = () => {
                 )}
               </div>
               <button
-                onClick={handleRegenerateMcpKey}
+                onClick={() => setShowMcpConfirm(true)}
                 disabled={mcpKeyLoading}
                 className="flex items-center gap-2 px-3 py-2 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/40 rounded-lg transition-colors disabled:opacity-50"
               >
@@ -276,10 +276,24 @@ const CredentialsTab = () => {
               </button>
             </div>
 
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-              <p className="text-xs text-blue-800 dark:text-blue-200">
-                <strong>How to use:</strong> Configure your MCP client with this key to enable AI-powered tools and integrations for this project.
-              </p>
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-blue-800 dark:text-blue-200 mb-1">
+                    <strong>How to use:</strong> Configure your MCP client with this key
+                  </p>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Connect Cursor AI and other MCP-compatible tools
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowCursorIntegration(true)}
+                  className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                >
+                  <Code className="w-4 h-4" />
+                  Cursor Setup
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -288,7 +302,7 @@ const CredentialsTab = () => {
               No MCP key configured for this project
             </p>
             <button
-              onClick={handleRegenerateMcpKey}
+              onClick={() => setShowMcpConfirm(true)}
               disabled={mcpKeyLoading}
               className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
             >
@@ -669,6 +683,32 @@ const CredentialsTab = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MCP Key Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showMcpConfirm}
+        heading={mcpKey ? 'Regenerate MCP Key' : 'Generate MCP Key'}
+        text={
+          mcpKey
+            ? 'Are you sure you want to regenerate the MCP key? The old key will stop working immediately and any integrations using it will break.'
+            : 'This will create a new MCP integration key for this project. You can use it to connect MCP-compatible tools and AI assistants.'
+        }
+        onCancel={() => setShowMcpConfirm(false)}
+        onConfirm={handleRegenerateMcpKey}
+        confirmText={mcpKey ? 'Regenerate' : 'Generate'}
+        variant={mcpKey ? 'warning' : 'info'}
+        loading={mcpKeyLoading}
+      />
+
+      {/* Cursor Integration Guide Modal */}
+      {mcpKey && (
+        <CursorIntegrationModal
+          isOpen={showCursorIntegration}
+          onClose={() => setShowCursorIntegration(false)}
+          mcpKey={mcpKey.token}
+          projectId={projectId!}
+        />
       )}
     </div>
   );

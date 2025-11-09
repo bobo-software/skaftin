@@ -16,6 +16,8 @@ export { default as CreateProjectModal } from './modals/CreateProjectModal';
 export { default as DeleteProjectModal } from './modals/DeleteProjectModal';
 export { default as ResetProjectModal } from './modals/ResetProjectModal';
 export { default as DeleteConfirmModal } from './modals/DeleteConfirmModal';
+export { default as ConfirmModal } from './modals/ConfirmModal';
+export { default as CursorIntegrationModal } from './modals/CursorIntegrationModal';
 export { default as AddRowModal } from './modals/AddRowModal';
 export { default as CsvImportModal } from './modals/CsvImportModal';
 export { default as DatabaseImportModal } from './modals/DatabaseImportModal';

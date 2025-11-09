@@ -381,7 +381,7 @@ export class DatabaseInitializer {
           id SERIAL PRIMARY KEY,
           project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
           name VARCHAR(255) NOT NULL,
-          credential_type VARCHAR(50) NOT NULL CHECK (credential_type IN ('api_key', 'access_token')),
+          credential_type VARCHAR(50) NOT NULL CHECK (credential_type IN ('api_key', 'access_token', 'mcp_key')),
           token VARCHAR(255) NOT NULL UNIQUE,
           permissions JSONB NOT NULL DEFAULT '[]',
           is_active BOOLEAN DEFAULT true,
