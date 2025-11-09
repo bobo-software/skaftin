@@ -1,4 +1,4 @@
-import axios from 'axios';
+import RequestUtils from '../utils/RequestUtils';
 import ApiRoutes from '../constants/ApiRoutes';
 
 export interface ApiCredential {
@@ -37,10 +37,8 @@ export interface AvailablePermissions {
 }
 
 class CredentialsService {
-  private getAuthHeaders() {
-    return {
-      'Content-Type': 'application/json',
-    };
+  private getToken(): string {
+    return localStorage.getItem('skaftin-token') || 'session-managed-by-supertokens';
   }
 
   /**
@@ -48,19 +46,19 @@ class CredentialsService {
    */
   async getAvailablePermissions(): Promise<AvailablePermissions> {
     try {
-      const response = await axios.get(ApiRoutes.CREDENTIALS.GET_PERMISSIONS, {
-        headers: this.getAuthHeaders(),
-        withCredentials: true,
-      });
+      const response = await RequestUtils.get(
+        ApiRoutes.CREDENTIALS.GET_PERMISSIONS,
+        this.getToken()
+      );
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to get permissions');
+      throw new Error(response.error || 'Failed to get permissions');
     } catch (error: any) {
       console.error('Error getting permissions:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to get permissions');
+      throw new Error(error.message || 'Failed to get permissions');
     }
   }
 
@@ -69,19 +67,19 @@ class CredentialsService {
    */
   async listCredentials(projectId: string): Promise<ApiCredential[]> {
     try {
-      const response = await axios.get(ApiRoutes.CREDENTIALS.LIST(projectId), {
-        headers: this.getAuthHeaders(),
-        withCredentials: true,
-      });
+      const response = await RequestUtils.get(
+        ApiRoutes.CREDENTIALS.LIST(projectId),
+        this.getToken()
+      );
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to list credentials');
+      throw new Error(response.error || 'Failed to list credentials');
     } catch (error: any) {
       console.error('Error listing credentials:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to list credentials');
+      throw new Error(error.message || 'Failed to list credentials');
     }
   }
 
@@ -90,23 +88,20 @@ class CredentialsService {
    */
   async createCredential(projectId: string, data: CreateCredentialRequest): Promise<ApiCredential> {
     try {
-      const response = await axios.post(
+      const response = await RequestUtils.post(
         ApiRoutes.CREDENTIALS.CREATE(projectId),
-        data,
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        data
       );
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to create credential');
+      throw new Error(response.error || 'Failed to create credential');
     } catch (error: any) {
       console.error('Error creating credential:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to create credential');
+      throw new Error(error.message || 'Failed to create credential');
     }
   }
 
@@ -119,23 +114,20 @@ class CredentialsService {
     data: UpdateCredentialRequest
   ): Promise<ApiCredential> {
     try {
-      const response = await axios.put(
+      const response = await RequestUtils.put(
         ApiRoutes.CREDENTIALS.UPDATE(projectId, credentialId),
-        data,
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        data
       );
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to update credential');
+      throw new Error(response.error || 'Failed to update credential');
     } catch (error: any) {
       console.error('Error updating credential:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to update credential');
+      throw new Error(error.message || 'Failed to update credential');
     }
   }
 
@@ -144,20 +136,18 @@ class CredentialsService {
    */
   async deleteCredential(projectId: string, credentialId: string): Promise<void> {
     try {
-      const response = await axios.delete(
+      const response = await RequestUtils.delete(
         ApiRoutes.CREDENTIALS.DELETE(projectId, credentialId),
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        {}
       );
 
-      if (!response.data.success) {
-        throw new Error(response.data.error || 'Failed to delete credential');
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to delete credential');
       }
     } catch (error: any) {
       console.error('Error deleting credential:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to delete credential');
+      throw new Error(error.message || 'Failed to delete credential');
     }
   }
 }

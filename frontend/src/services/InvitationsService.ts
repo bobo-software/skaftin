@@ -1,4 +1,4 @@
-import axios from 'axios';
+import RequestUtils from '../utils/RequestUtils';
 import ApiRoutes from '../constants/ApiRoutes';
 
 export interface ProjectInvitation {
@@ -33,10 +33,8 @@ export interface CreateInvitationRequest {
 }
 
 class InvitationsService {
-  private getAuthHeaders() {
-    return {
-      'Content-Type': 'application/json',
-    };
+  private getToken(): string {
+    return localStorage.getItem('skaftin-token') || 'session-managed-by-supertokens';
   }
 
   /**
@@ -48,19 +46,16 @@ class InvitationsService {
         ? `${ApiRoutes.INVITATIONS.LIST(projectId)}?status=${status}`
         : ApiRoutes.INVITATIONS.LIST(projectId);
 
-      const response = await axios.get(url, {
-        headers: this.getAuthHeaders(),
-        withCredentials: true,
-      });
+      const response = await RequestUtils.get(url, this.getToken());
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to list invitations');
+      throw new Error(response.error || 'Failed to list invitations');
     } catch (error: any) {
       console.error('Error listing invitations:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to list invitations');
+      throw new Error(error.message || 'Failed to list invitations');
     }
   }
 
@@ -69,19 +64,19 @@ class InvitationsService {
    */
   async listMembers(projectId: string): Promise<ProjectMember[]> {
     try {
-      const response = await axios.get(ApiRoutes.INVITATIONS.LIST_MEMBERS(projectId), {
-        headers: this.getAuthHeaders(),
-        withCredentials: true,
-      });
+      const response = await RequestUtils.get(
+        ApiRoutes.INVITATIONS.LIST_MEMBERS(projectId),
+        this.getToken()
+      );
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to list members');
+      throw new Error(response.error || 'Failed to list members');
     } catch (error: any) {
       console.error('Error listing members:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to list members');
+      throw new Error(error.message || 'Failed to list members');
     }
   }
 
@@ -95,28 +90,25 @@ class InvitationsService {
       console.log('  └─ data:', data);
       console.log('  └─ URL:', ApiRoutes.INVITATIONS.CREATE(projectId));
 
-      const response = await axios.post(
+      const response = await RequestUtils.post(
         ApiRoutes.INVITATIONS.CREATE(projectId),
-        data,
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        data
       );
 
-      console.log('  └─ Response:', response.data);
+      console.log('  └─ Response:', response);
 
-      if (response.data.success) {
+      if (response.success) {
         return {
-          invitation: response.data.data,
-          invite_link: response.data.invite_link,
+          invitation: response.data,
+          invite_link: response.invite_link,
         };
       }
 
-      throw new Error(response.data.error || 'Failed to create invitation');
+      throw new Error(response.error || 'Failed to create invitation');
     } catch (error: any) {
       console.error('Error creating invitation:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to create invitation');
+      throw new Error(error.message || 'Failed to create invitation');
     }
   }
 
@@ -125,18 +117,19 @@ class InvitationsService {
    */
   async getInvitationByCode(inviteCode: string): Promise<ProjectInvitation> {
     try {
-      const response = await axios.get(ApiRoutes.INVITATIONS.GET_BY_CODE(inviteCode), {
-        headers: this.getAuthHeaders(),
-      });
+      const response = await RequestUtils.get(
+        ApiRoutes.INVITATIONS.GET_BY_CODE(inviteCode),
+        ''
+      );
 
-      if (response.data.success) {
-        return response.data.data;
+      if (response.success) {
+        return response.data;
       }
 
-      throw new Error(response.data.error || 'Failed to get invitation');
+      throw new Error(response.error || 'Failed to get invitation');
     } catch (error: any) {
       console.error('Error getting invitation:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to get invitation');
+      throw new Error(error.message || 'Failed to get invitation');
     }
   }
 
@@ -145,21 +138,18 @@ class InvitationsService {
    */
   async acceptInvitation(inviteCode: string): Promise<void> {
     try {
-      const response = await axios.post(
+      const response = await RequestUtils.post(
         ApiRoutes.INVITATIONS.ACCEPT(inviteCode),
-        {},
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        {}
       );
 
-      if (!response.data.success) {
-        throw new Error(response.data.error || 'Failed to accept invitation');
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to accept invitation');
       }
     } catch (error: any) {
       console.error('Error accepting invitation:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to accept invitation');
+      throw new Error(error.message || 'Failed to accept invitation');
     }
   }
 
@@ -168,20 +158,18 @@ class InvitationsService {
    */
   async revokeInvitation(projectId: string, invitationId: string): Promise<void> {
     try {
-      const response = await axios.delete(
+      const response = await RequestUtils.delete(
         ApiRoutes.INVITATIONS.REVOKE(projectId, invitationId),
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        {}
       );
 
-      if (!response.data.success) {
-        throw new Error(response.data.error || 'Failed to revoke invitation');
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to revoke invitation');
       }
     } catch (error: any) {
       console.error('Error revoking invitation:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to revoke invitation');
+      throw new Error(error.message || 'Failed to revoke invitation');
     }
   }
 
@@ -190,20 +178,18 @@ class InvitationsService {
    */
   async removeMember(projectId: string, memberId: string): Promise<void> {
     try {
-      const response = await axios.delete(
+      const response = await RequestUtils.delete(
         ApiRoutes.INVITATIONS.REMOVE_MEMBER(projectId, memberId),
-        {
-          headers: this.getAuthHeaders(),
-          withCredentials: true,
-        }
+        this.getToken(),
+        {}
       );
 
-      if (!response.data.success) {
-        throw new Error(response.data.error || 'Failed to remove member');
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to remove member');
       }
     } catch (error: any) {
       console.error('Error removing member:', error);
-      throw new Error(error.response?.data?.error || error.message || 'Failed to remove member');
+      throw new Error(error.message || 'Failed to remove member');
     }
   }
 }
