@@ -34,6 +34,7 @@ interface ProjectStoreType {
   createProject: (name: string, description?: string, organization_id?: number) => Promise<Project | null>;
   updateProject: (projectId: string, updates: Partial<Project>) => Promise<Project | null>;
   deleteProject: (projectId: string) => Promise<boolean>;
+  resetProject: (projectId: string) => Promise<{ success: boolean; result?: any }>;
   setCurrentProject: (project: Project | null) => void;
   getProjectById: (projectId: string) => Promise<Project | null>;
   getProjectStats: (projectId: string) => Promise<void>;
@@ -222,6 +223,37 @@ const useProjectStore = create<ProjectStoreType>()(
             loading: false
           });
           return false;
+        }
+      },
+
+      // Reset a project (clear database and storage)
+      resetProject: async (projectId: string) => {
+        set({ loading: true, error: null });
+        try {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.post(
+            ApiRoutes.PROJECTS.RESET(projectId),
+            token,
+            {}
+          );
+
+          if (response.success) {
+            set({ loading: false });
+            return { success: true, result: response.data };
+          } else {
+            set({
+              error: response.message || 'Failed to reset project',
+              loading: false
+            });
+            return { success: false };
+          }
+        } catch (error) {
+          console.error('Error resetting project:', error);
+          set({
+            error: 'Network error while resetting project',
+            loading: false
+          });
+          return { success: false };
         }
       },
 

@@ -14,6 +14,7 @@ export { default as AppText } from './forms/AppText';
 // ---------- Modals ---------- //
 export { default as CreateProjectModal } from './modals/CreateProjectModal';
 export { default as DeleteProjectModal } from './modals/DeleteProjectModal';
+export { default as ResetProjectModal } from './modals/ResetProjectModal';
 export { default as DeleteConfirmModal } from './modals/DeleteConfirmModal';
 export { default as AddRowModal } from './modals/AddRowModal';
 export { default as CsvImportModal } from './modals/CsvImportModal';

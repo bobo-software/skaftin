@@ -5,7 +5,7 @@ export interface ApiCredential {
   id: number;
   project_id: number;
   name: string;
-  credential_type: 'api_key' | 'access_token';
+  credential_type: 'api_key' | 'access_token' | 'mcp_key';
   token: string;
   permissions: string[];
   is_active: boolean;
@@ -17,7 +17,7 @@ export interface ApiCredential {
 
 export interface CreateCredentialRequest {
   name: string;
-  credential_type: 'api_key' | 'access_token';
+  credential_type: 'api_key' | 'access_token' | 'mcp_key';
   permissions: string[];
   expires_in_days?: number;
 }
@@ -34,6 +34,7 @@ export interface AvailablePermissions {
   communications: string[];
   projects: string[];
   invitations: string[];
+  mcp: string[];
 }
 
 class CredentialsService {
@@ -148,6 +149,50 @@ class CredentialsService {
     } catch (error: any) {
       console.error('Error deleting credential:', error);
       throw new Error(error.message || 'Failed to delete credential');
+    }
+  }
+
+  /**
+   * Get MCP key for a project
+   */
+  async getMcpKey(projectId: string): Promise<ApiCredential | null> {
+    try {
+      const response = await RequestUtils.get(
+        ApiRoutes.CREDENTIALS.GET_MCP_KEY(projectId),
+        this.getToken()
+      );
+
+      if (response.success) {
+        return response.data;
+      }
+
+      // Return null if no MCP key exists (404)
+      return null;
+    } catch (error: any) {
+      console.error('Error getting MCP key:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Regenerate MCP key
+   */
+  async regenerateMcpKey(projectId: string): Promise<ApiCredential> {
+    try {
+      const response = await RequestUtils.post(
+        ApiRoutes.CREDENTIALS.REGENERATE_MCP_KEY(projectId),
+        this.getToken(),
+        {}
+      );
+
+      if (response.success) {
+        return response.data;
+      }
+
+      throw new Error(response.error || 'Failed to regenerate MCP key');
+    } catch (error: any) {
+      console.error('Error regenerating MCP key:', error);
+      throw new Error(error.message || 'Failed to regenerate MCP key');
     }
   }
 }

@@ -28,6 +28,7 @@ const ApiRoutes = {
     GET: (id: string) => `/api/projects/${id}`,
     UPDATE: (id: string) => `/api/projects/update/${id}`,
     DELETE: (id: string) => `/api/projects/delete/${id}`,
+    RESET: (id: string) => `/api/projects/reset/${id}`,
     STATS: (id: string) => `/api/projects/${id}/stats`,
   },
   
@@ -122,6 +123,8 @@ const ApiRoutes = {
     UPDATE: (projectId: string, credentialId: string) => `/api/credentials/${projectId}/credentials/${credentialId}`,
     DELETE: (projectId: string, credentialId: string) => `/api/credentials/${projectId}/credentials/${credentialId}`,
     GET_PERMISSIONS: '/api/credentials/permissions',
+    GET_MCP_KEY: (projectId: string) => `/api/credentials/${projectId}/mcp-key`,
+    REGENERATE_MCP_KEY: (projectId: string) => `/api/credentials/${projectId}/mcp-key/regenerate`,
   },
   
   // MCP routes

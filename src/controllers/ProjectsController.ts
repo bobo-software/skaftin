@@ -5,8 +5,9 @@ import { projects } from '../db/schemas/ProjectsSchema';
 import { organizations, organization_members } from '../db/schemas/OrganizationsSchema';
 import ResponseUtils from '../utils/ResponseUtils';
 import { emitProjectEvent } from '../utils/websocketEmitter';
-import { S3Client, CreateBucketCommand } from '@aws-sdk/client-s3';
+import { S3Client, CreateBucketCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
+import { Pool } from 'pg';
 
 // Initialize S3 client for MinIO
 const s3Client = new S3Client({
@@ -20,6 +21,12 @@ const s3Client = new S3Client({
 });
 
 class ProjectsController {
+  private static pool: Pool;
+
+  static initialize(pool: Pool) {
+    ProjectsController.pool = pool;
+  }
+
   /**
    * Check if user has access to a project through organization membership
    */
@@ -405,6 +412,175 @@ class ProjectsController {
     } catch (error) {
       console.error('Error deleting project:', error);
       ResponseUtils.error(res, 'Failed to delete project', error);
+    }
+  }
+
+  /**
+   * Reset project database and storage
+   * POST /api/projects/reset/:id
+   */
+  static async resetProject(req: SuperTokensAuthenticatedRequest, res: Response) {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    try {
+      const { id } = req.params;
+      const projectId = parseInt(id);
+
+      // Get existing project
+      const existing = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (existing.length === 0) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Check if user has access and permission (admin or dev can reset)
+      const access = await ProjectsController.checkProjectAccess(projectId, req.user.userId);
+      
+      if (!access.hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have access to this project' });
+      }
+
+      if (access.role !== 'admin' && access.role !== 'dev') {
+        return res.status(403).json({ success: false, message: 'You do not have permission to reset this project' });
+      }
+
+      const project = existing[0];
+      const schemaName = project.schema_name;
+      const bucketName = project.bucket_name;
+
+      let droppedTables = 0;
+      let deletedFiles = 0;
+      const errors: string[] = [];
+
+      console.log(`🔄 Starting reset for project ${project.name} (ID: ${projectId})`);
+
+      // 1. Drop all tables in the schema
+      try {
+        const client = await ProjectsController.pool.connect();
+        try {
+          await client.query(`SET search_path TO ${schemaName}, public`);
+          
+          // Get all tables in the schema
+          const tablesResult = await client.query(`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = $1 
+              AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+          `, [schemaName]);
+
+          console.log(`📊 Found ${tablesResult.rows.length} tables to drop in schema ${schemaName}`);
+
+          // Drop each table
+          for (const row of tablesResult.rows) {
+            try {
+              await client.query(`DROP TABLE IF EXISTS "${row.table_name}" CASCADE`);
+              droppedTables++;
+              console.log(`  ✓ Dropped table: ${row.table_name}`);
+            } catch (err: any) {
+              const errorMsg = `Failed to drop table ${row.table_name}: ${err.message}`;
+              errors.push(errorMsg);
+              console.error(`  ✗ ${errorMsg}`);
+            }
+          }
+        } finally {
+          client.release();
+        }
+      } catch (error: any) {
+        const errorMsg = `Database reset error: ${error.message}`;
+        errors.push(errorMsg);
+        console.error(`❌ ${errorMsg}`);
+      }
+
+      // 2. Delete all files from MinIO bucket
+      try {
+        console.log(`🗑️  Clearing bucket ${bucketName}`);
+        
+        // List all objects in the bucket
+        let continuationToken: string | undefined;
+        let hasMore = true;
+
+        while (hasMore) {
+          const listCommand = new ListObjectsV2Command({
+            Bucket: bucketName,
+            ContinuationToken: continuationToken,
+          });
+
+          const listResponse = await s3Client.send(listCommand);
+          
+          if (listResponse.Contents && listResponse.Contents.length > 0) {
+            // Delete objects in batches
+            const deleteCommand = new DeleteObjectsCommand({
+              Bucket: bucketName,
+              Delete: {
+                Objects: listResponse.Contents.map(obj => ({ Key: obj.Key })),
+                Quiet: false,
+              },
+            });
+
+            const deleteResponse = await s3Client.send(deleteCommand);
+            const deletedCount = deleteResponse.Deleted?.length || 0;
+            deletedFiles += deletedCount;
+            
+            console.log(`  ✓ Deleted ${deletedCount} files from bucket`);
+
+            if (deleteResponse.Errors && deleteResponse.Errors.length > 0) {
+              deleteResponse.Errors.forEach(err => {
+                const errorMsg = `Failed to delete ${err.Key}: ${err.Message}`;
+                errors.push(errorMsg);
+                console.error(`  ✗ ${errorMsg}`);
+              });
+            }
+          }
+
+          hasMore = listResponse.IsTruncated || false;
+          continuationToken = listResponse.NextContinuationToken;
+        }
+
+        console.log(`🗑️  Cleared ${deletedFiles} files from bucket ${bucketName}`);
+      } catch (error: any) {
+        const errorMsg = `Storage reset error: ${error.message}`;
+        errors.push(errorMsg);
+        console.error(`❌ ${errorMsg}`);
+      }
+
+      // Emit WebSocket event
+      emitProjectEvent(project.id.toString(), 'project_reset', {
+        droppedTables,
+        deletedFiles,
+        errorCount: errors.length,
+      });
+
+      const responseData = {
+        droppedTables,
+        deletedFiles,
+        errorCount: errors.length,
+        errors: errors.slice(0, 10), // Return first 10 errors
+      };
+
+      if (errors.length === 0) {
+        console.log(`✅ Project reset completed successfully`);
+        ResponseUtils.success(
+          res,
+          `Project reset successfully. Dropped ${droppedTables} tables and deleted ${deletedFiles} files.`,
+          responseData
+        );
+      } else {
+        console.log(`⚠️  Project reset completed with ${errors.length} errors`);
+        ResponseUtils.success(
+          res,
+          `Project reset completed with warnings. Dropped ${droppedTables} tables, deleted ${deletedFiles} files, ${errors.length} errors occurred.`,
+          responseData
+        );
+      }
+    } catch (error) {
+      console.error('❌ Error resetting project:', error);
+      ResponseUtils.error(res, 'Failed to reset project', error);
     }
   }
 }

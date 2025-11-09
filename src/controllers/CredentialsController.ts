@@ -6,7 +6,7 @@ interface ApiCredential {
   id?: number;
   project_id: number;
   name: string;
-  credential_type: 'api_key' | 'access_token';
+  credential_type: 'api_key' | 'access_token' | 'mcp_key';
   token: string;
   permissions: string[];
   is_active: boolean;
@@ -23,6 +23,7 @@ export const AVAILABLE_PERMISSIONS = {
   communications: ['communications:send', 'communications:manage'],
   projects: ['projects:read', 'projects:write'],
   invitations: ['invitations:send', 'invitations:manage'],
+  mcp: ['mcp:full_access'], // MCP keys have full access
 };
 
 class CredentialsController {
@@ -44,6 +45,13 @@ class CredentialsController {
    */
   private generateAccessToken(): string {
     return `sat_${crypto.randomBytes(40).toString('hex')}`;
+  }
+
+  /**
+   * Generate a secure MCP key
+   */
+  private generateMcpKey(): string {
+    return `mcp_${crypto.randomBytes(32).toString('hex')}`;
   }
 
   /**
@@ -122,18 +130,39 @@ class CredentialsController {
       }
 
       // Validate credential type
-      if (!['api_key', 'access_token'].includes(credential_type)) {
+      if (!['api_key', 'access_token', 'mcp_key'].includes(credential_type)) {
         res.status(400).json({
           success: false,
-          error: 'Invalid credential_type. Must be api_key or access_token',
+          error: 'Invalid credential_type. Must be api_key, access_token, or mcp_key',
         });
         return;
       }
 
+      // For MCP keys, check if one already exists
+      if (credential_type === 'mcp_key') {
+        const existingMcpKey = await this.pool.query(
+          'SELECT id FROM api_credentials WHERE project_id = $1 AND credential_type = $2',
+          [projectId, 'mcp_key']
+        );
+        
+        if (existingMcpKey.rows.length > 0) {
+          res.status(409).json({
+            success: false,
+            error: 'An MCP key already exists for this project. Please regenerate it instead.',
+          });
+          return;
+        }
+      }
+
       // Generate token based on type
-      const token = credential_type === 'api_key' 
-        ? this.generateApiKey() 
-        : this.generateAccessToken();
+      let token: string;
+      if (credential_type === 'api_key') {
+        token = this.generateApiKey();
+      } else if (credential_type === 'access_token') {
+        token = this.generateAccessToken();
+      } else {
+        token = this.generateMcpKey();
+      }
 
       // Calculate expiration if specified
       let expiresAt = null;
@@ -286,6 +315,123 @@ class CredentialsController {
       res.status(500).json({
         success: false,
         error: 'Failed to revoke credential',
+        message: error.message,
+      });
+    }
+  };
+
+  /**
+   * Get MCP key for a project
+   * GET /api/credentials/:projectId/mcp-key
+   */
+  getMcpKey = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId } = req.params;
+
+      const query = `
+        SELECT id, project_id, name, credential_type, token, permissions, 
+               is_active, last_used_at, created_by, created_at, expires_at
+        FROM api_credentials
+        WHERE project_id = $1 AND credential_type = 'mcp_key'
+      `;
+
+      const result = await this.pool.query(query, [projectId]);
+
+      if (result.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          error: 'No MCP key found for this project',
+          data: null,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        data: result.rows[0],
+      });
+    } catch (error: any) {
+      console.error('Error getting MCP key:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get MCP key',
+        message: error.message,
+      });
+    }
+  };
+
+  /**
+   * Regenerate MCP key for a project
+   * POST /api/credentials/:projectId/mcp-key/regenerate
+   */
+  regenerateMcpKey = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId } = req.params;
+      const createdBy = (req as any).user?.userId;
+
+      console.log('🔄 [regenerateMcpKey] Regenerating MCP key for project:', projectId);
+
+      // Check if MCP key exists
+      const existingQuery = `
+        SELECT id FROM api_credentials
+        WHERE project_id = $1 AND credential_type = 'mcp_key'
+      `;
+
+      const existing = await this.pool.query(existingQuery, [projectId]);
+
+      const newToken = this.generateMcpKey();
+
+      if (existing.rows.length > 0) {
+        // Update existing key
+        const updateQuery = `
+          UPDATE api_credentials
+          SET token = $1, created_at = CURRENT_TIMESTAMP, last_used_at = NULL
+          WHERE project_id = $2 AND credential_type = 'mcp_key'
+          RETURNING id, project_id, name, credential_type, token, permissions, 
+                    is_active, last_used_at, created_by, created_at, expires_at
+        `;
+
+        const result = await this.pool.query(updateQuery, [newToken, projectId]);
+
+        console.log('  └─ ✅ MCP key regenerated');
+
+        res.json({
+          success: true,
+          data: result.rows[0],
+          message: 'MCP key regenerated successfully',
+        });
+      } else {
+        // Create new MCP key
+        const insertQuery = `
+          INSERT INTO api_credentials 
+          (project_id, name, credential_type, token, permissions, created_by)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING id, project_id, name, credential_type, token, permissions, 
+                    is_active, last_used_at, created_by, created_at, expires_at
+        `;
+
+        const result = await this.pool.query(insertQuery, [
+          projectId,
+          'MCP Integration Key',
+          'mcp_key',
+          newToken,
+          JSON.stringify(['mcp:full_access']),
+          createdBy,
+        ]);
+
+        console.log('  └─ ✅ MCP key created');
+
+        res.status(201).json({
+          success: true,
+          data: result.rows[0],
+          message: 'MCP key created successfully',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error regenerating MCP key:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to regenerate MCP key',
         message: error.message,
       });
     }

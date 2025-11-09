@@ -123,6 +123,7 @@ import { createCredentialsRouter } from './routers/CredentialsRouter';
 import OrganizationsRouter from './routers/OrganizationsRouter';
 import MCPController from './controllers/MCPController';
 import DatabaseController from './controllers/DatabaseController';
+import ProjectsController from './controllers/ProjectsController';
 import StorageController from './controllers/StorageController';
 import GraphQLController from './controllers/GraphQLController';
 import CommunicationsController from './controllers/CommunicationsController';
@@ -166,6 +167,7 @@ app.get('/', (req: Request, res: Response) => {
 // Initialize controllers
 MCPController.initialize(pool, s3Client);
 DatabaseController.initialize(pool);
+ProjectsController.initialize(pool);
 StorageController.initialize({ pool, s3Client });
 
 // Initialize API key middleware

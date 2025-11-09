@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useProjectStore } from '../../../../stores/StoresIndex';
 import { useNavigate } from 'react-router-dom';
-import { DeleteProjectModal } from '../../../../components/ComponentsIndex';
+import { DeleteProjectModal, ResetProjectModal } from '../../../../components/ComponentsIndex';
 import { Settings, Users, Shield, Loader2 } from 'lucide-react';
 import TeamTab from '../../../../components/settings/TeamTab';
 import CredentialsTab from '../../../../components/settings/CredentialsTab';
@@ -10,13 +10,15 @@ import ToastUtils from '../../../../utils/ToastUtils';
 type SettingsTabType = 'general' | 'team' | 'credentials';
 
 const ProjectSettingsTab = () => {
-  const { currentProject, updateProject, deleteProject, loading } = useProjectStore();
+  const { currentProject, updateProject, deleteProject, resetProject, loading } = useProjectStore();
   const navigate = useNavigate();
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTabType>('general');
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   // Initialize form with current project data
   useEffect(() => {
@@ -69,10 +71,32 @@ const ProjectSettingsTab = () => {
     }
   };
 
-  const handleResetDatabase = () => {
-    // TODO: Implement database reset functionality
-    console.log('Reset database functionality not implemented yet');
-    ToastUtils.warning('Database reset functionality coming soon');
+  const handleResetProject = async () => {
+    if (!currentProject) return;
+    
+    setIsResetting(true);
+    try {
+      const result = await resetProject(currentProject.id);
+      
+      if (result.success && result.result) {
+        const { droppedTables, deletedFiles, errorCount } = result.result;
+        
+        if (errorCount === 0) {
+          ToastUtils.success(`Project reset successfully! Dropped ${droppedTables} tables and deleted ${deletedFiles} files.`);
+        } else {
+          ToastUtils.warning(`Project reset completed with ${errorCount} errors. Dropped ${droppedTables} tables and deleted ${deletedFiles} files.`);
+        }
+        
+        setIsResetModalOpen(false);
+      } else {
+        ToastUtils.error('Failed to reset project. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error resetting project:', error);
+      ToastUtils.error('Error resetting project. Please try again.');
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   return (
@@ -194,18 +218,32 @@ const ProjectSettingsTab = () => {
         <div className="card">
           <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">Danger Zone</h3>
           <div className="space-y-4">
-            <button 
-              onClick={() => setIsDeleteModalOpen(true)}
-              className="w-full btn-secondary text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
-            >
-              Delete Project
-            </button>
-            <button 
-              onClick={handleResetDatabase}
-              className="w-full btn-secondary text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-900/20"
-            >
-              Reset Database
-            </button>
+            <div className="border-2 border-orange-200 dark:border-orange-800 rounded-lg p-4">
+              <h4 className="font-medium text-dark-900 dark:text-white mb-2">Reset Project</h4>
+              <p className="text-sm text-dark-600 dark:text-dark-300 mb-3">
+                Clear all database tables and storage files. The project structure will remain.
+              </p>
+              <button 
+                onClick={() => setIsResetModalOpen(true)}
+                disabled={isResetting}
+                className="w-full btn-secondary text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isResetting ? 'Resetting...' : 'Reset Project'}
+              </button>
+            </div>
+            
+            <div className="border-2 border-red-200 dark:border-red-800 rounded-lg p-4">
+              <h4 className="font-medium text-dark-900 dark:text-white mb-2">Delete Project</h4>
+              <p className="text-sm text-dark-600 dark:text-dark-300 mb-3">
+                Permanently delete this project and all its data. This action cannot be undone.
+              </p>
+              <button 
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="w-full btn-secondary text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
+              >
+                Delete Project
+              </button>
+            </div>
           </div>
         </div>
         </div>
@@ -225,6 +263,15 @@ const ProjectSettingsTab = () => {
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={handleDeleteProject}
         projectName={currentProject?.name || ''}
+      />
+
+      {/* Reset Project Modal */}
+      <ResetProjectModal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        onConfirm={handleResetProject}
+        projectName={currentProject?.name || ''}
+        loading={isResetting}
       />
     </div>
   );

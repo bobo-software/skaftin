@@ -15,6 +15,7 @@ router.post('/create', ProjectsController.createProject);
 router.get('/:id', verifyProjectAccess, ProjectsController.getProjectById);
 router.put('/update/:id', verifyProjectAccess, ProjectsController.updateProject);
 router.delete('/delete/:id', verifyProjectAccess, ProjectsController.deleteProject);
+router.post('/reset/:id', verifyProjectAccess, ProjectsController.resetProject);
 router.get('/:id/stats', verifyProjectAccess, ProjectsController.getProjectStats);
 
 export { router };
