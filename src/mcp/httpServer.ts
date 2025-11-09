@@ -155,6 +155,12 @@ export function createMCPCallToolHandler(config: MCPHTTPConfig) {
         'delete_data',
         'select_data',
         'drop_table',
+        'list_cron_jobs',
+        'create_cron_job',
+        'update_cron_job',
+        'delete_cron_job',
+        'toggle_cron_job',
+        'get_cron_job_history',
       ];
 
       const storageToolNames = [
