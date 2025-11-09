@@ -18,20 +18,68 @@ interface MCPHTTPConfig {
 }
 
 /**
+ * Get header value with case-insensitive lookup
+ */
+function getHeader(req: Request, headerName: string): string | undefined {
+  if (!req.headers) {
+    console.log(`⚠️  No headers object on request`);
+    return undefined;
+  }
+
+  const lowerName = headerName.toLowerCase();
+  
+  // Try exact match first
+  if (req.headers[headerName]) {
+    return req.headers[headerName] as string;
+  }
+  
+  // Try lowercase
+  if (req.headers[lowerName]) {
+    return req.headers[lowerName] as string;
+  }
+  
+  // Try uppercase
+  const upperName = headerName.toUpperCase();
+  if (req.headers[upperName]) {
+    return req.headers[upperName] as string;
+  }
+  
+  // Try with first letter capitalized
+  const capitalName = headerName.charAt(0).toUpperCase() + headerName.slice(1);
+  if (req.headers[capitalName]) {
+    return req.headers[capitalName] as string;
+  }
+  
+  return undefined;
+}
+
+/**
  * Extract user ID from JWT token in request
+ * Handles case-insensitive header lookup
  */
 function getUserIdFromRequest(req: Request): string | null {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
+  // Use the helper to get authorization header
+  const authHeader = getHeader(req, 'authorization');
+  
+  if (!authHeader) {
+    console.log('⚠️  No authorization header found in request');
+    console.log('  └─ Available headers:', Object.keys(req.headers || {}).join(', '));
     return null;
   }
+
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
+    console.log('⚠️  Invalid authorization header format');
+    return null;
+  }
+
+  const token = parts[1];
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
     return decoded.userId?.toString() || null;
   } catch (error) {
+    console.log('⚠️  Token verification failed:', error);
     return null;
   }
 }

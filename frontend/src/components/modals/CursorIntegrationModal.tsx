@@ -25,12 +25,10 @@ const CursorIntegrationModal: React.FC<CursorIntegrationModalProps> = ({
   const mcpConfig = {
     mcpServers: {
       skaftin: {
-        command: "node",
-        args: ["/path/to/skaftin-mcp-server/index.js"],
-        env: {
-          SKAFTIN_API_URL: backendUrl,
-          SKAFTIN_PROJECT_ID: projectId,
-          SKAFTIN_MCP_KEY: mcpKey,
+        url: `${backendUrl}/api/mcp/protocol`,
+        headers: {
+          "Authorization": `Bearer ${mcpKey}`,
+          "X-Project-ID": projectId
         }
       }
     }
@@ -192,46 +190,40 @@ const CursorIntegrationModal: React.FC<CursorIntegrationModalProps> = ({
               </div>
               <div className="ml-10 space-y-3">
                 <p className="text-sm text-dark-600 dark:text-dark-300 mb-2">
-                  Replace the placeholder values with your actual paths:
+                  The configuration is ready to use! Here's what it contains:
                 </p>
                 <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                  <div className="space-y-2 text-sm">
+                  <div className="space-y-3 text-sm">
                     <div>
                       <span className="font-medium text-blue-900 dark:text-blue-100">
-                        command & args:
+                        Protocol:
                       </span>
                       <p className="text-blue-800 dark:text-blue-200 mt-1">
-                        Point to your Skaftin MCP server installation (or use npx if available)
+                        JSON-RPC 2.0 over HTTP - Standard MCP protocol
                       </p>
                     </div>
                     <div>
                       <span className="font-medium text-blue-900 dark:text-blue-100">
-                        SKAFTIN_API_URL:
+                        MCP Endpoint:
                       </span>
                       <code className="block mt-1 text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded font-mono">
-                        {backendUrl}
-                      </code>
-                      <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                        Configured from your environment (VITE_API_URL)
-                      </p>
-                    </div>
-                    <div>
-                      <span className="font-medium text-blue-900 dark:text-blue-100">
-                        SKAFTIN_PROJECT_ID:
-                      </span>
-                      <code className="block mt-1 text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded font-mono">
-                        {projectId}
+                        {backendUrl}/api/mcp/protocol
                       </code>
                     </div>
                     <div>
                       <span className="font-medium text-blue-900 dark:text-blue-100">
-                        SKAFTIN_MCP_KEY:
+                        Authentication:
                       </span>
                       <p className="text-blue-800 dark:text-blue-200 mt-1">
-                        Already set to your key (copied above)
+                        Bearer token with your MCP key + Project ID header
                       </p>
                     </div>
                   </div>
+                </div>
+                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
+                  <p className="text-xs text-green-800 dark:text-green-200">
+                    ✨ <strong>No installation required!</strong> This configuration connects directly to your running Skaftin backend.
+                  </p>
                 </div>
               </div>
             </div>
