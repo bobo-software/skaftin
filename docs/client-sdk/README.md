@@ -12,10 +12,11 @@ Welcome to the Skaftin Client SDK guides! These documents will help you integrat
    - Benefits and features
    - Authentication models
 
-2. **[02-AUTHENTICATION.md](./02-AUTHENTICATION.md)**
-   - Create API credentials
+2. **[02-AUTHENTICATION.md](./02-AUTHENTICATION.md)** ⭐ UPDATED
+   - Create API credentials (API keys/tokens)
    - Configure environment variables
-   - Set up auth headers
+   - Set up auth headers (x-api-key, x-access-token)
+   - Project auto-detection from credentials
    - Security best practices
 
 3. **[03-TYPE-GENERATION.md](./03-TYPE-GENERATION.md)**
@@ -42,6 +43,14 @@ Welcome to the Skaftin Client SDK guides! These documents will help you integrat
    - Error handling
    - Testing integration
 
+7. **[07-APP-USER-AUTHENTICATION.md](./07-APP-USER-AUTHENTICATION.md)** ⭐ UPDATED
+   - Application user registration & login (JWT)
+   - Simplified auth endpoints (no project ID in URL)
+   - Role-based access control
+   - Custom user fields
+   - Session management with JWT tokens
+   - Protected routes & token verification
+
 ## 🎯 What You'll Build
 
 By following these guides, you'll have a complete `src/backend/` folder in your React app with:
@@ -51,19 +60,41 @@ src/backend/
 ├── config/          → API configuration
 ├── schemas/         → TypeScript types (from database)
 ├── services/        → API service methods
+│   ├── DataService.ts      → Your custom tables
+│   └── AppAuthService.ts   → User management (NEW)
 ├── types/           → API response types
 └── utils/           → Auth & request helpers
 ```
 
-## ⚡ Quick Example
+## ⚡ Quick Examples
 
 After setup, using Skaftin in your app is simple:
 
+**Data Access:**
 ```typescript
 import AssociationService from './backend/services/AssociationService';
 
 // Fully typed!
 const associations = await AssociationService.findAll();
+```
+
+**User Management:** ⭐ NEW
+```typescript
+import AppAuthService from './backend/services/AppAuthService';
+
+// Create a user
+await AppAuthService.createUser({
+  name: "John Doe",
+  email: "john@example.com",
+  password: "secure123",
+  metadata: { department: "Engineering" }
+});
+
+// List users with filters
+const { users } = await AppAuthService.listUsers({
+  search: "john",
+  is_active: true
+});
 ```
 
 ## 🔑 Prerequisites
@@ -79,6 +110,31 @@ const associations = await AssociationService.findAll();
 - **Per Table:** 5-10 minutes
 - **Testing:** 15 minutes
 - **Total:** ~1-2 hours for complete integration
+
+## ⚡ What's New (Updated Nov 2025)
+
+### Simplified Authentication
+
+✅ **No Project ID Required in Auth Endpoints**
+- Old: `POST /api/app-auth/:projectId/auth/login`
+- New: `POST /api/app-auth/auth/login` (project extracted from API key)
+
+✅ **Cleaner Headers**
+- Use `x-api-key` or `x-access-token` (lowercase)
+- Project automatically identified from credentials
+
+✅ **Two-Layer Authentication Clarified**
+- **Platform Auth** (02-AUTHENTICATION.md) - Your app authenticates with Skaftin
+- **App User Auth** (07-APP-USER-AUTHENTICATION.md) - Your users authenticate with your app
+
+### Updated Service Examples
+
+✅ **AppUserAuthService** - Handle user registration/login/logout  
+✅ **UserManagementService** - Admin management of users  
+✅ **Protected Routes** - Token verification patterns  
+✅ **JWT Storage** - Best practices for token storage
+
+---
 
 ## 💡 Current Status
 

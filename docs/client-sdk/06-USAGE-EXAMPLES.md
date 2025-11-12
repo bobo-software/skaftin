@@ -1,5 +1,18 @@
 # Client SDK - Usage Examples
 
+## ⭐ NEW: App User Authentication Examples
+
+See detailed examples in `07-APP-USER-AUTHENTICATION.md` including:
+- User registration and login
+- Role-based access control
+- Custom user fields
+- Email verification
+- Session management
+
+---
+
+# Data Management Examples
+
 ## Complete React Component Examples
 
 ### Example 1: List View with CRUD

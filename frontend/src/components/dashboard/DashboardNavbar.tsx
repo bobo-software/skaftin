@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Menu, X, Database, Cloud, Home, Settings, ChevronRight, Mail } from 'lucide-react';
+import { ArrowLeft, Menu, X, Database, Cloud, Home, Settings, ChevronRight, Mail, Shield } from 'lucide-react';
 import AccountDropdown from './AccountDropdown';
 import OrganizationSwitcher from './OrganizationSwitcher';
 import AppText from '../forms/AppText';
@@ -25,6 +25,7 @@ const DashboardNavbar = ({
     const path = location.pathname;
     if (path.includes('/database')) return { name: 'Database', icon: Database, color: 'text-blue-600 dark:text-blue-400' };
     if (path.includes('/storage')) return { name: 'Storage', icon: Cloud, color: 'text-purple-600 dark:text-purple-400' };
+    if (path.includes('/auth')) return { name: 'Auth', icon: Shield, color: 'text-indigo-600 dark:text-indigo-400' };
     if (path.includes('/communications')) return { name: 'Communications', icon: Mail, color: 'text-green-600 dark:text-green-400' };
     if (path.includes('/settings')) return { name: 'Settings', icon: Settings, color: 'text-gray-600 dark:text-gray-400' };
     return { name: 'Overview', icon: Home, color: 'text-primary-600 dark:text-primary-400' };
@@ -34,7 +35,7 @@ const DashboardNavbar = ({
   const SectionIcon = currentSection.icon;
 
   return (
-    <div className="h-12 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-800 flex items-center justify-between px-4 md:px-6 flex-shrink-0 shadow-sm">
+    <div className="sticky top-0 z-40 h-12 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-800 flex items-center justify-between px-4 md:px-6 flex-shrink-0 shadow-sm">
       <div className="flex items-center space-x-3 md:space-x-4 flex-1 min-w-0">
         {/* Sidebar Toggle (Mobile) */}
         <button

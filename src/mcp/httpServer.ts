@@ -5,9 +5,11 @@ import { MCPServer } from './MCPServer';
 import { handleDatabaseTool } from './tools/databaseTools';
 import { handleStorageTool } from './tools/storageTools';
 import { handleProjectTool } from './tools/projectTools';
+import { handleCredentialsTool } from './tools/credentialsTools';
 import { createDatabaseTools } from './tools/databaseTools';
 import { createStorageTools } from './tools/storageTools';
 import { createProjectTools } from './tools/projectTools';
+import { createCredentialsTools } from './tools/credentialsTools';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
@@ -93,12 +95,14 @@ export function createMCPListToolsHandler(config: MCPHTTPConfig) {
       const databaseTools = createDatabaseTools(config);
       const storageTools = createStorageTools(config);
       const projectTools = createProjectTools(config);
+      const credentialsTools = createCredentialsTools(config);
 
       res.json({
         tools: [
           ...databaseTools,
           ...storageTools,
           ...projectTools,
+          ...credentialsTools,
         ],
       });
     } catch (error: any) {
@@ -179,6 +183,17 @@ export function createMCPCallToolHandler(config: MCPHTTPConfig) {
         'list_projects',
       ];
 
+      const credentialsToolNames = [
+        'list_api_credentials',
+        'get_api_credential',
+        'create_api_credential',
+        'update_api_credential',
+        'delete_api_credential',
+        'get_mcp_key',
+        'regenerate_mcp_key',
+        'get_credential_permissions',
+      ];
+
       let result;
       if (databaseToolNames.includes(name)) {
         result = await handleDatabaseTool(name, args || {}, config);
@@ -186,6 +201,8 @@ export function createMCPCallToolHandler(config: MCPHTTPConfig) {
         result = await handleStorageTool(name, args || {}, config);
       } else if (projectToolNames.includes(name)) {
         result = await handleProjectTool(name, args || {}, config, userId || undefined);
+      } else if (credentialsToolNames.includes(name)) {
+        result = await handleCredentialsTool(name, args || {}, config);
       } else {
         return res.status(400).json({
           status: 'error',

@@ -38,7 +38,7 @@ class RolesService {
    */
   async listRoles(projectId: string, includeUserCount: boolean = false): Promise<Role[]> {
     try {
-      const url = `/api/auth/${projectId}/roles${includeUserCount ? '?include_user_count=true' : ''}`;
+      const url = `/api/app-auth/${projectId}/roles${includeUserCount ? '?include_user_count=true' : ''}`;
       const response = await RequestUtils.get(url, this.getToken());
 
       if (response.success) {
@@ -58,7 +58,7 @@ class RolesService {
   async getRole(projectId: string, roleId: string): Promise<Role> {
     try {
       const response = await RequestUtils.get(
-        `/api/auth/${projectId}/roles/${roleId}`,
+        `/api/app-auth/${projectId}/roles/${roleId}`,
         this.getToken()
       );
 
@@ -79,9 +79,9 @@ class RolesService {
   async createRole(projectId: string, roleData: CreateRoleRequest): Promise<Role> {
     try {
       const response = await RequestUtils.post(
-        `/api/auth/${projectId}/roles`,
-        roleData,
-        this.getToken()
+        `/api/app-auth/${projectId}/roles`,
+        this.getToken(),
+        roleData
       );
 
       if (response.success) {
@@ -101,9 +101,9 @@ class RolesService {
   async updateRole(projectId: string, roleId: string, updates: UpdateRoleRequest): Promise<Role> {
     try {
       const response = await RequestUtils.put(
-        `/api/auth/${projectId}/roles/${roleId}`,
-        updates,
-        this.getToken()
+        `/api/app-auth/${projectId}/roles/${roleId}`,
+        this.getToken(),
+        updates
       );
 
       if (response.success) {
@@ -123,8 +123,9 @@ class RolesService {
   async deleteRole(projectId: string, roleId: string): Promise<void> {
     try {
       const response = await RequestUtils.delete(
-        `/api/auth/${projectId}/roles/${roleId}`,
-        this.getToken()
+        `/api/app-auth/${projectId}/roles/${roleId}`,
+        this.getToken(),
+        {}
       );
 
       if (!response.success) {
@@ -142,7 +143,7 @@ class RolesService {
   async getRolePermissions(projectId: string, roleId: string): Promise<any[]> {
     try {
       const response = await RequestUtils.get(
-        `/api/auth/${projectId}/roles/${roleId}/permissions`,
+        `/api/app-auth/${projectId}/roles/${roleId}/permissions`,
         this.getToken()
       );
 
@@ -163,9 +164,9 @@ class RolesService {
   async updateRolePermissions(projectId: string, roleId: string, permissions: any[]): Promise<Role> {
     try {
       const response = await RequestUtils.put(
-        `/api/auth/${projectId}/roles/${roleId}/permissions`,
-        { permissions },
-        this.getToken()
+        `/api/app-auth/${projectId}/roles/${roleId}/permissions`,
+        this.getToken(),
+        { permissions }
       );
 
       if (response.success) {
@@ -185,9 +186,9 @@ class RolesService {
   async updateSessionDuration(projectId: string, roleId: string, sessionDurationMinutes: number): Promise<Role> {
     try {
       const response = await RequestUtils.put(
-        `/api/auth/${projectId}/roles/${roleId}/session-duration`,
-        { session_duration_minutes: sessionDurationMinutes },
-        this.getToken()
+        `/api/app-auth/${projectId}/roles/${roleId}/session-duration`,
+        this.getToken(),
+        { session_duration_minutes: sessionDurationMinutes }
       );
 
       if (response.success) {

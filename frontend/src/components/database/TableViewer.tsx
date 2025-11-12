@@ -113,7 +113,13 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     await fetchTableData(tableName);
   };
 
-  const filteredTables = tables.filter(table =>
+  // Auth system tables that should be hidden from the table viewer
+  const authSystemTables = ['app_users', 'app_roles', 'app_user_roles', 'app_user_custom_fields'];
+
+  // First filter out auth tables, then apply search filter
+  const userTables = tables.filter(table => !authSystemTables.includes(table.table_name));
+  
+  const filteredTables = userTables.filter(table =>
     table.table_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -386,7 +392,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-semibold text-dark-900 dark:text-white">Tables</h4>
                 <span className="text-xs text-dark-500 dark:text-dark-400 bg-dark-100 dark:bg-dark-700 px-2 py-1 rounded">
-                  {tables.length}
+                  {userTables.length}
                 </span>
               </div>
               

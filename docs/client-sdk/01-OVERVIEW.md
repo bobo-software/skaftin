@@ -26,10 +26,12 @@ External React App
 Client app includes API key or access token in headers:
 ```typescript
 headers: {
-  'X-API-Key': 'sk_your_api_key_here',
-  'X-Project-ID': '1'
+  'x-api-key': 'sk_your_api_key_here'
+  // Note: Project ID auto-detected from credential, no need to include separately!
 }
 ```
+
+**Key Improvement:** Project context is now automatically identified from your API key/token, eliminating the need to manually include project IDs in headers or URLs for most endpoints.
 
 ### Step 2: Backend Validation
 Skaftin backend:
@@ -65,6 +67,13 @@ Per-table services with methods:
 - `delete(id)` - Delete record
 - `query(options)` - Custom queries
 
+**Plus App User Management:** ⭐ NEW
+- `listUsers()` - List app users with filters
+- `createUser()` - Register new users
+- `assignRole()` - Role assignment
+- `listRoles()` - Get available roles
+- `createCustomField()` - Add custom user fields
+
 ### 3. Configuration
 - API URL (development/production)
 - Project ID
@@ -91,7 +100,10 @@ Per-table services with methods:
 ✅ **Multi-tenant** - Each credential scoped to one project  
 ✅ **GraphQL Support** - Alternative to REST  
 ✅ **Auto-generated** - No manual typing needed  
-✅ **Easy Updates** - Regenerate when schema changes
+✅ **Easy Updates** - Regenerate when schema changes  
+✅ **User Management** - Complete auth system built-in ⭐ NEW  
+✅ **Role-Based Access** - Flexible permission system ⭐ NEW  
+✅ **Custom Fields** - Extend user profiles ⭐ NEW
 
 ## Authentication Models
 
@@ -128,9 +140,10 @@ This ensures:
 ## Next Steps
 
 Read the following guides in order:
-1. `02-AUTHENTICATION.md` - Set up credentials
+1. `02-AUTHENTICATION.md` - Set up API credentials
 2. `03-TYPE-GENERATION.md` - Generate TypeScript types
 3. `04-SERVICE-GENERATION.md` - Create API services
 4. `05-GRAPHQL-INTEGRATION.md` - Use GraphQL
 5. `06-USAGE-EXAMPLES.md` - Real-world examples
+6. `07-APP-USER-AUTHENTICATION.md` - App user management ⭐ NEW
 

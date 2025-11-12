@@ -138,6 +138,7 @@ app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 // ============================================================================
 
 import { router as AuthCompatibilityRouter } from './routers/AuthCompatibilityRouter';
+import { createAdminRouter } from './routers/AdminRouter';
 import { router as ProjectsRouter } from './routers/ProjectsRouter';
 import { router as FilesRouter } from './routers/FilesRouter';
 import { router as StorageRouter } from './routers/StorageRouter';
@@ -177,7 +178,8 @@ app.get('/', (req: Request, res: Response) => {
     version: '2.0.0',
     endpoints: {
       supertokens_auth: '/auth',
-      auth_management: '/api/auth/:projectId',
+      platform_auth: '/api/auth',
+      app_user_management: '/api/app-auth/:projectId',
       organizations: '/api/organizations',
       projects: '/api/projects',
       files: '/api/files',
@@ -220,12 +222,17 @@ const CredentialsRouter = createCredentialsRouter(pool);
 // Initialize Auth Management Router (for app user management)
 const AuthManagementRouter = createAuthRouter(pool);
 
+// Initialize Admin Router (for managing SuperTokens users)
+const AdminRouter = createAdminRouter(pool);
+
 // Register routers
 // Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
-// Auth compatibility layer for old frontend routes
-app.use('/api/auth-compatibility', AuthCompatibilityRouter);
-// Auth management routes for app users
-app.use('/api/auth', AuthManagementRouter);
+// Auth compatibility layer for Skaftin platform login (keep this at /api/auth for backward compatibility)
+app.use('/api/auth', AuthCompatibilityRouter);
+// Admin routes for managing SuperTokens users (development/debugging)
+app.use('/api/admin', AdminRouter);
+// Auth management routes for application users (project-specific)
+app.use('/api/app-auth', AuthManagementRouter);
 app.use('/api/organizations', OrganizationsRouter);
 app.use('/api/projects', ProjectsRouter);
 app.use('/api/files', FilesRouter);

@@ -75,7 +75,7 @@ class AuthUsersService {
       if (options?.limit) params.append('limit', String(options.limit));
 
       const queryString = params.toString();
-      const url = `/api/auth/${projectId}/users${queryString ? `?${queryString}` : ''}`;
+      const url = `/api/app-auth/${projectId}/users${queryString ? `?${queryString}` : ''}`;
 
       const response = await RequestUtils.get(url, this.getToken());
 
@@ -96,7 +96,7 @@ class AuthUsersService {
   async getUser(projectId: string, userId: string): Promise<AppUser> {
     try {
       const response = await RequestUtils.get(
-        `/api/auth/${projectId}/users/${userId}`,
+        `/api/app-auth/${projectId}/users/${userId}`,
         this.getToken()
       );
 
@@ -117,9 +117,9 @@ class AuthUsersService {
   async createUser(projectId: string, userData: CreateUserRequest): Promise<AppUser> {
     try {
       const response = await RequestUtils.post(
-        `/api/auth/${projectId}/users`,
-        userData,
-        this.getToken()
+        `/api/app-auth/${projectId}/users`,
+        this.getToken(),
+        userData
       );
 
       if (response.success) {
@@ -139,9 +139,9 @@ class AuthUsersService {
   async updateUser(projectId: string, userId: string, updates: UpdateUserRequest): Promise<AppUser> {
     try {
       const response = await RequestUtils.put(
-        `/api/auth/${projectId}/users/${userId}`,
-        updates,
-        this.getToken()
+        `/api/app-auth/${projectId}/users/${userId}`,
+        this.getToken(),
+        updates
       );
 
       if (response.success) {
@@ -160,8 +160,8 @@ class AuthUsersService {
    */
   async deleteUser(projectId: string, userId: string, permanent: boolean = false): Promise<void> {
     try {
-      const url = `/api/auth/${projectId}/users/${userId}${permanent ? '?permanent=true' : ''}`;
-      const response = await RequestUtils.delete(url, this.getToken());
+      const url = `/api/app-auth/${projectId}/users/${userId}${permanent ? '?permanent=true' : ''}`;
+      const response = await RequestUtils.delete(url, this.getToken(), {});
 
       if (!response.success) {
         throw new Error(response.error || 'Failed to delete user');
@@ -178,9 +178,9 @@ class AuthUsersService {
   async assignRole(projectId: string, userId: string, roleId: number): Promise<void> {
     try {
       const response = await RequestUtils.post(
-        `/api/auth/${projectId}/users/${userId}/roles`,
-        { role_id: roleId },
-        this.getToken()
+        `/api/app-auth/${projectId}/users/${userId}/roles`,
+        this.getToken(),
+        { role_id: roleId }
       );
 
       if (!response.success) {
@@ -198,8 +198,9 @@ class AuthUsersService {
   async removeRole(projectId: string, userId: string, roleId: string): Promise<void> {
     try {
       const response = await RequestUtils.delete(
-        `/api/auth/${projectId}/users/${userId}/roles/${roleId}`,
-        this.getToken()
+        `/api/app-auth/${projectId}/users/${userId}/roles/${roleId}`,
+        this.getToken(),
+        {}
       );
 
       if (!response.success) {
@@ -217,7 +218,7 @@ class AuthUsersService {
   async getUsersByRole(projectId: string, roleId: string): Promise<AppUser[]> {
     try {
       const response = await RequestUtils.get(
-        `/api/auth/${projectId}/users/by-role/${roleId}`,
+        `/api/app-auth/${projectId}/users/by-role/${roleId}`,
         this.getToken()
       );
 

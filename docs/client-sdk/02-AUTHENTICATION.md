@@ -1,4 +1,24 @@
-# Client SDK - Authentication Setup
+# Client SDK - Platform Authentication Setup
+
+> **Note:** This guide covers authenticating **your client application** with Skaftin's platform using API credentials. For authenticating **your app's end users**, see `07-APP-USER-AUTHENTICATION.md`.
+
+## Authentication Overview
+
+Skaftin uses **two separate authentication layers**:
+
+1. **Platform Authentication** (This Guide)
+   - Authenticates your client application with Skaftin
+   - Uses API Keys (`sk_...`) or Access Tokens (`sat_...`)
+   - Required for all API requests
+   - Controls what your app can access
+
+2. **App User Authentication** (`07-APP-USER-AUTHENTICATION.md`)
+   - Authenticates your application's end users
+   - Uses JWT tokens
+   - Built on top of platform authentication
+   - Manages user sessions and permissions
+
+---
 
 ## Step 1: Create API Credentials in Skaftin
 
@@ -15,6 +35,8 @@
      - `database:delete` - Delete data
      - `storage:read` - View files
      - `storage:write` - Upload files
+     - `auth:read` - Read user auth data
+     - `auth:write` - Manage users/roles
      - etc.
 4. Click **"Create Credential"**
 5. **COPY THE TOKEN** - You'll only see it once!
@@ -25,6 +47,7 @@
 ```
 ✅ database:read
 ✅ storage:read
+✅ auth:read (if showing user data)
 ```
 
 **Full CRUD App:**
@@ -34,6 +57,8 @@
 ✅ database:delete
 ✅ storage:read
 ✅ storage:write
+✅ auth:read
+✅ auth:write (if managing users)
 ```
 
 **Admin App:**
@@ -41,26 +66,50 @@
 ✅ Select all permissions
 ```
 
+### Credential Types
+
+**API Keys (`sk_...`)**
+- Server-to-server communication
+- Full project access (customizable)
+- Long-lived, never expires
+- Best for backend services
+
+**Access Tokens (`sat_...`)**
+- Client-side applications
+- Granular permissions per resource
+- Can have expiration dates
+- Best for frontend apps
+
+---
+
 ## Step 2: Configure Client App Environment
 
 Create `.env` file in your React app:
 
 ```bash
-# Skaftin API Configuration
+# Skaftin Platform Configuration
 REACT_APP_SKAFTIN_API_URL=http://localhost:4006
-REACT_APP_SKAFTIN_PROJECT_ID=1
 REACT_APP_SKAFTIN_API_KEY=sk_your_api_key_here
 
-# For access tokens (alternative to API key)
+# OR use Access Token (alternative to API key)
 # REACT_APP_SKAFTIN_ACCESS_TOKEN=sat_your_token_here
+
+# Optional: Explicit project ID (auto-detected from credential if not provided)
+# REACT_APP_SKAFTIN_PROJECT_ID=1
 ```
 
 **Production:**
 ```bash
-REACT_APP_SKAFTIN_API_URL=https://skaftinplatform.yourdomain.com
-REACT_APP_SKAFTIN_PROJECT_ID=123
+REACT_APP_SKAFTIN_API_URL=https://api.yourdomain.com
 REACT_APP_SKAFTIN_API_KEY=sk_production_key_here
 ```
+
+**Important Notes:**
+- API Key/Token automatically identifies your project
+- `PROJECT_ID` is optional - only needed for multi-project apps
+- Never commit `.env` to version control
+
+---
 
 ## Step 3: Create Config File
 
@@ -69,22 +118,27 @@ Create `src/backend/config/skaftin.config.ts`:
 ```typescript
 export const SKAFTIN_CONFIG = {
   apiUrl: process.env.REACT_APP_SKAFTIN_API_URL || 'http://localhost:4006',
-  projectId: process.env.REACT_APP_SKAFTIN_PROJECT_ID || '1',
   apiKey: process.env.REACT_APP_SKAFTIN_API_KEY || '',
   accessToken: process.env.REACT_APP_SKAFTIN_ACCESS_TOKEN || '',
+  projectId: process.env.REACT_APP_SKAFTIN_PROJECT_ID || '', // Optional
 };
 
 // Validation
 if (!SKAFTIN_CONFIG.apiKey && !SKAFTIN_CONFIG.accessToken) {
-  console.warn('⚠️  No Skaftin credentials configured. Set REACT_APP_SKAFTIN_API_KEY in .env');
-}
-
-if (!SKAFTIN_CONFIG.projectId) {
-  console.warn('⚠️  No Skaftin project ID configured. Set REACT_APP_SKAFTIN_PROJECT_ID in .env');
+  console.error('❌ No Skaftin credentials configured.');
+  console.error('   Set REACT_APP_SKAFTIN_API_KEY or REACT_APP_SKAFTIN_ACCESS_TOKEN in .env');
+  throw new Error('Skaftin credentials required');
 }
 
 export default SKAFTIN_CONFIG;
 ```
+
+**Key Changes:**
+- ✅ Credentials now automatically include project context
+- ✅ No manual project ID required (unless multi-project)
+- ✅ Simplified configuration
+
+---
 
 ## Step 4: Create Auth Utils
 
@@ -95,23 +149,28 @@ import SKAFTIN_CONFIG from '../config/skaftin.config';
 
 /**
  * Get authentication headers for Skaftin API requests
+ * 
+ * The API key/token automatically identifies your project,
+ * so no need to include project ID separately.
  */
 export function getAuthHeaders(): HeadersInit {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
 
-  // Use API key if available (preferred for server-to-server)
+  // Use API key (preferred method)
   if (SKAFTIN_CONFIG.apiKey) {
-    headers['X-API-Key'] = SKAFTIN_CONFIG.apiKey;
+    headers['x-api-key'] = SKAFTIN_CONFIG.apiKey;
+    return headers;
   }
   
-  // Use access token if API key not available
-  if (SKAFTIN_CONFIG.accessToken && !SKAFTIN_CONFIG.apiKey) {
-    headers['Authorization'] = `Bearer ${SKAFTIN_CONFIG.accessToken}`;
+  // Use access token (alternative method)
+  if (SKAFTIN_CONFIG.accessToken) {
+    headers['x-access-token'] = SKAFTIN_CONFIG.accessToken;
+    return headers;
   }
 
-  return headers;
+  throw new Error('No Skaftin credentials configured');
 }
 
 /**
@@ -122,12 +181,18 @@ export function isAuthenticated(): boolean {
 }
 
 /**
- * Get current project ID
+ * Get project ID if explicitly configured
+ * Note: Usually not needed as credentials auto-identify project
  */
-export function getProjectId(): string {
-  return SKAFTIN_CONFIG.projectId;
+export function getProjectId(): string | null {
+  return SKAFTIN_CONFIG.projectId || null;
 }
 ```
+
+**Important Changes:**
+- ✅ Headers use `x-api-key` and `x-access-token` (lowercase)
+- ✅ Project automatically identified from credentials
+- ✅ Simplified authentication flow
 
 ## Step 5: Create Request Wrapper
 
@@ -305,9 +370,45 @@ REACT_APP_SKAFTIN_API_KEY=sk_prod_key
 - Verify Skaftin backend is running
 - Check firewall/network settings
 
+---
+
 ## Next Steps
 
-Once authentication is working, proceed to:
+Once platform authentication is working:
+
+**For Data Access:**
 - `03-TYPE-GENERATION.md` - Generate TypeScript types
 - `04-SERVICE-GENERATION.md` - Create API services
+- `06-USAGE-EXAMPLES.md` - Real-world examples
+
+**For User Management:**
+- `07-APP-USER-AUTHENTICATION.md` - App user authentication, roles, and sessions
+
+---
+
+## Authentication Quick Reference
+
+### Platform Authentication (This Guide)
+```typescript
+// Headers for ALL API requests
+headers: {
+  'x-api-key': 'sk_your_api_key',        // API Key method
+  // OR
+  'x-access-token': 'sat_your_token'     // Access Token method
+}
+```
+
+### App User Authentication (See 07-APP-USER-AUTHENTICATION.md)
+```typescript
+// After user login, include JWT token
+headers: {
+  'x-api-key': 'sk_your_api_key',        // Platform auth (required)
+  'Authorization': 'Bearer eyJhbG...'    // User session (for user endpoints)
+}
+```
+
+**Remember:** 
+- Platform credentials authenticate YOUR APP
+- JWT tokens authenticate YOUR APP'S USERS
+- Both can work together in the same application
 

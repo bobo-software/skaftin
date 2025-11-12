@@ -61,7 +61,7 @@ class AuthSettingsService {
   async getAuthSettings(projectId: string): Promise<AuthSettings> {
     try {
       const response = await RequestUtils.get(
-        `/api/auth/${projectId}/settings`,
+        `/api/app-auth/${projectId}/settings`,
         this.getToken()
       );
 
@@ -82,9 +82,9 @@ class AuthSettingsService {
   async updateAuthSettings(projectId: string, updates: UpdateAuthSettingsRequest): Promise<AuthSettings> {
     try {
       const response = await RequestUtils.put(
-        `/api/auth/${projectId}/settings`,
-        updates,
-        this.getToken()
+        `/api/app-auth/${projectId}/settings`,
+        this.getToken(),
+        updates
       );
 
       if (response.success) {
@@ -104,7 +104,7 @@ class AuthSettingsService {
   async getSessionConfig(projectId: string, roleId: string): Promise<any> {
     try {
       const response = await RequestUtils.get(
-        `/api/auth/${projectId}/settings/session-config/${roleId}`,
+        `/api/app-auth/${projectId}/settings/session-config/${roleId}`,
         this.getToken()
       );
 
@@ -125,9 +125,9 @@ class AuthSettingsService {
   async sendVerificationEmail(projectId: string, userId?: string, email?: string): Promise<void> {
     try {
       const response = await RequestUtils.post(
-        `/api/auth/${projectId}/settings/send-verification`,
-        { user_id: userId, email },
-        this.getToken()
+        `/api/app-auth/${projectId}/settings/send-verification`,
+        this.getToken(),
+        { user_id: userId, email }
       );
 
       if (!response.success) {
@@ -145,9 +145,9 @@ class AuthSettingsService {
   async sendPasswordResetEmail(projectId: string, email: string): Promise<void> {
     try {
       const response = await RequestUtils.post(
-        `/api/auth/${projectId}/settings/send-reset`,
-        { email },
-        this.getToken()
+        `/api/app-auth/${projectId}/settings/send-reset`,
+        this.getToken(),
+        { email }
       );
 
       if (!response.success) {
@@ -165,9 +165,9 @@ class AuthSettingsService {
   async verifyOTP(projectId: string, userId: string, code: string): Promise<void> {
     try {
       const response = await RequestUtils.post(
-        `/api/auth/${projectId}/settings/verify-otp`,
-        { user_id: userId, code },
-        this.getToken()
+        `/api/app-auth/${projectId}/settings/verify-otp`,
+        this.getToken(),
+        { user_id: userId, code }
       );
 
       if (!response.success) {
@@ -185,7 +185,7 @@ class AuthSettingsService {
   async getAllSessionDurations(projectId: string): Promise<SessionDuration[]> {
     try {
       const response = await RequestUtils.get(
-        `/api/auth/${projectId}/settings/session-durations`,
+        `/api/app-auth/${projectId}/settings/session-durations`,
         this.getToken()
       );
 
@@ -206,9 +206,9 @@ class AuthSettingsService {
   async testEmailProvider(projectId: string, testEmail: string): Promise<void> {
     try {
       const response = await RequestUtils.post(
-        `/api/auth/${projectId}/settings/test-email-provider`,
-        { test_email: testEmail },
-        this.getToken()
+        `/api/app-auth/${projectId}/settings/test-email-provider`,
+        this.getToken(),
+        { test_email: testEmail }
       );
 
       if (!response.success) {
@@ -226,7 +226,7 @@ class AuthSettingsService {
   async getEmailProviders(projectId: string): Promise<EmailProvider[]> {
     try {
       const response = await RequestUtils.get(
-        `/api/auth/${projectId}/settings/email-providers`,
+        `/api/app-auth/${projectId}/settings/email-providers`,
         this.getToken()
       );
 

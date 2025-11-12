@@ -478,6 +478,7 @@ export class DatabaseInitializer {
           supertokens_user_id VARCHAR(255) UNIQUE,
           name VARCHAR(255) NOT NULL,
           email VARCHAR(255) NOT NULL,
+          password VARCHAR(255),
           phone VARCHAR(50),
           metadata JSONB DEFAULT '{}',
           is_active BOOLEAN DEFAULT true,

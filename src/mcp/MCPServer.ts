@@ -11,6 +11,8 @@ import { createStorageTools, handleStorageTool } from './tools/storageTools';
 import { createProjectTools, handleProjectTool } from './tools/projectTools';
 import { createGraphQLTools, handleGraphQLTool } from './tools/graphqlTools';
 import { createCommunicationsTools, handleCommunicationsTool } from './tools/communicationsTools';
+import { createAuthTools, handleAuthTool } from './tools/authTools';
+import { createCredentialsTools, handleCredentialsTool } from './tools/credentialsTools';
 
 export interface MCPServerConfig {
   pool: Pool;
@@ -46,6 +48,8 @@ export class MCPServer {
       const projectTools = createProjectTools(this.config);
       const graphqlTools = createGraphQLTools(this.config);
       const communicationsTools = createCommunicationsTools(this.config);
+      const authTools = createAuthTools(this.config);
+      const credentialsTools = createCredentialsTools(this.config);
 
       return {
         tools: [
@@ -54,6 +58,8 @@ export class MCPServer {
           ...projectTools,
           ...graphqlTools,
           ...communicationsTools,
+          ...authTools,
+          ...credentialsTools,
         ],
       };
     });
@@ -130,6 +136,36 @@ export class MCPServer {
           'send_email',
         ];
 
+        const authToolNames = [
+          'list_app_users',
+          'get_app_user',
+          'create_app_user',
+          'update_app_user',
+          'delete_app_user',
+          'assign_user_role',
+          'list_app_roles',
+          'get_app_role',
+          'create_app_role',
+          'update_app_role',
+          'delete_app_role',
+          'list_custom_fields',
+          'create_custom_field',
+          'apply_custom_field',
+          'get_auth_settings',
+          'update_auth_settings',
+        ];
+
+        const credentialsToolNames = [
+          'list_api_credentials',
+          'get_api_credential',
+          'create_api_credential',
+          'update_api_credential',
+          'delete_api_credential',
+          'get_mcp_key',
+          'regenerate_mcp_key',
+          'get_credential_permissions',
+        ];
+
         // Extract userId from args if available (for authentication)
         const userId = (args as any)?.userId || (args as any)?.authenticatedUserId;
 
@@ -147,6 +183,12 @@ export class MCPServer {
           return result;
         } else if (communicationsToolNames.includes(name)) {
           const result = await handleCommunicationsTool(name, args, this.config);
+          return result;
+        } else if (authToolNames.includes(name)) {
+          const result = await handleAuthTool(name, args, this.config);
+          return result;
+        } else if (credentialsToolNames.includes(name)) {
+          const result = await handleCredentialsTool(name, args, this.config);
           return result;
         } else {
           return {

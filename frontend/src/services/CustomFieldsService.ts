@@ -57,7 +57,7 @@ class CustomFieldsService {
    */
   async listCustomFields(projectId: string, includeInactive: boolean = false): Promise<CustomField[]> {
     try {
-      const url = `/api/auth/${projectId}/fields${includeInactive ? '?include_inactive=true' : ''}`;
+      const url = `/api/app-auth/${projectId}/fields${includeInactive ? '?include_inactive=true' : ''}`;
       const response = await RequestUtils.get(url, this.getToken());
 
       if (response.success) {
@@ -77,7 +77,7 @@ class CustomFieldsService {
   async getCustomField(projectId: string, fieldId: string): Promise<CustomField> {
     try {
       const response = await RequestUtils.get(
-        `/api/auth/${projectId}/fields/${fieldId}`,
+        `/api/app-auth/${projectId}/fields/${fieldId}`,
         this.getToken()
       );
 
@@ -98,9 +98,9 @@ class CustomFieldsService {
   async createCustomField(projectId: string, fieldData: CreateCustomFieldRequest): Promise<CustomField> {
     try {
       const response = await RequestUtils.post(
-        `/api/auth/${projectId}/fields`,
-        fieldData,
-        this.getToken()
+        `/api/app-auth/${projectId}/fields`,
+        this.getToken(),
+        fieldData
       );
 
       if (response.success) {
@@ -120,9 +120,9 @@ class CustomFieldsService {
   async updateCustomField(projectId: string, fieldId: string, updates: UpdateCustomFieldRequest): Promise<CustomField> {
     try {
       const response = await RequestUtils.put(
-        `/api/auth/${projectId}/fields/${fieldId}`,
-        updates,
-        this.getToken()
+        `/api/app-auth/${projectId}/fields/${fieldId}`,
+        this.getToken(),
+        updates
       );
 
       if (response.success) {
@@ -141,8 +141,8 @@ class CustomFieldsService {
    */
   async deleteCustomField(projectId: string, fieldId: string, permanent: boolean = false): Promise<void> {
     try {
-      const url = `/api/auth/${projectId}/fields/${fieldId}${permanent ? '?permanent=true' : ''}`;
-      const response = await RequestUtils.delete(url, this.getToken());
+      const url = `/api/app-auth/${projectId}/fields/${fieldId}${permanent ? '?permanent=true' : ''}`;
+      const response = await RequestUtils.delete(url, this.getToken(), {});
 
       if (!response.success) {
         throw new Error(response.error || 'Failed to delete custom field');
@@ -159,9 +159,9 @@ class CustomFieldsService {
   async applyCustomField(projectId: string, fieldId: string): Promise<void> {
     try {
       const response = await RequestUtils.post(
-        `/api/auth/${projectId}/fields/${fieldId}/apply`,
-        {},
-        this.getToken()
+        `/api/app-auth/${projectId}/fields/${fieldId}/apply`,
+        this.getToken(),
+        {}
       );
 
       if (!response.success) {
@@ -179,7 +179,7 @@ class CustomFieldsService {
   async getAvailableTables(projectId: string): Promise<AvailableTable[]> {
     try {
       const response = await RequestUtils.get(
-        `/api/auth/${projectId}/fields/available-tables`,
+        `/api/app-auth/${projectId}/fields/available-tables`,
         this.getToken()
       );
 

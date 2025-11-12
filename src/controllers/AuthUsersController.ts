@@ -3,6 +3,8 @@ import { Pool } from 'pg';
 import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
 import ResponseUtils from '../utils/ResponseUtils';
 import EmailPassword from 'supertokens-node/recipe/emailpassword';
+import { deleteUser } from 'supertokens-node';
+import { AuthUtils } from '../utils/AuthUtils';
 
 interface AppUser {
   id: number;
@@ -243,9 +245,18 @@ class AuthUsersController {
       const { projectId } = req.params;
       const { name, email, password, phone, metadata, role_ids }: CreateUserRequest = req.body;
 
-      // Validation
+      // Enhanced validation
       if (!name || !email || !password) {
         return ResponseUtils.error(res, 'Name, email, and password are required', null, null, 400);
+      }
+
+      if (!AuthUtils.isValidEmail(email)) {
+        return ResponseUtils.error(res, 'Invalid email format', null, null, 400);
+      }
+
+      const passwordValidation = AuthUtils.isValidPassword(password);
+      if (!passwordValidation.valid) {
+        return ResponseUtils.error(res, passwordValidation.message || 'Invalid password', null, null, 400);
       }
 
       const schemaName = await AuthUsersController.getProjectSchema(parseInt(projectId));
@@ -258,79 +269,51 @@ class AuthUsersController {
       
       if (!allowDuplicates) {
         // Check if email already exists in this project
-        const existingUser = await AuthUsersController.pool.query(
-          `SELECT id FROM ${schemaName}.app_users WHERE email = $1`,
-          [email]
+        const emailExists = await AuthUtils.emailExistsInProject(
+          AuthUsersController.pool,
+          schemaName,
+          email
         );
 
-        if (existingUser.rows.length > 0) {
-          return ResponseUtils.error(res, 'User with this email already exists', null, null, 400);
+        if (emailExists) {
+          return ResponseUtils.error(res, 'User with this email already exists in this project', null, null, 400);
         }
       }
 
-      // Create user in SuperTokens
-      let superTokensUserId: string | undefined;
-      try {
-        const signUpResponse = await EmailPassword.signUp('public', email, password);
+      // Sanitize metadata
+      const sanitizedMetadata = AuthUtils.sanitizeMetadata(metadata);
 
-        if (signUpResponse.status === 'OK') {
-          superTokensUserId = signUpResponse.user.id;
-          console.log(`✅ Created SuperTokens user: ${superTokensUserId}`);
-        } else if (signUpResponse.status === 'EMAIL_ALREADY_EXISTS_ERROR') {
-          // User exists in SuperTokens, try to get their ID
-          const existingUsers = await EmailPassword.getUserByEmail('public', email);
-          if (existingUsers) {
-            superTokensUserId = existingUsers.id;
-            console.log(`ℹ️  Using existing SuperTokens user: ${superTokensUserId}`);
-          }
-        }
-      } catch (stError) {
-        console.error('SuperTokens user creation error:', stError);
-        // Continue without SuperTokens ID if it fails
-      }
-
-      // Create user in app_users table
-      const insertQuery = `
-        INSERT INTO ${schemaName}.app_users (supertokens_user_id, name, email, phone, metadata, is_active)
-        VALUES ($1, $2, $3, $4, $5, true)
-        RETURNING *
-      `;
-
-      const result = await AuthUsersController.pool.query(insertQuery, [
-        superTokensUserId || null,
-        name,
-        email,
-        phone || null,
-        JSON.stringify(metadata || {}),
-      ]);
-
-      const newUser = result.rows[0];
-
-      // Assign roles if provided
-      if (role_ids && role_ids.length > 0) {
-        for (const roleId of role_ids) {
-          await AuthUsersController.pool.query(
-            `INSERT INTO ${schemaName}.app_user_roles (app_user_id, role_id, assigned_by)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (app_user_id, role_id) DO NOTHING`,
-            [newUser.id, roleId, req.user.userId]
-          );
-        }
-      } else {
-        // Assign default role if no roles specified
+      // Get default role if no roles specified
+      let finalRoleIds = role_ids || [];
+      if (!finalRoleIds || finalRoleIds.length === 0) {
         const defaultRoleResult = await AuthUsersController.pool.query(
           `SELECT default_role_id FROM auth_settings WHERE project_id = $1`,
           [parseInt(projectId)]
         );
-
         if (defaultRoleResult.rows.length > 0 && defaultRoleResult.rows[0].default_role_id) {
-          await AuthUsersController.pool.query(
-            `INSERT INTO ${schemaName}.app_user_roles (app_user_id, role_id, assigned_by)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (app_user_id, role_id) DO NOTHING`,
-            [newUser.id, defaultRoleResult.rows[0].default_role_id, req.user.userId]
-          );
+          finalRoleIds = [defaultRoleResult.rows[0].default_role_id];
         }
+      }
+
+      // Use transaction-safe user creation
+      // NOTE: App users are NOT created in SuperTokens (they use separate JWT auth)
+      // Only platform admins use SuperTokens authentication
+      const result = await AuthUtils.createUserWithTransaction(
+        AuthUsersController.pool,
+        schemaName,
+        {
+          name,
+          email,
+          password,
+          phone,
+          metadata: sanitizedMetadata,
+          role_ids: finalRoleIds,
+        },
+        false // Do NOT create in SuperTokens - app users use JWT auth
+      );
+
+      if (!result.success) {
+        return ResponseUtils.error(res, result.error || 'Failed to create user', null, null, 500);
       }
 
       // Fetch the user with roles
@@ -350,8 +333,10 @@ class AuthUsersController {
         WHERE u.id = $1
         GROUP BY u.id
         `,
-        [newUser.id]
+        [result.user.id]
       );
+
+      console.log(`✅ User created: ${email} (ID: ${result.user.id}, SuperTokens: ${result.superTokensUserId || 'N/A'})`);
 
       ResponseUtils.success(res, 'User created successfully', userWithRoles.rows[0], 201);
     } catch (error) {
@@ -487,46 +472,27 @@ class AuthUsersController {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      // Get user to check if they exist and get SuperTokens ID
-      const userResult = await AuthUsersController.pool.query(
-        `SELECT * FROM ${schemaName}.app_users WHERE id = $1`,
-        [parseInt(userId)]
+      const isPermanent = permanent === 'true';
+
+      // Use transaction-safe deletion
+      const result = await AuthUtils.deleteUserWithTransaction(
+        AuthUsersController.pool,
+        schemaName,
+        parseInt(userId),
+        isPermanent
       );
 
-      if (userResult.rows.length === 0) {
-        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      if (!result.success) {
+        return ResponseUtils.error(res, result.error || 'Failed to delete user', null, null, 500);
       }
 
-      const user = userResult.rows[0];
+      const message = isPermanent 
+        ? `User permanently deleted${result.deletedFromSuperTokens ? ' (including SuperTokens account)' : ''}`
+        : 'User deactivated successfully';
 
-      if (permanent === 'true') {
-        // Permanent deletion
-        await AuthUsersController.pool.query(
-          `DELETE FROM ${schemaName}.app_users WHERE id = $1`,
-          [parseInt(userId)]
-        );
+      console.log(`✅ ${message} - User ID: ${userId}`);
 
-        // Delete from SuperTokens if they have a SuperTokens ID
-        if (user.supertokens_user_id) {
-          try {
-            await EmailPassword.deleteUser(user.supertokens_user_id);
-            console.log(`✅ Deleted SuperTokens user: ${user.supertokens_user_id}`);
-          } catch (stError) {
-            console.error('Error deleting SuperTokens user:', stError);
-            // Continue even if SuperTokens deletion fails
-          }
-        }
-
-        ResponseUtils.success(res, 'User permanently deleted');
-      } else {
-        // Soft delete (deactivate)
-        await AuthUsersController.pool.query(
-          `UPDATE ${schemaName}.app_users SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-          [parseInt(userId)]
-        );
-
-        ResponseUtils.success(res, 'User deactivated successfully');
-      }
+      ResponseUtils.success(res, message);
     } catch (error) {
       console.error('Error deleting user:', error);
       ResponseUtils.error(res, 'Failed to delete user', error);
