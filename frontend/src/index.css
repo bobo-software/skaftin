@@ -44,6 +44,24 @@
   .glow-effect {
     @apply shadow-glow hover:shadow-glow-lg transition-shadow duration-300;
   }
+  
+  /* Custom Scrollbar Styles */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-dark-300 dark:bg-dark-600;
+    border-radius: 100px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-dark-400 dark:bg-dark-500;
+  }
 }
 
 @layer utilities {

@@ -6,7 +6,7 @@ import {
   Search,
   Download
 } from 'lucide-react';
-import { AppButton } from '../ComponentsIndex';
+import { AppButton, AppText } from '../ComponentsIndex';
 
 interface DataTableProps {
   data: any[];
@@ -244,12 +244,15 @@ const DataTable = ({
     <div className={`space-y-4 ${className} p-4`}>
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h4 className="text-lg font-semibold text-dark-900 dark:text-white">
-            Table Data
-          </h4>
+        <div className="flex flex-row items-center space-x-2">
+          <AppText
+            children="Table Data"
+            size="lg"
+            weight="semibold"
+            color="default"
+          />
           <p className="text-sm text-dark-600 dark:text-dark-300">
-            {sortedData.length} rows
+              {sortedData.length} rows
             {selectedRows.size > 0 && (
               <span className="ml-2 text-primary-600 dark:text-primary-400 font-medium">
                 • {selectedRows.size} selected
@@ -293,6 +296,7 @@ const DataTable = ({
           {onAddRow && (
             <AppButton 
               variant="primary" 
+              size="sm"
               icon={<Plus className="w-4 h-4" />}
               onClick={onAddRow}
             >
@@ -303,6 +307,7 @@ const DataTable = ({
           {onCsvImport && (
             <AppButton 
               variant="secondary" 
+              size="sm"
               icon={<Download className="w-4 h-4" />}
               onClick={onCsvImport}
             >
@@ -321,15 +326,15 @@ const DataTable = ({
             placeholder="Search table data..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full text-xs pl-10 pr-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
         </div>
       )}
 
       {/* Table */}
       {paginatedData.length > 0 ? (
-        <div className="overflow-x-auto">
-          <table className="w-full border border-dark-200 dark:border-dark-700 rounded-lg">
+        <div className="overflow-x-auto overflow-y-auto h-[57vh]">
+          <table className="w-full border border-dark-200 dark:border-dark-700 rounded-lg overflow-y-auto">
             <thead className="bg-dark-50 dark:bg-dark-800">
               <tr>
                 {selectable && (
@@ -348,7 +353,7 @@ const DataTable = ({
                 {tableColumns.map((column) => (
                   <th 
                     key={column} 
-                    className={`px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider border-b border-dark-200 dark:border-dark-700 ${
+                    className={`px-2 py-1 text-left text-[0.7rem] font-light text-dark-500 dark:text-dark-400 uppercase tracking-wider border-b border-dark-200 dark:border-dark-700 ${
                       sortable ? 'cursor-pointer hover:bg-dark-100 dark:hover:bg-dark-700' : ''
                     }`}
                     onClick={() => handleSort(column)}
@@ -365,7 +370,7 @@ const DataTable = ({
                 ))}
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-dark-900 divide-y divide-dark-200 dark:divide-dark-700">
+            <tbody className="bg-white  overflow-y-auto dark:bg-dark-900 divide-y divide-dark-200 dark:divide-dark-700">
               {paginatedData.map((row, index) => (
                 <tr key={index} className="hover:bg-dark-50 dark:hover:bg-dark-800">
                   {selectable && (
@@ -383,9 +388,8 @@ const DataTable = ({
                     const isEditable = !['id', 'created_at', 'updated_at'].includes(column.toLowerCase());
                     
                     return (
-                      <td 
-                        key={cellIndex} 
-                        className={`px-4 py-3 text-sm text-dark-900 dark:text-white border-b border-dark-100 dark:border-dark-800 ${
+                      <td key={cellIndex} 
+                        className={`px-2 text-[0.8rem]  text-dark-900 dark:text-white border-b border-dark-100 dark:border-dark-800 ${
                           isEditable ? 'cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20' : ''
                         }`}
                         onClick={() => isEditable && handleCellClick(index, column, row[column])}

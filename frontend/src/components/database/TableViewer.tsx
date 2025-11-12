@@ -14,7 +14,7 @@ import {
   Settings,
   Upload
 } from 'lucide-react';
-import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem, TableSettingsTab, DatabaseImportModal } from '../ComponentsIndex';
+import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem, TableSettingsTab, DatabaseImportModal, AppText } from '../ComponentsIndex';
 
 interface TableViewerProps {
   projectId: string;
@@ -361,7 +361,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   }
 
   return (
-    <div className="">
+    <div className="h-full">
 
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
@@ -377,7 +377,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         </div>
       )}
 
-      <div className="flex h-screen">
+      <div className="flex h-[88vh]">
         {/* Tables Sidebar */}
         <div className="w-30 flex-shrink-0 border-r border-dark-200 dark:border-dark-700 bg-dark-50 dark:bg-dark-800">
           <div className="h-full flex flex-col">
@@ -404,7 +404,6 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                   size="sm"
                   icon={<Upload className="w-4 h-4" />}
                   onClick={() => setShowImportModal(true)}
-                  title="Import PostgreSQL dump"
                 >
                   Import
                 </AppButton>
@@ -456,15 +455,20 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
           {currentTable ? (
             <div className="h-full flex flex-col">
               {/* Content Header */}
-              <div className="p-6 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-900">
+              <div className="p-2 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-900">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xl font-semibold text-dark-900 dark:text-white">
-                      {currentTable.table_name}
-                    </h4>
-                    <p className="text-sm text-dark-600 dark:text-dark-300 mt-1">
-                      {currentTable.table_type} • {currentTable.columns?.length || 0} columns
-                    </p>
+                  <div className="flex flex-row items-center space-x-2">
+                    <AppText
+                      children={currentTable.table_name}
+                      size="xl"
+                      weight="semibold"
+                      color="default"
+                    />
+                    <AppText
+                      children={`-> ${currentTable.table_type} • ${currentTable.columns?.length || 0} columns`}
+                      size="xs"
+                      color="muted"
+                    />
                   </div>
                 </div>
               </div>

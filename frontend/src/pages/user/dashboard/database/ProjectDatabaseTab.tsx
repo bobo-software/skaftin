@@ -60,7 +60,7 @@ const ProjectDatabaseTab = ({ projectId }: ProjectDatabaseTabProps) => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === tab.id
                     ? 'border-primary-500 text-primary-600 dark:text-primary-400'
                     : 'border-transparent text-dark-500 dark:text-dark-400 hover:text-dark-700 dark:hover:text-dark-300 hover:border-dark-300 dark:hover:border-dark-600'
@@ -75,7 +75,7 @@ const ProjectDatabaseTab = ({ projectId }: ProjectDatabaseTabProps) => {
       </div>
 
       {/* Tab Content */}
-      <div className="mt-2">
+      <div className="">
         {renderContent()}
       </div>
     </div>
