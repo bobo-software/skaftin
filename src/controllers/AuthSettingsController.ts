@@ -449,6 +449,10 @@ class AuthSettingsController {
         return ResponseUtils.error(res, 'Test email address is required', null, null, 400);
       }
 
+      console.log('📧 [testEmailProvider] Sending test email...');
+      console.log('   └─ projectId:', projectId);
+      console.log('   └─ test_email:', test_email);
+
       // Get email provider configuration
       const settingsResult = await AuthSettingsController.pool.query(
         'SELECT email_provider_id FROM auth_settings WHERE project_id = $1',
@@ -465,15 +469,138 @@ class AuthSettingsController {
         );
       }
 
-      // TODO: Send test email using AuthEmailService
+      const providerId = settingsResult.rows[0].email_provider_id;
+      console.log('   └─ providerId:', providerId);
+
+      // Get email provider details
+      const providerQuery = `
+        SELECT smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, 
+               from_email, from_name, is_active
+        FROM email_providers
+        WHERE id = $1 AND project_id = $2 AND is_active = true
+      `;
+
+      const providerResult = await AuthSettingsController.pool.query(providerQuery, [
+        providerId,
+        parseInt(projectId),
+      ]);
+
+      if (providerResult.rows.length === 0) {
+        return ResponseUtils.error(
+          res,
+          'Email provider not found or inactive',
+          null,
+          null,
+          404
+        );
+      }
+
+      const provider = providerResult.rows[0];
+      console.log('   └─ Provider found:', provider.smtp_host);
+
+      // Get project name
+      const projectResult = await AuthSettingsController.pool.query(
+        'SELECT name FROM projects WHERE id = $1',
+        [parseInt(projectId)]
+      );
+      const projectName = projectResult.rows[0]?.name || 'Skaftin Project';
+
+      // Create nodemailer transporter
+      const nodemailer = require('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: provider.smtp_host,
+        port: provider.smtp_port,
+        secure: provider.smtp_secure,
+        auth: {
+          user: provider.smtp_user,
+          pass: provider.smtp_password,
+        },
+      });
+
+      // Prepare test email
+      const mailOptions = {
+        from: provider.from_name
+          ? `"${provider.from_name}" <${provider.from_email}>`
+          : provider.from_email,
+        to: test_email,
+        subject: `Test Email from ${projectName} - Skaftin Platform`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h1 style="color: #4F46E5;">Email Configuration Test ✅</h1>
+            <p>This is a test email from your Skaftin project: <strong>${projectName}</strong></p>
+            
+            <div style="background-color: #F3F4F6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <p style="margin: 0;"><strong>Email Provider Details:</strong></p>
+              <p style="margin: 5px 0;">Host: ${provider.smtp_host}</p>
+              <p style="margin: 5px 0;">Port: ${provider.smtp_port}</p>
+              <p style="margin: 5px 0;">Secure: ${provider.smtp_secure ? 'Yes' : 'No'}</p>
+              <p style="margin: 5px 0;">From: ${provider.from_email}</p>
+            </div>
+            
+            <div style="background-color: #D1FAE5; border-left: 4px solid #10B981; padding: 15px; margin: 20px 0;">
+              <p style="margin: 0; color: #065F46;">
+                <strong>✓ Success!</strong><br/>
+                Your email provider is configured correctly and emails are being delivered successfully.
+              </p>
+            </div>
+            
+            <p style="color: #6B7280; font-size: 14px; margin-top: 20px;">
+              If you received this email, your email configuration is working perfectly!<br/>
+              You can now send authentication emails, invitations, and notifications from your project.
+            </p>
+            
+            <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;">
+            
+            <p style="color: #6B7280; font-size: 12px;">
+              Skaftin Platform - Email Testing Service
+            </p>
+          </div>
+        `,
+        text: `
+Email Configuration Test
+
+This is a test email from your Skaftin project: ${projectName}
+
+Email Provider Details:
+- Host: ${provider.smtp_host}
+- Port: ${provider.smtp_port}
+- Secure: ${provider.smtp_secure ? 'Yes' : 'No'}
+- From: ${provider.from_email}
+
+✓ Success!
+Your email provider is configured correctly and emails are being delivered successfully.
+
+If you received this email, your email configuration is working perfectly!
+You can now send authentication emails, invitations, and notifications from your project.
+
+Skaftin Platform - Email Testing Service
+        `.trim(),
+      };
+
+      console.log('   └─ Sending test email...');
+
+      // Send email
+      await transporter.sendMail(mailOptions);
+
+      console.log('   └─ ✅ Test email sent successfully!');
 
       ResponseUtils.success(res, 'Test email sent successfully', {
-        message: 'Test email functionality will be implemented with AuthEmailService',
+        message: `Test email has been sent to ${test_email}. Please check your inbox.`,
         test_email,
+        provider: {
+          host: provider.smtp_host,
+          port: provider.smtp_port,
+          from: provider.from_email,
+        },
       });
-    } catch (error) {
-      console.error('Error testing email provider:', error);
-      ResponseUtils.error(res, 'Failed to test email provider', error);
+    } catch (error: any) {
+      console.error('❌ Error testing email provider:', error);
+      ResponseUtils.error(
+        res,
+        'Failed to send test email',
+        error,
+        error.message || 'Unknown error occurred'
+      );
     }
   }
 
