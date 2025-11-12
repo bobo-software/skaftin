@@ -58,8 +58,17 @@ const AuthEmailSettingsTab = () => {
     try {
       await AuthSettingsService.updateAuthSettings(projectId, {
         email_provider_id: selectedProvider,
+        send_registration_email: settings.send_registration_email,
+        send_verification_email: settings.send_verification_email,
+        send_password_reset_email: settings.send_password_reset_email,
+        send_welcome_email: settings.send_welcome_email,
       });
-      setMessage({ type: 'success', text: 'Email provider updated successfully!' });
+      
+      setMessage({ type: 'success', text: 'Email settings saved successfully!' });
+      
+      // Refresh settings to get updated values from server
+      await fetchSettings();
+      
       setTimeout(() => setMessage(null), 3000);
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message });
@@ -261,7 +270,7 @@ const AuthEmailSettingsTab = () => {
                 <div className="flex-1">
                   <label className="font-medium text-dark-900 dark:text-white">Send Verification Email</label>
                   <p className="text-sm text-dark-600 dark:text-dark-400">
-                    Send email verification link to confirm email addresses
+                    Send email verification link when users change their email address
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">

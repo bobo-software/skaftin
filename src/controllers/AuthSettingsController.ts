@@ -537,14 +537,124 @@ class AuthSettingsController {
         return ResponseUtils.error(res, 'User ID and OTP code are required', null, null, 400);
       }
 
-      // TODO: Implement OTP verification logic
-      // This would involve:
-      // 1. Checking if OTP is valid and not expired
-      // 2. Marking user's email/phone as verified
-      // 3. Deleting the OTP token
+      console.log('🔐 [verifyOTP] Verifying OTP...');
+      console.log('   └─ projectId:', projectId);
+      console.log('   └─ user_id:', user_id);
 
-      ResponseUtils.success(res, 'OTP verification will be implemented', {
-        message: 'OTP verification logic to be implemented',
+      // Get project schema
+      const schemaResult = await AuthSettingsController.pool.query(
+        'SELECT schema_name FROM projects WHERE id = $1',
+        [parseInt(projectId)]
+      );
+
+      if (schemaResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      const schemaName = schemaResult.rows[0].schema_name;
+
+      // Get user with OTP data
+      const userResult = await AuthSettingsController.pool.query(
+        `SELECT id, name, email, metadata, is_active FROM ${schemaName}.app_users WHERE id = $1`,
+        [parseInt(user_id)]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+      const metadata = user.metadata || {};
+
+      console.log('   └─ User found:', user.email);
+      console.log('   └─ User active status:', user.is_active);
+
+      // Check if OTP exists
+      if (!metadata.otp) {
+        return ResponseUtils.error(
+          res,
+          'No OTP found for this user. Please request a new verification code.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Check if OTP is expired
+      if (metadata.otp_expires_at) {
+        const expiresAt = new Date(metadata.otp_expires_at);
+        if (expiresAt < new Date()) {
+          return ResponseUtils.error(
+            res,
+            'OTP code has expired. Please request a new verification code.',
+            null,
+            null,
+          400
+          );
+        }
+      }
+
+      // Verify OTP code
+      if (metadata.otp !== code) {
+        return ResponseUtils.error(
+          res,
+          'Invalid OTP code. Please check the code and try again.',
+          null,
+          null,
+          400
+        );
+      }
+
+      console.log('   └─ ✅ OTP verified successfully');
+
+      // Activate user and mark email as verified
+      await AuthSettingsController.pool.query(
+        `UPDATE ${schemaName}.app_users 
+         SET is_active = true,
+             email_verified = true,
+             metadata = metadata - 'otp' - 'otp_expires_at',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [user.id]
+      );
+
+      console.log('   └─ ✅ User activated and email verified');
+
+      // Check if welcome email should be sent
+      const settingsResult = await AuthSettingsController.pool.query(
+        'SELECT send_welcome_email, email_provider_id FROM auth_settings WHERE project_id = $1',
+        [parseInt(projectId)]
+      );
+
+      if (settingsResult.rows.length > 0) {
+        const emailSettings = settingsResult.rows[0];
+        
+        if (emailSettings.send_welcome_email && emailSettings.email_provider_id) {
+          console.log('📧 Sending welcome email...');
+          
+          const welcomeResult = await AuthSettingsController.emailService.sendWelcomeEmail(
+            parseInt(projectId),
+            user.email,
+            user.name
+          );
+          
+          if (welcomeResult.success) {
+            console.log('   └─ ✅ Welcome email sent');
+          } else {
+            console.warn('   └─ ⚠️ Failed to send welcome email:', welcomeResult.error);
+          }
+        }
+      }
+
+      ResponseUtils.success(res, 'OTP verified successfully', {
+        message: 'Your account has been activated. You can now log in.',
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          is_active: true,
+          email_verified: true,
+        },
       });
     } catch (error) {
       console.error('Error verifying OTP:', error);

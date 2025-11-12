@@ -89,13 +89,17 @@ class AppAuthController {
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
+      // Determine if user should be active immediately or wait for OTP verification
+      const requiresOTP = emailSettings.send_registration_email && emailSettings.email_provider_id;
+      const isActive = !requiresOTP; // Active immediately if OTP not required
+
       // Create user
       const insertResult = await AppAuthController.pool.query(
         `INSERT INTO ${schemaName}.app_users 
          (name, email, password, phone, metadata, is_active, email_verified)
-         VALUES ($1, $2, $3, $4, $5, true, false)
+         VALUES ($1, $2, $3, $4, $5, $6, false)
          RETURNING id, name, email, phone, is_active, created_at`,
-        [name, email, hashedPassword, phone || null, JSON.stringify(metadata || {})]
+        [name, email, hashedPassword, phone || null, JSON.stringify(metadata || {}), isActive]
       );
 
       const user = insertResult.rows[0];
@@ -132,10 +136,14 @@ class AppAuthController {
       // SEND EMAILS BASED ON SETTINGS
       // ============================================
 
+      let otpSent = false;
+
       // Send registration email (with OTP if configured)
       if (emailSettings.send_registration_email && emailSettings.email_provider_id) {
         const otp = crypto.randomInt(100000, 999999).toString();
-        console.log(`📧 Sending registration email to ${email}...`);
+        const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        
+        console.log(`📧 Sending registration email with OTP to ${email}...`);
         
         const registrationResult = await AppAuthController.emailService.sendRegistrationEmail(
           projectId,
@@ -145,41 +153,36 @@ class AppAuthController {
         );
         
         if (registrationResult.success) {
-          console.log('   └─ ✅ Registration email sent');
-        } else {
-          console.warn('   └─ ⚠️ Failed to send registration email:', registrationResult.error);
-        }
-      }
-
-      // Send verification email
-      if (emailSettings.send_verification_email && emailSettings.email_provider_id) {
-        const verificationToken = crypto.randomBytes(32).toString('hex');
-        console.log(`📧 Sending verification email to ${email}...`);
-        
-        const verificationResult = await AppAuthController.emailService.sendVerificationEmail(
-          projectId,
-          email,
-          name,
-          verificationToken
-        );
-        
-        if (verificationResult.success) {
-          console.log('   └─ ✅ Verification email sent');
+          console.log('   └─ ✅ Registration email sent with OTP');
           
-          // Store verification token in user metadata
+          // Store OTP in user metadata
           await AppAuthController.pool.query(
             `UPDATE ${schemaName}.app_users 
-             SET metadata = jsonb_set(COALESCE(metadata, '{}'), '{verification_token}', $1::jsonb)
-             WHERE id = $2`,
-            [JSON.stringify(verificationToken), user.id]
+             SET metadata = jsonb_set(
+               jsonb_set(COALESCE(metadata, '{}'), '{otp}', $1::jsonb),
+               '{otp_expires_at}', $2::jsonb
+             )
+             WHERE id = $3`,
+            [JSON.stringify(otp), JSON.stringify(otpExpiresAt.toISOString()), user.id]
           );
+          
+          otpSent = true;
         } else {
-          console.warn('   └─ ⚠️ Failed to send verification email:', verificationResult.error);
+          console.warn('   └─ ⚠️ Failed to send registration email:', registrationResult.error);
+          // If OTP email fails, activate user immediately (don't block registration)
+          if (!user.is_active) {
+            await AppAuthController.pool.query(
+              `UPDATE ${schemaName}.app_users SET is_active = true WHERE id = $1`,
+              [user.id]
+            );
+            user.is_active = true;
+          }
         }
       }
 
-      // Send welcome email
-      if (emailSettings.send_welcome_email && emailSettings.email_provider_id) {
+      // Send welcome email ONLY if OTP is not required
+      // (If OTP required, welcome email is sent after OTP verification)
+      if (!requiresOTP && emailSettings.send_welcome_email && emailSettings.email_provider_id) {
         console.log(`📧 Sending welcome email to ${email}...`);
         
         const welcomeResult = await AppAuthController.emailService.sendWelcomeEmail(
@@ -198,7 +201,11 @@ class AppAuthController {
       // Note: Email sending failures are logged but don't prevent registration
       // User can still log in and use the app
 
-      ResponseUtils.success(res, 'User registered successfully', {
+      const responseMessage = otpSent 
+        ? 'User registered successfully. Please check your email for the OTP code to activate your account.'
+        : 'User registered successfully';
+
+      ResponseUtils.success(res, responseMessage, {
         user: {
           id: user.id,
           name: user.name,
@@ -207,6 +214,10 @@ class AppAuthController {
           is_active: user.is_active,
         },
         token,
+        requires_otp_verification: otpSent,
+        message: otpSent 
+          ? 'Check your email for OTP code. Your account will be activated after verification.'
+          : 'Account is active and ready to use.'
       }, 201);
     } catch (error) {
       console.error('Error registering app user:', error);
@@ -270,7 +281,23 @@ class AppAuthController {
 
       // Check if user is active
       if (!user.is_active) {
-        return ResponseUtils.error(res, 'Account is inactive', null, null, 403);
+        // Check if user has pending OTP verification
+        const metadata = user.metadata || {};
+        if (metadata.otp) {
+          return ResponseUtils.error(
+            res,
+            'Account pending verification. Please verify your email with the OTP code sent to you.',
+            null,
+            {
+              requires_otp: true,
+              user_id: user.id,
+              email: user.email,
+            },
+            403
+          );
+        }
+        
+        return ResponseUtils.error(res, 'Account is inactive. Please contact support.', null, null, 403);
       }
 
       // Verify password
@@ -398,6 +425,146 @@ class AppAuthController {
     // For JWT, logout is handled client-side by removing the token
     // We could implement token blacklisting here if needed
     ResponseUtils.success(res, 'Logged out successfully');
+  }
+
+  /**
+   * Verify OTP code (public endpoint for user self-verification)
+   * POST /api/app-auth/auth/verify-otp (with x-api-key or x-access-token)
+   * POST /api/app-auth/:projectId/auth/verify-otp (backward compatibility)
+   */
+  static async verifyOTP(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware (extracted from API key/token) or URL param
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
+      }
+
+      const { user_id, email, code } = req.body;
+
+      if ((!user_id && !email) || !code) {
+        return ResponseUtils.error(res, 'User ID (or email) and OTP code are required', null, null, 400);
+      }
+
+      console.log('🔐 [verifyOTP] Verifying OTP for user registration...');
+
+      // Get user with OTP data
+      let userQuery = '';
+      let queryParams: any[] = [];
+
+      if (user_id) {
+        userQuery = `SELECT id, name, email, metadata, is_active FROM ${schemaName}.app_users WHERE id = $1`;
+        queryParams = [parseInt(user_id)];
+      } else {
+        userQuery = `SELECT id, name, email, metadata, is_active FROM ${schemaName}.app_users WHERE email = $1`;
+        queryParams = [email];
+      }
+
+      const userResult = await AppAuthController.pool.query(userQuery, queryParams);
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+      const metadata = user.metadata || {};
+
+      console.log('   └─ User found:', user.email);
+      console.log('   └─ User active status:', user.is_active);
+
+      // Check if OTP exists
+      if (!metadata.otp) {
+        return ResponseUtils.error(
+          res,
+          'No OTP found for this user. OTP may have already been verified or expired.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Check if OTP is expired
+      if (metadata.otp_expires_at) {
+        const expiresAt = new Date(metadata.otp_expires_at);
+        if (expiresAt < new Date()) {
+          return ResponseUtils.error(
+            res,
+            'OTP code has expired. Please request a new registration or contact support.',
+            null,
+            null,
+            400
+          );
+        }
+      }
+
+      // Verify OTP code
+      if (metadata.otp !== code) {
+        return ResponseUtils.error(
+          res,
+          'Invalid OTP code. Please check the code and try again.',
+          null,
+          null,
+          400
+        );
+      }
+
+      console.log('   └─ ✅ OTP verified successfully');
+
+      // Activate user and mark email as verified
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.app_users 
+         SET is_active = true,
+             email_verified = true,
+             metadata = metadata - 'otp' - 'otp_expires_at',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [user.id]
+      );
+
+      console.log('   └─ ✅ User activated and email verified');
+
+      // Check if welcome email should be sent
+      const settingsResult = await AppAuthController.pool.query(
+        'SELECT send_welcome_email, email_provider_id FROM auth_settings WHERE project_id = $1',
+        [projectId]
+      );
+
+      if (settingsResult.rows.length > 0) {
+        const emailSettings = settingsResult.rows[0];
+        
+        if (emailSettings.send_welcome_email && emailSettings.email_provider_id) {
+          console.log('📧 Sending welcome email...');
+          
+          const welcomeResult = await AppAuthController.emailService.sendWelcomeEmail(
+            projectId,
+            user.email,
+            user.name
+          );
+          
+          if (welcomeResult.success) {
+            console.log('   └─ ✅ Welcome email sent');
+          } else {
+            console.warn('   └─ ⚠️ Failed to send welcome email:', welcomeResult.error);
+          }
+        }
+      }
+
+      ResponseUtils.success(res, 'OTP verified successfully', {
+        message: 'Your account has been activated. You can now log in.',
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          is_active: true,
+          email_verified: true,
+        },
+      });
+    } catch (error) {
+      console.error('Error verifying OTP:', error);
+      ResponseUtils.error(res, 'Failed to verify OTP', error);
+    }
   }
 }
 

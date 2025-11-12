@@ -31,12 +31,14 @@ export function createAuthRouter(pool: Pool): Router {
   router.post('/auth/login', projectExtractor, AppAuthController.login);
   router.post('/auth/verify', projectExtractor, AppAuthController.verify);
   router.post('/auth/logout', projectExtractor, AppAuthController.logout);
+  router.post('/auth/verify-otp', projectExtractor, AppAuthController.verifyOTP);
 
   // Legacy routes WITH projectId in URL (backward compatibility)
   router.post('/:projectId/auth/register', projectExtractor, AppAuthController.register);
   router.post('/:projectId/auth/login', projectExtractor, AppAuthController.login);
   router.post('/:projectId/auth/verify', projectExtractor, AppAuthController.verify);
   router.post('/:projectId/auth/logout', projectExtractor, AppAuthController.logout);
+  router.post('/:projectId/auth/verify-otp', projectExtractor, AppAuthController.verifyOTP);
 
   // ============================================
   // USER MANAGEMENT ROUTES (Platform admin auth required)
