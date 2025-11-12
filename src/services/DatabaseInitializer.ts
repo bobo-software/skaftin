@@ -438,6 +438,10 @@ export class DatabaseInitializer {
           default_role_id INTEGER,
           email_provider_id INTEGER REFERENCES public.email_providers(id) ON DELETE SET NULL,
           sms_provider_id INTEGER,
+          send_registration_email BOOLEAN DEFAULT false,
+          send_verification_email BOOLEAN DEFAULT false,
+          send_password_reset_email BOOLEAN DEFAULT true,
+          send_welcome_email BOOLEAN DEFAULT false,
           settings_json JSONB DEFAULT '{}',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

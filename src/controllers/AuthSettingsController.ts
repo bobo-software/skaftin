@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
 import ResponseUtils from '../utils/ResponseUtils';
 import crypto from 'crypto';
+import { AuthEmailService } from '../services/AuthEmailService';
 
 interface AuthSettings {
   id: number;
@@ -17,6 +18,10 @@ interface AuthSettings {
   default_role_id?: number;
   email_provider_id?: number;
   sms_provider_id?: number;
+  send_registration_email: boolean;
+  send_verification_email: boolean;
+  send_password_reset_email: boolean;
+  send_welcome_email: boolean;
   settings_json: any;
   created_at: Date;
   updated_at: Date;
@@ -33,6 +38,10 @@ interface UpdateAuthSettingsRequest {
   default_role_id?: number;
   email_provider_id?: number;
   sms_provider_id?: number;
+  send_registration_email?: boolean;
+  send_verification_email?: boolean;
+  send_password_reset_email?: boolean;
+  send_welcome_email?: boolean;
   settings_json?: any;
 }
 
@@ -43,9 +52,11 @@ interface VerificationToken {
 
 class AuthSettingsController {
   private static pool: Pool;
+  private static emailService: AuthEmailService;
 
   static initialize(pool: Pool) {
     AuthSettingsController.pool = pool;
+    AuthSettingsController.emailService = new AuthEmailService(pool);
   }
 
   /**
@@ -152,6 +163,26 @@ class AuthSettingsController {
         values.push(updates.sms_provider_id);
       }
 
+      if (updates.send_registration_email !== undefined) {
+        updateFields.push(`send_registration_email = $${paramIndex++}`);
+        values.push(updates.send_registration_email);
+      }
+
+      if (updates.send_verification_email !== undefined) {
+        updateFields.push(`send_verification_email = $${paramIndex++}`);
+        values.push(updates.send_verification_email);
+      }
+
+      if (updates.send_password_reset_email !== undefined) {
+        updateFields.push(`send_password_reset_email = $${paramIndex++}`);
+        values.push(updates.send_password_reset_email);
+      }
+
+      if (updates.send_welcome_email !== undefined) {
+        updateFields.push(`send_welcome_email = $${paramIndex++}`);
+        values.push(updates.send_welcome_email);
+      }
+
       if (updates.settings_json !== undefined) {
         updateFields.push(`settings_json = $${paramIndex++}`);
         values.push(JSON.stringify(updates.settings_json));
@@ -255,13 +286,31 @@ class AuthSettingsController {
         return ResponseUtils.error(res, 'User ID or email is required', null, null, 400);
       }
 
-      // Check if email provider is configured
+      console.log('📧 [sendVerificationEmail] Checking settings...');
+
+      // Check if verification email is enabled
       const settingsResult = await AuthSettingsController.pool.query(
-        'SELECT email_provider_id FROM auth_settings WHERE project_id = $1',
+        'SELECT send_verification_email, email_provider_id FROM auth_settings WHERE project_id = $1',
         [parseInt(projectId)]
       );
 
-      if (settingsResult.rows.length === 0 || !settingsResult.rows[0].email_provider_id) {
+      if (settingsResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'Auth settings not found', null, null, 404);
+      }
+
+      const settings = settingsResult.rows[0];
+
+      if (!settings.send_verification_email) {
+        return ResponseUtils.error(
+          res,
+          'Email verification is not enabled for this project. Enable it in Auth Settings.',
+          null,
+          null,
+          403
+        );
+      }
+
+      if (!settings.email_provider_id) {
         return ResponseUtils.error(
           res,
           'Email provider not configured. Please configure an email provider first.',
@@ -271,19 +320,76 @@ class AuthSettingsController {
         );
       }
 
+      // Get project schema
+      const schemaResult = await AuthSettingsController.pool.query(
+        'SELECT schema_name FROM projects WHERE id = $1',
+        [parseInt(projectId)]
+      );
+
+      if (schemaResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      const schemaName = schemaResult.rows[0].schema_name;
+
+      // Get user details
+      let userQuery = '';
+      let queryParams: any[] = [];
+
+      if (user_id) {
+        userQuery = `SELECT id, name, email FROM ${schemaName}.app_users WHERE id = $1`;
+        queryParams = [user_id];
+      } else {
+        userQuery = `SELECT id, name, email FROM ${schemaName}.app_users WHERE email = $1`;
+        queryParams = [email];
+      }
+
+      const userResult = await AuthSettingsController.pool.query(userQuery, queryParams);
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+
       // Generate verification token
-      const token = crypto.randomBytes(32).toString('hex');
+      const verificationToken = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-      // Store verification token (you would implement this in your database)
-      // For now, we'll just return the token
+      console.log(`   └─ Sending verification email to ${user.email}...`);
 
-      // TODO: Integrate with AuthEmailService to send actual email
+      // Send verification email
+      const emailResult = await AuthSettingsController.emailService.sendVerificationEmail(
+        parseInt(projectId),
+        user.email,
+        user.name,
+        verificationToken
+      );
+
+      if (!emailResult.success) {
+        return ResponseUtils.error(
+          res,
+          'Failed to send verification email',
+          null,
+          emailResult.error,
+          500
+        );
+      }
+
+      // Store verification token in user metadata
+      await AuthSettingsController.pool.query(
+        `UPDATE ${schemaName}.app_users 
+         SET metadata = jsonb_set(COALESCE(metadata, '{}'), '{verification_token}', $1::jsonb),
+             metadata = jsonb_set(metadata, '{verification_expires_at}', $2::jsonb)
+         WHERE id = $3`,
+        [JSON.stringify(verificationToken), JSON.stringify(expiresAt.toISOString()), user.id]
+      );
+
+      console.log('   └─ ✅ Verification email sent successfully');
 
       ResponseUtils.success(res, 'Verification email sent successfully', {
-        token,
+        message: `Verification email sent to ${user.email}`,
         expires_at: expiresAt,
-        message: 'Email sending will be implemented with AuthEmailService',
       });
     } catch (error) {
       console.error('Error sending verification email:', error);
@@ -308,9 +414,11 @@ class AuthSettingsController {
         return ResponseUtils.error(res, 'Email is required', null, null, 400);
       }
 
-      // Check if password reset is enabled
+      console.log('📧 [sendPasswordResetEmail] Checking settings...');
+
+      // Check if password reset email is enabled
       const settingsResult = await AuthSettingsController.pool.query(
-        'SELECT enable_password_reset, email_provider_id FROM auth_settings WHERE project_id = $1',
+        'SELECT send_password_reset_email, email_provider_id FROM auth_settings WHERE project_id = $1',
         [parseInt(projectId)]
       );
 
@@ -320,8 +428,14 @@ class AuthSettingsController {
 
       const settings = settingsResult.rows[0];
 
-      if (!settings.enable_password_reset) {
-        return ResponseUtils.error(res, 'Password reset is disabled for this project', null, null, 403);
+      if (!settings.send_password_reset_email) {
+        return ResponseUtils.error(
+          res,
+          'Password reset emails are not enabled for this project. Enable it in Auth Settings.',
+          null,
+          null,
+          403
+        );
       }
 
       if (!settings.email_provider_id) {
@@ -334,16 +448,71 @@ class AuthSettingsController {
         );
       }
 
+      // Get project schema
+      const schemaResult = await AuthSettingsController.pool.query(
+        'SELECT schema_name FROM projects WHERE id = $1',
+        [parseInt(projectId)]
+      );
+
+      if (schemaResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      const schemaName = schemaResult.rows[0].schema_name;
+
+      // Check if user exists
+      const userResult = await AuthSettingsController.pool.query(
+        `SELECT id, name, email FROM ${schemaName}.app_users WHERE email = $1`,
+        [email]
+      );
+
+      if (userResult.rows.length === 0) {
+        // Don't reveal if email exists or not for security
+        return ResponseUtils.success(res, 'If the email exists, a password reset link has been sent', {
+          message: 'Password reset email sent (if email exists)',
+        });
+      }
+
+      const user = userResult.rows[0];
+
       // Generate reset token
-      const token = crypto.randomBytes(32).toString('hex');
+      const resetToken = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-      // TODO: Integrate with AuthEmailService to send actual email
+      console.log(`   └─ Sending password reset email to ${user.email}...`);
+
+      // Send password reset email
+      const emailResult = await AuthSettingsController.emailService.sendPasswordResetEmail(
+        parseInt(projectId),
+        user.email,
+        user.name,
+        resetToken
+      );
+
+      if (!emailResult.success) {
+        return ResponseUtils.error(
+          res,
+          'Failed to send password reset email',
+          null,
+          emailResult.error,
+          500
+        );
+      }
+
+      // Store reset token in user metadata
+      await AuthSettingsController.pool.query(
+        `UPDATE ${schemaName}.app_users 
+         SET metadata = jsonb_set(COALESCE(metadata, '{}'), '{reset_token}', $1::jsonb),
+             metadata = jsonb_set(metadata, '{reset_expires_at}', $2::jsonb)
+         WHERE id = $3`,
+        [JSON.stringify(resetToken), JSON.stringify(expiresAt.toISOString()), user.id]
+      );
+
+      console.log('   └─ ✅ Password reset email sent successfully');
 
       ResponseUtils.success(res, 'Password reset email sent successfully', {
-        token,
+        message: `Password reset instructions sent to ${email}`,
         expires_at: expiresAt,
-        message: 'Email sending will be implemented with AuthEmailService',
       });
     } catch (error) {
       console.error('Error sending password reset email:', error);

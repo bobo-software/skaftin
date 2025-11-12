@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Mail, CheckCircle, AlertCircle, Settings, ExternalLink, Send } from 'lucide-react';
+import { Mail, CheckCircle, AlertCircle, Settings, ExternalLink, Send, Save } from 'lucide-react';
 import AuthSettingsService, { AuthSettings, EmailProvider } from '../../../../../services/AuthSettingsService';
 import { AppButton } from '../../../../../components/ComponentsIndex';
 
@@ -225,6 +225,113 @@ const AuthEmailSettingsTab = () => {
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Email Toggles */}
+        {settings && (
+          <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6 mb-6">
+            <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">Email Notifications</h3>
+            <p className="text-sm text-dark-600 dark:text-dark-400 mb-6">
+              Control which emails are automatically sent during user registration and authentication flows.
+            </p>
+            
+            <div className="space-y-4">
+              {/* Registration Email Toggle */}
+              <div className="flex items-center justify-between py-3 border-b border-dark-100 dark:border-dark-700">
+                <div className="flex-1">
+                  <label className="font-medium text-dark-900 dark:text-white">Send Registration Email</label>
+                  <p className="text-sm text-dark-600 dark:text-dark-400">
+                    Send welcome email with OTP code when users register
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.send_registration_email || false}
+                    onChange={(e) => setSettings({ ...settings, send_registration_email: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </label>
+              </div>
+
+              {/* Verification Email Toggle */}
+              <div className="flex items-center justify-between py-3 border-b border-dark-100 dark:border-dark-700">
+                <div className="flex-1">
+                  <label className="font-medium text-dark-900 dark:text-white">Send Verification Email</label>
+                  <p className="text-sm text-dark-600 dark:text-dark-400">
+                    Send email verification link to confirm email addresses
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.send_verification_email || false}
+                    onChange={(e) => setSettings({ ...settings, send_verification_email: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </label>
+              </div>
+
+              {/* Password Reset Email Toggle */}
+              <div className="flex items-center justify-between py-3 border-b border-dark-100 dark:border-dark-700">
+                <div className="flex-1">
+                  <label className="font-medium text-dark-900 dark:text-white">Send Password Reset Email</label>
+                  <p className="text-sm text-dark-600 dark:text-dark-400">
+                    Send reset link when users request password reset
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.send_password_reset_email !== undefined ? settings.send_password_reset_email : true}
+                    onChange={(e) => setSettings({ ...settings, send_password_reset_email: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </label>
+              </div>
+
+              {/* Welcome Email Toggle */}
+              <div className="flex items-center justify-between py-3">
+                <div className="flex-1">
+                  <label className="font-medium text-dark-900 dark:text-white">Send Welcome Email</label>
+                  <p className="text-sm text-dark-600 dark:text-dark-400">
+                    Send welcome message after successful registration
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.send_welcome_email || false}
+                    onChange={(e) => setSettings({ ...settings, send_welcome_email: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-6 pt-4 border-t border-dark-200 dark:border-dark-700">
+              <AppButton
+                onClick={handleSaveProvider}
+                disabled={saving}
+                icon={<Save className="w-4 h-4" />}
+              >
+                {saving ? 'Saving...' : 'Save Email Settings'}
+              </AppButton>
+            </div>
+
+            {!settings.email_provider_id && (
+              <div className="mt-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                  <AlertCircle className="w-4 h-4 inline mr-1" />
+                  Configure an email provider above to enable email notifications.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

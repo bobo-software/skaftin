@@ -451,6 +451,22 @@ export function createAuthTools(config: AuthToolsConfig): Tool[] {
             type: 'number',
             description: 'Email provider ID for auth emails',
           },
+          send_registration_email: {
+            type: 'boolean',
+            description: 'Send registration email with OTP on signup',
+          },
+          send_verification_email: {
+            type: 'boolean',
+            description: 'Send email verification link after registration',
+          },
+          send_password_reset_email: {
+            type: 'boolean',
+            description: 'Send password reset email when requested',
+          },
+          send_welcome_email: {
+            type: 'boolean',
+            description: 'Send welcome email after registration',
+          },
         },
         required: ['projectId'],
       },
@@ -1057,6 +1073,10 @@ export async function handleAuthTool(
         auth_enabled,
         default_role_id,
         email_provider_id,
+        send_registration_email,
+        send_verification_email,
+        send_password_reset_email,
+        send_welcome_email,
       } = args;
 
       const updateFields: string[] = [];
@@ -1090,6 +1110,22 @@ export async function handleAuthTool(
       if (email_provider_id !== undefined) {
         updateFields.push(`email_provider_id = $${paramIndex++}`);
         values.push(email_provider_id);
+      }
+      if (send_registration_email !== undefined) {
+        updateFields.push(`send_registration_email = $${paramIndex++}`);
+        values.push(send_registration_email);
+      }
+      if (send_verification_email !== undefined) {
+        updateFields.push(`send_verification_email = $${paramIndex++}`);
+        values.push(send_verification_email);
+      }
+      if (send_password_reset_email !== undefined) {
+        updateFields.push(`send_password_reset_email = $${paramIndex++}`);
+        values.push(send_password_reset_email);
+      }
+      if (send_welcome_email !== undefined) {
+        updateFields.push(`send_welcome_email = $${paramIndex++}`);
+        values.push(send_welcome_email);
       }
 
       if (updateFields.length === 0) {

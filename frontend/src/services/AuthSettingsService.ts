@@ -13,6 +13,10 @@ export interface AuthSettings {
   default_role_id?: number;
   email_provider_id?: number;
   sms_provider_id?: number;
+  send_registration_email: boolean;
+  send_verification_email: boolean;
+  send_password_reset_email: boolean;
+  send_welcome_email: boolean;
   settings_json: any;
   created_at: string;
   updated_at: string;
@@ -29,6 +33,10 @@ export interface UpdateAuthSettingsRequest {
   default_role_id?: number;
   email_provider_id?: number;
   sms_provider_id?: number;
+  send_registration_email?: boolean;
+  send_verification_email?: boolean;
+  send_password_reset_email?: boolean;
+  send_welcome_email?: boolean;
   settings_json?: any;
 }
 

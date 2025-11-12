@@ -3,7 +3,9 @@ import { Pool } from 'pg';
 import ResponseUtils from '../utils/ResponseUtils';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { AppUserAuthenticatedRequest } from '../middleware/appUserAuthMiddleware';
+import { AuthEmailService } from '../services/AuthEmailService';
 
 /**
  * Authentication controller for application users
@@ -11,9 +13,11 @@ import { AppUserAuthenticatedRequest } from '../middleware/appUserAuthMiddleware
  */
 class AppAuthController {
   private static pool: Pool;
+  private static emailService: AuthEmailService;
 
   static initialize(pool: Pool) {
     AppAuthController.pool = pool;
+    AppAuthController.emailService = new AuthEmailService(pool);
   }
 
   /**
@@ -53,9 +57,12 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Name, email, and password are required', null, null, 400);
       }
 
-      // Check if registration is enabled
+      // Check if registration is enabled and get email settings
       const settingsResult = await AppAuthController.pool.query(
-        'SELECT registration_enabled, auth_enabled FROM auth_settings WHERE project_id = $1',
+        `SELECT registration_enabled, auth_enabled, email_provider_id,
+                send_registration_email, send_verification_email, 
+                send_welcome_email, require_email_verification
+         FROM auth_settings WHERE project_id = $1`,
         [projectId]
       );
 
@@ -66,6 +73,8 @@ class AppAuthController {
       if (!settingsResult.rows[0].registration_enabled) {
         return ResponseUtils.error(res, 'Registration is disabled for this project', null, null, 403);
       }
+
+      const emailSettings = settingsResult.rows[0];
 
       // Check if email already exists
       const existingUser = await AppAuthController.pool.query(
@@ -118,6 +127,76 @@ class AppAuthController {
       );
 
       console.log(`✅ App user registered: ${email} (Project: ${projectId})`);
+
+      // ============================================
+      // SEND EMAILS BASED ON SETTINGS
+      // ============================================
+
+      // Send registration email (with OTP if configured)
+      if (emailSettings.send_registration_email && emailSettings.email_provider_id) {
+        const otp = crypto.randomInt(100000, 999999).toString();
+        console.log(`📧 Sending registration email to ${email}...`);
+        
+        const registrationResult = await AppAuthController.emailService.sendRegistrationEmail(
+          projectId,
+          email,
+          name,
+          otp
+        );
+        
+        if (registrationResult.success) {
+          console.log('   └─ ✅ Registration email sent');
+        } else {
+          console.warn('   └─ ⚠️ Failed to send registration email:', registrationResult.error);
+        }
+      }
+
+      // Send verification email
+      if (emailSettings.send_verification_email && emailSettings.email_provider_id) {
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        console.log(`📧 Sending verification email to ${email}...`);
+        
+        const verificationResult = await AppAuthController.emailService.sendVerificationEmail(
+          projectId,
+          email,
+          name,
+          verificationToken
+        );
+        
+        if (verificationResult.success) {
+          console.log('   └─ ✅ Verification email sent');
+          
+          // Store verification token in user metadata
+          await AppAuthController.pool.query(
+            `UPDATE ${schemaName}.app_users 
+             SET metadata = jsonb_set(COALESCE(metadata, '{}'), '{verification_token}', $1::jsonb)
+             WHERE id = $2`,
+            [JSON.stringify(verificationToken), user.id]
+          );
+        } else {
+          console.warn('   └─ ⚠️ Failed to send verification email:', verificationResult.error);
+        }
+      }
+
+      // Send welcome email
+      if (emailSettings.send_welcome_email && emailSettings.email_provider_id) {
+        console.log(`📧 Sending welcome email to ${email}...`);
+        
+        const welcomeResult = await AppAuthController.emailService.sendWelcomeEmail(
+          projectId,
+          email,
+          name
+        );
+        
+        if (welcomeResult.success) {
+          console.log('   └─ ✅ Welcome email sent');
+        } else {
+          console.warn('   └─ ⚠️ Failed to send welcome email:', welcomeResult.error);
+        }
+      }
+
+      // Note: Email sending failures are logged but don't prevent registration
+      // User can still log in and use the app
 
       ResponseUtils.success(res, 'User registered successfully', {
         user: {
