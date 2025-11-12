@@ -8,6 +8,7 @@ import { emitProjectEvent } from '../utils/websocketEmitter';
 import { S3Client, CreateBucketCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
 import { Pool } from 'pg';
+import { DatabaseInitializer } from '../services/DatabaseInitializer';
 
 // Initialize S3 client for MinIO
 const s3Client = new S3Client({
@@ -278,6 +279,29 @@ class ProjectsController {
       } catch (schemaError) {
         console.error('❌ Error creating PostgreSQL schema:', schemaError);
         // Continue even if schema creation fails
+      }
+
+      // Initialize auth tables for the new project
+      try {
+        const dbInitializer = new DatabaseInitializer(ProjectsController.pool);
+        await dbInitializer.initializeProjectAuthTables(schemaName, newProject.id);
+        console.log(`✅ Initialized auth tables for project: ${schemaName}`);
+      } catch (authError) {
+        console.error('❌ Error initializing auth tables:', authError);
+        // Continue even if auth table creation fails
+      }
+
+      // Create default auth settings for the project
+      try {
+        await db.execute(sql`
+          INSERT INTO public.auth_settings (project_id, allow_duplicate_emails, registration_enabled, auth_enabled)
+          VALUES (${newProject.id}, false, true, true)
+          ON CONFLICT (project_id) DO NOTHING
+        `);
+        console.log(`✅ Created default auth settings for project: ${newProject.id}`);
+      } catch (authSettingsError) {
+        console.error('❌ Error creating auth settings:', authSettingsError);
+        // Continue even if auth settings creation fails
       }
 
       // Create MinIO bucket

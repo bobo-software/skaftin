@@ -137,7 +137,6 @@ app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 // ROUTERS
 // ============================================================================
 
-import { router as AuthRouter } from './routers/AuthRouter';
 import { router as AuthCompatibilityRouter } from './routers/AuthCompatibilityRouter';
 import { router as ProjectsRouter } from './routers/ProjectsRouter';
 import { router as FilesRouter } from './routers/FilesRouter';
@@ -149,6 +148,7 @@ import { router as DatabaseRouter } from './routers/DatabaseRouter';
 import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import { createInvitationsRouter } from './routers/InvitationsRouter';
 import { createCredentialsRouter } from './routers/CredentialsRouter';
+import { createAuthRouter } from './routers/AuthRouter';
 import OrganizationsRouter from './routers/OrganizationsRouter';
 import MCPController from './controllers/MCPController';
 import DatabaseController from './controllers/DatabaseController';
@@ -176,7 +176,8 @@ app.get('/', (req: Request, res: Response) => {
     message: 'Skaftin Platform API',
     version: '2.0.0',
     endpoints: {
-      auth: '/api/auth',
+      supertokens_auth: '/auth',
+      auth_management: '/api/auth/:projectId',
       organizations: '/api/organizations',
       projects: '/api/projects',
       files: '/api/files',
@@ -216,10 +217,15 @@ const InvitationsRouter = createInvitationsRouter(pool);
 // Initialize Credentials Router
 const CredentialsRouter = createCredentialsRouter(pool);
 
+// Initialize Auth Management Router (for app user management)
+const AuthManagementRouter = createAuthRouter(pool);
+
 // Register routers
 // Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
 // Auth compatibility layer for old frontend routes
-app.use('/api/auth', AuthCompatibilityRouter);
+app.use('/api/auth-compatibility', AuthCompatibilityRouter);
+// Auth management routes for app users
+app.use('/api/auth', AuthManagementRouter);
 app.use('/api/organizations', OrganizationsRouter);
 app.use('/api/projects', ProjectsRouter);
 app.use('/api/files', FilesRouter);
