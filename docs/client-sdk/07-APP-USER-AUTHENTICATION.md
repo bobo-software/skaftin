@@ -20,9 +20,10 @@ This guide covers authenticating **your application's end users** (not the clien
 
 **Layer 2: App User Authentication** (This Guide)
 - Authenticates your app's end users
-- Email/password authentication with JWT tokens
+- Email/password authentication with SuperTokens sessions
 - Session-based with configurable durations
 - Role-based access control
+- Secure HTTP-only session management
 - Built on top of platform authentication
 
 **Key Concept:** Your API key identifies the project, so you don't need to include project ID in URLs anymore!
@@ -68,7 +69,10 @@ Response:
       "phone": "+1234567890",
       "is_active": true
     },
-    "token": "eyJhbGciOiJIUzI1NiIs..."  // JWT token for user
+    "session": {
+      "accessToken": "eyJhbGciOiJIUzI1NiIs..."  // SuperTokens access token
+      // Refresh token is handled automatically via /auth/session/refresh
+    }
   }
 }
 ```
@@ -108,12 +112,15 @@ Response:
       ],
       "is_active": true
     },
-    "token": "eyJhbGciOiJIUzI1NiIs..."
+    "session": {
+      "accessToken": "eyJhbGciOiJIUzI1NiIs..."  // SuperTokens access token
+      // Refresh token is handled automatically via /auth/session/refresh
+    }
   }
 }
 ```
 
-### Verify Token
+### Verify Session
 
 ```typescript
 POST /api/app-auth/auth/verify
@@ -121,7 +128,7 @@ POST /api/app-auth/auth/verify
 Headers:
 {
   "x-api-key": "sk_your_api_key",
-  "Authorization": "Bearer eyJhbGciOiJIUzI1NiIs..."
+  "Authorization": "Bearer <accessToken>"  // SuperTokens access token
 }
 
 Response:
@@ -148,7 +155,7 @@ POST /api/app-auth/auth/logout
 Headers:
 {
   "x-api-key": "sk_your_api_key",
-  "Authorization": "Bearer eyJhbGciOiJIUzI1NiIs..."
+  "Authorization": "Bearer <accessToken>"  // SuperTokens access token
 }
 
 Response:
@@ -158,7 +165,29 @@ Response:
 }
 ```
 
-**Note:** For JWT authentication, logout is primarily handled client-side by removing the token.
+**Note:** This endpoint revokes the SuperTokens session server-side. You should also remove the access token from client storage.
+
+### Refresh Session Token
+
+When the access token expires, refresh it using SuperTokens' refresh endpoint:
+
+```typescript
+POST /auth/session/refresh
+
+Headers:
+{
+  "Authorization": "Bearer <accessToken>"  // Current access token
+}
+
+Response:
+{
+  "status": "OK",
+  "accessToken": "...",  // New access token
+  "refreshToken": "..."  // New refresh token (if using cookies, handled automatically)
+}
+```
+
+**Note:** SuperTokens automatically handles token refresh. Your client should implement retry logic to refresh tokens when API calls return 401 (Unauthorized).
 
 ---
 
@@ -508,7 +537,9 @@ export interface LoginRequest {
 
 export interface AuthResponse {
   user: AppUser;
-  token: string;
+  session: {
+    accessToken: string;
+  };
 }
 
 /**
@@ -532,14 +563,14 @@ class AppUserAuthService {
   }
 
   /**
-   * Verify a JWT token
+   * Verify a SuperTokens session token
    */
-  async verify(token: string) {
+  async verify(accessToken: string) {
     const response = await fetch(`${this.basePath}/verify`, {
       method: 'POST',
       headers: {
         ...getAuthHeaders(),
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${accessToken}`,
       },
     });
 
@@ -547,42 +578,123 @@ class AppUserAuthService {
   }
 
   /**
-   * Logout (client-side token removal)
+   * Logout and revoke session
    */
-  async logout(token: string) {
-    // Remove token client-side
-    localStorage.removeItem('app_user_token');
+  async logout(accessToken: string) {
+    // Call logout endpoint to revoke session server-side
+    const result = await post(`${this.basePath}/logout`, {}, {
+      'Authorization': `Bearer ${accessToken}`,
+    });
     
-    // Optional: call logout endpoint
-    return post(`${this.basePath}/logout`, {});
+    // Remove token client-side
+    this.removeToken();
+    
+    return result;
   }
 
   /**
-   * Store token in localStorage
+   * Refresh access token using SuperTokens refresh endpoint
    */
-  storeToken(token: string) {
-    localStorage.setItem('app_user_token', token);
+  async refreshToken(accessToken: string): Promise<string | null> {
+    try {
+      const response = await fetch('/auth/session/refresh', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Important for SuperTokens
+      });
+
+      if (!response.ok) {
+        throw new Error('Token refresh failed');
+      }
+
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.accessToken) {
+        // Store new access token
+        this.storeToken(data.accessToken);
+        return data.accessToken;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Failed to refresh token:', error);
+      // Token refresh failed - user needs to log in again
+      this.removeToken();
+      return null;
+    }
   }
 
   /**
-   * Get stored token
+   * Store access token in localStorage
+   */
+  storeToken(accessToken: string) {
+    localStorage.setItem('app_user_access_token', accessToken);
+  }
+
+  /**
+   * Get stored access token
    */
   getToken(): string | null {
-    return localStorage.getItem('app_user_token');
+    return localStorage.getItem('app_user_access_token');
   }
 
   /**
    * Remove stored token
    */
   removeToken() {
-    localStorage.removeItem('app_user_token');
+    localStorage.removeItem('app_user_access_token');
   }
 
   /**
-   * Check if user is logged in
+   * Check if user is logged in (has access token)
    */
   isLoggedIn(): boolean {
     return !!this.getToken();
+  }
+
+  /**
+   * Make authenticated request with automatic token refresh on 401
+   */
+  async authenticatedFetch(url: string, options: RequestInit = {}) {
+    let accessToken = this.getToken();
+
+    if (!accessToken) {
+      throw new Error('Not authenticated');
+    }
+
+    // Add authorization header
+    const headers = new Headers(options.headers);
+    headers.set('Authorization', `Bearer ${accessToken}`);
+    headers.set('Content-Type', 'application/json');
+
+    let response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
+    // If unauthorized, try to refresh token and retry once
+    if (response.status === 401) {
+      const newToken = await this.refreshToken(accessToken);
+      
+      if (newToken) {
+        // Retry request with new token
+        headers.set('Authorization', `Bearer ${newToken}`);
+        response = await fetch(url, {
+          ...options,
+          headers,
+        });
+      } else {
+        // Refresh failed - redirect to login
+        this.removeToken();
+        window.location.href = '/login';
+        throw new Error('Session expired. Please log in again.');
+      }
+    }
+
+    return response;
   }
 }
 
@@ -707,11 +819,11 @@ const RegisterForm = () => {
       });
 
       if (response.success) {
-        // Store the JWT token
-        AppUserAuthService.storeToken(response.data.token);
+        // Store the SuperTokens access token
+        AppUserAuthService.storeToken(response.data.session.accessToken);
         
         console.log('User registered:', response.data.user);
-        console.log('Token stored');
+        console.log('Access token stored');
         
         // Redirect to dashboard
         window.location.href = '/dashboard';
@@ -754,8 +866,8 @@ const LoginForm = () => {
       const response = await AppUserAuthService.login({ email, password });
 
       if (response.success) {
-        // Store the JWT token
-        AppUserAuthService.storeToken(response.data.token);
+        // Store the SuperTokens access token
+        AppUserAuthService.storeToken(response.data.session.accessToken);
         
         console.log('User logged in:', response.data.user);
         console.log('Roles:', response.data.user.roles);

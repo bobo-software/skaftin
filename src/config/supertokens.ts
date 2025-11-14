@@ -86,7 +86,18 @@ export function initSuperTokens() {
       Session.init({
         ...cookieSettings,
         sessionExpiredStatusCode: 401,
-        getTokenTransferMethod: () => "cookie", // FORCE cookie-based sessions
+        // Support both cookie and header-based token transfer
+        // App users can use header tokens, platform users use cookies
+        getTokenTransferMethod: (input) => {
+          // Check if this is an app-auth request (use header tokens)
+          // BaseRequest may not have originalUrl, so check path or use a header
+          const req = input.req as any;
+          if (req?.originalUrl?.includes('/api/app-auth') || req?.path?.includes('/api/app-auth')) {
+            return "header";
+          }
+          // Platform auth uses cookies
+          return "cookie";
+        },
         override: {
           functions: (originalImplementation) => {
             return {

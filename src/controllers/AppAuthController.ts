@@ -1,11 +1,13 @@
 import { Response } from 'express';
 import { Pool } from 'pg';
 import ResponseUtils from '../utils/ResponseUtils';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { AppUserAuthenticatedRequest } from '../middleware/appUserAuthMiddleware';
 import { AuthEmailService } from '../services/AuthEmailService';
+import EmailPassword from "supertokens-node/recipe/emailpassword";
+import Session from "supertokens-node/recipe/session";
+import { convertToRecipeUserId } from "supertokens-node";
+import { createProjectScopedEmail, extractOriginalEmail } from '../middleware/appUserSuperTokensMiddleware';
 
 /**
  * Authentication controller for application users
@@ -76,7 +78,7 @@ class AppAuthController {
 
       const emailSettings = settingsResult.rows[0];
 
-      // Check if email already exists
+      // Check if email already exists in this project
       const existingUser = await AppAuthController.pool.query(
         `SELECT id FROM ${schemaName}.app_users WHERE email = $1`,
         [email]
@@ -86,20 +88,33 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Email already registered', null, null, 409);
       }
 
-      // Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
-
       // Determine if user should be active immediately or wait for OTP verification
       const requiresOTP = emailSettings.send_registration_email && emailSettings.email_provider_id;
       const isActive = !requiresOTP; // Active immediately if OTP not required
 
-      // Create user
+      // Create project-scoped email for SuperTokens (allows same email across projects)
+      const supertokensEmail = createProjectScopedEmail(email, projectId);
+
+      // Create SuperTokens user
+      const signUpResponse = await EmailPassword.signUp("public", supertokensEmail, password);
+
+      if (signUpResponse.status !== "OK") {
+        if (signUpResponse.status === "EMAIL_ALREADY_EXISTS_ERROR") {
+          return ResponseUtils.error(res, 'Email already registered', null, null, 409);
+        }
+        console.error('SuperTokens signup failed:', signUpResponse);
+        return ResponseUtils.error(res, 'Failed to create user account', null, null, 500);
+      }
+
+      const supertokensUserId = signUpResponse.user.id;
+
+      // Create app user in database
       const insertResult = await AppAuthController.pool.query(
         `INSERT INTO ${schemaName}.app_users 
-         (name, email, password, phone, metadata, is_active, email_verified)
+         (supertokens_user_id, name, email, phone, metadata, is_active, email_verified)
          VALUES ($1, $2, $3, $4, $5, $6, false)
          RETURNING id, name, email, phone, is_active, created_at`,
-        [name, email, hashedPassword, phone || null, JSON.stringify(metadata || {}), isActive]
+        [supertokensUserId, name, email, phone || null, JSON.stringify(metadata || {}), isActive]
       );
 
       const user = insertResult.rows[0];
@@ -118,19 +133,21 @@ class AppAuthController {
         );
       }
 
-      // Generate JWT token
-      const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
-      const token = jwt.sign(
-        {
-          userId: user.id,
-          email: user.email,
-          projectId: projectId,
-        },
-        jwtSecret,
-        { expiresIn: '7d' } as jwt.SignOptions
-      );
-
       console.log(`✅ App user registered: ${email} (Project: ${projectId})`);
+      
+      // Convert to RecipeUserId for session creation
+      const recipeUserId = convertToRecipeUserId(supertokensUserId);
+      
+      // Create SuperTokens session with project context
+      const session = await Session.createNewSession(req, res, "public", recipeUserId, {
+        projectId: projectId,
+        appUserId: user.id.toString(),
+        email: user.email,
+      }, {});
+
+      // Get session token (for header-based auth)
+      // SuperTokens handles refresh tokens automatically via the refresh endpoint
+      const accessToken = session.getAccessToken();
 
       // ============================================
       // SEND EMAILS BASED ON SETTINGS
@@ -213,7 +230,10 @@ class AppAuthController {
           phone: user.phone,
           is_active: user.is_active,
         },
-        token,
+        session: {
+          accessToken,
+          // Refresh token is handled automatically by SuperTokens via /auth/session/refresh endpoint
+        },
         requires_otp_verification: otpSent,
         message: otpSent 
           ? 'Check your email for OTP code. Your account will be activated after verification.'
@@ -300,46 +320,51 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Account is inactive. Please contact support.', null, null, 403);
       }
 
-      // Verify password
-      const isValidPassword = await bcrypt.compare(password, user.password);
-      if (!isValidPassword) {
+      // Get SuperTokens email (project-scoped)
+      const supertokensEmail = createProjectScopedEmail(email, projectId);
+
+      // Verify credentials with SuperTokens
+      const signInResponse = await EmailPassword.signIn("public", supertokensEmail, password);
+
+      if (signInResponse.status !== "OK") {
         return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
       }
 
-      // Get session duration from user's primary role
-      let sessionDuration = '7d'; // Default 7 days
-      if (user.roles && user.roles.length > 0) {
-        const primaryRole = user.roles[0];
-        const roleResult = await AppAuthController.pool.query(
-          `SELECT session_duration_minutes FROM ${schemaName}.app_roles WHERE id = $1`,
-          [primaryRole.id]
-        );
-        if (roleResult.rows.length > 0 && roleResult.rows[0].session_duration_minutes) {
-          sessionDuration = `${roleResult.rows[0].session_duration_minutes}m`;
-        }
+      const supertokensUserId = signInResponse.user.id;
+
+      // Verify SuperTokens user ID matches our app user
+      if (user.supertokens_user_id !== supertokensUserId) {
+        console.error(`SuperTokens user ID mismatch: ${user.supertokens_user_id} vs ${supertokensUserId}`);
+        return ResponseUtils.error(res, 'User authentication mismatch', null, null, 500);
       }
 
-      // Generate JWT token
-      const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
-      const token = jwt.sign(
-        {
-          userId: user.id,
-          email: user.email,
-          projectId: projectId,
-          roles: user.roles,
-        },
-        jwtSecret,
-        { expiresIn: sessionDuration } as jwt.SignOptions
-      );
+      // Convert to RecipeUserId for session creation
+      const recipeUserId = convertToRecipeUserId(supertokensUserId);
+
+      // Create SuperTokens session with project context
+      const session = await Session.createNewSession(req, res, "public", recipeUserId, {
+        projectId: projectId,
+        appUserId: user.id.toString(),
+        email: user.email,
+        roles: user.roles || [],
+      }, {});
+
+      // Get session token (for header-based auth)
+      // SuperTokens handles refresh tokens automatically via the refresh endpoint
+      const accessToken = session.getAccessToken();
 
       console.log(`✅ App user logged in: ${email} (Project: ${projectId})`);
 
-      // Remove password from response
+      // Remove password from response (not used anymore, but keep for compatibility)
       delete user.password;
+      delete user.supertokens_user_id; // Don't expose SuperTokens user ID
 
       ResponseUtils.success(res, 'Login successful', {
         user,
-        token,
+        session: {
+          accessToken,
+          // Refresh token is handled automatically by SuperTokens via /auth/session/refresh endpoint
+        },
       });
     } catch (error) {
       console.error('Error logging in app user:', error);
@@ -348,32 +373,44 @@ class AppAuthController {
   }
 
   /**
-   * Verify app user token
-   * POST /api/app-auth/auth/verify (with JWT token - projectId extracted from token)
+   * Verify app user session
+   * POST /api/app-auth/auth/verify (with SuperTokens session token)
    * POST /api/app-auth/:projectId/auth/verify (backward compatibility)
    */
   static async verify(req: AppUserAuthenticatedRequest, res: Response) {
     try {
-      const token = req.headers.authorization?.replace('Bearer ', '');
-
-      if (!token) {
-        return ResponseUtils.error(res, 'No token provided', null, null, 401);
-      }
-
-      // Verify JWT
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
-
-      // Get projectId from middleware, URL param, or token
-      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null) || decoded.projectId;
+      // Get projectId from middleware or URL param
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
       const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
 
       if (!projectId || !schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      // Verify token matches project (if projectId was in URL or middleware)
-      if (req.projectId && decoded.projectId !== req.projectId) {
-        return ResponseUtils.error(res, 'Token does not match project context', null, null, 403);
+      // Use SuperTokens session verification middleware
+      // This will be handled by the route middleware, but we need to get user info
+      const sessionToken = req.headers.authorization?.replace('Bearer ', '');
+      
+      if (!sessionToken) {
+        return ResponseUtils.error(res, 'No session token provided', null, null, 401);
+      }
+
+      // Verify session using SuperTokens
+      const session = await Session.getSession(req, res, {
+        sessionRequired: true,
+        antiCsrfCheck: false,
+      });
+
+      if (!session) {
+        return ResponseUtils.error(res, 'Invalid or expired session', null, null, 401);
+      }
+
+      const supertokensUserId = session.getUserId();
+      const sessionData = session.getAccessTokenPayload();
+
+      // Verify project matches
+      if (sessionData.projectId !== projectId) {
+        return ResponseUtils.error(res, 'Session does not match project context', null, null, 403);
       }
 
       // Get fresh user data
@@ -388,9 +425,9 @@ class AppAuthController {
          FROM ${schemaName}.app_users u
          LEFT JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
          LEFT JOIN ${schemaName}.app_roles r ON ur.role_id = r.id
-         WHERE u.id = $1
+         WHERE u.supertokens_user_id = $1
          GROUP BY u.id`,
-        [decoded.userId]
+        [supertokensUserId]
       );
 
       if (userResult.rows.length === 0) {
@@ -405,26 +442,35 @@ class AppAuthController {
 
       ResponseUtils.success(res, 'Token is valid', { user });
     } catch (error: any) {
-      if (error.name === 'TokenExpiredError') {
-        return ResponseUtils.error(res, 'Token expired', null, null, 401);
-      }
-      if (error.name === 'JsonWebTokenError') {
-        return ResponseUtils.error(res, 'Invalid token', null, null, 401);
-      }
-      console.error('Error verifying app user token:', error);
-      ResponseUtils.error(res, 'Failed to verify token', error);
+      console.error('Error verifying app user session:', error);
+      return ResponseUtils.error(res, 'Failed to verify session', error, null, 401);
     }
   }
 
   /**
-   * Logout app user (client-side token removal)
+   * Logout app user (SuperTokens session revocation)
    * POST /api/app-auth/auth/logout
    * POST /api/app-auth/:projectId/auth/logout (backward compatibility)
    */
   static async logout(req: AppUserAuthenticatedRequest, res: Response) {
-    // For JWT, logout is handled client-side by removing the token
-    // We could implement token blacklisting here if needed
-    ResponseUtils.success(res, 'Logged out successfully');
+    try {
+      // Revoke SuperTokens session
+      const session = await Session.getSession(req, res, {
+        sessionRequired: false,
+        antiCsrfCheck: false,
+      });
+
+      if (session) {
+        await session.revokeSession();
+        console.log('✅ App user session revoked');
+      }
+
+      ResponseUtils.success(res, 'Logged out successfully');
+    } catch (error) {
+      console.error('Error logging out app user:', error);
+      // Still return success even if session revoke fails
+      ResponseUtils.success(res, 'Logged out successfully');
+    }
   }
 
   /**
