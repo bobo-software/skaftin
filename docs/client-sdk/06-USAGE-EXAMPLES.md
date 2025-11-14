@@ -9,6 +9,10 @@ See detailed examples in `07-APP-USER-AUTHENTICATION.md` including:
 - Email verification
 - Session management
 
+## ⭐ NEW: WebSocket Real-Time Updates
+
+See `08-WEBSOCKET-INTEGRATION.md` for complete WebSocket setup, or check examples below.
+
 ---
 
 # Data Management Examples
@@ -583,6 +587,172 @@ const loadPage = async () => {
 </button>
 ```
 
+## ⭐ NEW: Real-Time Updates with WebSocket
+
+### Example 7: Real-Time List with Auto-Refresh
+
+```typescript
+// components/AssociationsList.tsx
+import { useState, useEffect } from 'react';
+import AssociationService from '../backend/services/AssociationService';
+import { useAutoRefresh } from '../backend/hooks/useWebSocket';
+import { Association } from '../backend/schemas/Association.schema';
+
+export function AssociationsList() {
+  const [associations, setAssociations] = useState<Association[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Get project ID from your config or context
+  const projectId = 'your-project-id'; // Or from config/context
+
+  const loadAssociations = async () => {
+    try {
+      setLoading(true);
+      const data = await AssociationService.findAll();
+      setAssociations(data);
+    } catch (error) {
+      console.error('Failed to load:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAssociations();
+  }, []);
+
+  // Auto-refresh when associations table changes
+  useAutoRefresh(projectId, 'associations', loadAssociations);
+
+  if (loading) return <div>Loading...</div>;
+
+  return (
+    <div>
+      <h1>Taxi Associations</h1>
+      <ul>
+        {associations.map((assoc) => (
+          <li key={assoc.id}>
+            <strong>{assoc.name}</strong> - {assoc.location}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+### Example 8: Manual Event Handling with Optimistic Updates
+
+```typescript
+// components/VehiclesList.tsx
+import { useState, useEffect } from 'react';
+import VehicleService from '../backend/services/VehicleService';
+import { useDatabaseEvents } from '../backend/hooks/useWebSocket';
+import { DatabaseEvent } from '../backend/services/WebSocketService';
+import { Vehicle } from '../backend/schemas/Vehicle.schema';
+
+export function VehiclesList() {
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [lastEvent, setLastEvent] = useState<DatabaseEvent | null>(null);
+  const projectId = 'your-project-id';
+
+  const loadVehicles = async () => {
+    const data = await VehicleService.findAll();
+    setVehicles(data);
+  };
+
+  useEffect(() => {
+    loadVehicles();
+  }, []);
+
+  // Listen to vehicle table changes
+  useDatabaseEvents(projectId, 'vehicles', (event) => {
+    setLastEvent(event);
+    
+    // Handle different event types
+    switch (event.type) {
+      case 'insert':
+        // Add new vehicle to list
+        if (event.data) {
+          setVehicles(prev => [...prev, event.data]);
+        }
+        break;
+      
+      case 'update':
+        // Update vehicle in list
+        if (event.data) {
+          setVehicles(prev =>
+            prev.map(v => v.id === event.data.id ? event.data : v)
+          );
+        }
+        break;
+      
+      case 'delete':
+        // Remove vehicle from list
+        if (event.data?.id) {
+          setVehicles(prev => prev.filter(v => v.id !== event.data.id));
+        }
+        break;
+      
+      default:
+        // Refresh all data for other events
+        loadVehicles();
+    }
+  });
+
+  return (
+    <div>
+      <h1>Vehicles</h1>
+      {lastEvent && (
+        <div className="notification">
+          Last update: {lastEvent.type} at {new Date(lastEvent.timestamp).toLocaleTimeString()}
+        </div>
+      )}
+      <ul>
+        {vehicles.map((vehicle) => (
+          <li key={vehicle.id}>
+            {vehicle.registration_number} - {vehicle.status}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+### Example 9: Connection Status Indicator
+
+```typescript
+// components/ConnectionStatus.tsx
+import { useWebSocket } from '../backend/hooks/useWebSocket';
+
+export function ConnectionStatus() {
+  const { isConnected, reconnectAttempts, reconnect } = useWebSocket();
+
+  if (isConnected) {
+    return (
+      <div className="connection-status connected">
+        <span className="dot"></span>
+        Connected
+      </div>
+    );
+  }
+
+  return (
+    <div className="connection-status disconnected">
+      <span className="dot"></span>
+      Disconnected
+      {reconnectAttempts > 0 && (
+        <span> (Reconnecting... {reconnectAttempts})</span>
+      )}
+      <button onClick={reconnect}>Reconnect</button>
+    </div>
+  );
+}
+```
+
+**See `08-WEBSOCKET-INTEGRATION.md` for complete WebSocket setup guide.**
+
 ## Next Steps
 
 Your client app is now ready to use Skaftin as a backend! 🎉
@@ -593,4 +763,5 @@ For more advanced features:
 - Check `03-TYPE-GENERATION.md` for type updates
 - See `04-SERVICE-GENERATION.md` for service patterns
 - Explore `05-GRAPHQL-INTEGRATION.md` for GraphQL
+- Integrate `08-WEBSOCKET-INTEGRATION.md` for real-time updates ⭐ NEW
 

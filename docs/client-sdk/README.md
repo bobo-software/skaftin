@@ -51,6 +51,13 @@ Welcome to the Skaftin Client SDK guides! These documents will help you integrat
    - Session management with JWT tokens
    - Protected routes & token verification
 
+8. **[08-WEBSOCKET-INTEGRATION.md](./08-WEBSOCKET-INTEGRATION.md)** ⭐ NEW
+   - Real-time database change notifications
+   - WebSocket service setup
+   - React hooks for WebSocket
+   - Auto-refresh patterns
+   - Connection management
+
 ## 🎯 What You'll Build
 
 By following these guides, you'll have a complete `src/backend/` folder in your React app with:
@@ -60,8 +67,11 @@ src/backend/
 ├── config/          → API configuration
 ├── schemas/         → TypeScript types (from database)
 ├── services/        → API service methods
-│   ├── DataService.ts      → Your custom tables
-│   └── AppAuthService.ts   → User management (NEW)
+│   ├── DataService.ts         → Your custom tables
+│   ├── AppAuthService.ts      → User management (NEW)
+│   └── WebSocketService.ts    → Real-time updates (NEW)
+├── hooks/           → React hooks
+│   └── useWebSocket.ts        → WebSocket hooks (NEW)
 ├── types/           → API response types
 └── utils/           → Auth & request helpers
 ```
@@ -94,6 +104,16 @@ await AppAuthService.createUser({
 const { users } = await AppAuthService.listUsers({
   search: "john",
   is_active: true
+});
+```
+
+**Real-Time Updates:** ⭐ NEW
+```typescript
+import { useAutoRefresh } from './backend/hooks/useWebSocket';
+
+// Auto-refresh when data changes
+useAutoRefresh(projectId, 'vehicles', () => {
+  loadVehicles();
 });
 ```
 
