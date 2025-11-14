@@ -5,9 +5,11 @@ import { MCPServer } from './MCPServer';
 import { handleDatabaseTool } from './tools/databaseTools';
 import { handleStorageTool } from './tools/storageTools';
 import { handleProjectTool } from './tools/projectTools';
+import { handleCredentialsTool } from './tools/credentialsTools';
 import { createDatabaseTools } from './tools/databaseTools';
 import { createStorageTools } from './tools/storageTools';
 import { createProjectTools } from './tools/projectTools';
+import { createCredentialsTools } from './tools/credentialsTools';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
@@ -18,20 +20,68 @@ interface MCPHTTPConfig {
 }
 
 /**
+ * Get header value with case-insensitive lookup
+ */
+function getHeader(req: Request, headerName: string): string | undefined {
+  if (!req.headers) {
+    console.log(`⚠️  No headers object on request`);
+    return undefined;
+  }
+
+  const lowerName = headerName.toLowerCase();
+  
+  // Try exact match first
+  if (req.headers[headerName]) {
+    return req.headers[headerName] as string;
+  }
+  
+  // Try lowercase
+  if (req.headers[lowerName]) {
+    return req.headers[lowerName] as string;
+  }
+  
+  // Try uppercase
+  const upperName = headerName.toUpperCase();
+  if (req.headers[upperName]) {
+    return req.headers[upperName] as string;
+  }
+  
+  // Try with first letter capitalized
+  const capitalName = headerName.charAt(0).toUpperCase() + headerName.slice(1);
+  if (req.headers[capitalName]) {
+    return req.headers[capitalName] as string;
+  }
+  
+  return undefined;
+}
+
+/**
  * Extract user ID from JWT token in request
+ * Handles case-insensitive header lookup
  */
 function getUserIdFromRequest(req: Request): string | null {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
+  // Use the helper to get authorization header
+  const authHeader = getHeader(req, 'authorization');
+  
+  if (!authHeader) {
+    console.log('⚠️  No authorization header found in request');
+    console.log('  └─ Available headers:', Object.keys(req.headers || {}).join(', '));
     return null;
   }
+
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
+    console.log('⚠️  Invalid authorization header format');
+    return null;
+  }
+
+  const token = parts[1];
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
     return decoded.userId?.toString() || null;
   } catch (error) {
+    console.log('⚠️  Token verification failed:', error);
     return null;
   }
 }
@@ -45,12 +95,14 @@ export function createMCPListToolsHandler(config: MCPHTTPConfig) {
       const databaseTools = createDatabaseTools(config);
       const storageTools = createStorageTools(config);
       const projectTools = createProjectTools(config);
+      const credentialsTools = createCredentialsTools(config);
 
       res.json({
         tools: [
           ...databaseTools,
           ...storageTools,
           ...projectTools,
+          ...credentialsTools,
         ],
       });
     } catch (error: any) {
@@ -107,6 +159,12 @@ export function createMCPCallToolHandler(config: MCPHTTPConfig) {
         'delete_data',
         'select_data',
         'drop_table',
+        'list_cron_jobs',
+        'create_cron_job',
+        'update_cron_job',
+        'delete_cron_job',
+        'toggle_cron_job',
+        'get_cron_job_history',
       ];
 
       const storageToolNames = [
@@ -125,6 +183,17 @@ export function createMCPCallToolHandler(config: MCPHTTPConfig) {
         'list_projects',
       ];
 
+      const credentialsToolNames = [
+        'list_api_credentials',
+        'get_api_credential',
+        'create_api_credential',
+        'update_api_credential',
+        'delete_api_credential',
+        'get_mcp_key',
+        'regenerate_mcp_key',
+        'get_credential_permissions',
+      ];
+
       let result;
       if (databaseToolNames.includes(name)) {
         result = await handleDatabaseTool(name, args || {}, config);
@@ -132,6 +201,8 @@ export function createMCPCallToolHandler(config: MCPHTTPConfig) {
         result = await handleStorageTool(name, args || {}, config);
       } else if (projectToolNames.includes(name)) {
         result = await handleProjectTool(name, args || {}, config, userId || undefined);
+      } else if (credentialsToolNames.includes(name)) {
+        result = await handleCredentialsTool(name, args || {}, config);
       } else {
         return res.status(400).json({
           status: 'error',

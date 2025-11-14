@@ -183,6 +183,56 @@ interface DeleteSchemaParams {
 - Backup creation
 - Confirmation requirements
 
+## 👥 Authentication & User Management Tools
+
+### App User Management
+
+The Auth Tools provide comprehensive MCP integration for managing application users, roles, custom fields, and authentication settings. For detailed documentation, see [Auth Tools Documentation](./mcp/AUTH_TOOLS.md).
+
+#### Available Tools
+
+**User Management:**
+- `list_app_users` - List users with filtering and pagination
+- `get_app_user` - Get user details by ID
+- `create_app_user` - Create new application users
+- `update_app_user` - Update user information
+- `delete_app_user` - Deactivate or permanently delete users
+- `assign_user_role` - Assign roles to users
+
+**Role Management:**
+- `list_app_roles` - List all project roles
+- `get_app_role` - Get role details
+- `create_app_role` - Create custom roles with permissions
+- `update_app_role` - Update role configuration
+- `delete_app_role` - Delete custom roles
+
+**Custom Fields:**
+- `list_custom_fields` - List user custom fields
+- `create_custom_field` - Define new custom fields
+- `apply_custom_field` - Apply field to database schema
+
+**Auth Settings:**
+- `get_auth_settings` - Get project auth configuration
+- `update_auth_settings` - Update auth settings
+
+#### Quick Example
+
+```typescript
+// Create a user and assign admin role
+const user = await mcpClient.callTool('create_app_user', {
+  projectId: '1',
+  name: 'John Doe',
+  email: 'john@example.com',
+  password: 'SecurePass123!',
+});
+
+await mcpClient.callTool('assign_user_role', {
+  projectId: '1',
+  userId: user.user.id.toString(),
+  roleId: 1 // Admin role
+});
+```
+
 ## 📁 Storage Tools
 
 ### MinIO Integration

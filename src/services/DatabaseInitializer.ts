@@ -381,7 +381,7 @@ export class DatabaseInitializer {
           id SERIAL PRIMARY KEY,
           project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
           name VARCHAR(255) NOT NULL,
-          credential_type VARCHAR(50) NOT NULL CHECK (credential_type IN ('api_key', 'access_token')),
+          credential_type VARCHAR(50) NOT NULL CHECK (credential_type IN ('api_key', 'access_token', 'mcp_key')),
           token VARCHAR(255) NOT NULL UNIQUE,
           permissions JSONB NOT NULL DEFAULT '[]',
           is_active BOOLEAN DEFAULT true,
@@ -418,6 +418,205 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize auth_settings table using Drizzle
+   * Stores authentication and authorization settings per project
+   * Always creates in public schema
+   */
+  async initializeAuthSettingsTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.auth_settings (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL UNIQUE REFERENCES public.projects(id) ON DELETE CASCADE,
+          allow_duplicate_emails BOOLEAN DEFAULT false,
+          require_email_verification BOOLEAN DEFAULT false,
+          require_phone_verification BOOLEAN DEFAULT false,
+          enable_password_reset BOOLEAN DEFAULT true,
+          enable_mfa BOOLEAN DEFAULT false,
+          registration_enabled BOOLEAN DEFAULT true,
+          auth_enabled BOOLEAN DEFAULT true,
+          default_role_id INTEGER,
+          email_provider_id INTEGER REFERENCES public.email_providers(id) ON DELETE SET NULL,
+          sms_provider_id INTEGER,
+          send_registration_email BOOLEAN DEFAULT false,
+          send_verification_email BOOLEAN DEFAULT false,
+          send_password_reset_email BOOLEAN DEFAULT true,
+          send_welcome_email BOOLEAN DEFAULT false,
+          settings_json JSONB DEFAULT '{}',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Auth settings table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_auth_settings_project_id ON public.auth_settings(project_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_auth_settings_email_provider_id ON public.auth_settings(email_provider_id);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ Auth settings index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Auth settings table initialized');
+  }
+
+  /**
+   * Initialize auth tables for a specific project schema
+   * Creates app_users, app_roles, app_user_roles, and app_user_custom_fields tables
+   */
+  async initializeProjectAuthTables(schemaName: string, projectId: number): Promise<void> {
+    try {
+      // Create app_users table in project schema
+      await this.db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS ${schemaName}.app_users (
+          id SERIAL PRIMARY KEY,
+          supertokens_user_id VARCHAR(255) UNIQUE,
+          name VARCHAR(255) NOT NULL,
+          email VARCHAR(255) NOT NULL,
+          password VARCHAR(255),
+          phone VARCHAR(50),
+          metadata JSONB DEFAULT '{}',
+          is_active BOOLEAN DEFAULT true,
+          email_verified BOOLEAN DEFAULT false,
+          phone_verified BOOLEAN DEFAULT false,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `));
+
+      // Create indexes for app_users
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_app_users_email ON ${schemaName}.app_users(email);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_app_users_supertokens_user_id ON ${schemaName}.app_users(supertokens_user_id);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_app_users_is_active ON ${schemaName}.app_users(is_active);
+      `));
+
+      console.log(`✅ app_users table created in schema: ${schemaName}`);
+
+      // Create app_roles table in project schema
+      await this.db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS ${schemaName}.app_roles (
+          id SERIAL PRIMARY KEY,
+          role_name VARCHAR(255) NOT NULL,
+          role_key VARCHAR(100) NOT NULL UNIQUE,
+          description TEXT,
+          permissions JSONB DEFAULT '[]',
+          session_duration_minutes INTEGER DEFAULT 10080,
+          is_system_role BOOLEAN DEFAULT false,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `));
+
+      // Create index for app_roles
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_app_roles_role_key ON ${schemaName}.app_roles(role_key);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_app_roles_is_system_role ON ${schemaName}.app_roles(is_system_role);
+      `));
+
+      console.log(`✅ app_roles table created in schema: ${schemaName}`);
+
+      // Insert default roles (Admin and User)
+      await this.db.execute(sql.raw(`
+        INSERT INTO ${schemaName}.app_roles (role_name, role_key, description, permissions, session_duration_minutes, is_system_role)
+        VALUES 
+          ('Admin', 'admin', 'Administrator with full access', '["*"]', 60, true),
+          ('User', 'user', 'Standard user with limited access', '["read"]', 10080, true)
+        ON CONFLICT (role_key) DO NOTHING;
+      `));
+
+      console.log(`✅ Default roles seeded in schema: ${schemaName}`);
+
+      // Create app_user_roles junction table
+      await this.db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS ${schemaName}.app_user_roles (
+          id SERIAL PRIMARY KEY,
+          app_user_id INTEGER NOT NULL REFERENCES ${schemaName}.app_users(id) ON DELETE CASCADE,
+          role_id INTEGER NOT NULL REFERENCES ${schemaName}.app_roles(id) ON DELETE CASCADE,
+          assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          assigned_by VARCHAR(255),
+          UNIQUE(app_user_id, role_id)
+        );
+      `));
+
+      // Create indexes for app_user_roles
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_app_user_roles_app_user_id ON ${schemaName}.app_user_roles(app_user_id);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_app_user_roles_role_id ON ${schemaName}.app_user_roles(role_id);
+      `));
+
+      console.log(`✅ app_user_roles table created in schema: ${schemaName}`);
+
+      // Create app_user_custom_fields table
+      await this.db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS ${schemaName}.app_user_custom_fields (
+          id SERIAL PRIMARY KEY,
+          field_name VARCHAR(255) NOT NULL UNIQUE,
+          field_label VARCHAR(255) NOT NULL,
+          field_type VARCHAR(50) NOT NULL CHECK (field_type IN ('text', 'number', 'boolean', 'date', 'select', 'multi_select', 'reference')),
+          is_required BOOLEAN DEFAULT false,
+          default_value TEXT,
+          options JSONB,
+          reference_table VARCHAR(255),
+          reference_column VARCHAR(255),
+          validation_rules JSONB,
+          display_order INTEGER DEFAULT 0,
+          is_active BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `));
+
+      // Create index for app_user_custom_fields
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_app_user_custom_fields_field_name ON ${schemaName}.app_user_custom_fields(field_name);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_app_user_custom_fields_is_active ON ${schemaName}.app_user_custom_fields(is_active);
+      `));
+
+      console.log(`✅ app_user_custom_fields table created in schema: ${schemaName}`);
+
+      // Update auth_settings with default role
+      const defaultRoleResult = await this.db.execute(sql.raw(`
+        SELECT id FROM ${schemaName}.app_roles WHERE role_key = 'user' LIMIT 1;
+      `));
+
+      if (defaultRoleResult.rows.length > 0) {
+        const defaultRoleId = (defaultRoleResult.rows[0] as any).id;
+        await this.db.execute(sql`
+          UPDATE public.auth_settings 
+          SET default_role_id = ${defaultRoleId}
+          WHERE project_id = ${projectId} AND default_role_id IS NULL;
+        `);
+      }
+
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07' && err.code !== '42P06') {
+        console.error(`❌ Error creating auth tables in schema ${schemaName}:`, err.message);
+        throw err;
+      }
+    }
+  }
+
+  /**
    * Initialize all database tables
    * Order matters: organizations must be created before organization_members and projects
    */
@@ -430,6 +629,7 @@ export class DatabaseInitializer {
     await this.initializeProjectMembersTable();
     await this.initializeProjectInvitationsTable();
     await this.initializeApiCredentialsTable();
+    await this.initializeAuthSettingsTable();
   }
 
   /**

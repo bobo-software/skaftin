@@ -11,9 +11,10 @@ import {
   Download,
   Table,
   List,
-  Settings
+  Settings,
+  Upload
 } from 'lucide-react';
-import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem, TableSettingsTab } from '../ComponentsIndex';
+import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem, TableSettingsTab, DatabaseImportModal, AppText } from '../ComponentsIndex';
 
 interface TableViewerProps {
   projectId: string;
@@ -30,6 +31,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     setCurrentTable,
     insertData,
     createTable,
+    importDatabaseDump,
     clearError 
   } = useDatabaseStore();
   
@@ -41,8 +43,10 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   const [showAddRowModal, setShowAddRowModal] = useState(false);
   const [showCsvImportModal, setShowCsvImportModal] = useState(false);
   const [showCreateTableModal, setShowCreateTableModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [tableData, setTableData] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
     type: 'single' | 'bulk' | 'table';
@@ -109,7 +113,13 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     await fetchTableData(tableName);
   };
 
-  const filteredTables = tables.filter(table =>
+  // Auth system tables that should be hidden from the table viewer
+  const authSystemTables = ['app_users', 'app_roles', 'app_user_roles', 'app_user_custom_fields'];
+
+  // First filter out auth tables, then apply search filter
+  const userTables = tables.filter(table => !authSystemTables.includes(table.table_name));
+  
+  const filteredTables = userTables.filter(table =>
     table.table_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -298,7 +308,52 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     });
   };
 
-
+  const handleDatabaseImport = async (sqlContent: string, dropExisting: boolean) => {
+    setImportLoading(true);
+    try {
+      const result = await importDatabaseDump(projectId, sqlContent, dropExisting);
+      
+      if (result.success && result.result) {
+        const { successCount, errorCount, droppedTablesCount, errors } = result.result;
+        
+        if (errorCount === 0) {
+          let message = `Successfully imported ${successCount} SQL statements!`;
+          if (dropExisting && droppedTablesCount > 0) {
+            message += ` Dropped ${droppedTablesCount} existing tables.`;
+          }
+          ToastUtils.success(message);
+        } else {
+          let message = `Imported ${successCount} statements with ${errorCount} errors.`;
+          if (dropExisting && droppedTablesCount > 0) {
+            message += ` Dropped ${droppedTablesCount} existing tables.`;
+          }
+          ToastUtils.warning(message);
+          
+          // Log errors to console for debugging
+          if (errors && errors.length > 0) {
+            console.error('Import errors:', errors);
+          }
+        }
+        
+        setShowImportModal(false);
+        
+        // Refresh tables list
+        await fetchTables(projectId);
+        
+        // Clear selected table
+        setSelectedTable(null);
+        setCurrentTable(null);
+        setTableData([]);
+      } else {
+        ToastUtils.error('Failed to import database dump. Please check the SQL content and console for errors.');
+      }
+    } catch (error) {
+      console.error('Error importing database dump:', error);
+      ToastUtils.error('Error importing database dump. Please try again.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
 
   if (loading && tables.length === 0) {
     return (
@@ -312,7 +367,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   }
 
   return (
-    <div className="">
+    <div className="h-full">
 
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
@@ -328,7 +383,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         </div>
       )}
 
-      <div className="flex h-screen">
+      <div className="flex h-[88vh]">
         {/* Tables Sidebar */}
         <div className="w-30 flex-shrink-0 border-r border-dark-200 dark:border-dark-700 bg-dark-50 dark:bg-dark-800">
           <div className="h-full flex flex-col">
@@ -337,7 +392,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-semibold text-dark-900 dark:text-white">Tables</h4>
                 <span className="text-xs text-dark-500 dark:text-dark-400 bg-dark-100 dark:bg-dark-700 px-2 py-1 rounded">
-                  {tables.length}
+                  {userTables.length}
                 </span>
               </div>
               
@@ -349,6 +404,14 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                   onClick={() => setShowCreateTableModal(true)}
                 >
                   Create
+                </AppButton>
+                <AppButton
+                  variant="secondary"
+                  size="sm"
+                  icon={<Upload className="w-4 h-4" />}
+                  onClick={() => setShowImportModal(true)}
+                >
+                  Import
                 </AppButton>
               </div>
               
@@ -398,15 +461,20 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
           {currentTable ? (
             <div className="h-full flex flex-col">
               {/* Content Header */}
-              <div className="p-6 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-900">
+              <div className="p-2 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-900">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xl font-semibold text-dark-900 dark:text-white">
-                      {currentTable.table_name}
-                    </h4>
-                    <p className="text-sm text-dark-600 dark:text-dark-300 mt-1">
-                      {currentTable.table_type} • {currentTable.columns?.length || 0} columns
-                    </p>
+                  <div className="flex flex-row items-center space-x-2">
+                    <AppText
+                      children={currentTable.table_name}
+                      size="xl"
+                      weight="semibold"
+                      color="default"
+                    />
+                    <AppText
+                      children={`-> ${currentTable.table_type} • ${currentTable.columns?.length || 0} columns`}
+                      size="xs"
+                      color="muted"
+                    />
                   </div>
                 </div>
               </div>
@@ -591,6 +659,14 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         isOpen={showCreateTableModal}
         onClose={() => setShowCreateTableModal(false)}
         onCreate={handleCreateTable}
+      />
+
+      {/* Database Import Modal */}
+      <DatabaseImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImport={handleDatabaseImport}
+        loading={importLoading}
       />
     </div>
   );

@@ -1,18 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useProjectStore } from '../../../../stores/StoresIndex';
 import { useNavigate } from 'react-router-dom';
-import { DeleteProjectModal } from '../../../../components/ComponentsIndex';
-import { Settings, Users, Shield } from 'lucide-react';
+import { DeleteProjectModal, ResetProjectModal } from '../../../../components/ComponentsIndex';
+import { Settings, Users, Shield, Loader2 } from 'lucide-react';
 import TeamTab from '../../../../components/settings/TeamTab';
 import CredentialsTab from '../../../../components/settings/CredentialsTab';
+import ToastUtils from '../../../../utils/ToastUtils';
 
 type SettingsTabType = 'general' | 'team' | 'credentials';
 
 const ProjectSettingsTab = () => {
-  const { currentProject, deleteProject } = useProjectStore();
+  const { currentProject, updateProject, deleteProject, resetProject, loading } = useProjectStore();
   const navigate = useNavigate();
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTabType>('general');
+  const [projectName, setProjectName] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
+  // Initialize form with current project data
+  useEffect(() => {
+    if (currentProject) {
+      setProjectName(currentProject.name);
+      setProjectDescription(currentProject.description || '');
+    }
+  }, [currentProject]);
 
   const handleDeleteProject = async () => {
     if (!currentProject) return;
@@ -29,9 +43,60 @@ const ProjectSettingsTab = () => {
     }
   };
 
-  const handleResetDatabase = () => {
-    // TODO: Implement database reset functionality
-    console.log('Reset database functionality not implemented yet');
+  const handleSaveChanges = async () => {
+    if (!currentProject) return;
+
+    if (!projectName.trim()) {
+      ToastUtils.error('Project name cannot be empty');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const result = await updateProject(currentProject.id, {
+        name: projectName.trim(),
+        description: projectDescription.trim() || undefined,
+      });
+
+      if (result) {
+        ToastUtils.success('Project updated successfully!');
+      } else {
+        ToastUtils.error('Failed to update project');
+      }
+    } catch (error) {
+      console.error('Error updating project:', error);
+      ToastUtils.error('Error updating project');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleResetProject = async () => {
+    if (!currentProject) return;
+    
+    setIsResetting(true);
+    try {
+      const result = await resetProject(currentProject.id);
+      
+      if (result.success && result.result) {
+        const { droppedTables, deletedFiles, errorCount } = result.result;
+        
+        if (errorCount === 0) {
+          ToastUtils.success(`Project reset successfully! Dropped ${droppedTables} tables and deleted ${deletedFiles} files.`);
+        } else {
+          ToastUtils.warning(`Project reset completed with ${errorCount} errors. Dropped ${droppedTables} tables and deleted ${deletedFiles} files.`);
+        }
+        
+        setIsResetModalOpen(false);
+      } else {
+        ToastUtils.error('Failed to reset project. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error resetting project:', error);
+      ToastUtils.error('Error resetting project. Please try again.');
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   return (
@@ -89,9 +154,11 @@ const ProjectSettingsTab = () => {
               </label>
               <input
                 type="text"
-                defaultValue={currentProject?.name || ''}
-                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 placeholder="Enter project name"
+                disabled={isSaving}
               />
             </div>
             <div>
@@ -100,13 +167,50 @@ const ProjectSettingsTab = () => {
               </label>
               <textarea
                 rows={3}
-                defaultValue={currentProject?.description || ''}
-                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                value={projectDescription}
+                onChange={(e) => setProjectDescription(e.target.value)}
+                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
                 placeholder="Enter project description"
+                disabled={isSaving}
               />
             </div>
-            <button className="btn-primary">
-              Save Changes
+            <div>
+              <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                Database Schema
+              </label>
+              <input
+                type="text"
+                value={currentProject?.schema_name || ''}
+                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-dark-100 dark:bg-dark-800 text-dark-600 dark:text-dark-400"
+                disabled
+                readOnly
+              />
+              <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                This is the PostgreSQL schema name for your project database
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                Storage Bucket
+              </label>
+              <input
+                type="text"
+                value={currentProject?.bucket_name || ''}
+                className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-dark-100 dark:bg-dark-800 text-dark-600 dark:text-dark-400"
+                disabled
+                readOnly
+              />
+              <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                This is the MinIO bucket name for your project files
+              </p>
+            </div>
+            <button 
+              onClick={handleSaveChanges}
+              disabled={isSaving || !projectName.trim()}
+              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+            >
+              {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>{isSaving ? 'Saving...' : 'Save Changes'}</span>
             </button>
           </div>
         </div>
@@ -114,18 +218,32 @@ const ProjectSettingsTab = () => {
         <div className="card">
           <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">Danger Zone</h3>
           <div className="space-y-4">
-            <button 
-              onClick={() => setIsDeleteModalOpen(true)}
-              className="w-full btn-secondary text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
-            >
-              Delete Project
-            </button>
-            <button 
-              onClick={handleResetDatabase}
-              className="w-full btn-secondary text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-900/20"
-            >
-              Reset Database
-            </button>
+            <div className="border-2 border-orange-200 dark:border-orange-800 rounded-lg p-4">
+              <h4 className="font-medium text-dark-900 dark:text-white mb-2">Reset Project</h4>
+              <p className="text-sm text-dark-600 dark:text-dark-300 mb-3">
+                Clear all database tables and storage files. The project structure will remain.
+              </p>
+              <button 
+                onClick={() => setIsResetModalOpen(true)}
+                disabled={isResetting}
+                className="w-full btn-secondary text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isResetting ? 'Resetting...' : 'Reset Project'}
+              </button>
+            </div>
+            
+            <div className="border-2 border-red-200 dark:border-red-800 rounded-lg p-4">
+              <h4 className="font-medium text-dark-900 dark:text-white mb-2">Delete Project</h4>
+              <p className="text-sm text-dark-600 dark:text-dark-300 mb-3">
+                Permanently delete this project and all its data. This action cannot be undone.
+              </p>
+              <button 
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="w-full btn-secondary text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
+              >
+                Delete Project
+              </button>
+            </div>
           </div>
         </div>
         </div>
@@ -145,6 +263,15 @@ const ProjectSettingsTab = () => {
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={handleDeleteProject}
         projectName={currentProject?.name || ''}
+      />
+
+      {/* Reset Project Modal */}
+      <ResetProjectModal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        onConfirm={handleResetProject}
+        projectName={currentProject?.name || ''}
+        loading={isResetting}
       />
     </div>
   );

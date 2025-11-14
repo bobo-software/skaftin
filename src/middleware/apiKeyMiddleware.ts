@@ -8,7 +8,7 @@ export interface ApiKeyAuthenticatedRequest extends Request {
     id: number;
     projectId: number;
     name: string;
-    type: 'api_key' | 'access_token';
+    type: 'api_key' | 'access_token' | 'mcp_key';
     permissions: string[];
   };
 }

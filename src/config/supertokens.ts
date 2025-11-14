@@ -14,6 +14,7 @@ export function initSuperTokens() {
     cookieSameSite: isProduction ? "none" as const : "lax" as const,
     cookieSecure: isProduction, // true in production (HTTPS required)
     cookieDomain: process.env.COOKIE_DOMAIN || undefined, // .bobosoftware.co.za in production
+    olderCookieDomain: process.env.OLDER_COOKIE_DOMAIN || undefined, // Clear old cookies if domain changed
   };
 
   const config: TypeInput = {

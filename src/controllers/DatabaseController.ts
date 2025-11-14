@@ -1312,6 +1312,152 @@ class DatabaseController {
       ResponseUtils.error(res, 'Failed to toggle cron job', error);
     }
   }
+
+  /**
+   * Import PostgreSQL database dump
+   * POST /api/database/:projectId/import
+   */
+  static async importDatabaseDump(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const { projectId } = req.params;
+      const { sqlContent, dropExisting = false } = req.body;
+
+      if (!sqlContent || typeof sqlContent !== 'string') {
+        return ResponseUtils.error(res, 'SQL content is required', null, null, 400);
+      }
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      let successCount = 0;
+      let errorCount = 0;
+      let droppedTablesCount = 0;
+      const errors: string[] = [];
+
+      try {
+        // Start a transaction
+        await client.query('BEGIN');
+
+        // If dropExisting is true, drop all tables in the current schema
+        if (dropExisting) {
+          console.log('🗑️  Dropping existing tables...');
+          const tablesResult = await client.query(`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = current_schema() 
+              AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+          `);
+
+          for (const row of tablesResult.rows) {
+            try {
+              await client.query(`DROP TABLE IF EXISTS "${row.table_name}" CASCADE`);
+              droppedTablesCount++;
+              console.log(`  ✓ Dropped table: ${row.table_name}`);
+            } catch (err: any) {
+              errorCount++;
+              errors.push(`Failed to drop table ${row.table_name}: ${err.message}`);
+              console.error(`  ✗ Failed to drop table ${row.table_name}:`, err.message);
+            }
+          }
+          console.log(`🗑️  Dropped ${droppedTablesCount} tables`);
+        }
+
+        // Clean and parse SQL content
+        // Remove SQL comments (both -- and /* */ style)
+        let cleanedSql = sqlContent
+          .split('\n')
+          .map(line => {
+            // Remove inline comments (--) but keep the rest of the line
+            const commentIndex = line.indexOf('--');
+            if (commentIndex !== -1) {
+              return line.substring(0, commentIndex);
+            }
+            return line;
+          })
+          .join('\n');
+
+        // Remove multi-line comments /* */
+        cleanedSql = cleanedSql.replace(/\/\*[\s\S]*?\*\//g, '');
+
+        // Split by semicolons and clean up statements
+        const statements = cleanedSql
+          .split(';')
+          .map((stmt: string) => stmt.trim())
+          .filter((stmt: string) => {
+            // Filter out empty statements and comment-only lines
+            if (stmt.length === 0) return false;
+            // Check if it's only whitespace or newlines
+            if (!/\S/.test(stmt)) return false;
+            return true;
+          });
+
+        console.log(`📝 Found ${statements.length} SQL statements to execute`);
+
+        for (let i = 0; i < statements.length; i++) {
+          const statement = statements[i];
+          try {
+            await client.query(statement);
+            successCount++;
+            
+            // Log progress for every 10 statements
+            if ((i + 1) % 10 === 0) {
+              console.log(`✅ Executed ${i + 1}/${statements.length} statements`);
+            }
+          } catch (err: any) {
+            errorCount++;
+            const errorMsg = `Statement ${i + 1}: ${statement.substring(0, 100)}... Error: ${err.message}`;
+            errors.push(errorMsg);
+            console.error('❌ SQL execution error:', errorMsg);
+          }
+        }
+
+        // Commit transaction
+        await client.query('COMMIT');
+
+        client.release();
+
+        // Emit WebSocket event
+        emitDatabaseChange(projectId, 'database', 'import_dump', { 
+          successCount, 
+          errorCount,
+          dropExisting 
+        });
+
+        const responseData: any = {
+          successCount,
+          errorCount,
+          droppedTablesCount: dropExisting ? droppedTablesCount : 0,
+        };
+
+        if (errorCount === 0) {
+          responseData.message = `Successfully executed ${successCount} SQL statements`;
+          if (dropExisting) {
+            responseData.message += ` (dropped ${droppedTablesCount} existing tables)`;
+          }
+          ResponseUtils.success(res, 'Database dump imported successfully', responseData);
+        } else {
+          responseData.errors = errors.slice(0, 10); // Return first 10 errors
+          responseData.message = `Executed ${successCount} statements, ${errorCount} failed`;
+          if (dropExisting) {
+            responseData.message += ` (dropped ${droppedTablesCount} existing tables)`;
+          }
+          ResponseUtils.success(res, 'Database dump imported with warnings', responseData);
+        }
+      } catch (error: any) {
+        // Rollback on error
+        await client.query('ROLLBACK');
+        client.release();
+        throw error;
+      }
+    } catch (error: any) {
+      console.error('Error importing database dump:', error);
+      ResponseUtils.error(res, 'Failed to import database dump', error);
+    }
+  }
 }
 
 export default DatabaseController;

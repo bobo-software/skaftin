@@ -28,6 +28,7 @@ const ApiRoutes = {
     GET: (id: string) => `/api/projects/${id}`,
     UPDATE: (id: string) => `/api/projects/update/${id}`,
     DELETE: (id: string) => `/api/projects/delete/${id}`,
+    RESET: (id: string) => `/api/projects/reset/${id}`,
     STATS: (id: string) => `/api/projects/${id}/stats`,
   },
   
@@ -79,6 +80,7 @@ const ApiRoutes = {
     DELETE_DATA: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/delete`,
     DROP_TABLE: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}`,
     EXECUTE_QUERY: (projectId: string) => `/api/database/${projectId}/query`,
+    IMPORT_DUMP: (projectId: string) => `/api/database/${projectId}/import`,
     // Constraint routes
     LIST_CONSTRAINTS: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints`,
     LIST_FOREIGN_KEYS: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/foreign-keys`,
@@ -121,6 +123,8 @@ const ApiRoutes = {
     UPDATE: (projectId: string, credentialId: string) => `/api/credentials/${projectId}/credentials/${credentialId}`,
     DELETE: (projectId: string, credentialId: string) => `/api/credentials/${projectId}/credentials/${credentialId}`,
     GET_PERMISSIONS: '/api/credentials/permissions',
+    GET_MCP_KEY: (projectId: string) => `/api/credentials/${projectId}/mcp-key`,
+    REGENERATE_MCP_KEY: (projectId: string) => `/api/credentials/${projectId}/mcp-key/regenerate`,
   },
   
   // MCP routes

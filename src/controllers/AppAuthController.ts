@@ -1,0 +1,572 @@
+import { Response } from 'express';
+import { Pool } from 'pg';
+import ResponseUtils from '../utils/ResponseUtils';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import { AppUserAuthenticatedRequest } from '../middleware/appUserAuthMiddleware';
+import { AuthEmailService } from '../services/AuthEmailService';
+
+/**
+ * Authentication controller for application users
+ * Separate from platform admin authentication
+ */
+class AppAuthController {
+  private static pool: Pool;
+  private static emailService: AuthEmailService;
+
+  static initialize(pool: Pool) {
+    AppAuthController.pool = pool;
+    AppAuthController.emailService = new AuthEmailService(pool);
+  }
+
+  /**
+   * Get project schema name from project ID
+   */
+  private static async getProjectSchema(projectId: number): Promise<string | null> {
+    try {
+      const result = await AppAuthController.pool.query(
+        'SELECT schema_name FROM projects WHERE id = $1',
+        [projectId]
+      );
+      return result.rows.length > 0 ? result.rows[0].schema_name : null;
+    } catch (error) {
+      console.error('Error fetching project schema:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Register a new app user
+   * POST /api/app-auth/auth/register (with x-api-key or x-access-token)
+   * POST /api/app-auth/:projectId/auth/register (backward compatibility)
+   */
+  static async register(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware (extracted from API key/token) or URL param
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
+      }
+
+      const { name, email, password, phone, metadata } = req.body;
+
+      if (!name || !email || !password) {
+        return ResponseUtils.error(res, 'Name, email, and password are required', null, null, 400);
+      }
+
+      // Check if registration is enabled and get email settings
+      const settingsResult = await AppAuthController.pool.query(
+        `SELECT registration_enabled, auth_enabled, email_provider_id,
+                send_registration_email, send_verification_email, 
+                send_welcome_email, require_email_verification
+         FROM auth_settings WHERE project_id = $1`,
+        [projectId]
+      );
+
+      if (settingsResult.rows.length === 0 || !settingsResult.rows[0].auth_enabled) {
+        return ResponseUtils.error(res, 'Authentication is not enabled for this project', null, null, 403);
+      }
+
+      if (!settingsResult.rows[0].registration_enabled) {
+        return ResponseUtils.error(res, 'Registration is disabled for this project', null, null, 403);
+      }
+
+      const emailSettings = settingsResult.rows[0];
+
+      // Check if email already exists
+      const existingUser = await AppAuthController.pool.query(
+        `SELECT id FROM ${schemaName}.app_users WHERE email = $1`,
+        [email]
+      );
+
+      if (existingUser.rows.length > 0) {
+        return ResponseUtils.error(res, 'Email already registered', null, null, 409);
+      }
+
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Determine if user should be active immediately or wait for OTP verification
+      const requiresOTP = emailSettings.send_registration_email && emailSettings.email_provider_id;
+      const isActive = !requiresOTP; // Active immediately if OTP not required
+
+      // Create user
+      const insertResult = await AppAuthController.pool.query(
+        `INSERT INTO ${schemaName}.app_users 
+         (name, email, password, phone, metadata, is_active, email_verified)
+         VALUES ($1, $2, $3, $4, $5, $6, false)
+         RETURNING id, name, email, phone, is_active, created_at`,
+        [name, email, hashedPassword, phone || null, JSON.stringify(metadata || {}), isActive]
+      );
+
+      const user = insertResult.rows[0];
+
+      // Assign default role
+      const defaultRoleResult = await AppAuthController.pool.query(
+        'SELECT default_role_id FROM auth_settings WHERE project_id = $1',
+        [projectId]
+      );
+
+      if (defaultRoleResult.rows.length > 0 && defaultRoleResult.rows[0].default_role_id) {
+        await AppAuthController.pool.query(
+          `INSERT INTO ${schemaName}.app_user_roles (app_user_id, role_id)
+           VALUES ($1, $2)`,
+          [user.id, defaultRoleResult.rows[0].default_role_id]
+        );
+      }
+
+      // Generate JWT token
+      const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
+      const token = jwt.sign(
+        {
+          userId: user.id,
+          email: user.email,
+          projectId: projectId,
+        },
+        jwtSecret,
+        { expiresIn: '7d' } as jwt.SignOptions
+      );
+
+      console.log(`✅ App user registered: ${email} (Project: ${projectId})`);
+
+      // ============================================
+      // SEND EMAILS BASED ON SETTINGS
+      // ============================================
+
+      let otpSent = false;
+
+      // Send registration email (with OTP if configured)
+      if (emailSettings.send_registration_email && emailSettings.email_provider_id) {
+        const otp = crypto.randomInt(100000, 999999).toString();
+        const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        
+        console.log(`📧 Sending registration email with OTP to ${email}...`);
+        
+        const registrationResult = await AppAuthController.emailService.sendRegistrationEmail(
+          projectId,
+          email,
+          name,
+          otp
+        );
+        
+        if (registrationResult.success) {
+          console.log('   └─ ✅ Registration email sent with OTP');
+          
+          // Store OTP in user metadata
+          await AppAuthController.pool.query(
+            `UPDATE ${schemaName}.app_users 
+             SET metadata = jsonb_set(
+               jsonb_set(COALESCE(metadata, '{}'), '{otp}', $1::jsonb),
+               '{otp_expires_at}', $2::jsonb
+             )
+             WHERE id = $3`,
+            [JSON.stringify(otp), JSON.stringify(otpExpiresAt.toISOString()), user.id]
+          );
+          
+          otpSent = true;
+        } else {
+          console.warn('   └─ ⚠️ Failed to send registration email:', registrationResult.error);
+          // If OTP email fails, activate user immediately (don't block registration)
+          if (!user.is_active) {
+            await AppAuthController.pool.query(
+              `UPDATE ${schemaName}.app_users SET is_active = true WHERE id = $1`,
+              [user.id]
+            );
+            user.is_active = true;
+          }
+        }
+      }
+
+      // Send welcome email ONLY if OTP is not required
+      // (If OTP required, welcome email is sent after OTP verification)
+      if (!requiresOTP && emailSettings.send_welcome_email && emailSettings.email_provider_id) {
+        console.log(`📧 Sending welcome email to ${email}...`);
+        
+        const welcomeResult = await AppAuthController.emailService.sendWelcomeEmail(
+          projectId,
+          email,
+          name
+        );
+        
+        if (welcomeResult.success) {
+          console.log('   └─ ✅ Welcome email sent');
+        } else {
+          console.warn('   └─ ⚠️ Failed to send welcome email:', welcomeResult.error);
+        }
+      }
+
+      // Note: Email sending failures are logged but don't prevent registration
+      // User can still log in and use the app
+
+      const responseMessage = otpSent 
+        ? 'User registered successfully. Please check your email for the OTP code to activate your account.'
+        : 'User registered successfully';
+
+      ResponseUtils.success(res, responseMessage, {
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          is_active: user.is_active,
+        },
+        token,
+        requires_otp_verification: otpSent,
+        message: otpSent 
+          ? 'Check your email for OTP code. Your account will be activated after verification.'
+          : 'Account is active and ready to use.'
+      }, 201);
+    } catch (error) {
+      console.error('Error registering app user:', error);
+      ResponseUtils.error(res, 'Failed to register user', error);
+    }
+  }
+
+  /**
+   * Login an app user
+   * POST /api/app-auth/auth/login (with x-api-key or x-access-token)
+   * POST /api/app-auth/:projectId/auth/login (backward compatibility)
+   */
+  static async login(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware (extracted from API key/token) or URL param
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
+      }
+
+      const { email, password } = req.body;
+
+      if (!email || !password) {
+        return ResponseUtils.error(res, 'Email and password are required', null, null, 400);
+      }
+
+      // Check if auth is enabled
+      const settingsResult = await AppAuthController.pool.query(
+        'SELECT auth_enabled FROM auth_settings WHERE project_id = $1',
+        [projectId]
+      );
+
+      if (settingsResult.rows.length === 0 || !settingsResult.rows[0].auth_enabled) {
+        return ResponseUtils.error(res, 'Authentication is not enabled for this project', null, null, 403);
+      }
+
+      // Find user
+      const userResult = await AppAuthController.pool.query(
+        `SELECT u.*, 
+         COALESCE(
+           json_agg(
+             json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key)
+           ) FILTER (WHERE r.id IS NOT NULL), 
+           '[]'
+         ) as roles
+         FROM ${schemaName}.app_users u
+         LEFT JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
+         LEFT JOIN ${schemaName}.app_roles r ON ur.role_id = r.id
+         WHERE u.email = $1
+         GROUP BY u.id`,
+        [email]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
+      }
+
+      const user = userResult.rows[0];
+
+      // Check if user is active
+      if (!user.is_active) {
+        // Check if user has pending OTP verification
+        const metadata = user.metadata || {};
+        if (metadata.otp) {
+          return ResponseUtils.error(
+            res,
+            'Account pending verification. Please verify your email with the OTP code sent to you.',
+            null,
+            {
+              requires_otp: true,
+              user_id: user.id,
+              email: user.email,
+            },
+            403
+          );
+        }
+        
+        return ResponseUtils.error(res, 'Account is inactive. Please contact support.', null, null, 403);
+      }
+
+      // Verify password
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      if (!isValidPassword) {
+        return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
+      }
+
+      // Get session duration from user's primary role
+      let sessionDuration = '7d'; // Default 7 days
+      if (user.roles && user.roles.length > 0) {
+        const primaryRole = user.roles[0];
+        const roleResult = await AppAuthController.pool.query(
+          `SELECT session_duration_minutes FROM ${schemaName}.app_roles WHERE id = $1`,
+          [primaryRole.id]
+        );
+        if (roleResult.rows.length > 0 && roleResult.rows[0].session_duration_minutes) {
+          sessionDuration = `${roleResult.rows[0].session_duration_minutes}m`;
+        }
+      }
+
+      // Generate JWT token
+      const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
+      const token = jwt.sign(
+        {
+          userId: user.id,
+          email: user.email,
+          projectId: projectId,
+          roles: user.roles,
+        },
+        jwtSecret,
+        { expiresIn: sessionDuration } as jwt.SignOptions
+      );
+
+      console.log(`✅ App user logged in: ${email} (Project: ${projectId})`);
+
+      // Remove password from response
+      delete user.password;
+
+      ResponseUtils.success(res, 'Login successful', {
+        user,
+        token,
+      });
+    } catch (error) {
+      console.error('Error logging in app user:', error);
+      ResponseUtils.error(res, 'Failed to login', error);
+    }
+  }
+
+  /**
+   * Verify app user token
+   * POST /api/app-auth/auth/verify (with JWT token - projectId extracted from token)
+   * POST /api/app-auth/:projectId/auth/verify (backward compatibility)
+   */
+  static async verify(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      const token = req.headers.authorization?.replace('Bearer ', '');
+
+      if (!token) {
+        return ResponseUtils.error(res, 'No token provided', null, null, 401);
+      }
+
+      // Verify JWT
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+
+      // Get projectId from middleware, URL param, or token
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null) || decoded.projectId;
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Verify token matches project (if projectId was in URL or middleware)
+      if (req.projectId && decoded.projectId !== req.projectId) {
+        return ResponseUtils.error(res, 'Token does not match project context', null, null, 403);
+      }
+
+      // Get fresh user data
+      const userResult = await AppAuthController.pool.query(
+        `SELECT u.id, u.name, u.email, u.phone, u.is_active,
+         COALESCE(
+           json_agg(
+             json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key)
+           ) FILTER (WHERE r.id IS NOT NULL), 
+           '[]'
+         ) as roles
+         FROM ${schemaName}.app_users u
+         LEFT JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
+         LEFT JOIN ${schemaName}.app_roles r ON ur.role_id = r.id
+         WHERE u.id = $1
+         GROUP BY u.id`,
+        [decoded.userId]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+
+      if (!user.is_active) {
+        return ResponseUtils.error(res, 'Account is inactive', null, null, 403);
+      }
+
+      ResponseUtils.success(res, 'Token is valid', { user });
+    } catch (error: any) {
+      if (error.name === 'TokenExpiredError') {
+        return ResponseUtils.error(res, 'Token expired', null, null, 401);
+      }
+      if (error.name === 'JsonWebTokenError') {
+        return ResponseUtils.error(res, 'Invalid token', null, null, 401);
+      }
+      console.error('Error verifying app user token:', error);
+      ResponseUtils.error(res, 'Failed to verify token', error);
+    }
+  }
+
+  /**
+   * Logout app user (client-side token removal)
+   * POST /api/app-auth/auth/logout
+   * POST /api/app-auth/:projectId/auth/logout (backward compatibility)
+   */
+  static async logout(req: AppUserAuthenticatedRequest, res: Response) {
+    // For JWT, logout is handled client-side by removing the token
+    // We could implement token blacklisting here if needed
+    ResponseUtils.success(res, 'Logged out successfully');
+  }
+
+  /**
+   * Verify OTP code (public endpoint for user self-verification)
+   * POST /api/app-auth/auth/verify-otp (with x-api-key or x-access-token)
+   * POST /api/app-auth/:projectId/auth/verify-otp (backward compatibility)
+   */
+  static async verifyOTP(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware (extracted from API key/token) or URL param
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
+      }
+
+      const { user_id, email, code } = req.body;
+
+      if ((!user_id && !email) || !code) {
+        return ResponseUtils.error(res, 'User ID (or email) and OTP code are required', null, null, 400);
+      }
+
+      console.log('🔐 [verifyOTP] Verifying OTP for user registration...');
+
+      // Get user with OTP data
+      let userQuery = '';
+      let queryParams: any[] = [];
+
+      if (user_id) {
+        userQuery = `SELECT id, name, email, metadata, is_active FROM ${schemaName}.app_users WHERE id = $1`;
+        queryParams = [parseInt(user_id)];
+      } else {
+        userQuery = `SELECT id, name, email, metadata, is_active FROM ${schemaName}.app_users WHERE email = $1`;
+        queryParams = [email];
+      }
+
+      const userResult = await AppAuthController.pool.query(userQuery, queryParams);
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+      const metadata = user.metadata || {};
+
+      console.log('   └─ User found:', user.email);
+      console.log('   └─ User active status:', user.is_active);
+
+      // Check if OTP exists
+      if (!metadata.otp) {
+        return ResponseUtils.error(
+          res,
+          'No OTP found for this user. OTP may have already been verified or expired.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Check if OTP is expired
+      if (metadata.otp_expires_at) {
+        const expiresAt = new Date(metadata.otp_expires_at);
+        if (expiresAt < new Date()) {
+          return ResponseUtils.error(
+            res,
+            'OTP code has expired. Please request a new registration or contact support.',
+            null,
+            null,
+            400
+          );
+        }
+      }
+
+      // Verify OTP code
+      if (metadata.otp !== code) {
+        return ResponseUtils.error(
+          res,
+          'Invalid OTP code. Please check the code and try again.',
+          null,
+          null,
+          400
+        );
+      }
+
+      console.log('   └─ ✅ OTP verified successfully');
+
+      // Activate user and mark email as verified
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.app_users 
+         SET is_active = true,
+             email_verified = true,
+             metadata = metadata - 'otp' - 'otp_expires_at',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [user.id]
+      );
+
+      console.log('   └─ ✅ User activated and email verified');
+
+      // Check if welcome email should be sent
+      const settingsResult = await AppAuthController.pool.query(
+        'SELECT send_welcome_email, email_provider_id FROM auth_settings WHERE project_id = $1',
+        [projectId]
+      );
+
+      if (settingsResult.rows.length > 0) {
+        const emailSettings = settingsResult.rows[0];
+        
+        if (emailSettings.send_welcome_email && emailSettings.email_provider_id) {
+          console.log('📧 Sending welcome email...');
+          
+          const welcomeResult = await AppAuthController.emailService.sendWelcomeEmail(
+            projectId,
+            user.email,
+            user.name
+          );
+          
+          if (welcomeResult.success) {
+            console.log('   └─ ✅ Welcome email sent');
+          } else {
+            console.warn('   └─ ⚠️ Failed to send welcome email:', welcomeResult.error);
+          }
+        }
+      }
+
+      ResponseUtils.success(res, 'OTP verified successfully', {
+        message: 'Your account has been activated. You can now log in.',
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          is_active: true,
+          email_verified: true,
+        },
+      });
+    } catch (error) {
+      console.error('Error verifying OTP:', error);
+      ResponseUtils.error(res, 'Failed to verify OTP', error);
+    }
+  }
+}
+
+export default AppAuthController;
+

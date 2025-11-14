@@ -19,6 +19,10 @@ export function createCredentialsRouter(pool: Pool): Router {
   router.put('/:projectId/credentials/:credentialId', authMiddleware, controller.updateCredential);
   router.delete('/:projectId/credentials/:credentialId', authMiddleware, controller.deleteCredential);
 
+  // MCP Key Routes
+  router.get('/:projectId/mcp-key', authMiddleware, controller.getMcpKey);
+  router.post('/:projectId/mcp-key/regenerate', authMiddleware, controller.regenerateMcpKey);
+
   return router;
 }
 
