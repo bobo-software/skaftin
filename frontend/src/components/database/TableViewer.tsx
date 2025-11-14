@@ -84,7 +84,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.post(
-        ApiRoutes.DATABASE.SELECT_DATA(projectId, tableName),
+        ApiRoutes.DATABASE.SELECT_DATA(tableName),
         token,
         { limit: 100 }
       );

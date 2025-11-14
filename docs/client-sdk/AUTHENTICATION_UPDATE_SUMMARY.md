@@ -17,16 +17,16 @@ The Skaftin Client SDK authentication documentation has been updated to reflect 
 
 **Before:**
 ```typescript
-POST /api/app-auth/:projectId/auth/register
-POST /api/app-auth/:projectId/auth/login
-POST /api/app-auth/:projectId/auth/verify
+POST /app-api/auth/:projectId/auth/register
+POST /app-api/auth/:projectId/auth/login
+POST /app-api/auth/:projectId/auth/verify
 ```
 
 **After:**
 ```typescript
-POST /api/app-auth/auth/register
-POST /api/app-auth/auth/login
-POST /api/app-auth/auth/verify
+POST /app-api/auth/auth/register
+POST /app-api/auth/auth/login
+POST /app-api/auth/auth/verify
 ```
 
 **Why:** Project ID is now extracted from the API key/token in the request headers, simplifying the API surface.
@@ -167,7 +167,7 @@ function getAuthHeaders() {
 }
 
 // 3. For app user auth, use simplified endpoints
-const response = await fetch('/api/app-auth/auth/login', {
+const response = await fetch('/app-api/auth/auth/login', {
   method: 'POST',
   headers: getAuthHeaders(),
   body: JSON.stringify({ email, password })
@@ -185,7 +185,7 @@ Your Client App
     ↓
     ├─ Include x-api-key header (identifies project)
     ↓
-    ├─ POST /api/app-auth/auth/register (user signs up)
+    ├─ POST /app-api/auth/auth/register (user signs up)
     ↓
     ├─ Receive SuperTokens access token
     ↓
@@ -226,10 +226,10 @@ headers: {
 **Step 2: Update Auth Endpoint URLs**
 ```typescript
 // OLD
-POST /api/app-auth/${projectId}/auth/login
+POST /app-api/auth/${projectId}/auth/login
 
 // NEW
-POST /api/app-auth/auth/login
+POST /app-api/auth/auth/login
 ```
 
 **Step 3: Update Your Config**
@@ -246,37 +246,32 @@ export const SKAFTIN_CONFIG = {
 ```typescript
 // OLD
 class UserService {
-  private basePath = `/api/app-auth/${projectId}`;
+  private basePath = `/app-api/auth/${projectId}`;
   // ...
 }
 
 // NEW - Split into two services
 class AppUserAuthService {
-  private basePath = '/api/app-auth/auth';  // No project ID!
+  private basePath = '/app-api/auth/auth';  // No project ID!
   // register, login, verify, logout
 }
 
 class UserManagementService {
-  private basePath = `/api/app-auth/${projectId}`;  // Project ID still needed here
+  private basePath = '/app-api/auth';  // Project ID auto-extracted from API key
   // listUsers, createUser, updateUser, etc (admin operations)
 }
 ```
 
 ---
 
-## ✅ Backward Compatibility
+## ✅ Important Note
 
-**Good News:** The old endpoints with project IDs still work for backward compatibility:
+**Project ID is now automatically extracted from API keys**, so you no longer need to include it in URLs. This applies to:
+- Database routes: `/app-api/database/tables/...` (not `/app-api/database/:projectId/tables/...`)
+- Storage routes: `/app-api/storage/files` (not `/app-api/storage/:projectId/files`)
+- Auth management routes: `/app-api/auth/users` (not `/app-api/auth/:projectId/users`)
 
-```typescript
-// ✅ Still works (legacy)
-POST /api/app-auth/:projectId/auth/login
-
-// ✅ Recommended (new)
-POST /api/app-auth/auth/login
-```
-
-Both will function correctly, but the new format is recommended for cleaner code.
+All routes now automatically identify the project from your `x-api-key` or `x-access-token` header.
 
 ---
 
@@ -294,7 +289,7 @@ headers: {
 ### App User Registration
 
 ```typescript
-POST /api/app-auth/auth/register
+POST /app-api/auth/auth/register
 
 Headers: { 'x-api-key': 'sk_your_key' }
 Body: { name, email, password, phone?, metadata? }
@@ -304,7 +299,7 @@ Response: { user, session: { accessToken } }
 ### App User Login
 
 ```typescript
-POST /api/app-auth/auth/login
+POST /app-api/auth/auth/login
 
 Headers: { 'x-api-key': 'sk_your_key' }
 Body: { email, password }
@@ -314,7 +309,7 @@ Response: { user, session: { accessToken } }
 ### Session Verification
 
 ```typescript
-POST /api/app-auth/auth/verify
+POST /app-api/auth/auth/verify
 
 Headers: {
   'x-api-key': 'sk_your_key',
@@ -337,10 +332,11 @@ Response: { status: 'OK', accessToken, refreshToken }
 ### Admin User Management
 
 ```typescript
-GET /api/app-auth/:projectId/users
+GET /app-api/auth/users
 
 Headers: {
   'Cookie': 'sAccessToken=...'  // Platform admin session
+  'x-api-key': 'sk_your_key'    // Project auto-detected from API key
 }
 Response: { users[], pagination }
 ```

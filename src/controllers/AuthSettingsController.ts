@@ -63,17 +63,20 @@ class AuthSettingsController {
    * Get auth settings for a project
    * GET /api/auth/:projectId/settings
    */
-  static async getAuthSettings(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async getAuthSettings(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
 
       const result = await AuthSettingsController.pool.query(
         'SELECT * FROM auth_settings WHERE project_id = $1',
-        [parseInt(projectId)]
+        [projectId]
       );
 
       if (result.rows.length === 0) {
@@ -82,7 +85,7 @@ class AuthSettingsController {
           `INSERT INTO auth_settings (project_id, allow_duplicate_emails, registration_enabled, auth_enabled)
            VALUES ($1, false, true, true)
            RETURNING *`,
-          [parseInt(projectId)]
+          [projectId]
         );
 
         return ResponseUtils.success(res, 'Auth settings created', createResult.rows[0], 201);
@@ -99,13 +102,16 @@ class AuthSettingsController {
    * Update auth settings for a project
    * PUT /api/auth/:projectId/settings
    */
-  static async updateAuthSettings(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async updateAuthSettings(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const updates: UpdateAuthSettingsRequest = req.body;
 
       // Build update query dynamically
@@ -193,7 +199,7 @@ class AuthSettingsController {
       }
 
       updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-      values.push(parseInt(projectId));
+      values.push(projectId);
 
       const updateQuery = `
         UPDATE auth_settings
@@ -210,7 +216,7 @@ class AuthSettingsController {
           `INSERT INTO auth_settings (project_id, allow_duplicate_emails, registration_enabled, auth_enabled)
            VALUES ($1, false, true, true)
            RETURNING *`,
-          [parseInt(projectId)]
+          [projectId]
         );
 
         return ResponseUtils.success(res, 'Auth settings created', createResult.rows[0], 201);
@@ -227,18 +233,22 @@ class AuthSettingsController {
    * Get session configuration for a specific role
    * GET /api/auth/:projectId/settings/session-config/:roleId
    */
-  static async getSessionConfig(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async getSessionConfig(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId, roleId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { roleId } = req.params;
 
       // Get project schema
       const projectResult = await AuthSettingsController.pool.query(
         'SELECT schema_name FROM projects WHERE id = $1',
-        [parseInt(projectId)]
+        [projectId]
       );
 
       if (projectResult.rows.length === 0) {
@@ -273,13 +283,16 @@ class AuthSettingsController {
    * Send verification email to a user
    * POST /api/auth/:projectId/settings/send-verification
    */
-  static async sendVerificationEmail(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async sendVerificationEmail(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const { user_id, email } = req.body;
 
       if (!user_id && !email) {
@@ -291,7 +304,7 @@ class AuthSettingsController {
       // Check if verification email is enabled
       const settingsResult = await AuthSettingsController.pool.query(
         'SELECT send_verification_email, email_provider_id FROM auth_settings WHERE project_id = $1',
-        [parseInt(projectId)]
+        [projectId]
       );
 
       if (settingsResult.rows.length === 0) {
@@ -323,7 +336,7 @@ class AuthSettingsController {
       // Get project schema
       const schemaResult = await AuthSettingsController.pool.query(
         'SELECT schema_name FROM projects WHERE id = $1',
-        [parseInt(projectId)]
+        [projectId]
       );
 
       if (schemaResult.rows.length === 0) {
@@ -360,7 +373,7 @@ class AuthSettingsController {
 
       // Send verification email
       const emailResult = await AuthSettingsController.emailService.sendVerificationEmail(
-        parseInt(projectId),
+        projectId,
         user.email,
         user.name,
         verificationToken
@@ -401,13 +414,16 @@ class AuthSettingsController {
    * Send password reset email
    * POST /api/auth/:projectId/settings/send-reset
    */
-  static async sendPasswordResetEmail(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async sendPasswordResetEmail(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const { email } = req.body;
 
       if (!email) {
@@ -419,7 +435,7 @@ class AuthSettingsController {
       // Check if password reset email is enabled
       const settingsResult = await AuthSettingsController.pool.query(
         'SELECT send_password_reset_email, email_provider_id FROM auth_settings WHERE project_id = $1',
-        [parseInt(projectId)]
+        [projectId]
       );
 
       if (settingsResult.rows.length === 0) {
@@ -451,7 +467,7 @@ class AuthSettingsController {
       // Get project schema
       const schemaResult = await AuthSettingsController.pool.query(
         'SELECT schema_name FROM projects WHERE id = $1',
-        [parseInt(projectId)]
+        [projectId]
       );
 
       if (schemaResult.rows.length === 0) {
@@ -483,7 +499,7 @@ class AuthSettingsController {
 
       // Send password reset email
       const emailResult = await AuthSettingsController.emailService.sendPasswordResetEmail(
-        parseInt(projectId),
+        projectId,
         user.email,
         user.name,
         resetToken
@@ -524,13 +540,16 @@ class AuthSettingsController {
    * Verify OTP code
    * POST /api/auth/:projectId/settings/verify-otp
    */
-  static async verifyOTP(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async verifyOTP(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const { user_id, code } = req.body;
 
       if (!user_id || !code) {
@@ -544,7 +563,7 @@ class AuthSettingsController {
       // Get project schema
       const schemaResult = await AuthSettingsController.pool.query(
         'SELECT schema_name FROM projects WHERE id = $1',
-        [parseInt(projectId)]
+        [projectId]
       );
 
       if (schemaResult.rows.length === 0) {
@@ -623,7 +642,7 @@ class AuthSettingsController {
       // Check if welcome email should be sent
       const settingsResult = await AuthSettingsController.pool.query(
         'SELECT send_welcome_email, email_provider_id FROM auth_settings WHERE project_id = $1',
-        [parseInt(projectId)]
+        [projectId]
       );
 
       if (settingsResult.rows.length > 0) {
@@ -633,7 +652,7 @@ class AuthSettingsController {
           console.log('📧 Sending welcome email...');
           
           const welcomeResult = await AuthSettingsController.emailService.sendWelcomeEmail(
-            parseInt(projectId),
+            projectId,
             user.email,
             user.name
           );
@@ -666,18 +685,21 @@ class AuthSettingsController {
    * Get all session durations for roles in a project
    * GET /api/auth/:projectId/settings/session-durations
    */
-  static async getAllSessionDurations(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async getAllSessionDurations(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
 
       // Get project schema
       const projectResult = await AuthSettingsController.pool.query(
         'SELECT schema_name FROM projects WHERE id = $1',
-        [parseInt(projectId)]
+        [projectId]
       );
 
       if (projectResult.rows.length === 0) {
@@ -715,13 +737,16 @@ class AuthSettingsController {
    * Test email provider configuration
    * POST /api/auth/:projectId/settings/test-email-provider
    */
-  static async testEmailProvider(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async testEmailProvider(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const { test_email } = req.body;
 
       if (!test_email) {
@@ -735,7 +760,7 @@ class AuthSettingsController {
       // Get email provider configuration
       const settingsResult = await AuthSettingsController.pool.query(
         'SELECT email_provider_id FROM auth_settings WHERE project_id = $1',
-        [parseInt(projectId)]
+        [projectId]
       );
 
       if (settingsResult.rows.length === 0 || !settingsResult.rows[0].email_provider_id) {
@@ -761,7 +786,7 @@ class AuthSettingsController {
 
       const providerResult = await AuthSettingsController.pool.query(providerQuery, [
         providerId,
-        parseInt(projectId),
+        projectId,
       ]);
 
       if (providerResult.rows.length === 0) {
@@ -780,7 +805,7 @@ class AuthSettingsController {
       // Get project name
       const projectResult = await AuthSettingsController.pool.query(
         'SELECT name FROM projects WHERE id = $1',
-        [parseInt(projectId)]
+        [projectId]
       );
       const projectName = projectResult.rows[0]?.name || 'Skaftin Project';
 
@@ -887,13 +912,16 @@ Skaftin Platform - Email Testing Service
    * Get available email providers for the project
    * GET /api/auth/:projectId/settings/email-providers
    */
-  static async getEmailProviders(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async getEmailProviders(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
 
       const providersResult = await AuthSettingsController.pool.query(
         `SELECT id, name, provider_type, from_email, is_active

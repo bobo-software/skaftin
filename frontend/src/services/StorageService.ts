@@ -12,7 +12,7 @@ class StorageService {
       if (prefix) params.append('prefix', prefix);
       params.append('maxKeys', maxKeys.toString());
       
-      const url = `${ApiRoutes.STORAGE.LIST_FILES(projectId)}?${params.toString()}`;
+      const url = `${ApiRoutes.STORAGE.LIST_FILES}?${params.toString()}`;
       const result = await RequestUtils.get(url, token);
       
       return result;
@@ -34,7 +34,7 @@ class StorageService {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.post(
-        ApiRoutes.STORAGE.SEARCH_FILES(projectId),
+        ApiRoutes.STORAGE.SEARCH_FILES,
         token,
         { query, fileType, dateRange }
       );
@@ -65,7 +65,7 @@ class StorageService {
       });
       
       const result = await RequestUtils.post(
-        ApiRoutes.STORAGE.UPLOAD_FILE(projectId),
+        ApiRoutes.STORAGE.UPLOAD_FILE,
         token,
         { 
           filePath, 
@@ -94,7 +94,7 @@ class StorageService {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(ApiRoutes.STORAGE.UPLOAD_FILE_MULTIPART(projectId), {
+      const response = await fetch(ApiRoutes.STORAGE.UPLOAD_FILE_MULTIPART, {
         method: 'POST',
         headers: {
           ...(token && token !== 'session-managed-by-supertokens' ? { Authorization: `Bearer ${token}` } : {}),
@@ -124,7 +124,7 @@ class StorageService {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.post(
-        ApiRoutes.STORAGE.UPLOAD_FILE(projectId),
+        ApiRoutes.STORAGE.UPLOAD_FILE,
         token,
         { filePath, fileContent, contentType, metadata }
       );
@@ -142,7 +142,7 @@ class StorageService {
   static async downloadFile(projectId: string, filePath: string): Promise<any> {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
-      const url = `${ApiRoutes.STORAGE.DOWNLOAD_FILE(projectId, filePath)}?returnUrl=true`;
+      const url = `${ApiRoutes.STORAGE.DOWNLOAD_FILE(filePath)}?returnUrl=true`;
       const result = await RequestUtils.get(url, token);
       
       return result;
@@ -159,7 +159,7 @@ class StorageService {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.delete(
-        ApiRoutes.STORAGE.DELETE_FILE(projectId, filePath),
+        ApiRoutes.STORAGE.DELETE_FILE(filePath),
         token,
         {}
       );
@@ -178,7 +178,7 @@ class StorageService {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.get(
-        ApiRoutes.STORAGE.GET_FILE_METADATA(projectId, filePath),
+        ApiRoutes.STORAGE.GET_FILE_METADATA(filePath),
         token
       );
       
@@ -218,7 +218,7 @@ class StorageService {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.put(
-        ApiRoutes.STORAGE.RENAME_FOLDER(projectId),
+        ApiRoutes.STORAGE.RENAME_FOLDER,
         token,
         { oldPath, newPath }
       );
@@ -237,7 +237,7 @@ class StorageService {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.delete(
-        ApiRoutes.STORAGE.DELETE_FOLDER(projectId, folderPath),
+        ApiRoutes.STORAGE.DELETE_FOLDER(folderPath),
         token,
         {}
       );

@@ -173,7 +173,7 @@ const SchemaEditor = ({
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.get(
-        ApiRoutes.DATABASE.LIST_TABLES(projectId),
+        ApiRoutes.DATABASE.LIST_TABLES,
         token
       );
       if (result.success) {

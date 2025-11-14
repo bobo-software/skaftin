@@ -141,7 +141,7 @@ import { router as AuthCompatibilityRouter } from './routers/AuthCompatibilityRo
 import { createAdminRouter } from './routers/AdminRouter';
 import { router as ProjectsRouter } from './routers/ProjectsRouter';
 import { router as FilesRouter } from './routers/FilesRouter';
-import { router as StorageRouter } from './routers/StorageRouter';
+import { createStorageRouter } from './routers/StorageRouter';
 import { router as UsersRouter } from './routers/UsersRouter';
 import { router as HealthRouter } from './routers/HealthRouter';
 import { router as MCPRouter } from './routers/MCPRouter';
@@ -177,21 +177,27 @@ app.get('/', (req: Request, res: Response) => {
     message: 'Skaftin Platform API',
     version: '2.0.0',
     endpoints: {
-      supertokens_auth: '/auth',
-      platform_auth: '/api/auth',
-      app_user_management: '/api/app-auth/:projectId',
-      organizations: '/api/organizations',
-      projects: '/api/projects',
-      files: '/api/files',
-      storage: '/api/storage',
-      database: '/api/database',
-      communications: '/api/communications',
-      invitations: '/api/invitations',
-      credentials: '/api/credentials',
-      users: '/api/users',
-      health: '/api/health',
-      mcp: '/api/mcp',
-      graphql: '/api/graphql',
+      // Platform Admin Routes (SuperTokens authentication)
+      platform: {
+        supertokens_auth: '/auth',
+        platform_auth: '/api/auth',
+        organizations: '/api/organizations',
+        projects: '/api/projects',
+        files: '/api/files',
+        communications: '/api/communications',
+        invitations: '/api/invitations',
+        credentials: '/api/credentials',
+        users: '/api/users',
+        health: '/api/health',
+        mcp: '/api/mcp',
+        graphql: '/api/graphql',
+      },
+      // Client-Facing Routes (API Key / App User JWT authentication)
+      app_api: {
+        app_user_auth: '/app-api/auth',
+        storage: '/app-api/storage',
+        database: '/app-api/database',
+      },
     },
   });
 });
@@ -227,23 +233,34 @@ const AdminRouter = createAdminRouter(pool);
 
 // Register routers
 // Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
+
+// ============================================================================
+// PLATFORM ADMIN ROUTES (/api/*) - SuperTokens authentication
+// ============================================================================
 // Auth compatibility layer for Skaftin platform login (keep this at /api/auth for backward compatibility)
 app.use('/api/auth', AuthCompatibilityRouter);
 // Admin routes for managing SuperTokens users (development/debugging)
 app.use('/api/admin', AdminRouter);
-// Auth management routes for application users (project-specific)
-app.use('/api/app-auth', AuthManagementRouter);
+// Platform management routes
 app.use('/api/organizations', OrganizationsRouter);
 app.use('/api/projects', ProjectsRouter);
 app.use('/api/files', FilesRouter);
-app.use('/api/storage', StorageRouter);
 app.use('/api/users', UsersRouter);
-app.use('/api/database', DatabaseRouter);
 app.use('/api/communications', CommunicationsRouter);
 app.use('/api/invitations', InvitationsRouter);
 app.use('/api/credentials', CredentialsRouter);
 app.use('/api/health', HealthRouter);
 app.use('/api/mcp', MCPRouter);
+
+// ============================================================================
+// CLIENT-FACING ROUTES (/app-api/*) - API Key / App User JWT authentication
+// ============================================================================
+// Auth management routes for application users (project-specific)
+app.use('/app-api/auth', AuthManagementRouter);
+// Storage operations (supports both API key and SuperTokens via hybrid auth)
+app.use('/app-api/storage', createStorageRouter(pool));
+// Database operations (supports both API key and SuperTokens via hybrid auth)
+app.use('/app-api/database', DatabaseRouter);
 
 // SuperTokens error handler - MUST come after your routes
 app.use(supertokensErrorHandler() as ErrorRequestHandler);
@@ -284,13 +301,17 @@ const startServer = async () => {
     console.log('='.repeat(60));
     console.log(`✅ Skaftin Platform server is running!`);
     console.log(`🌐 Server URL: http://localhost:${port}`);
-    console.log(`📡 API Base: http://localhost:${port}/api`);
-    console.log(`🔐 Auth: http://localhost:${port}/api/auth`);
-    console.log(`📁 Projects: http://localhost:${port}/api/projects`);
-    console.log(`📄 Files: http://localhost:${port}/api/files`);
-    console.log(`🔧 MCP: http://localhost:${port}/api/mcp`);
-    console.log(`🔬 GraphQL: http://localhost:${port}/api/graphql`);
-    console.log(`🔌 WebSocket: ws://localhost:${port}`);
+    console.log('\n📡 Platform Admin API (SuperTokens):');
+    console.log(`   🔐 Auth: http://localhost:${port}/api/auth`);
+    console.log(`   📁 Projects: http://localhost:${port}/api/projects`);
+    console.log(`   📄 Files: http://localhost:${port}/api/files`);
+    console.log(`   🔧 MCP: http://localhost:${port}/api/mcp`);
+    console.log(`   🔬 GraphQL: http://localhost:${port}/api/graphql`);
+    console.log('\n📱 Client-Facing API (API Key / App User JWT):');
+    console.log(`   🔐 App Auth: http://localhost:${port}/app-api/auth`);
+    console.log(`   💾 Storage: http://localhost:${port}/app-api/storage`);
+    console.log(`   🗄️  Database: http://localhost:${port}/app-api/database`);
+    console.log(`\n🔌 WebSocket: ws://localhost:${port}`);
     console.log('='.repeat(60) + '\n');
   });
 };

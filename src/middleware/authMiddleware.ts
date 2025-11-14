@@ -13,6 +13,8 @@ export interface AuthenticatedRequest extends Request {
     iat?: number;
     exp?: number;
   };
+  projectId?: number;
+  schemaName?: string;
 }
 
 /**
@@ -72,18 +74,27 @@ export const authenticateToken = (req: AuthenticatedRequest, res: Response, next
 
 /**
  * Middleware to verify user has access to a specific project
+ * Supports both API key authentication (req.projectId) and SuperTokens/JWT (req.user)
  */
 export const verifyProjectAccess = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     console.log('🔑 [verifyProjectAccess] Checking project access');
+    
+    // If projectId is set from API key, allow access (API key already verified project)
+    if (req.projectId) {
+      console.log('  └─ ✅ Project access granted (API key):', req.projectId);
+      return next();
+    }
+    
+    // Otherwise, require user authentication (SuperTokens/JWT)
     console.log('  └─ User:', req.user ? `ID ${req.user.userId}, Email: ${req.user.email}` : 'NOT FOUND');
     
     if (!req.user) {
-      console.log('  └─ ❌ No user object found');
+      console.log('  └─ ❌ No user object found and no projectId from API key');
       return ResponseUtils.error(res, 'Authentication required', null, null, 401);
     }
 
-    // Try to get projectId from params (could be :id or :projectId) or body
+    // Try to get projectId from params/body for SuperTokens users
     const projectId = req.params?.projectId || req.params?.id || req.body?.projectId;
     console.log('  └─ Project ID requested:', projectId);
     console.log('  └─ Request params:', JSON.stringify(req.params));
@@ -93,7 +104,7 @@ export const verifyProjectAccess = (req: AuthenticatedRequest, res: Response, ne
       return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
     }
 
-    const projectIdInt = parseInt(projectId, 10);
+    const projectIdInt = typeof projectId === 'number' ? projectId : parseInt(projectId, 10);
     console.log('  └─ Project ID (parsed):', projectIdInt);
 
     if (isNaN(projectIdInt)) {

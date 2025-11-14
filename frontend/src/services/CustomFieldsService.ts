@@ -57,7 +57,7 @@ class CustomFieldsService {
    */
   async listCustomFields(projectId: string, includeInactive: boolean = false): Promise<CustomField[]> {
     try {
-      const url = `/api/app-auth/${projectId}/fields${includeInactive ? '?include_inactive=true' : ''}`;
+      const url = `/app-api/auth/${projectId}/fields${includeInactive ? '?include_inactive=true' : ''}`;
       const response = await RequestUtils.get(url, this.getToken());
 
       if (response.success) {
@@ -77,7 +77,7 @@ class CustomFieldsService {
   async getCustomField(projectId: string, fieldId: string): Promise<CustomField> {
     try {
       const response = await RequestUtils.get(
-        `/api/app-auth/${projectId}/fields/${fieldId}`,
+        `/app-api/auth/${projectId}/fields/${fieldId}`,
         this.getToken()
       );
 
@@ -98,7 +98,7 @@ class CustomFieldsService {
   async createCustomField(projectId: string, fieldData: CreateCustomFieldRequest): Promise<CustomField> {
     try {
       const response = await RequestUtils.post(
-        `/api/app-auth/${projectId}/fields`,
+        `/app-api/auth/${projectId}/fields`,
         this.getToken(),
         fieldData
       );
@@ -120,7 +120,7 @@ class CustomFieldsService {
   async updateCustomField(projectId: string, fieldId: string, updates: UpdateCustomFieldRequest): Promise<CustomField> {
     try {
       const response = await RequestUtils.put(
-        `/api/app-auth/${projectId}/fields/${fieldId}`,
+        `/app-api/auth/${projectId}/fields/${fieldId}`,
         this.getToken(),
         updates
       );
@@ -141,7 +141,7 @@ class CustomFieldsService {
    */
   async deleteCustomField(projectId: string, fieldId: string, permanent: boolean = false): Promise<void> {
     try {
-      const url = `/api/app-auth/${projectId}/fields/${fieldId}${permanent ? '?permanent=true' : ''}`;
+      const url = `/app-api/auth/${projectId}/fields/${fieldId}${permanent ? '?permanent=true' : ''}`;
       const response = await RequestUtils.delete(url, this.getToken(), {});
 
       if (!response.success) {
@@ -159,7 +159,7 @@ class CustomFieldsService {
   async applyCustomField(projectId: string, fieldId: string): Promise<void> {
     try {
       const response = await RequestUtils.post(
-        `/api/app-auth/${projectId}/fields/${fieldId}/apply`,
+        `/app-api/auth/${projectId}/fields/${fieldId}/apply`,
         this.getToken(),
         {}
       );
@@ -179,7 +179,7 @@ class CustomFieldsService {
   async getAvailableTables(projectId: string): Promise<AvailableTable[]> {
     try {
       const response = await RequestUtils.get(
-        `/api/app-auth/${projectId}/fields/available-tables`,
+        `/app-api/auth/${projectId}/fields/available-tables`,
         this.getToken()
       );
 

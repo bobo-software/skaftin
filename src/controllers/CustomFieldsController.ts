@@ -98,16 +98,19 @@ class CustomFieldsController {
    * List all custom fields for a project
    * GET /api/auth/:projectId/fields
    */
-  static async listCustomFields(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async listCustomFields(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const { include_inactive = 'false' } = req.query;
 
-      const schemaName = await CustomFieldsController.getProjectSchema(parseInt(projectId));
+      const schemaName = await CustomFieldsController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -136,15 +139,19 @@ class CustomFieldsController {
    * Get a single custom field by ID
    * GET /api/auth/:projectId/fields/:fieldId
    */
-  static async getCustomField(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async getCustomField(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId, fieldId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { fieldId } = req.params;
 
-      const schemaName = await CustomFieldsController.getProjectSchema(parseInt(projectId));
+      const schemaName = await CustomFieldsController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -169,13 +176,16 @@ class CustomFieldsController {
    * Create a new custom field
    * POST /api/auth/:projectId/fields
    */
-  static async createCustomField(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async createCustomField(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const fieldData: CreateCustomFieldRequest = req.body;
 
       // Validation
@@ -194,7 +204,7 @@ class CustomFieldsController {
         return ResponseUtils.error(res, validation.error!, null, null, 400);
       }
 
-      const schemaName = await CustomFieldsController.getProjectSchema(parseInt(projectId));
+      const schemaName = await CustomFieldsController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -269,16 +279,20 @@ class CustomFieldsController {
    * Update a custom field
    * PUT /api/auth/:projectId/fields/:fieldId
    */
-  static async updateCustomField(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async updateCustomField(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId, fieldId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { fieldId } = req.params;
       const updates: UpdateCustomFieldRequest = req.body;
 
-      const schemaName = await CustomFieldsController.getProjectSchema(parseInt(projectId));
+      const schemaName = await CustomFieldsController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -354,16 +368,20 @@ class CustomFieldsController {
    * Delete a custom field
    * DELETE /api/auth/:projectId/fields/:fieldId
    */
-  static async deleteCustomField(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async deleteCustomField(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId, fieldId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { fieldId } = req.params;
       const { permanent = 'false' } = req.query;
 
-      const schemaName = await CustomFieldsController.getProjectSchema(parseInt(projectId));
+      const schemaName = await CustomFieldsController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -410,15 +428,19 @@ class CustomFieldsController {
    * POST /api/auth/:projectId/fields/:fieldId/apply
    * Note: This is an advanced feature that alters the table structure
    */
-  static async applyCustomField(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async applyCustomField(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId, fieldId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { fieldId } = req.params;
 
-      const schemaName = await CustomFieldsController.getProjectSchema(parseInt(projectId));
+      const schemaName = await CustomFieldsController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -525,15 +547,18 @@ class CustomFieldsController {
    * Get available tables in project schema (for reference field options)
    * GET /api/auth/:projectId/fields/available-tables
    */
-  static async getAvailableTables(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async getAvailableTables(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
 
-      const schemaName = await CustomFieldsController.getProjectSchema(parseInt(projectId));
+      const schemaName = await CustomFieldsController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }

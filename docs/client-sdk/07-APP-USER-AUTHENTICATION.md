@@ -37,7 +37,7 @@ These endpoints allow your app's users to register and log in. **No authenticati
 ### Register New User
 
 ```typescript
-POST /api/app-auth/auth/register
+POST /app-api/auth/auth/register
 
 Headers:
 {
@@ -80,7 +80,7 @@ Response:
 ### Login User
 
 ```typescript
-POST /api/app-auth/auth/login
+POST /app-api/auth/auth/login
 
 Headers:
 {
@@ -123,7 +123,7 @@ Response:
 ### Verify Session
 
 ```typescript
-POST /api/app-auth/auth/verify
+POST /app-api/auth/auth/verify
 
 Headers:
 {
@@ -150,7 +150,7 @@ Response:
 ### Logout
 
 ```typescript
-POST /api/app-auth/auth/logout
+POST /app-api/auth/auth/logout
 
 Headers:
 {
@@ -195,14 +195,14 @@ Response:
 
 All user management endpoints require **both** platform authentication (API key) **and** platform admin authorization (SuperTokens session).
 
-Base URL: `/api/app-auth/:projectId`
+Base URL: `/app-api/auth`
 
-> **Note:** These endpoints are for **platform admins** managing users, not for end-user self-service.
+> **Note:** These endpoints are for **platform admins** managing users, not for end-user self-service. Project ID is automatically extracted from your API key.
 
 ### List Users
 
 ```typescript
-GET /api/app-auth/:projectId/users
+GET /app-api/auth/users
 
 Query Parameters:
 - search?: string         // Search by name or email
@@ -229,7 +229,7 @@ Response:
 ### Get Single User
 
 ```typescript
-GET /api/app-auth/:projectId/users/:userId
+GET /app-api/auth/users/:userId
 
 Response:
 {
@@ -254,7 +254,7 @@ Response:
 ### Create User
 
 ```typescript
-POST /api/app-auth/:projectId/users
+POST /app-api/auth/users
 
 Body:
 {
@@ -280,7 +280,7 @@ Response:
 ### Update User
 
 ```typescript
-PUT /api/app-auth/:projectId/users/:userId
+PUT /app-api/auth/users/:userId
 
 Body:
 {
@@ -302,7 +302,7 @@ Response:
 ### Delete User
 
 ```typescript
-DELETE /api/app-auth/:projectId/users/:userId?permanent=false
+DELETE /app-api/auth/users/:userId?permanent=false
 
 Query Parameters:
 - permanent=true   // Permanent deletion (also removes from SuperTokens)
@@ -322,7 +322,7 @@ Response:
 ### List Roles
 
 ```typescript
-GET /api/app-auth/:projectId/roles?include_user_count=true
+GET /app-api/auth/roles?include_user_count=true
 
 Response:
 {
@@ -346,7 +346,7 @@ Response:
 ### Create Role
 
 ```typescript
-POST /api/app-auth/:projectId/roles
+POST /app-api/auth/roles
 
 Body:
 {
@@ -367,7 +367,7 @@ Response:
 ### Assign Role to User
 
 ```typescript
-POST /api/app-auth/:projectId/users/:userId/roles
+POST /app-api/auth/users/:userId/roles
 
 Body:
 {
@@ -384,7 +384,7 @@ Response:
 ### Remove Role from User
 
 ```typescript
-DELETE /api/app-auth/:projectId/users/:userId/roles/:roleId
+DELETE /app-api/auth/users/:userId/roles/:roleId
 
 Response:
 {
@@ -400,7 +400,7 @@ Response:
 ### List Custom Fields
 
 ```typescript
-GET /api/app-auth/:projectId/fields?include_inactive=false
+GET /app-api/auth/fields?include_inactive=false
 
 Response:
 {
@@ -422,7 +422,7 @@ Response:
 ### Create Custom Field
 
 ```typescript
-POST /api/app-auth/:projectId/fields
+POST /app-api/auth/fields
 
 Body:
 {
@@ -445,7 +445,7 @@ Response:
 ### Apply Custom Field (Add DB Column)
 
 ```typescript
-POST /api/app-auth/:projectId/fields/:fieldId/apply
+POST /app-api/auth/fields/:fieldId/apply
 
 Response:
 {
@@ -461,7 +461,7 @@ Response:
 ### Get Auth Settings
 
 ```typescript
-GET /api/app-auth/:projectId/settings
+GET /app-api/auth/settings
 
 Response:
 {
@@ -481,7 +481,7 @@ Response:
 ### Update Auth Settings
 
 ```typescript
-PUT /api/app-auth/:projectId/settings
+PUT /app-api/auth/settings
 
 Body:
 {
@@ -546,7 +546,7 @@ export interface AuthResponse {
  * Service for app user authentication (register, login, verify, logout)
  */
 class AppUserAuthService {
-  private basePath = '/api/app-auth/auth';
+  private basePath = '/app-api/auth/auth';
 
   /**
    * Register a new app user
@@ -708,7 +708,7 @@ For platform admins to manage users (requires SuperTokens authentication):
 ```typescript
 // src/backend/services/UserManagementService.ts
 import { post, get, put, del } from '../utils/request';
-import { getProjectId } from '../utils/auth';
+// Note: getProjectId is no longer needed - project is extracted from API key
 
 export interface AppUser {
   id: number;
@@ -726,11 +726,8 @@ export interface AppUser {
  */
 class UserManagementService {
   private getBasePath() {
-    const projectId = getProjectId();
-    if (!projectId) {
-      throw new Error('Project ID not configured');
-    }
-    return `/api/app-auth/${projectId}`;
+    // Project ID is automatically extracted from API key
+    return `/app-api/auth`;
   }
 
   async listUsers(options?: {
@@ -1079,7 +1076,7 @@ Platform admins can configure session durations per role:
 
 ```typescript
 // Via API (requires platform admin authentication)
-PUT /api/app-auth/:projectId/roles/:roleId/session-duration
+PUT /app-api/auth/roles/:roleId/session-duration
 
 Headers:
 {
@@ -1134,7 +1131,7 @@ let authToken = token;
 
 **Send Verification Email:**
 ```typescript
-POST /api/app-auth/:projectId/settings/send-verification
+POST /app-api/auth/settings/send-verification
 
 Body:
 {
@@ -1145,7 +1142,7 @@ Body:
 
 **Send Password Reset Email:**
 ```typescript
-POST /api/app-auth/:projectId/settings/send-reset
+POST /app-api/auth/settings/send-reset
 
 Body:
 {
@@ -1155,7 +1152,7 @@ Body:
 
 **Verify OTP:**
 ```typescript
-POST /api/app-auth/:projectId/settings/verify-otp
+POST /app-api/auth/settings/verify-otp
 
 Body:
 {
@@ -1250,7 +1247,8 @@ Below is a comprehensive service that combines **all** app user functionality. F
 ```typescript
 // src/backend/services/ComprehensiveAppAuthService.ts
 import { get, post, put, del } from '../utils/request';
-import { getProjectId, getAuthHeaders } from '../utils/auth';
+import { getAuthHeaders } from '../utils/auth';
+// Note: getProjectId is no longer needed - project is extracted from API key
 
 export interface AppUser {
   id: number;
@@ -1284,9 +1282,9 @@ export interface CustomField {
 }
 
 class ComprehensiveAppAuthService {
-  private projectId = getProjectId();
-  private basePath = `/api/app-auth/${this.projectId}`;
-  private authBasePath = '/api/app-auth/auth';
+  // Project ID is automatically extracted from API key
+  private basePath = '/app-api/auth';
+  private authBasePath = '/app-api/auth/auth';
 
   // ============================================
   // APP USER AUTHENTICATION (No platform admin auth required)
@@ -1652,9 +1650,9 @@ headers: { 'x-api-key': 'sk_your_key' }
 
 2. **Use auth endpoints WITHOUT project ID** (simpler URLs):
 ```typescript
-POST /api/app-auth/auth/register  // NOT /api/app-auth/:projectId/auth/register
-POST /api/app-auth/auth/login
-POST /api/app-auth/auth/verify
+POST /app-api/auth/auth/register  // NOT /app-api/auth/:projectId/auth/register
+POST /app-api/auth/auth/login
+POST /app-api/auth/auth/verify
 ```
 
 3. **Store JWT tokens returned from login/register**:
@@ -1675,9 +1673,9 @@ headers: {
 
 Use project-scoped endpoints (requires platform admin session):
 ```typescript
-GET /api/app-auth/:projectId/users
-POST /api/app-auth/:projectId/users
-PUT /api/app-auth/:projectId/users/:userId
+GET /app-api/auth/users
+POST /app-api/auth/users
+PUT /app-api/auth/users/:userId
 ```
 
 ---

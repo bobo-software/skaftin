@@ -93,7 +93,7 @@ const useDatabaseStore = create<DatabaseStoreType>()(
         set({ loading: true, error: null });
         try {
           const token = localStorage.getItem('skaftin-token') || '';
-          const response = await RequestUtils.get(ApiRoutes.DATABASE.LIST_TABLES(projectId), token);
+          const response = await RequestUtils.get(ApiRoutes.DATABASE.LIST_TABLES, token);
           
           if (response.success) {
             const tables = Array.isArray(response.data) ? response.data : [];
@@ -360,7 +360,7 @@ const useDatabaseStore = create<DatabaseStoreType>()(
           // This would be a new API endpoint
           const token = localStorage.getItem('skaftin-token') || '';
           const response = await RequestUtils.get(
-            `/api/database/${projectId}/stats`,
+            `/app-api/database/${projectId}/stats`,
             token
           );
           if (response.success) {

@@ -26,6 +26,8 @@ export interface HybridAuthRequest extends SessionRequest {
     permissions: string[];
   };
   authType?: 'supertokens' | 'api_key';
+  projectId?: number;
+  schemaName?: string;
 }
 
 /**
@@ -64,6 +66,16 @@ export const hybridAuth = async (
         };
         req.authType = 'api_key';
         
+        // Set projectId and schemaName from credential
+        req.projectId = verification.credential.project_id;
+        const schemaResult = await pool.query(
+          'SELECT schema_name FROM projects WHERE id = $1',
+          [req.projectId]
+        );
+        if (schemaResult.rows.length > 0) {
+          req.schemaName = schemaResult.rows[0].schema_name;
+        }
+        
         // Update last used timestamp
         await CredentialsController.updateLastUsed(pool, apiKey);
         
@@ -93,6 +105,16 @@ export const hybridAuth = async (
         };
         req.authType = 'api_key';
         
+        // Set projectId and schemaName from credential
+        req.projectId = verification.credential.project_id;
+        const schemaResult = await pool.query(
+          'SELECT schema_name FROM projects WHERE id = $1',
+          [req.projectId]
+        );
+        if (schemaResult.rows.length > 0) {
+          req.schemaName = schemaResult.rows[0].schema_name;
+        }
+        
         await CredentialsController.updateLastUsed(pool, accessToken);
         
         return next();
@@ -120,6 +142,16 @@ export const hybridAuth = async (
           permissions: verification.credential.permissions || [],
         };
         req.authType = 'api_key';
+        
+        // Set projectId and schemaName from credential
+        req.projectId = verification.credential.project_id;
+        const schemaResult = await pool.query(
+          'SELECT schema_name FROM projects WHERE id = $1',
+          [req.projectId]
+        );
+        if (schemaResult.rows.length > 0) {
+          req.schemaName = schemaResult.rows[0].schema_name;
+        }
         
         await CredentialsController.updateLastUsed(pool, accessToken);
         
@@ -153,47 +185,57 @@ export const hybridAuth = async (
 
 /**
  * Middleware to verify project access for hybrid auth
+ * Project ID is extracted from API key or can be provided in URL params (for SuperTokens)
  */
 export const verifyProjectAccess = async (
   req: HybridAuthRequest,
   res: Response,
   next: NextFunction
 ) => {
-  const { projectId } = req.params;
-
-  if (!projectId) {
-    return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
-  }
-
-  // If authenticated via API key, check if credential belongs to this project
-  if (req.authType === 'api_key' && req.credential) {
-    if (req.credential.projectId.toString() !== projectId) {
-      console.log('  └─ ❌ API key project mismatch');
-      return ResponseUtils.error(
-        res,
-        'API key does not have access to this project',
-        null,
-        null,
-        403
-      );
-    }
-    console.log('  └─ ✅ Project access granted (API key)');
+  // For API key auth, projectId is already set from credential
+  if (req.authType === 'api_key' && req.projectId) {
+    console.log('  └─ ✅ Project access granted (API key):', req.projectId);
     return next();
   }
 
-  // If authenticated via SuperTokens, verify user has access (existing logic)
+  // For SuperTokens, check URL param or use project from session
   if (req.authType === 'supertokens' && req.session) {
-    // SuperTokens project access verification logic would go here
-    // For now, allow all authenticated SuperTokens users
+    const projectId = req.params.projectId ? parseInt(req.params.projectId) : null;
+    
+    if (projectId) {
+      req.projectId = projectId;
+      // Get schema name
+      const schemaResult = await pool.query(
+        'SELECT schema_name FROM projects WHERE id = $1',
+        [projectId]
+      );
+      if (schemaResult.rows.length > 0) {
+        req.schemaName = schemaResult.rows[0].schema_name;
+      }
+    }
+    
     console.log('  └─ ✅ Project access granted (SuperTokens)');
     return next();
   }
 
-  return ResponseUtils.error(res, 'Project access denied', null, null, 403);
+  // If no project context found
+  if (!req.projectId) {
+    return ResponseUtils.error(
+      res,
+      'Project context not found. Provide API key or project ID in URL.',
+      null,
+      null,
+      400
+    );
+  }
+
+  return next();
 };
 
 /**
  * Combined middleware: Hybrid auth + project access
+ * For API keys: Project is extracted automatically
+ * For SuperTokens: Project ID can be in URL params
  */
 export const hybridAuthAndVerifyProject = [hybridAuth, verifyProjectAccess];
 

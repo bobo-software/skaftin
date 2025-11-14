@@ -115,13 +115,15 @@ const { users } = await AppAuthService.listUsers({
 
 ### Simplified Authentication
 
-✅ **No Project ID Required in Auth Endpoints**
-- Old: `POST /api/app-auth/:projectId/auth/login`
-- New: `POST /api/app-auth/auth/login` (project extracted from API key)
+✅ **No Project ID Required in Any Endpoints**
+- Old: `POST /app-api/database/:projectId/tables/...`
+- New: `POST /app-api/database/tables/...` (project extracted from API key)
+- Applies to: Database, Storage, and Auth management routes
 
 ✅ **Cleaner Headers**
 - Use `x-api-key` or `x-access-token` (lowercase)
 - Project automatically identified from credentials
+- No need to pass project ID in URLs or headers
 
 ✅ **Two-Layer Authentication Clarified**
 - **Platform Auth** (02-AUTHENTICATION.md) - Your app authenticates with Skaftin

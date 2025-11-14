@@ -1,10 +1,14 @@
 import express, { Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import multer from 'multer';
 import StorageController from '../controllers/StorageController';
 import { authenticateAndAttachUser } from '../middleware/supertokensAuthMiddleware';
 import { verifyProjectAccess } from '../middleware/authMiddleware';
+import { extractProjectFromCredentials } from '../middleware/appUserAuthMiddleware';
+import { Pool } from 'pg';
 
-const router = express.Router();
+export function createStorageRouter(pool: Pool): Router {
+  const router = Router();
 
 // Configure multer for multipart file uploads
 const upload = multer({
@@ -15,14 +19,38 @@ const upload = multer({
 });
 
 // ============================================================================
-// BUCKET ROUTES (No project access verification needed for listing)
+// BUCKET ROUTES
 // ============================================================================
 
 /**
- * List all buckets
+ * List buckets
  * GET /api/storage/buckets?includeStats=false
+ * 
+ * - Platform admin (SuperTokens): Can see all buckets
+ * - Client app (API key): Only sees their project's bucket
  */
-router.get('/buckets', authenticateAndAttachUser, StorageController.listBuckets);
+const projectExtractor = extractProjectFromCredentials(pool);
+
+// Middleware to optionally authenticate (allows both API key and SuperTokens)
+const optionalAuth = async (req: any, res: Response, next: NextFunction) => {
+  // If projectId is already set (from API key), skip SuperTokens auth
+  if (req.projectId) {
+    return next();
+  }
+  // Otherwise, try SuperTokens auth (for platform admin)
+  // authenticateAndAttachUser is an array, so apply each middleware
+  for (const middleware of authenticateAndAttachUser) {
+    await new Promise<void>((resolve, reject) => {
+      middleware(req, res, (err?: any) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+  return next();
+};
+
+router.get('/buckets', projectExtractor, optionalAuth, StorageController.listBuckets);
 
 /**
  * Create a new bucket
@@ -39,51 +67,56 @@ router.delete('/buckets/:bucketName', authenticateAndAttachUser, StorageControll
 
 // ============================================================================
 // PROJECT-BASED FILE ROUTES (Require project access verification)
+// Project ID is extracted from API key automatically, or can be provided in URL for SuperTokens
 // ============================================================================
 
 /**
  * List files in a project bucket
- * GET /api/storage/:projectId/files?prefix=&maxKeys=1000
+ * GET /app-api/storage/files?prefix=&maxKeys=1000
  */
 router.get(
-  '/:projectId/files',
-  authenticateAndAttachUser,
+  '/files',
+  projectExtractor,
+  optionalAuth,
   verifyProjectAccess,
   StorageController.listFiles
 );
 
 /**
  * Search files in a project bucket
- * POST /api/storage/:projectId/search
+ * POST /app-api/storage/search
  * Body: { query: string, fileType?: string, dateRange?: { start: string, end: string } }
  */
 router.post(
-  '/:projectId/search',
-  authenticateAndAttachUser,
+  '/search',
+  projectExtractor,
+  optionalAuth,
   verifyProjectAccess,
   StorageController.searchFiles
 );
 
 /**
  * Upload file (base64 encoded)
- * POST /api/storage/:projectId/upload
+ * POST /app-api/storage/upload
  * Body: { filePath: string, fileContent: string (base64), contentType?: string, metadata?: object }
  */
 router.post(
-  '/:projectId/upload',
-  authenticateAndAttachUser,
+  '/upload',
+  projectExtractor,
+  optionalAuth,
   verifyProjectAccess,
   StorageController.uploadFile
 );
 
 /**
  * Upload file (multipart form data)
- * POST /api/storage/:projectId/upload-multipart
+ * POST /app-api/storage/upload-multipart
  * Form data: file (file field)
  */
 router.post(
-  '/:projectId/upload-multipart',
-  authenticateAndAttachUser,
+  '/upload-multipart',
+  projectExtractor,
+  optionalAuth,
   verifyProjectAccess,
   upload.single('file'),
   StorageController.uploadFileMultipart
@@ -91,45 +124,43 @@ router.post(
 
 /**
  * Rename folder
- * PUT /api/storage/:projectId/folders/rename
+ * PUT /app-api/storage/folders/rename
  */
 router.put(
-  '/:projectId/folders/rename',
-  authenticateAndAttachUser,
+  '/folders/rename',
+  projectExtractor,
+  optionalAuth,
   verifyProjectAccess,
   StorageController.renameFolder
 );
 
 /**
  * Custom middleware to handle wildcard file paths
- * Extracts projectId and filePath from the URL for download/delete/metadata operations
+ * Extracts filePath from the URL (projectId comes from API key via middleware)
  */
-const handleWildcardPath = (req: Request, res: Response, next: NextFunction) => {
-  // Parse the path after /api/storage/
-  // req.path is relative to the router mount point (e.g., /6/download/file.png)
+const handleWildcardPath = (req: Request & { projectId?: number }, res: Response, next: NextFunction) => {
+  // Parse the path after /app-api/storage/
+  // req.path is relative to the router mount point (e.g., /download/file.png)
   const path = req.path;
   
-  // Match download pattern: /projectId/download/filePath
-  let match = path.match(/^\/([^\/]+)\/download\/(.+)$/);
+  // Match download pattern: /download/filePath
+  let match = path.match(/^\/download\/(.+)$/);
   if (match) {
-    req.params.projectId = match[1];
-    req.params.filePath = decodeURIComponent(match[2]);
+    req.params.filePath = decodeURIComponent(match[1]);
     return next();
   }
   
-  // Match folders pattern: /projectId/folders/folderPath
-  match = path.match(/^\/([^\/]+)\/folders\/(.+)$/);
+  // Match folders pattern: /folders/folderPath
+  match = path.match(/^\/folders\/(.+)$/);
   if (match) {
-    req.params.projectId = match[1];
-    req.params.folderPath = decodeURIComponent(match[2]);
+    req.params.folderPath = decodeURIComponent(match[1]);
     return next();
   }
   
-  // Match files pattern: /projectId/files/filePath
-  match = path.match(/^\/([^\/]+)\/files\/(.+)$/);
+  // Match files pattern: /files/filePath
+  match = path.match(/^\/files\/(.+)$/);
   if (match) {
-    req.params.projectId = match[1];
-    const filePathPart = match[2];
+    const filePathPart = match[1];
     
     // Check if this is a metadata request
     if (filePathPart.endsWith('/metadata')) {
@@ -147,24 +178,26 @@ const handleWildcardPath = (req: Request, res: Response, next: NextFunction) => 
 
 /**
  * Download file
- * GET /api/storage/:projectId/download/...
+ * GET /app-api/storage/download/...
  */
 router.get(
-  /^\/([^\/]+)\/download\/.+$/,
+  /^\/download\/.+$/,
+  projectExtractor,
   handleWildcardPath,
-  authenticateAndAttachUser,
+  optionalAuth,
   verifyProjectAccess,
   StorageController.downloadFile
 );
 
 /**
  * Delete file
- * DELETE /api/storage/:projectId/files/...
+ * DELETE /app-api/storage/files/...
  */
 router.delete(
-  /^\/([^\/]+)\/files\/.+$/,
+  /^\/files\/.+$/,
+  projectExtractor,
   handleWildcardPath,
-  authenticateAndAttachUser,
+  optionalAuth,
   verifyProjectAccess,
   (req: Request, res: Response, next: NextFunction) => {
     // Skip if this is a metadata request
@@ -178,27 +211,30 @@ router.delete(
 
 /**
  * Get file metadata
- * GET /api/storage/:projectId/files/.../metadata
+ * GET /app-api/storage/files/.../metadata
  */
 router.get(
-  /^\/([^\/]+)\/files\/.+\/metadata$/,
+  /^\/files\/.+\/metadata$/,
+  projectExtractor,
   handleWildcardPath,
-  authenticateAndAttachUser,
+  optionalAuth,
   verifyProjectAccess,
   StorageController.getFileMetadata
 );
 
 /**
  * Delete folder
- * DELETE /api/storage/:projectId/folders/:folderPath
+ * DELETE /app-api/storage/folders/:folderPath
  */
 router.delete(
-  /^\/([^\/]+)\/folders\/.+$/,
+  /^\/folders\/.+$/,
+  projectExtractor,
   handleWildcardPath,
-  authenticateAndAttachUser,
+  optionalAuth,
   verifyProjectAccess,
   StorageController.deleteFolder
 );
 
-export { router };
+  return router;
+}
 

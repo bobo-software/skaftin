@@ -23,20 +23,53 @@ export function extractProjectFromCredentials(pool: Pool) {
       let projectId: number | null = null;
 
       // Method 1: Extract from API key or access token (x-api-key or x-access-token header)
-      const apiKey = req.headers['x-api-key'] as string;
-      const accessToken = req.headers['x-access-token'] as string;
+      // Express normalizes headers to lowercase automatically
+      const apiKey = req.headers['x-api-key'] as string | undefined;
+      const accessToken = req.headers['x-access-token'] as string | undefined;
       const credential = apiKey || accessToken;
       
+      // Debug: Log all headers to see what we're receiving
+      if (req.originalUrl?.includes('/api/app-auth')) {
+        console.log(`🔍 [extractProject] URL: ${req.originalUrl}`);
+        console.log(`🔍 [extractProject] Method: ${req.method}`);
+        console.log(`🔍 [extractProject] All headers:`, Object.keys(req.headers).filter(k => k.toLowerCase().includes('api') || k.toLowerCase().includes('access')));
+        console.log(`🔍 [extractProject] x-api-key:`, apiKey ? `${apiKey.substring(0, 30)}...` : 'MISSING');
+        console.log(`🔍 [extractProject] x-access-token:`, accessToken ? `${accessToken.substring(0, 30)}...` : 'MISSING');
+      }
+      
       if (credential) {
-        const result = await pool.query(
-          'SELECT project_id FROM api_credentials WHERE token = $1 AND is_active = true',
-          [credential]
-        );
+        console.log(`🔍 Looking up project for credential: ${credential.substring(0, 20)}...`);
+        try {
+          const result = await pool.query(
+            'SELECT project_id, credential_type, is_active FROM api_credentials WHERE token = $1',
+            [credential]
+          );
 
-        if (result.rows.length > 0) {
-          projectId = result.rows[0].project_id;
-          console.log(`📍 Project extracted from credential: ${projectId}`);
+          if (result.rows.length > 0) {
+            const row = result.rows[0];
+            console.log(`🔍 Found credential:`, {
+              project_id: row.project_id,
+              credential_type: row.credential_type,
+              is_active: row.is_active
+            });
+            
+            if (row.is_active) {
+              projectId = row.project_id;
+              console.log(`📍 Project extracted from credential: ${projectId}`);
+            } else {
+              console.log(`⚠️ Credential found but is inactive`);
+            }
+          } else {
+            console.log(`⚠️ No credential found in database for: ${credential.substring(0, 20)}...`);
+            // Debug: Check if any credentials exist
+            const debugResult = await pool.query('SELECT COUNT(*) as count FROM api_credentials');
+            console.log(`🔍 Total credentials in database: ${debugResult.rows[0]?.count || 0}`);
+          }
+        } catch (dbError) {
+          console.error('❌ Database error looking up credential:', dbError);
         }
+      } else {
+        console.log(`⚠️ No API key or access token found in headers`);
       }
 
       // Method 2: Extract from JWT token (Authorization header)
