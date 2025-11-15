@@ -5,6 +5,13 @@ import ResponseUtils from '../utils/ResponseUtils';
 import { emitDatabaseChange } from '../utils/websocketEmitter';
 import { Pool } from 'pg';
 import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
+import { HybridAuthRequest } from '../middleware/hybridAuthMiddleware';
+
+// Extended request type that can have projectId from middleware or params
+type DatabaseRequest = (SuperTokensAuthenticatedRequest | HybridAuthRequest) & {
+  projectId?: number;
+  schemaName?: string;
+};
 
 class DatabaseController {
   private static pool: Pool;
@@ -42,13 +49,29 @@ class DatabaseController {
   }
 
   /**
+   * Helper to get projectId from request (middleware or params)
+   */
+  private static getProjectId(req: DatabaseRequest): string | null {
+    // Prefer projectId from middleware (extracted from API key)
+    if (req.projectId) {
+      return req.projectId.toString();
+    }
+    // Fallback to params (for SuperTokens routes)
+    if (req.params?.projectId) {
+      return req.params.projectId;
+    }
+    return null;
+  }
+
+  /**
    * List all tables in a project
    */
-  static async listTables(req: SuperTokensAuthenticatedRequest, res: Response) {
-    // User info is attached by SuperTokens middleware (not needed here, just for consistency)
-
+  static async listTables(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const client = await DatabaseController.getProjectClient(projectId);
       
       if (!client) {
@@ -77,11 +100,13 @@ class DatabaseController {
   /**
    * Get table schema (columns)
    */
-  static async getTableSchema(req: SuperTokensAuthenticatedRequest, res: Response) {
-    // User info is attached by SuperTokens middleware
-
+  static async getTableSchema(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const client = await DatabaseController.getProjectClient(projectId);
       
       if (!client) {
@@ -138,11 +163,12 @@ class DatabaseController {
   /**
    * Create a new table
    */
-  static async createTable(req: SuperTokensAuthenticatedRequest, res: Response) {
-    // User info is attached by SuperTokens middleware
-
+  static async createTable(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const { tableName, columns } = req.body;
 
       if (!tableName || !columns || columns.length === 0) {
@@ -212,11 +238,12 @@ class DatabaseController {
   /**
    * Execute SQL query
    */
-  static async executeQuery(req: SuperTokensAuthenticatedRequest, res: Response) {
-    // User info is attached by SuperTokens middleware
-
+  static async executeQuery(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const { query, parameters = [] } = req.body;
 
       if (!query) {
@@ -248,13 +275,17 @@ class DatabaseController {
   }
 
   /**
-   * Select data from a table
+   * Select data from a table (POST - body parameters)
    */
-  static async selectData(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async selectData(req: DatabaseRequest, res: Response) {
     // User info is attached by SuperTokens middleware
 
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const { columns, where, limit = 100, offset = 0 } = req.body;
 
       const client = await DatabaseController.getProjectClient(projectId);
@@ -300,13 +331,102 @@ class DatabaseController {
   }
 
   /**
+   * Select data from a table (GET - query parameters)
+   * GET /app-api/database/tables/:tableName/select?limit=100&offset=0&columns=col1,col2&where={"key":"value"}
+   */
+  static async selectDataGet(req: DatabaseRequest, res: Response) {
+    try {
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
+      
+      // Parse query parameters
+      const limitParam = req.query.limit;
+      const offsetParam = req.query.offset;
+      const columnsParam = req.query.columns;
+      const whereParam = req.query.where;
+
+      // Parse limit and offset (defaults: limit=100, offset=0)
+      const limit = limitParam ? parseInt(limitParam as string, 10) : 100;
+      const offset = offsetParam ? parseInt(offsetParam as string, 10) : 0;
+
+      // Validate limit and offset
+      if (isNaN(limit) || limit < 0) {
+        return ResponseUtils.error(res, 'Invalid limit parameter', null, null, 400);
+      }
+      if (isNaN(offset) || offset < 0) {
+        return ResponseUtils.error(res, 'Invalid offset parameter', null, null, 400);
+      }
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Parse columns (comma-separated string)
+      let selectClause = '*';
+      if (columnsParam && typeof columnsParam === 'string') {
+        const columns = columnsParam.split(',').map(col => col.trim()).filter(col => col.length > 0);
+        if (columns.length > 0) {
+          selectClause = columns.map((col: string) => `"${col}"`).join(', ');
+        }
+      }
+
+      let query = `SELECT ${selectClause} FROM "${tableName}"`;
+      const values: any[] = [];
+
+      // Parse where clause (JSON string)
+      if (whereParam && typeof whereParam === 'string') {
+        try {
+          const where = JSON.parse(whereParam);
+          if (where && typeof where === 'object' && Object.keys(where).length > 0) {
+            const whereColumns = Object.keys(where);
+            const whereValues = Object.values(where);
+            const whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
+            query += ` WHERE ${whereClause}`;
+            values.push(...whereValues);
+          }
+        } catch (parseError) {
+          return ResponseUtils.error(res, 'Invalid where parameter: must be valid JSON', null, null, 400);
+        }
+      }
+
+      // Add limit and offset
+      if (limit) {
+        query += ` LIMIT $${values.length + 1}`;
+        values.push(limit);
+      }
+
+      if (offset) {
+        query += ` OFFSET $${values.length + 1}`;
+        values.push(offset);
+      }
+
+      const result = await client.query(query, values);
+      client.release();
+
+      ResponseUtils.success(res, 'Data fetched successfully', result.rows);
+    } catch (error) {
+      console.error('Error selecting data:', error);
+      ResponseUtils.error(res, 'Failed to select data', error);
+    }
+  }
+
+  /**
    * Insert data into a table
    */
-  static async insertData(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async insertData(req: DatabaseRequest, res: Response) {
     // User info is attached by SuperTokens middleware
 
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const { data } = req.body;
 
       if (!data) {
@@ -341,11 +461,15 @@ class DatabaseController {
   /**
    * Bulk insert data
    */
-  static async bulkInsertData(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async bulkInsertData(req: DatabaseRequest, res: Response) {
     // User info is attached by SuperTokens middleware
 
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const { dataArray } = req.body;
 
       if (!dataArray || !Array.isArray(dataArray) || dataArray.length === 0) {
@@ -385,11 +509,15 @@ class DatabaseController {
   /**
    * Update data in a table
    */
-  static async updateData(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async updateData(req: DatabaseRequest, res: Response) {
     // User info is attached by SuperTokens middleware
 
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const { data, where } = req.body;
 
       if (!data || !where) {
@@ -428,11 +556,15 @@ class DatabaseController {
   /**
    * Delete data from a table
    */
-  static async deleteData(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async deleteData(req: DatabaseRequest, res: Response) {
     // User info is attached by SuperTokens middleware
 
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const { where } = req.body;
 
       if (!where) {
@@ -467,11 +599,15 @@ class DatabaseController {
   /**
    * Rename a table
    */
-  static async renameTable(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async renameTable(req: DatabaseRequest, res: Response) {
     // User info is attached by SuperTokens middleware
 
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const { newTableName } = req.body;
 
       if (!newTableName || !newTableName.trim()) {
@@ -529,11 +665,15 @@ class DatabaseController {
   /**
    * Drop a table
    */
-  static async dropTable(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async dropTable(req: DatabaseRequest, res: Response) {
     // User info is attached by SuperTokens middleware
 
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
 
       const client = await DatabaseController.getProjectClient(projectId);
       
@@ -557,9 +697,13 @@ class DatabaseController {
   /**
    * Add a column to a table
    */
-  static async addColumn(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async addColumn(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const { columnName, columnType, nullable = true, defaultValue } = req.body;
 
       if (!columnName || !columnType) {
@@ -607,9 +751,13 @@ class DatabaseController {
   /**
    * Alter/modify a column
    */
-  static async alterColumn(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async alterColumn(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, tableName, columnName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName, columnName } = req.params;
       const { newName, newType, nullable, defaultValue } = req.body;
 
       const client = await DatabaseController.getProjectClient(projectId);
@@ -664,9 +812,13 @@ class DatabaseController {
   /**
    * Drop a column from a table
    */
-  static async dropColumn(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async dropColumn(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, tableName, columnName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName, columnName } = req.params;
 
       const client = await DatabaseController.getProjectClient(projectId);
       
@@ -690,9 +842,13 @@ class DatabaseController {
   /**
    * List all constraints for a table
    */
-  static async listConstraints(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async listConstraints(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
 
       const client = await DatabaseController.getProjectClient(projectId);
       
@@ -739,9 +895,13 @@ class DatabaseController {
   /**
    * List foreign keys for a table
    */
-  static async listForeignKeys(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async listForeignKeys(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
 
       const client = await DatabaseController.getProjectClient(projectId);
       
@@ -784,9 +944,13 @@ class DatabaseController {
   /**
    * Create a foreign key constraint
    */
-  static async createForeignKey(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async createForeignKey(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const { columnName, referencedTable, referencedColumn, onDelete = 'RESTRICT', onUpdate = 'RESTRICT' } = req.body;
 
       if (!columnName || !referencedTable || !referencedColumn) {
@@ -839,9 +1003,13 @@ class DatabaseController {
   /**
    * Drop a constraint from a table
    */
-  static async dropConstraint(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async dropConstraint(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, tableName, constraintName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName, constraintName } = req.params;
 
       const client = await DatabaseController.getProjectClient(projectId);
       
@@ -893,9 +1061,13 @@ class DatabaseController {
    * Create a unique constraint
    * POST /api/database/:projectId/tables/:tableName/constraints/unique
    */
-  static async createUniqueConstraint(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async createUniqueConstraint(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const { columnName, constraintName } = req.body;
 
       if (!columnName) {
@@ -945,9 +1117,13 @@ class DatabaseController {
    * Create a primary key constraint
    * POST /api/database/:projectId/tables/:tableName/constraints/primary-key
    */
-  static async createPrimaryKeyConstraint(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async createPrimaryKeyConstraint(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const { columnNames, constraintName } = req.body;
 
       if (!columnNames || !Array.isArray(columnNames) || columnNames.length === 0) {
@@ -1024,9 +1200,13 @@ class DatabaseController {
    * Create a check constraint
    * POST /api/database/:projectId/tables/:tableName/constraints/check
    */
-  static async createCheckConstraint(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async createCheckConstraint(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, tableName } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
       const { checkExpression, constraintName } = req.body;
 
       if (!checkExpression) {
@@ -1076,9 +1256,12 @@ class DatabaseController {
    * List all cron jobs
    * GET /api/database/:projectId/cron
    */
-  static async listCronJobs(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async listCronJobs(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const client = await DatabaseController.getProjectClient(projectId);
       
       if (!client) {
@@ -1112,9 +1295,12 @@ class DatabaseController {
    * Create a new cron job
    * POST /api/database/:projectId/cron
    */
-  static async createCronJob(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async createCronJob(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const { jobName, schedule, command } = req.body;
 
       if (!jobName || !schedule || !command) {
@@ -1160,9 +1346,13 @@ class DatabaseController {
    * Update a cron job
    * PUT /api/database/:projectId/cron/:jobId
    */
-  static async updateCronJob(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async updateCronJob(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, jobId } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { jobId } = req.params;
       const { schedule, command, jobName } = req.body;
 
       const client = await DatabaseController.getProjectClient(projectId);
@@ -1213,9 +1403,13 @@ class DatabaseController {
    * Delete a cron job
    * DELETE /api/database/:projectId/cron/:jobId
    */
-  static async deleteCronJob(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async deleteCronJob(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, jobId } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { jobId } = req.params;
 
       const client = await DatabaseController.getProjectClient(projectId);
       
@@ -1241,9 +1435,13 @@ class DatabaseController {
    * Get cron job execution history
    * GET /api/database/:projectId/cron/:jobId/history
    */
-  static async getCronJobHistory(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async getCronJobHistory(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, jobId } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { jobId } = req.params;
       const { limit = 50 } = req.query;
 
       const client = await DatabaseController.getProjectClient(projectId);
@@ -1282,9 +1480,13 @@ class DatabaseController {
    * Toggle cron job active status
    * PATCH /api/database/:projectId/cron/:jobId/toggle
    */
-  static async toggleCronJob(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async toggleCronJob(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId, jobId } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { jobId } = req.params;
       const { active } = req.body;
 
       if (active === undefined) {
@@ -1317,9 +1519,12 @@ class DatabaseController {
    * Import PostgreSQL database dump
    * POST /api/database/:projectId/import
    */
-  static async importDatabaseDump(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async importDatabaseDump(req: DatabaseRequest, res: Response) {
     try {
-      const { projectId } = req.params;
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const { sqlContent, dropExisting = false } = req.body;
 
       if (!sqlContent || typeof sqlContent !== 'string') {

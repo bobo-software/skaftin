@@ -57,16 +57,19 @@ class RolesController {
    * List all roles for a project
    * GET /api/auth/:projectId/roles
    */
-  static async listRoles(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async listRoles(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const { include_user_count = 'false' } = req.query;
 
-      const schemaName = await RolesController.getProjectSchema(parseInt(projectId));
+      const schemaName = await RolesController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -104,15 +107,19 @@ class RolesController {
    * Get a single role by ID
    * GET /api/auth/:projectId/roles/:roleId
    */
-  static async getRole(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async getRole(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId, roleId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { roleId } = req.params;
 
-      const schemaName = await RolesController.getProjectSchema(parseInt(projectId));
+      const schemaName = await RolesController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -144,13 +151,16 @@ class RolesController {
    * Create a new role
    * POST /api/auth/:projectId/roles
    */
-  static async createRole(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async createRole(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
       const {
         role_name,
         role_key,
@@ -175,7 +185,7 @@ class RolesController {
         );
       }
 
-      const schemaName = await RolesController.getProjectSchema(parseInt(projectId));
+      const schemaName = await RolesController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -217,16 +227,20 @@ class RolesController {
    * Update a role
    * PUT /api/auth/:projectId/roles/:roleId
    */
-  static async updateRole(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async updateRole(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId, roleId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { roleId } = req.params;
       const updates: UpdateRoleRequest = req.body;
 
-      const schemaName = await RolesController.getProjectSchema(parseInt(projectId));
+      const schemaName = await RolesController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -305,15 +319,19 @@ class RolesController {
    * Delete a role
    * DELETE /api/auth/:projectId/roles/:roleId
    */
-  static async deleteRole(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async deleteRole(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId, roleId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { roleId } = req.params;
 
-      const schemaName = await RolesController.getProjectSchema(parseInt(projectId));
+      const schemaName = await RolesController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -369,15 +387,19 @@ class RolesController {
    * Get role permissions
    * GET /api/auth/:projectId/roles/:roleId/permissions
    */
-  static async getRolePermissions(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async getRolePermissions(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId, roleId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { roleId } = req.params;
 
-      const schemaName = await RolesController.getProjectSchema(parseInt(projectId));
+      const schemaName = await RolesController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -404,20 +426,24 @@ class RolesController {
    * Update role permissions
    * PUT /api/auth/:projectId/roles/:roleId/permissions
    */
-  static async updateRolePermissions(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async updateRolePermissions(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId, roleId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { roleId } = req.params;
       const { permissions } = req.body;
 
       if (!Array.isArray(permissions)) {
         return ResponseUtils.error(res, 'Permissions must be an array', null, null, 400);
       }
 
-      const schemaName = await RolesController.getProjectSchema(parseInt(projectId));
+      const schemaName = await RolesController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -446,13 +472,17 @@ class RolesController {
    * Update session duration for a role
    * PUT /api/auth/:projectId/roles/:roleId/session-duration
    */
-  static async updateSessionDuration(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async updateSessionDuration(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
     try {
-      const { projectId, roleId } = req.params;
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { roleId } = req.params;
       const { session_duration_minutes } = req.body;
 
       if (typeof session_duration_minutes !== 'number' || session_duration_minutes <= 0) {
@@ -465,7 +495,7 @@ class RolesController {
         );
       }
 
-      const schemaName = await RolesController.getProjectSchema(parseInt(projectId));
+      const schemaName = await RolesController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }

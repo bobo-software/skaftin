@@ -1,9 +1,18 @@
 const ApiRoutes = {
-  // Authentication routes
+  // Platform Admin Authentication routes (SuperTokens)
   AUTH: {
     LOGIN: '/api/auth/login',
     REGISTER: '/api/auth/register',
     VERIFY: '/api/auth/verify',
+  },
+  
+  // App User Authentication routes (JWT - client-facing)
+  APP_AUTH: {
+    REGISTER: '/app-api/auth/auth/register',
+    LOGIN: '/app-api/auth/auth/login',
+    VERIFY: '/app-api/auth/auth/verify',
+    LOGOUT: '/app-api/auth/auth/logout',
+    VERIFY_OTP: '/app-api/auth/auth/verify-otp',
   },
   
   // Organizations routes
@@ -46,14 +55,10 @@ const ApiRoutes = {
     DELETE: (fileName: string) => `/api/files/${fileName}`,
   },
   
-  // Storage routes (project-based bucket isolation)
+  // Storage routes - Admin API (SuperTokens authentication)
+  // Project ID is provided in the URL path
   STORAGE: {
-    // Bucket management
-    LIST_BUCKETS: '/api/storage/buckets',
-    CREATE_BUCKET: '/api/storage/buckets',
-    DELETE_BUCKET: (bucketName: string) => `/api/storage/buckets/${bucketName}`,
-    
-    // File operations (project-based)
+    // File operations
     LIST_FILES: (projectId: string) => `/api/storage/${projectId}/files`,
     SEARCH_FILES: (projectId: string) => `/api/storage/${projectId}/search`,
     UPLOAD_FILE: (projectId: string) => `/api/storage/${projectId}/upload`,
@@ -67,7 +72,8 @@ const ApiRoutes = {
     DELETE_FOLDER: (projectId: string, folderPath: string) => `/api/storage/${projectId}/folders/${folderPath}`,
   },
   
-  // Database routes
+  // Database routes - Admin API (SuperTokens authentication)
+  // Project ID is provided in the URL path
   DATABASE: {
     LIST_TABLES: (projectId: string) => `/api/database/${projectId}/tables`,
     GET_TABLE_SCHEMA: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/schema`,
@@ -127,13 +133,21 @@ const ApiRoutes = {
     REGENERATE_MCP_KEY: (projectId: string) => `/api/credentials/${projectId}/mcp-key/regenerate`,
   },
   
-  // MCP routes
+  // MCP routes - Admin API (SuperTokens authentication, all tools)
   MCP: {
     CALL: '/api/mcp/call',
     TOOLS: '/api/mcp/tools',
+    PROTOCOL: '/api/mcp/protocol',
     INFO: '/api/mcp/info',
     HEALTH: '/api/mcp/health',
     EXECUTE: '/api/mcp/tools/execute',
+  },
+  
+  // Client MCP routes - Client API (MCP keys/API keys, restricted tools)
+  CLIENT_MCP: {
+    CALL: '/app-api/mcp/call',
+    TOOLS: '/app-api/mcp/tools',
+    PROTOCOL: '/app-api/mcp/protocol',
   },
   
   // Health routes

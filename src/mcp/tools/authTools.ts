@@ -1,6 +1,8 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { Pool } from 'pg';
+import { ToolModule, ToolCategory, MCPToolsConfig, MCPToolResult, ToolExecutionContext } from '../registry/types';
 
+// Legacy export for backward compatibility during migration
 export interface AuthToolsConfig {
   pool: Pool;
 }
@@ -474,11 +476,12 @@ export function createAuthTools(config: AuthToolsConfig): Tool[] {
   ];
 }
 
+// Legacy export for backward compatibility during migration
 export async function handleAuthTool(
   name: string,
   args: any,
   config: AuthToolsConfig
-): Promise<{ content: Array<{ type: string; text: string }> }> {
+): Promise<MCPToolResult> {
   const { pool } = config;
   const { projectId } = args;
 
@@ -1164,4 +1167,61 @@ export async function handleAuthTool(
     };
   }
 }
+
+/**
+ * Internal handler that works with MCPToolsConfig
+ */
+async function handleAuthToolInternal(
+  toolName: string,
+  args: any,
+  config: MCPToolsConfig,
+  context?: ToolExecutionContext
+): Promise<MCPToolResult> {
+  // Use the legacy handler which uses 'name' parameter
+  return handleAuthTool(toolName, args, config);
+}
+
+/**
+ * Auth tools module
+ */
+export const authToolModule: ToolModule = {
+  category: ToolCategory.AUTH,
+  metadata: {
+    name: 'auth',
+    description: 'Authentication and user management tools',
+    category: ToolCategory.AUTH,
+  },
+  createTools: (config: MCPToolsConfig): Tool[] => createAuthTools(config),
+  handleTool: handleAuthToolInternal,
+  getToolNames: (): string[] => {
+    return [
+      'list_app_users',
+      'get_app_user',
+      'create_app_user',
+      'update_app_user',
+      'delete_app_user',
+      'assign_user_role',
+      'list_app_roles',
+      'get_app_role',
+      'create_app_role',
+      'update_app_role',
+      'delete_app_role',
+      'list_custom_fields',
+      'create_custom_field',
+      'apply_custom_field',
+      'get_auth_settings',
+      'update_auth_settings',
+    ];
+  },
+  getClientSafeTools: (): string[] => {
+    // Client-safe auth tools (basic user management only)
+    return [
+      'list_app_users',
+      'get_app_user',
+      'create_app_user',
+      'update_app_user',
+      'delete_app_user',
+    ];
+  },
+};
 

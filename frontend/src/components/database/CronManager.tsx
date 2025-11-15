@@ -60,7 +60,7 @@ const CronManager = ({ projectId }: CronManagerProps) => {
     setError('');
     try {
       const token = localStorage.getItem('skaftin-token') || '';
-      const response = await RequestUtils.get(`/api/database/${projectId}/cron`, token);
+      const response = await RequestUtils.get(`/app-api/database/${projectId}/cron`, token);
       if (response.success) {
         setCronJobs(response.data);
       }
@@ -80,7 +80,7 @@ const CronManager = ({ projectId }: CronManagerProps) => {
     setHistoryLoading(true);
     try {
       const token = localStorage.getItem('skaftin-token') || '';
-      const response = await RequestUtils.get(`/api/database/${projectId}/cron/${jobId}/history`, token);
+      const response = await RequestUtils.get(`/app-api/database/${projectId}/cron/${jobId}/history`, token);
       if (response.success) {
         setJobHistory(response.data);
       }
@@ -99,7 +99,7 @@ const CronManager = ({ projectId }: CronManagerProps) => {
 
     try {
       const token = localStorage.getItem('skaftin-token') || '';
-      const response = await RequestUtils.post(`/api/database/${projectId}/cron`, token, formData);
+      const response = await RequestUtils.post(`/app-api/database/${projectId}/cron`, token, formData);
       if (response.success) {
         setShowCreateModal(false);
         setFormData({ jobName: '', schedule: '', command: '' });
@@ -117,7 +117,7 @@ const CronManager = ({ projectId }: CronManagerProps) => {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const response = await RequestUtils.put(
-        `/api/database/${projectId}/cron/${selectedJob.jobid}`,
+        `/app-api/database/${projectId}/cron/${selectedJob.jobid}`,
         token,
         formData
       );
@@ -137,7 +137,7 @@ const CronManager = ({ projectId }: CronManagerProps) => {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const response = await RequestUtils.fetch(
-        `/api/database/${projectId}/cron/${job.jobid}/toggle`,
+        `/app-api/database/${projectId}/cron/${job.jobid}/toggle`,
         'PATCH',
         { active: !job.active },
         token
@@ -158,7 +158,7 @@ const CronManager = ({ projectId }: CronManagerProps) => {
 
     try {
       const token = localStorage.getItem('skaftin-token') || '';
-      const response = await RequestUtils.delete(`/api/database/${projectId}/cron/${jobId}`, token, {});
+      const response = await RequestUtils.delete(`/app-api/database/${projectId}/cron/${jobId}`, token, {});
       if (response.success) {
         fetchCronJobs();
       }

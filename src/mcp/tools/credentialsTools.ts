@@ -1,7 +1,9 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { Pool } from 'pg';
 import crypto from 'crypto';
+import { ToolModule, ToolCategory, MCPToolsConfig, MCPToolResult, ToolExecutionContext } from '../registry/types';
 
+// Legacy export for backward compatibility during migration
 export interface CredentialsToolsConfig {
   pool: Pool;
 }
@@ -185,11 +187,12 @@ function generateMcpKey(): string {
   return 'mcp_' + crypto.randomBytes(32).toString('hex');
 }
 
+// Legacy export for backward compatibility during migration
 export async function handleCredentialsTool(
   name: string,
   args: any,
   config: CredentialsToolsConfig
-): Promise<{ content: Array<{ type: string; text: string }> }> {
+): Promise<MCPToolResult> {
   const { pool } = config;
   const { projectId } = args;
 
@@ -590,4 +593,46 @@ export async function handleCredentialsTool(
     };
   }
 }
+
+/**
+ * Internal handler that works with MCPToolsConfig
+ */
+async function handleCredentialsToolInternal(
+  toolName: string,
+  args: any,
+  config: MCPToolsConfig,
+  context?: ToolExecutionContext
+): Promise<MCPToolResult> {
+  return handleCredentialsTool(toolName, args, config);
+}
+
+/**
+ * Credentials tools module
+ */
+export const credentialsToolModule: ToolModule = {
+  category: ToolCategory.CREDENTIALS,
+  metadata: {
+    name: 'credentials',
+    description: 'API credentials and authentication management tools',
+    category: ToolCategory.CREDENTIALS,
+  },
+  createTools: (config: MCPToolsConfig): Tool[] => createCredentialsTools(config),
+  handleTool: handleCredentialsToolInternal,
+  getToolNames: (): string[] => {
+    return [
+      'list_api_credentials',
+      'get_api_credential',
+      'create_api_credential',
+      'update_api_credential',
+      'delete_api_credential',
+      'get_mcp_key',
+      'regenerate_mcp_key',
+      'get_credential_permissions',
+    ];
+  },
+  getClientSafeTools: (): string[] => {
+    // No credentials tools are client-safe (admin only)
+    return [];
+  },
+};
 

@@ -16,7 +16,7 @@ class DatabaseService {
     try {
       const token = this.getToken() || 'session-managed-by-supertokens';
       const result = await RequestUtils.post(
-        `/api/database/${projectId}/tables/${tableName}/columns`,
+        `/app-api/database/${projectId}/tables/${tableName}/columns`,
         token,
         { columnName, columnType, nullable, defaultValue }
       );
@@ -41,7 +41,7 @@ class DatabaseService {
     try {
       const token = this.getToken() || 'session-managed-by-supertokens';
       const result = await RequestUtils.put(
-        `/api/database/${projectId}/tables/${tableName}/columns/${columnName}`,
+        `/app-api/database/${projectId}/tables/${tableName}/columns/${columnName}`,
         token,
         changes
       );
@@ -60,7 +60,7 @@ class DatabaseService {
     try {
       const token = this.getToken() || 'session-managed-by-supertokens';
       const result = await RequestUtils.delete(
-        `/api/database/${projectId}/tables/${tableName}/columns/${columnName}`,
+        `/app-api/database/${projectId}/tables/${tableName}/columns/${columnName}`,
         token,
         {}
       );
@@ -78,7 +78,7 @@ class DatabaseService {
     try {
       const token = this.getToken() || 'session-managed-by-supertokens';
       const result = await RequestUtils.delete(
-        `/api/database/${projectId}/tables/${tableName}`,
+        `/app-api/database/${projectId}/tables/${tableName}`,
         token,
         {}
       );

@@ -9,7 +9,6 @@ Create typed API service classes for each database table with methods for common
 Create `src/backend/services/TableService.ts`:
 
 ```typescript
-import { getProjectId } from '../utils/auth';
 import { get, post, put, del } from '../utils/request';
 import { ApiResponse } from '../types/api.types';
 
@@ -22,14 +21,13 @@ export interface QueryOptions<T> {
 
 /**
  * Generic table service with CRUD operations
+ * Project ID is automatically extracted from API key in headers
  */
 export class TableService<T extends { id: number }> {
   protected tableName: string;
-  protected projectId: string;
 
   constructor(tableName: string) {
     this.tableName = tableName;
-    this.projectId = getProjectId();
   }
 
   /**
@@ -37,7 +35,7 @@ export class TableService<T extends { id: number }> {
    */
   async findAll(options?: QueryOptions<T>): Promise<T[]> {
     const response = await post<T[]>(
-      `/api/database/${this.projectId}/tables/${this.tableName}/select`,
+      `/app-api/database/tables/${this.tableName}/select`,
       {
         columns: options?.columns,
         where: options?.where,
@@ -53,7 +51,7 @@ export class TableService<T extends { id: number }> {
    */
   async findById(id: number): Promise<T | null> {
     const response = await post<T[]>(
-      `/api/database/${this.projectId}/tables/${this.tableName}/select`,
+      `/app-api/database/tables/${this.tableName}/select`,
       {
         where: { id },
         limit: 1,
@@ -67,7 +65,7 @@ export class TableService<T extends { id: number }> {
    */
   async create(data: Omit<T, 'id' | 'created_at' | 'updated_at'>): Promise<T> {
     const response = await post<T>(
-      `/api/database/${this.projectId}/tables/${this.tableName}/insert`,
+      `/app-api/database/tables/${this.tableName}/insert`,
       { data }
     );
     return response.data;
@@ -78,7 +76,7 @@ export class TableService<T extends { id: number }> {
    */
   async update(id: number, data: Partial<Omit<T, 'id'>>): Promise<T> {
     const response = await put<T[]>(
-      `/api/database/${this.projectId}/tables/${this.tableName}/update`,
+      `/app-api/database/tables/${this.tableName}/update`,
       {
         data,
         where: { id },
@@ -92,7 +90,7 @@ export class TableService<T extends { id: number }> {
    */
   async delete(id: number): Promise<void> {
     await del(
-      `/api/database/${this.projectId}/tables/${this.tableName}/delete`,
+      `/app-api/database/tables/${this.tableName}/delete`,
       { where: { id } }
     );
   }
@@ -102,7 +100,7 @@ export class TableService<T extends { id: number }> {
    */
   async query(sql: string): Promise<T[]> {
     const response = await post<any>(
-      `/api/database/${this.projectId}/query`,
+      `/app-api/database/query`,
       { query: sql }
     );
     return response.data.rows;
@@ -117,7 +115,7 @@ export class TableService<T extends { id: number }> {
       : `SELECT COUNT(*) FROM "${this.tableName}"`;
     
     const response = await post<any>(
-      `/api/database/${this.projectId}/query`,
+      `/app-api/database/query`,
       { query: sql }
     );
     return parseInt(response.data.rows[0].count);
@@ -404,7 +402,7 @@ async findActiveWithDriver(): Promise<Vehicle[]> {
 ```typescript
 async bulkCreate(items: CreateVehicleDto[]): Promise<Vehicle[]> {
   const response = await post<Vehicle[]>(
-    `/api/database/${this.projectId}/tables/${this.tableName}/bulk-insert`,
+    `/app-api/database/tables/${this.tableName}/bulk-insert`,
     { dataArray: items }
   );
   return response.data;

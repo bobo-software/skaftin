@@ -78,7 +78,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   // The store will automatically call this when events are received
 
   const fetchTableData = async (tableName: string) => {
-    if (!tableName) return;
+    if (!tableName || !projectId) return;
     
     setDataLoading(true);
     try {

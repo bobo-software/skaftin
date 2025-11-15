@@ -51,6 +51,13 @@ Welcome to the Skaftin Client SDK guides! These documents will help you integrat
    - Session management with JWT tokens
    - Protected routes & token verification
 
+8. **[08-WEBSOCKET-INTEGRATION.md](./08-WEBSOCKET-INTEGRATION.md)** ⭐ NEW
+   - Real-time database change notifications
+   - WebSocket service setup
+   - React hooks for WebSocket
+   - Auto-refresh patterns
+   - Connection management
+
 ## 🎯 What You'll Build
 
 By following these guides, you'll have a complete `src/backend/` folder in your React app with:
@@ -60,8 +67,11 @@ src/backend/
 ├── config/          → API configuration
 ├── schemas/         → TypeScript types (from database)
 ├── services/        → API service methods
-│   ├── DataService.ts      → Your custom tables
-│   └── AppAuthService.ts   → User management (NEW)
+│   ├── DataService.ts         → Your custom tables
+│   ├── AppAuthService.ts      → User management (NEW)
+│   └── WebSocketService.ts    → Real-time updates (NEW)
+├── hooks/           → React hooks
+│   └── useWebSocket.ts        → WebSocket hooks (NEW)
 ├── types/           → API response types
 └── utils/           → Auth & request helpers
 ```
@@ -97,6 +107,16 @@ const { users } = await AppAuthService.listUsers({
 });
 ```
 
+**Real-Time Updates:** ⭐ NEW
+```typescript
+import { useAutoRefresh } from './backend/hooks/useWebSocket';
+
+// Auto-refresh when data changes
+useAutoRefresh(projectId, 'vehicles', () => {
+  loadVehicles();
+});
+```
+
 ## 🔑 Prerequisites
 
 - Skaftin project created
@@ -115,13 +135,15 @@ const { users } = await AppAuthService.listUsers({
 
 ### Simplified Authentication
 
-✅ **No Project ID Required in Auth Endpoints**
-- Old: `POST /api/app-auth/:projectId/auth/login`
-- New: `POST /api/app-auth/auth/login` (project extracted from API key)
+✅ **No Project ID Required in Any Endpoints**
+- Old: `POST /app-api/database/:projectId/tables/...`
+- New: `POST /app-api/database/tables/...` (project extracted from API key)
+- Applies to: Database, Storage, and Auth management routes
 
 ✅ **Cleaner Headers**
 - Use `x-api-key` or `x-access-token` (lowercase)
 - Project automatically identified from credentials
+- No need to pass project ID in URLs or headers
 
 ✅ **Two-Layer Authentication Clarified**
 - **Platform Auth** (02-AUTHENTICATION.md) - Your app authenticates with Skaftin

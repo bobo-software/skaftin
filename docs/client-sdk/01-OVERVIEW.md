@@ -13,6 +13,7 @@ External React App
 │   │   ├── config/           → API configuration
 │   │   ├── schemas/          → TypeScript interfaces (from DB)
 │   │   ├── services/         → API service methods
+│   │   ├── hooks/            → React hooks (WebSocket, etc.)
 │   │   ├── types/            → API response types
 │   │   └── utils/            → Auth & request helpers
 │   ├── components/           → Your React components
@@ -92,6 +93,13 @@ Per-table services with methods:
 - Typed responses
 - Error handling
 
+### 6. WebSocket Service ⭐ NEW
+- Real-time database change notifications
+- Project-scoped event rooms
+- Auto-reconnection handling
+- React hooks for easy integration
+- Type-safe event handling
+
 ## Benefits
 
 ✅ **Type Safety** - Full TypeScript typing from database schema  
@@ -103,7 +111,8 @@ Per-table services with methods:
 ✅ **Easy Updates** - Regenerate when schema changes  
 ✅ **User Management** - Complete auth system built-in ⭐ NEW  
 ✅ **Role-Based Access** - Flexible permission system ⭐ NEW  
-✅ **Custom Fields** - Extend user profiles ⭐ NEW
+✅ **Custom Fields** - Extend user profiles ⭐ NEW  
+✅ **Real-Time Updates** - WebSocket support for instant notifications ⭐ NEW
 
 ## Authentication Models
 
@@ -146,4 +155,5 @@ Read the following guides in order:
 4. `05-GRAPHQL-INTEGRATION.md` - Use GraphQL
 5. `06-USAGE-EXAMPLES.md` - Real-world examples
 6. `07-APP-USER-AUTHENTICATION.md` - App user management ⭐ NEW
+7. `08-WEBSOCKET-INTEGRATION.md` - Real-time updates ⭐ NEW
 

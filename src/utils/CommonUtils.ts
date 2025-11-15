@@ -84,4 +84,41 @@ export default class CommonUtils {
     }
     return OTP;
   }
+
+  /**
+   * Create route path with conditional admin prefix
+   * Reduces repetition when defining routes for both admin and client
+   */
+  static createRoutePath(path: string, isAdmin: boolean): string {
+    if (isAdmin && !path.includes('/:projectId')) {
+      // For admin routes, check if we need to add projectId prefix
+      // Most admin paths already include it, so we preserve the original
+      return path;
+    }
+    return path;
+  }
+
+  /**
+   * Check if a string path contains project ID parameter
+   */
+  static hasProjectIdParam(path: string): boolean {
+    return path.includes('/:projectId');
+  }
+
+  /**
+   * Add project ID prefix to a path if it doesn't already have it
+   */
+  static addProjectIdPrefix(path: string): string {
+    if (this.hasProjectIdParam(path)) {
+      return path;
+    }
+    return `/:projectId${path}`;
+  }
+
+  /**
+   * Remove project ID prefix from a path if it exists
+   */
+  static removeProjectIdPrefix(path: string): string {
+    return path.replace(/^\/:projectId/, '');
+  }
 }

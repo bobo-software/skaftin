@@ -4,7 +4,9 @@ import { GraphQLError, graphql, print, parse } from 'graphql';
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import { typeDefs } from '../../graphql/typeDefs';
 import { createResolvers } from '../../graphql/resolvers';
+import { ToolModule, ToolCategory, MCPToolsConfig, MCPToolResult, ToolExecutionContext } from '../registry/types';
 
+// Legacy export for backward compatibility during migration
 export interface GraphQLToolsConfig {
   pool: Pool;
 }
@@ -400,6 +402,7 @@ export function createGraphQLTools(config: GraphQLToolsConfig): Tool[] {
   ];
 }
 
+// Legacy export for backward compatibility during migration
 export async function handleGraphQLTool(
   name: string,
   args: any,
@@ -969,4 +972,53 @@ export async function handleGraphQLTool(
     };
   }
 }
+
+/**
+ * Internal handler that works with MCPToolsConfig
+ */
+async function handleGraphQLToolInternal(
+  toolName: string,
+  args: any,
+  config: MCPToolsConfig,
+  context?: ToolExecutionContext
+): Promise<MCPToolResult> {
+  return handleGraphQLTool(toolName, args, config);
+}
+
+/**
+ * GraphQL tools module
+ */
+export const graphqlToolModule: ToolModule = {
+  category: ToolCategory.GRAPHQL,
+  metadata: {
+    name: 'graphql',
+    description: 'GraphQL query and mutation tools',
+    category: ToolCategory.GRAPHQL,
+  },
+  createTools: (config: MCPToolsConfig): Tool[] => createGraphQLTools(config),
+  handleTool: handleGraphQLToolInternal,
+  getToolNames: (): string[] => {
+    return [
+      'graphql_query',
+      'graphql_mutation',
+      'graphql_list_tables',
+      'graphql_get_table_schema',
+      'graphql_query_table',
+      'graphql_insert_data',
+      'graphql_bulk_insert',
+      'graphql_update_data',
+      'graphql_delete_data',
+      'graphql_create_table',
+      'graphql_drop_table',
+      'graphql_add_column',
+      'graphql_create_foreign_key',
+      'graphql_get_constraints',
+      'graphql_introspect_schema',
+    ];
+  },
+  getClientSafeTools: (): string[] => {
+    // No GraphQL tools are client-safe (admin only)
+    return [];
+  },
+};
 

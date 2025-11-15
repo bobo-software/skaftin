@@ -94,8 +94,8 @@ REACT_APP_SKAFTIN_API_KEY=sk_your_api_key_here
 # OR use Access Token (alternative to API key)
 # REACT_APP_SKAFTIN_ACCESS_TOKEN=sat_your_token_here
 
-# Optional: Explicit project ID (auto-detected from credential if not provided)
-# REACT_APP_SKAFTIN_PROJECT_ID=1
+# Note: Project ID is automatically extracted from API key/token
+# No need to set PROJECT_ID - it's identified from your credential
 ```
 
 **Production:**
@@ -106,7 +106,7 @@ REACT_APP_SKAFTIN_API_KEY=sk_production_key_here
 
 **Important Notes:**
 - API Key/Token automatically identifies your project
-- `PROJECT_ID` is optional - only needed for multi-project apps
+- `PROJECT_ID` is no longer needed - project is extracted from credentials
 - Never commit `.env` to version control
 
 ---
@@ -120,7 +120,7 @@ export const SKAFTIN_CONFIG = {
   apiUrl: process.env.REACT_APP_SKAFTIN_API_URL || 'http://localhost:4006',
   apiKey: process.env.REACT_APP_SKAFTIN_API_KEY || '',
   accessToken: process.env.REACT_APP_SKAFTIN_ACCESS_TOKEN || '',
-  projectId: process.env.REACT_APP_SKAFTIN_PROJECT_ID || '', // Optional
+  // projectId is no longer needed - automatically extracted from API key/token
 };
 
 // Validation
@@ -181,11 +181,14 @@ export function isAuthenticated(): boolean {
 }
 
 /**
- * Get project ID if explicitly configured
- * Note: Usually not needed as credentials auto-identify project
+ * Get project ID (deprecated - no longer needed)
+ * Project is automatically extracted from API key/token in headers
+ * This function is kept for backward compatibility only
  */
 export function getProjectId(): string | null {
-  return SKAFTIN_CONFIG.projectId || null;
+  // Project ID is now extracted from credentials automatically
+  // This function is deprecated and returns null
+  return null;
 }
 ```
 
