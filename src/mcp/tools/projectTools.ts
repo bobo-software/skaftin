@@ -15,10 +15,10 @@ export function createProjectTools(config: ProjectToolsConfig): Tool[] {
         properties: {
           projectId: {
             type: 'string',
-            description: 'Project ID',
+            description: 'Project ID (optional if using MCP key - will be auto-detected)',
           },
         },
-        required: ['projectId'],
+        required: [],
       },
     },
     {
@@ -70,9 +70,38 @@ export async function handleProjectTool(
   switch (toolName) {
     case 'get_project_info': {
       const { projectId } = args;
+      
+      if (!projectId) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              error: 'Project ID is required',
+              hint: 'Project ID must be provided as a parameter or auto-detected from MCP key. Ensure you are using a valid MCP key in the x-access-token header.'
+            }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+      
       const client = await pool.connect();
       
       try {
+        const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+        
+        if (isNaN(projectIdInt)) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ 
+                error: 'Invalid project ID',
+                hint: `The provided project ID "${projectId}" is not a valid number.`
+              }, null, 2) 
+            }],
+            isError: true
+          };
+        }
+        
         const result = await client.query(
           `SELECT 
             id,
@@ -85,14 +114,17 @@ export async function handleProjectTool(
             updated_at
           FROM projects 
           WHERE id = $1`,
-          [projectId]
+          [projectIdInt]
         );
         
         if (result.rows.length === 0) {
           return {
             content: [{ 
               type: 'text', 
-              text: JSON.stringify({ error: 'Project not found' }, null, 2) 
+              text: JSON.stringify({ 
+                error: 'Project not found',
+                hint: `No project exists with ID ${projectIdInt}. Verify the project ID or check if you have access to this project.`
+              }, null, 2) 
             }],
             isError: true
           };

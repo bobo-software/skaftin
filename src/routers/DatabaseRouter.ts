@@ -9,6 +9,7 @@ const router = express.Router();
 // GET routes
 router.get('/tables', hybridAuthAndVerifyProject, DatabaseController.listTables);
 router.get('/tables/:tableName/schema', hybridAuthAndVerifyProject, DatabaseController.getTableSchema);
+router.get('/tables/:tableName/select', hybridAuthAndVerifyProject, DatabaseController.selectDataGet);
 
 // POST routes
 router.post('/tables/create', hybridAuthAndVerifyProject, DatabaseController.createTable);

@@ -76,7 +76,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
         properties: {
           projectId: {
             type: 'string',
-            description: 'Project ID',
+            description: 'Project ID (optional if using MCP key - will be auto-detected)',
           },
           schema: {
             type: 'string',
@@ -88,7 +88,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
             default: false,
           },
         },
-        required: ['projectId'],
+        required: [],
       },
     },
     {
@@ -292,7 +292,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
         properties: {
           projectId: {
             type: 'string',
-            description: 'Project ID',
+            description: 'Project ID (optional if using MCP key - will be auto-detected)',
           },
           tableName: {
             type: 'string',
@@ -331,7 +331,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
             },
           },
         },
-        required: ['projectId', 'tableName', 'columns'],
+        required: ['tableName', 'columns'],
       },
     },
     {
@@ -342,14 +342,14 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
         properties: {
           projectId: {
             type: 'string',
-            description: 'Project ID',
+            description: 'Project ID (optional if using MCP key - will be auto-detected)',
           },
           tableName: {
             type: 'string',
             description: 'Name of the table',
           },
         },
-        required: ['projectId', 'tableName'],
+        required: ['tableName'],
       },
     },
     {
@@ -462,7 +462,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
       inputSchema: {
         type: 'object',
         properties: {
-          projectId: { type: 'string', description: 'Project ID' },
+          projectId: { type: 'string', description: 'Project ID (optional if using MCP key - will be auto-detected)' },
           tableName: { type: 'string', description: 'Name of the table' },
           columnName: { type: 'string', description: 'Name of the column' },
           referencedTable: { type: 'string', description: 'Referenced table name' },
@@ -470,7 +470,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           onDelete: { type: 'string', description: 'ON DELETE action (RESTRICT, CASCADE, SET NULL, SET DEFAULT, NO ACTION)', default: 'RESTRICT' },
           onUpdate: { type: 'string', description: 'ON UPDATE action (RESTRICT, CASCADE, SET NULL, SET DEFAULT, NO ACTION)', default: 'RESTRICT' },
         },
-        required: ['projectId', 'tableName', 'columnName', 'referencedTable', 'referencedColumn'],
+        required: ['tableName', 'columnName', 'referencedTable', 'referencedColumn'],
       },
     },
     {
@@ -657,6 +657,20 @@ export async function handleDatabaseTool(
 
     case 'list_tables': {
       const { projectId, schema, includeMetadata = false } = args;
+      
+      if (!projectId) {
+        return { 
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              error: 'Project ID is required',
+              hint: 'Project ID must be provided as a parameter or auto-detected from MCP key. Ensure you are using a valid MCP key in the x-access-token header.'
+            }, null, 2) 
+          }],
+          isError: true 
+        };
+      }
+      
       const client = await pool.connect();
       
       try {
@@ -667,7 +681,10 @@ export async function handleDatabaseTool(
           return { 
             content: [{ 
               type: 'text', 
-              text: JSON.stringify({ error: 'Invalid project ID' }, null, 2) 
+              text: JSON.stringify({ 
+                error: 'Invalid project ID',
+                hint: `The provided project ID "${projectId}" is not a valid number.`
+              }, null, 2) 
             }],
             isError: true 
           };
@@ -683,7 +700,10 @@ export async function handleDatabaseTool(
           return { 
             content: [{ 
               type: 'text', 
-              text: JSON.stringify({ error: 'Project not found' }, null, 2) 
+              text: JSON.stringify({ 
+                error: 'Project not found',
+                hint: `No project exists with ID ${projectIdInt}. Verify the project ID or check if you have access to this project.`
+              }, null, 2) 
             }],
             isError: true 
           };
@@ -1137,13 +1157,40 @@ export async function handleDatabaseTool(
 
     case 'get_table_schema': {
       const { projectId, tableName } = args;
+      
+      if (!projectId) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              error: 'Project ID is required',
+              hint: 'Project ID must be provided as a parameter or auto-detected from MCP key. Ensure you are using a valid MCP key in the x-access-token header.'
+            }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+      
+      if (!tableName) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ error: 'Table name is required' }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+      
       const client = await getProjectClient(pool, projectId);
       
       if (!client) {
         return {
           content: [{ 
             type: 'text', 
-            text: JSON.stringify({ error: 'Project not found or failed to get client' }, null, 2) 
+            text: JSON.stringify({ 
+              error: 'Project not found or failed to get client',
+              hint: `No project exists with ID ${projectId} or failed to establish database connection. Verify the project ID or check if you have access to this project.`
+            }, null, 2) 
           }],
           isError: true
         };
@@ -1223,29 +1270,57 @@ export async function handleDatabaseTool(
 
     case 'create_table': {
       const { projectId, tableName, columns } = args;
+      
+      if (!projectId) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              error: 'Project ID is required',
+              hint: 'Project ID must be provided as a parameter or auto-detected from MCP key. Ensure you are using a valid MCP key in the x-access-token header.'
+            }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+      
+      if (!tableName) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ error: 'Table name is required' }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+      
+      if (!columns || !Array.isArray(columns) || columns.length === 0) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ error: 'Columns array is required and must not be empty' }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+      
       const client = await getProjectClient(pool, projectId);
       
       if (!client) {
         return {
           content: [{ 
             type: 'text', 
-            text: JSON.stringify({ error: 'Project not found or failed to get client' }, null, 2) 
+            text: JSON.stringify({ 
+              error: 'Project not found or failed to get client',
+              hint: `No project exists with ID ${projectId} or failed to establish database connection. Verify the project ID or check if you have access to this project.`
+            }, null, 2) 
           }],
           isError: true
         };
       }
       
       try {
-        // Validate inputs
-        if (!tableName || !columns || !Array.isArray(columns) || columns.length === 0) {
-          return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ error: 'Table name and at least one column are required' }, null, 2) 
-            }],
-            isError: true
-          };
-        }
+        // Build CREATE TABLE statement
 
         // Validate table name (PostgreSQL identifier rules)
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tableName)) {
@@ -1662,10 +1737,43 @@ export async function handleDatabaseTool(
 
     case 'create_foreign_key': {
       const { projectId, tableName, columnName, referencedTable, referencedColumn, onDelete = 'RESTRICT', onUpdate = 'RESTRICT' } = args;
+      
+      if (!projectId) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              error: 'Project ID is required',
+              hint: 'Project ID must be provided as a parameter or auto-detected from MCP key. Ensure you are using a valid MCP key in the x-access-token header.'
+            }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+      
+      if (!tableName || !columnName || !referencedTable || !referencedColumn) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              error: 'Missing required parameters',
+              hint: 'tableName, columnName, referencedTable, and referencedColumn are all required.'
+            }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+      
       const client = await getProjectClient(pool, projectId);
       if (!client) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              error: 'Project not found',
+              hint: `No project exists with ID ${projectId} or failed to establish database connection. Verify the project ID or check if you have access to this project.`
+            }, null, 2) 
+          }],
           isError: true
         };
       }

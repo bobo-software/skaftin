@@ -78,13 +78,13 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   // The store will automatically call this when events are received
 
   const fetchTableData = async (tableName: string) => {
-    if (!tableName) return;
+    if (!tableName || !projectId) return;
     
     setDataLoading(true);
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.post(
-        ApiRoutes.DATABASE.SELECT_DATA(tableName),
+        ApiRoutes.DATABASE.SELECT_DATA(projectId, tableName),
         token,
         { limit: 100 }
       );

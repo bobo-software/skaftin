@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
 import { Database, Cloud, Settings, Home, Layers, LucideIcon, ChevronRight, ChevronLeft, Mail, Shield } from 'lucide-react';
+import useSidebarStore from '../../stores/state/useSidebarStore';
 
 interface NavItem {
   path: string;
@@ -16,8 +16,7 @@ interface ProjectSidebarProps {
 
 const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSidebarProps) => {
   const { projectId } = useParams<{ projectId: string }>();
-  const [isCollapsed, setIsCollapsed] = useState(true);
-  const [isHovering, setIsHovering] = useState(false);
+  const { isCollapsed, toggle } = useSidebarStore();
 
   const navItems: NavItem[] = [
     { path: 'overview', icon: Home, label: 'Overview' },
@@ -28,24 +27,10 @@ const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSide
     { path: 'settings', icon: Settings, label: 'Settings' },
   ];
 
-  const shouldShowFull = !isCollapsed || isHovering;
-
-  const handleToggle = () => {
-    setIsCollapsed(!isCollapsed);
-  };
-
-  const handleMouseEnter = () => {
-    setIsHovering(true);
-  };
-
-  const handleMouseLeave = () => {
-    setIsHovering(false);
-  };
+  const shouldShowFull = !isCollapsed;
 
   return (
     <aside
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       className={`${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       } fixed lg:translate-x-0 inset-y-0 left-0 z-30 ${
@@ -105,7 +90,7 @@ const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSide
       <div className="border-t border-dark-200 dark:border-dark-700">
         {/* Toggle Button - Always visible on desktop */}
         <button
-          onClick={handleToggle}
+          onClick={toggle}
           className={`hidden lg:flex items-center w-full p-3 text-dark-500 hover:text-dark-900 dark:text-dark-400 dark:hover:text-white hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors border-b border-dark-200 dark:border-dark-700 ${
             shouldShowFull ? 'justify-end' : 'justify-center'
           }`}

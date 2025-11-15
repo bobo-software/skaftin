@@ -32,6 +32,21 @@ class StorageController {
   }
 
   /**
+   * Helper to get projectId from request (middleware or params)
+   */
+  private static getProjectId(req: Request & { projectId?: number }): string | null {
+    // Prefer projectId from middleware (extracted from API key)
+    if (req.projectId) {
+      return req.projectId.toString();
+    }
+    // Fallback to params (for SuperTokens routes)
+    if (req.params?.projectId) {
+      return req.params.projectId;
+    }
+    return null;
+  }
+
+  /**
    * Get project bucket name from database
    */
   private static async getProjectBucket(projectId: string): Promise<string | null> {
@@ -261,7 +276,7 @@ class StorageController {
    */
   static async listFiles(req: Request & { projectId?: number }, res: Response) {
     try {
-      const projectId = req.projectId?.toString();
+      const projectId = StorageController.getProjectId(req);
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
@@ -309,7 +324,7 @@ class StorageController {
    */
   static async searchFiles(req: Request & { projectId?: number }, res: Response) {
     try {
-      const projectId = req.projectId?.toString();
+      const projectId = StorageController.getProjectId(req);
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
@@ -389,7 +404,7 @@ class StorageController {
    */
   static async uploadFile(req: Request & { projectId?: number }, res: Response) {
     try {
-      const projectId = req.projectId?.toString();
+      const projectId = StorageController.getProjectId(req);
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
@@ -442,7 +457,7 @@ class StorageController {
    */
   static async uploadFileMultipart(req: Request & { projectId?: number }, res: Response) {
     try {
-      const projectId = req.projectId?.toString();
+      const projectId = StorageController.getProjectId(req);
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
@@ -486,14 +501,17 @@ class StorageController {
    */
   static async downloadFile(req: Request & { projectId?: number }, res: Response) {
     try {
-      let { projectId, filePath } = req.params;
+      let { filePath } = req.params;
       const { range } = req.query;
 
+      // Get projectId from helper (checks both middleware and params)
+      let projectId = StorageController.getProjectId(req);
+
       // If filePath is not in params, extract it from the URL path
-      if (!projectId || !filePath) {
+      if (!filePath) {
         const pathMatch = req.path.match(/^\/([^\/]+)\/download\/(.+)$/);
         if (pathMatch) {
-          projectId = pathMatch[1];
+          projectId = projectId || pathMatch[1];
           filePath = decodeURIComponent(pathMatch[2]);
         }
       }
@@ -556,8 +574,8 @@ class StorageController {
    */
   static async deleteFile(req: Request & { projectId?: number }, res: Response) {
     try {
-      // Get projectId from middleware (set by projectExtractor from API key)
-      const projectId = req.projectId?.toString();
+      // Get projectId from helper (checks both middleware and params)
+      const projectId = StorageController.getProjectId(req);
       
       // Get filePath from params (set by handleWildcardPath middleware)
       const filePath = req.params.filePath;
@@ -603,13 +621,16 @@ class StorageController {
    */
   static async getFileMetadata(req: Request & { projectId?: number }, res: Response) {
     try {
-      let { projectId, filePath } = req.params;
+      let { filePath } = req.params;
+
+      // Get projectId from helper (checks both middleware and params)
+      let projectId = StorageController.getProjectId(req);
 
       // If filePath is not in params, extract it from the URL path
-      if (!projectId || !filePath) {
+      if (!filePath) {
         const pathMatch = req.path.match(/^\/([^\/]+)\/files\/(.+)\/metadata$/);
         if (pathMatch) {
-          projectId = pathMatch[1];
+          projectId = projectId || pathMatch[1];
           filePath = decodeURIComponent(pathMatch[2]);
         }
       }
@@ -664,7 +685,7 @@ class StorageController {
    */
   static async renameFolder(req: Request & { projectId?: number }, res: Response) {
     try {
-      const projectId = req.projectId?.toString();
+      const projectId = StorageController.getProjectId(req);
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
@@ -739,13 +760,16 @@ class StorageController {
    */
   static async deleteFolder(req: Request & { projectId?: number }, res: Response) {
     try {
-      let { projectId, folderPath } = req.params;
+      let { folderPath } = req.params;
+
+      // Get projectId from helper (checks both middleware and params)
+      let projectId = StorageController.getProjectId(req);
 
       // If folderPath is not in params, extract it from the URL path
-      if (!projectId || !folderPath) {
+      if (!folderPath) {
         const pathMatch = req.path.match(/^\/([^\/]+)\/folders\/(.+)$/);
         if (pathMatch) {
-          projectId = pathMatch[1];
+          projectId = projectId || pathMatch[1];
           folderPath = decodeURIComponent(pathMatch[2]);
         }
       }

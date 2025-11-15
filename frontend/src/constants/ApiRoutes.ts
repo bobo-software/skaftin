@@ -55,51 +55,46 @@ const ApiRoutes = {
     DELETE: (fileName: string) => `/api/files/${fileName}`,
   },
   
-  // Storage routes (project-based bucket isolation) - Client-facing API
-  // Project ID is extracted from API key automatically
+  // Storage routes - Admin API (SuperTokens authentication)
+  // Project ID is provided in the URL path
   STORAGE: {
-    // Bucket management
-    LIST_BUCKETS: '/app-api/storage/buckets',
-    CREATE_BUCKET: '/app-api/storage/buckets',
-    DELETE_BUCKET: (bucketName: string) => `/app-api/storage/buckets/${bucketName}`,
-    
-    // File operations (project extracted from API key)
-    LIST_FILES: '/app-api/storage/files',
-    SEARCH_FILES: '/app-api/storage/search',
-    UPLOAD_FILE: '/app-api/storage/upload',
-    UPLOAD_FILE_MULTIPART: '/app-api/storage/upload-multipart',
-    DOWNLOAD_FILE: (filePath: string) => `/app-api/storage/download/${filePath}`,
-    DELETE_FILE: (filePath: string) => `/app-api/storage/files/${filePath}`,
-    GET_FILE_METADATA: (filePath: string) => `/app-api/storage/files/${filePath}/metadata`,
+    // File operations
+    LIST_FILES: (projectId: string) => `/api/storage/${projectId}/files`,
+    SEARCH_FILES: (projectId: string) => `/api/storage/${projectId}/search`,
+    UPLOAD_FILE: (projectId: string) => `/api/storage/${projectId}/upload`,
+    UPLOAD_FILE_MULTIPART: (projectId: string) => `/api/storage/${projectId}/upload-multipart`,
+    DOWNLOAD_FILE: (projectId: string, filePath: string) => `/api/storage/${projectId}/download/${filePath}`,
+    DELETE_FILE: (projectId: string, filePath: string) => `/api/storage/${projectId}/files/${filePath}`,
+    GET_FILE_METADATA: (projectId: string, filePath: string) => `/api/storage/${projectId}/files/${filePath}/metadata`,
     
     // Folder operations
-    RENAME_FOLDER: '/app-api/storage/folders/rename',
-    DELETE_FOLDER: (folderPath: string) => `/app-api/storage/folders/${folderPath}`,
+    RENAME_FOLDER: (projectId: string) => `/api/storage/${projectId}/folders/rename`,
+    DELETE_FOLDER: (projectId: string, folderPath: string) => `/api/storage/${projectId}/folders/${folderPath}`,
   },
   
-  // Database routes - Client-facing API
-  // Project ID is extracted from API key automatically
+  // Database routes - Admin API (SuperTokens authentication)
+  // Project ID is provided in the URL path
   DATABASE: {
-    LIST_TABLES: '/app-api/database/tables',
-    GET_TABLE_SCHEMA: (tableName: string) => `/app-api/database/tables/${tableName}/schema`,
-    CREATE_TABLE: '/app-api/database/tables/create',
-    RENAME_TABLE: (tableName: string) => `/app-api/database/tables/${tableName}/rename`,
-    SELECT_DATA: (tableName: string) => `/app-api/database/tables/${tableName}/select`,
-    INSERT_DATA: (tableName: string) => `/app-api/database/tables/${tableName}/insert`,
-    BULK_INSERT: (tableName: string) => `/app-api/database/tables/${tableName}/bulk-insert`,
-    UPDATE_DATA: (tableName: string) => `/app-api/database/tables/${tableName}/update`,
-    DELETE_DATA: (tableName: string) => `/app-api/database/tables/${tableName}/delete`,
-    DROP_TABLE: (tableName: string) => `/app-api/database/tables/${tableName}`,
-    EXECUTE_QUERY: '/app-api/database/query',
-    IMPORT_DUMP: '/app-api/database/import',
+    LIST_TABLES: (projectId: string) => `/api/database/${projectId}/tables`,
+    GET_TABLE_SCHEMA: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/schema`,
+    CREATE_TABLE: (projectId: string) => `/api/database/${projectId}/tables/create`,
+    RENAME_TABLE: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/rename`,
+    SELECT_DATA: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/select`,
+    INSERT_DATA: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/insert`,
+    BULK_INSERT: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/bulk-insert`,
+    UPDATE_DATA: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/update`,
+    DELETE_DATA: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/delete`,
+    DROP_TABLE: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}`,
+    EXECUTE_QUERY: (projectId: string) => `/api/database/${projectId}/query`,
+    IMPORT_DUMP: (projectId: string) => `/api/database/${projectId}/import`,
     // Constraint routes
-    LIST_CONSTRAINTS: (tableName: string) => `/app-api/database/tables/${tableName}/constraints`,
-    LIST_FOREIGN_KEYS: (tableName: string) => `/app-api/database/tables/${tableName}/foreign-keys`,
-    CREATE_FOREIGN_KEY: (tableName: string) => `/app-api/database/tables/${tableName}/constraints/foreign-key`,
-    CREATE_UNIQUE_CONSTRAINT: (tableName: string) => `/app-api/database/tables/${tableName}/constraints/unique`,
-    CREATE_PRIMARY_KEY: (tableName: string) => `/app-api/database/tables/${tableName}/constraints/primary-key`,
-    CREATE_CHECK_CONSTRAINT: (tableName: string) => `/app-api/database/tables/${tableName}/constraints/check`,
-    DROP_CONSTRAINT: (tableName: string, constraintName: string) => `/app-api/database/tables/${tableName}/constraints/${constraintName}`,
+    LIST_CONSTRAINTS: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints`,
+    LIST_FOREIGN_KEYS: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/foreign-keys`,
+    CREATE_FOREIGN_KEY: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/foreign-key`,
+    CREATE_UNIQUE_CONSTRAINT: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/unique`,
+    CREATE_PRIMARY_KEY: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/primary-key`,
+    CREATE_CHECK_CONSTRAINT: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/check`,
+    DROP_CONSTRAINT: (projectId: string, tableName: string, constraintName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/${constraintName}`,
   },
   
   // Communications routes

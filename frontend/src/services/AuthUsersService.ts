@@ -75,7 +75,7 @@ class AuthUsersService {
       if (options?.limit) params.append('limit', String(options.limit));
 
       const queryString = params.toString();
-      const url = `/app-api/auth/${projectId}/users${queryString ? `?${queryString}` : ''}`;
+      const url = `/api/auth/${projectId}/users${queryString ? `?${queryString}` : ''}`;
 
       const response = await RequestUtils.get(url, this.getToken());
 
@@ -96,7 +96,7 @@ class AuthUsersService {
   async getUser(projectId: string, userId: string): Promise<AppUser> {
     try {
       const response = await RequestUtils.get(
-        `/app-api/auth/${projectId}/users/${userId}`,
+        `/api/auth/${projectId}/users/${userId}`,
         this.getToken()
       );
 
@@ -117,7 +117,7 @@ class AuthUsersService {
   async createUser(projectId: string, userData: CreateUserRequest): Promise<AppUser> {
     try {
       const response = await RequestUtils.post(
-        `/app-api/auth/${projectId}/users`,
+        `/api/auth/${projectId}/users`,
         this.getToken(),
         userData
       );
@@ -139,7 +139,7 @@ class AuthUsersService {
   async updateUser(projectId: string, userId: string, updates: UpdateUserRequest): Promise<AppUser> {
     try {
       const response = await RequestUtils.put(
-        `/app-api/auth/${projectId}/users/${userId}`,
+        `/api/auth/${projectId}/users/${userId}`,
         this.getToken(),
         updates
       );
@@ -160,7 +160,7 @@ class AuthUsersService {
    */
   async deleteUser(projectId: string, userId: string, permanent: boolean = false): Promise<void> {
     try {
-      const url = `/app-api/auth/${projectId}/users/${userId}${permanent ? '?permanent=true' : ''}`;
+      const url = `/api/auth/${projectId}/users/${userId}${permanent ? '?permanent=true' : ''}`;
       const response = await RequestUtils.delete(url, this.getToken(), {});
 
       if (!response.success) {
@@ -178,7 +178,7 @@ class AuthUsersService {
   async assignRole(projectId: string, userId: string, roleId: number): Promise<void> {
     try {
       const response = await RequestUtils.post(
-        `/app-api/auth/${projectId}/users/${userId}/roles`,
+        `/api/auth/${projectId}/users/${userId}/roles`,
         this.getToken(),
         { role_id: roleId }
       );
@@ -198,7 +198,7 @@ class AuthUsersService {
   async removeRole(projectId: string, userId: string, roleId: string): Promise<void> {
     try {
       const response = await RequestUtils.delete(
-        `/app-api/auth/${projectId}/users/${userId}/roles/${roleId}`,
+        `/api/auth/${projectId}/users/${userId}/roles/${roleId}`,
         this.getToken(),
         {}
       );
@@ -218,7 +218,7 @@ class AuthUsersService {
   async getUsersByRole(projectId: string, roleId: string): Promise<AppUser[]> {
     try {
       const response = await RequestUtils.get(
-        `/app-api/auth/${projectId}/users/by-role/${roleId}`,
+        `/api/auth/${projectId}/users/by-role/${roleId}`,
         this.getToken()
       );
 

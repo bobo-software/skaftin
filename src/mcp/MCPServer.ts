@@ -90,6 +90,7 @@ export class MCPServer {
           'delete_data',
           'select_data',
           'drop_table',
+          'create_foreign_key',
         ];
 
         const storageToolNames = [

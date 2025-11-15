@@ -11,6 +11,13 @@ import { initSuperTokens } from './config/supertokens';
 import { initializeWebSocketService } from './services/WebSocketService';
 import { DatabaseInitializer } from './services/DatabaseInitializer';
 import { HealthCheckService } from './services/HealthCheckService';
+import OrganizationsRouter from './routers/OrganizationsRouter';
+import MCPController from './controllers/MCPController';
+import DatabaseController from './controllers/DatabaseController';
+import ProjectsController from './controllers/ProjectsController';
+import StorageController from './controllers/StorageController';
+import GraphQLController from './controllers/GraphQLController';
+import CommunicationsController from './controllers/CommunicationsController';
 
 // Load environment variables
 dotenv.config();
@@ -146,17 +153,13 @@ import { router as UsersRouter } from './routers/UsersRouter';
 import { router as HealthRouter } from './routers/HealthRouter';
 import { router as MCPRouter } from './routers/MCPRouter';
 import { router as DatabaseRouter } from './routers/DatabaseRouter';
+import { AdminDatabaseRouter } from './routers/AdminDatabaseRouter';
+import { AdminStorageRouter } from './routers/AdminStorageRouter';
+import { createAdminAuthRouter } from './routers/AdminAuthRouter';
 import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import { createInvitationsRouter } from './routers/InvitationsRouter';
 import { createCredentialsRouter } from './routers/CredentialsRouter';
 import { createAuthRouter } from './routers/AuthRouter';
-import OrganizationsRouter from './routers/OrganizationsRouter';
-import MCPController from './controllers/MCPController';
-import DatabaseController from './controllers/DatabaseController';
-import ProjectsController from './controllers/ProjectsController';
-import StorageController from './controllers/StorageController';
-import GraphQLController from './controllers/GraphQLController';
-import CommunicationsController from './controllers/CommunicationsController';
 import { initializeApiKeyMiddleware } from './middleware/apiKeyMiddleware';
 
 // ============================================================================
@@ -251,6 +254,9 @@ app.use('/api/invitations', InvitationsRouter);
 app.use('/api/credentials', CredentialsRouter);
 app.use('/api/health', HealthRouter);
 app.use('/api/mcp', MCPRouter);
+app.use('/api/database', AdminDatabaseRouter);
+app.use('/api/storage', AdminStorageRouter);
+app.use('/api/auth', createAdminAuthRouter(pool));
 
 // ============================================================================
 // CLIENT-FACING ROUTES (/app-api/*) - API Key / App User JWT authentication

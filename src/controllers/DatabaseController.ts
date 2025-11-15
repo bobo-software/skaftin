@@ -275,7 +275,7 @@ class DatabaseController {
   }
 
   /**
-   * Select data from a table
+   * Select data from a table (POST - body parameters)
    */
   static async selectData(req: DatabaseRequest, res: Response) {
     // User info is attached by SuperTokens middleware
@@ -310,6 +310,91 @@ class DatabaseController {
         values.push(...whereValues);
       }
 
+      if (limit) {
+        query += ` LIMIT $${values.length + 1}`;
+        values.push(limit);
+      }
+
+      if (offset) {
+        query += ` OFFSET $${values.length + 1}`;
+        values.push(offset);
+      }
+
+      const result = await client.query(query, values);
+      client.release();
+
+      ResponseUtils.success(res, 'Data fetched successfully', result.rows);
+    } catch (error) {
+      console.error('Error selecting data:', error);
+      ResponseUtils.error(res, 'Failed to select data', error);
+    }
+  }
+
+  /**
+   * Select data from a table (GET - query parameters)
+   * GET /app-api/database/tables/:tableName/select?limit=100&offset=0&columns=col1,col2&where={"key":"value"}
+   */
+  static async selectDataGet(req: DatabaseRequest, res: Response) {
+    try {
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { tableName } = req.params;
+      
+      // Parse query parameters
+      const limitParam = req.query.limit;
+      const offsetParam = req.query.offset;
+      const columnsParam = req.query.columns;
+      const whereParam = req.query.where;
+
+      // Parse limit and offset (defaults: limit=100, offset=0)
+      const limit = limitParam ? parseInt(limitParam as string, 10) : 100;
+      const offset = offsetParam ? parseInt(offsetParam as string, 10) : 0;
+
+      // Validate limit and offset
+      if (isNaN(limit) || limit < 0) {
+        return ResponseUtils.error(res, 'Invalid limit parameter', null, null, 400);
+      }
+      if (isNaN(offset) || offset < 0) {
+        return ResponseUtils.error(res, 'Invalid offset parameter', null, null, 400);
+      }
+
+      const client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Parse columns (comma-separated string)
+      let selectClause = '*';
+      if (columnsParam && typeof columnsParam === 'string') {
+        const columns = columnsParam.split(',').map(col => col.trim()).filter(col => col.length > 0);
+        if (columns.length > 0) {
+          selectClause = columns.map((col: string) => `"${col}"`).join(', ');
+        }
+      }
+
+      let query = `SELECT ${selectClause} FROM "${tableName}"`;
+      const values: any[] = [];
+
+      // Parse where clause (JSON string)
+      if (whereParam && typeof whereParam === 'string') {
+        try {
+          const where = JSON.parse(whereParam);
+          if (where && typeof where === 'object' && Object.keys(where).length > 0) {
+            const whereColumns = Object.keys(where);
+            const whereValues = Object.values(where);
+            const whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
+            query += ` WHERE ${whereClause}`;
+            values.push(...whereValues);
+          }
+        } catch (parseError) {
+          return ResponseUtils.error(res, 'Invalid where parameter: must be valid JSON', null, null, 400);
+        }
+      }
+
+      // Add limit and offset
       if (limit) {
         query += ` LIMIT $${values.length + 1}`;
         values.push(limit);
