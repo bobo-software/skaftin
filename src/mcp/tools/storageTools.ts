@@ -2,7 +2,9 @@ import { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, Del
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { Pool } from 'pg';
+import { ToolModule, ToolCategory, MCPToolsConfig, MCPToolResult, ToolExecutionContext } from '../registry/types';
 
+// Legacy export for backward compatibility during migration
 export interface StorageToolsConfig {
   s3Client: S3Client;
   pool: Pool;
@@ -124,7 +126,7 @@ export function createStorageTools(config: StorageToolsConfig): Tool[] {
             default: false,
           },
         },
-        required: ['projectId'],
+        required: [],
       },
     },
     {
@@ -228,6 +230,7 @@ async function getProjectBucket(pool: Pool, projectId: string): Promise<string |
   }
 }
 
+// Legacy export for backward compatibility during migration
 export async function handleStorageTool(
   toolName: string,
   args: any,
@@ -653,7 +656,63 @@ export async function handleStorageTool(
     }
 
     default:
-      throw new Error(`Unknown storage tool: ${toolName}`);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ error: `Unknown storage tool: ${toolName}` }, null, 2)
+        }],
+        isError: true
+      };
   }
 }
+
+/**
+ * Internal handler that works with MCPToolsConfig
+ */
+async function handleStorageToolInternal(
+  toolName: string,
+  args: any,
+  config: MCPToolsConfig,
+  context?: ToolExecutionContext
+): Promise<MCPToolResult> {
+  // Use the legacy handler which has the same signature for the tool logic
+  return handleStorageTool(toolName, args, config);
+}
+
+/**
+ * Storage tools module
+ */
+export const storageToolModule: ToolModule = {
+  category: ToolCategory.STORAGE,
+  metadata: {
+    name: 'storage',
+    description: 'Storage and file management tools',
+    category: ToolCategory.STORAGE,
+  },
+  createTools: (config: MCPToolsConfig): Tool[] => createStorageTools(config),
+  handleTool: handleStorageToolInternal,
+  getToolNames: (): string[] => {
+    return [
+      'search_bucket',
+      'upload_file',
+      'download_file',
+      'list_buckets',
+      'create_bucket',
+      'delete_bucket',
+      'list_files',
+    ];
+  },
+  getClientSafeTools: (): string[] => {
+    // All storage tools are client-safe
+    return [
+      'search_bucket',
+      'upload_file',
+      'download_file',
+      'list_buckets',
+      'create_bucket',
+      'delete_bucket',
+      'list_files',
+    ];
+  },
+};
 

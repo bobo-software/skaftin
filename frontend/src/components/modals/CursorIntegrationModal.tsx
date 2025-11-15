@@ -13,8 +13,9 @@ const CursorIntegrationModal: React.FC<CursorIntegrationModalProps> = ({
   isOpen,
   onClose,
   mcpKey,
-  projectId,
+  projectId: _projectId, // Project ID is auto-detected from MCP key, not needed in config
 }) => {
+  void _projectId; // Explicitly mark as intentionally unused
   const [copiedConfig, setCopiedConfig] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
 
@@ -25,10 +26,9 @@ const CursorIntegrationModal: React.FC<CursorIntegrationModalProps> = ({
   const mcpConfig = {
     mcpServers: {
       skaftin: {
-        url: `${backendUrl}/api/mcp/protocol`,
+        url: `${backendUrl}/app-api/mcp/protocol`,
         headers: {
-          "Authorization": `Bearer ${mcpKey}`,
-          "X-Project-ID": projectId
+          "Authorization": `Bearer ${mcpKey}`
         }
       }
     }
@@ -72,7 +72,7 @@ const CursorIntegrationModal: React.FC<CursorIntegrationModalProps> = ({
                 Cursor MCP Integration
               </h3>
               <p className="text-sm text-dark-600 dark:text-dark-300">
-                Connect Skaftin to Cursor AI
+                Connect your Skaftin project to Cursor AI
               </p>
             </div>
           </div>
@@ -207,7 +207,7 @@ const CursorIntegrationModal: React.FC<CursorIntegrationModalProps> = ({
                         MCP Endpoint:
                       </span>
                       <code className="block mt-1 text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded font-mono">
-                        {backendUrl}/api/mcp/protocol
+                        {backendUrl}/app-api/mcp/protocol
                       </code>
                     </div>
                     <div>
@@ -215,7 +215,7 @@ const CursorIntegrationModal: React.FC<CursorIntegrationModalProps> = ({
                         Authentication:
                       </span>
                       <p className="text-blue-800 dark:text-blue-200 mt-1">
-                        Bearer token with your MCP key + Project ID header
+                        Bearer token with your MCP key (project ID is automatically detected from the key)
                       </p>
                     </div>
                   </div>
@@ -254,25 +254,34 @@ const CursorIntegrationModal: React.FC<CursorIntegrationModalProps> = ({
               <ul className="text-sm text-purple-800 dark:text-purple-200 space-y-1">
                 <li className="flex items-start space-x-2">
                   <span className="text-purple-500">•</span>
-                  <span>AI can read and query your database tables</span>
+                  <span>Build complete database schemas - create tables, foreign keys, and manage migrations</span>
                 </li>
                 <li className="flex items-start space-x-2">
                   <span className="text-purple-500">•</span>
-                  <span>AI can manage your storage files</span>
+                  <span>Full CRUD operations on your data - select, insert, update, delete</span>
                 </li>
                 <li className="flex items-start space-x-2">
                   <span className="text-purple-500">•</span>
-                  <span>AI can send emails via your configured providers</span>
+                  <span>Manage storage buckets and files - upload, download, organize</span>
                 </li>
                 <li className="flex items-start space-x-2">
                   <span className="text-purple-500">•</span>
-                  <span>AI can execute GraphQL queries</span>
+                  <span>Schedule automated tasks with cron jobs</span>
                 </li>
                 <li className="flex items-start space-x-2">
                   <span className="text-purple-500">•</span>
-                  <span>Full project management capabilities</span>
+                  <span>Execute complex SQL queries for advanced operations</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="text-purple-500">•</span>
+                  <span>Manage application users and authentication</span>
                 </li>
               </ul>
+              <div className="mt-3 pt-3 border-t border-purple-200 dark:border-purple-700">
+                <p className="text-xs text-purple-700 dark:text-purple-300">
+                  <strong>Note:</strong> All operations are automatically scoped to your project. Platform admins can use <code className="bg-purple-100 dark:bg-purple-900/40 px-1 rounded">/api/mcp</code> for full admin access.
+                </p>
+              </div>
             </div>
 
             {/* Troubleshooting */}

@@ -1,6 +1,8 @@
 import { Pool, PoolClient } from 'pg';
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { ToolModule, ToolCategory, MCPToolsConfig, MCPToolResult, ToolExecutionContext } from '../registry/types';
 
+// Legacy export for backward compatibility during migration
 export interface DatabaseToolsConfig {
   pool: Pool;
 }
@@ -107,7 +109,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
             default: false,
           },
         },
-        required: ['projectId'],
+        required: [],
       },
     },
     {
@@ -131,7 +133,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
             description: 'Filter by migration status',
           },
         },
-        required: ['projectId'],
+        required: [],
       },
     },
     {
@@ -184,7 +186,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
             default: true,
           },
         },
-        required: ['projectId', 'query'],
+        required: ['query'],
       },
     },
     {
@@ -216,7 +218,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
             default: 100,
           },
         },
-        required: ['projectId'],
+        required: [],
       },
     },
     {
@@ -235,7 +237,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
             description: 'Type of recommendations',
           },
         },
-        required: ['projectId'],
+        required: [],
       },
     },
     {
@@ -259,7 +261,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
             default: 'interface',
           },
         },
-        required: ['projectId'],
+        required: [],
       },
     },
     {
@@ -385,7 +387,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           tableName: { type: 'string', description: 'Name of the table' },
           data: { type: 'object', description: 'Data to insert as key-value pairs' },
         },
-        required: ['projectId', 'tableName', 'data'],
+        required: ['tableName', 'data'],
       },
     },
     {
@@ -398,7 +400,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           tableName: { type: 'string', description: 'Name of the table' },
           dataArray: { type: 'array', description: 'Array of data objects to insert' },
         },
-        required: ['projectId', 'tableName', 'dataArray'],
+        required: ['tableName', 'dataArray'],
       },
     },
     {
@@ -412,7 +414,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           data: { type: 'object', description: 'Data to update as key-value pairs' },
           where: { type: 'object', description: 'WHERE condition as key-value pairs' },
         },
-        required: ['projectId', 'tableName', 'data', 'where'],
+        required: ['tableName', 'data', 'where'],
       },
     },
     {
@@ -425,7 +427,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           tableName: { type: 'string', description: 'Name of the table' },
           where: { type: 'object', description: 'WHERE condition as key-value pairs' },
         },
-        required: ['projectId', 'tableName', 'where'],
+        required: ['tableName', 'where'],
       },
     },
     {
@@ -441,7 +443,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           limit: { type: 'number', description: 'Maximum number of rows to return (optional)' },
           offset: { type: 'number', description: 'Number of rows to skip (optional)' },
         },
-        required: ['projectId', 'tableName'],
+        required: ['tableName'],
       },
     },
     {
@@ -453,7 +455,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           projectId: { type: 'string', description: 'Project ID' },
           tableName: { type: 'string', description: 'Name of the table to drop' },
         },
-        required: ['projectId', 'tableName'],
+        required: ['tableName'],
       },
     },
     {
@@ -462,7 +464,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
       inputSchema: {
         type: 'object',
         properties: {
-          projectId: { type: 'string', description: 'Project ID (optional if using MCP key - will be auto-detected)' },
+          projectId: { type: 'string', description: 'Project ID' },
           tableName: { type: 'string', description: 'Name of the table' },
           columnName: { type: 'string', description: 'Name of the column' },
           referencedTable: { type: 'string', description: 'Referenced table name' },
@@ -482,7 +484,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           projectId: { type: 'string', description: 'Project ID' },
           tableName: { type: 'string', description: 'Name of the table' },
         },
-        required: ['projectId', 'tableName'],
+        required: ['tableName'],
       },
     },
     {
@@ -507,7 +509,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           projectId: { type: 'string', description: 'Project ID' },
           tableName: { type: 'string', description: 'Name of the table' },
         },
-        required: ['projectId', 'tableName'],
+        required: ['tableName'],
       },
     },
     {
@@ -518,7 +520,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
         properties: {
           projectId: { type: 'string', description: 'Project ID' },
         },
-        required: ['projectId'],
+        required: [],
       },
     },
     {
@@ -591,6 +593,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
   ];
 }
 
+// Legacy export for backward compatibility during migration
 export async function handleDatabaseTool(
   toolName: string,
   args: any,
@@ -658,19 +661,6 @@ export async function handleDatabaseTool(
     case 'list_tables': {
       const { projectId, schema, includeMetadata = false } = args;
       
-      if (!projectId) {
-        return { 
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              error: 'Project ID is required',
-              hint: 'Project ID must be provided as a parameter or auto-detected from MCP key. Ensure you are using a valid MCP key in the x-access-token header.'
-            }, null, 2) 
-          }],
-          isError: true 
-        };
-      }
-      
       const client = await pool.connect();
       
       try {
@@ -709,10 +699,14 @@ export async function handleDatabaseTool(
           };
         }
         
-        const schemaName = schema || projectResult.rows[0].schema_name;
+        const projectSchemaName = projectResult.rows[0].schema_name;
+        const schemaName = schema || projectSchemaName;
+        
+        // If no specific schema requested, search both project schema and public schema
+        const schemasToSearch = schema ? [schemaName] : [projectSchemaName, 'public'];
         
         if (includeMetadata) {
-          // Get detailed table information
+          // Get detailed table information from both schemas
           const result = await client.query(`
             SELECT 
               t.table_name,
@@ -729,21 +723,21 @@ export async function handleDatabaseTool(
             LEFT JOIN information_schema.columns c 
               ON t.table_name = c.table_name 
               AND t.table_schema = c.table_schema
-            WHERE t.table_schema = $1
+            WHERE t.table_schema = ANY($1::text[])
               AND t.table_type = 'BASE TABLE'
             GROUP BY t.table_name, t.table_schema
-            ORDER BY t.table_name
-          `, [schemaName]);
+            ORDER BY t.table_schema, t.table_name
+          `, [schemasToSearch]);
           
           return { content: [{ type: 'text', text: JSON.stringify(result.rows, null, 2) }] };
         } else {
           const result = await client.query(`
             SELECT table_name, table_schema
             FROM information_schema.tables
-            WHERE table_schema = $1
+            WHERE table_schema = ANY($1::text[])
               AND table_type = 'BASE TABLE'
-            ORDER BY table_name
-          `, [schemaName]);
+            ORDER BY table_schema, table_name
+          `, [schemasToSearch]);
           
           return { content: [{ type: 'text', text: JSON.stringify(result.rows, null, 2) }] };
         }
@@ -780,19 +774,82 @@ export async function handleDatabaseTool(
     }
 
     case 'list_migrations': {
-      // This would need a migrations table - for now return placeholder
       const { projectId, limit = 50, status } = args;
-      return { 
-        content: [{ 
-          type: 'text', 
-          text: JSON.stringify({ 
-            message: 'Migration system not yet implemented',
-            projectId,
-            limit,
-            status 
-          }, null, 2) 
-        }] 
-      };
+      
+      const client = await getProjectClient(pool, projectId);
+      if (!client) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Project not found' }, null, 2) }],
+          isError: true
+        };
+      }
+      
+      try {
+        // Check if migrations table exists
+        const tableCheck = await client.query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = current_schema() 
+            AND table_name = 'schema_migrations'
+          ) as table_exists
+        `);
+        
+        if (!tableCheck.rows[0].table_exists) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ 
+                success: true,
+                message: 'No migrations table found. Migration tracking is not set up for this project.',
+                hint: 'Migrations are tracked in a schema_migrations table. If you have migrations, ensure the table exists.',
+                data: [],
+                migrations_table_exists: false
+              }, null, 2) 
+            }]
+          };
+        }
+        
+        // Query migrations table
+        let query = 'SELECT * FROM schema_migrations ORDER BY version DESC';
+        const params: any[] = [];
+        
+        if (status) {
+          query += ' WHERE status = $1';
+          params.push(status);
+        }
+        
+        query += ` LIMIT $${params.length + 1}`;
+        params.push(limit);
+        
+        const result = await client.query(query, params);
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true,
+              message: result.rows.length === 0 ? 'No migrations found' : 'Migrations fetched successfully',
+              data: result.rows,
+              count: result.rows.length,
+              migrations_table_exists: true
+            }, null, 2) 
+          }]
+        };
+      } catch (error: any) {
+        console.error('Error listing migrations:', error);
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              error: error.message,
+              hint: 'Error querying migrations. Ensure the schema_migrations table exists and is accessible.'
+            }, null, 2) 
+          }],
+          isError: true
+        };
+      } finally {
+        client.release();
+      }
     }
 
     case 'apply_migration': {
@@ -1158,19 +1215,6 @@ export async function handleDatabaseTool(
     case 'get_table_schema': {
       const { projectId, tableName } = args;
       
-      if (!projectId) {
-        return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              error: 'Project ID is required',
-              hint: 'Project ID must be provided as a parameter or auto-detected from MCP key. Ensure you are using a valid MCP key in the x-access-token header.'
-            }, null, 2) 
-          }],
-          isError: true
-        };
-      }
-      
       if (!tableName) {
         return {
           content: [{ 
@@ -1197,7 +1241,26 @@ export async function handleDatabaseTool(
       }
       
       try {
-        // Get column information
+        // Get project schema name
+        const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+        const projectResult = await client.query(
+          'SELECT schema_name FROM projects WHERE id = $1',
+          [projectIdInt]
+        );
+        
+        if (projectResult.rows.length === 0) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ error: 'Project not found' }, null, 2) 
+            }],
+            isError: true
+          };
+        }
+        
+        const projectSchemaName = projectResult.rows[0].schema_name;
+        
+        // Search in both project schema and public schema
         const result = await client.query(`
           SELECT 
             column_name,
@@ -1205,24 +1268,57 @@ export async function handleDatabaseTool(
             character_maximum_length,
             is_nullable,
             column_default,
-            ordinal_position
+            ordinal_position,
+            table_schema
           FROM information_schema.columns
-          WHERE table_schema = current_schema()
-            AND table_name = $1
-          ORDER BY ordinal_position
-        `, [tableName]);
+          WHERE table_schema IN ($1, 'public')
+            AND table_name = $2
+          ORDER BY 
+            CASE WHEN table_schema = $1 THEN 1 ELSE 2 END,
+            ordinal_position
+        `, [projectSchemaName, tableName]);
         
         if (result.rows.length === 0) {
+          // Check if table exists in any schema
+          const tableCheck = await client.query(`
+            SELECT table_schema, table_name
+            FROM information_schema.tables
+            WHERE table_name = $1
+              AND table_type = 'BASE TABLE'
+            ORDER BY table_schema
+          `, [tableName]);
+          
+          if (tableCheck.rows.length > 0) {
+            const schemas = tableCheck.rows.map((r: any) => r.table_schema).join(', ');
+            return {
+              content: [{ 
+                type: 'text', 
+                text: JSON.stringify({ 
+                  error: `Table "${tableName}" not found in project schema (${projectSchemaName}) or public schema`,
+                  hint: `Table exists in schema(s): ${schemas}. Use schema-qualified name like "${tableCheck.rows[0].table_schema}.${tableName}" or create the table in the project schema.`,
+                  found_in_schemas: tableCheck.rows.map((r: any) => r.table_schema)
+                }, null, 2) 
+              }],
+              isError: true
+            };
+          }
+          
           return {
             content: [{ 
               type: 'text', 
-              text: JSON.stringify({ error: `Table ${tableName} not found` }, null, 2) 
+              text: JSON.stringify({ 
+                error: `Table "${tableName}" not found`,
+                hint: `Table not found in project schema (${projectSchemaName}) or public schema. Check the table name or create it first.`
+              }, null, 2) 
             }],
             isError: true
           };
         }
         
-        // Get primary key information
+        // Use the schema from the first result (prefer project schema)
+        const tableSchema = result.rows[0].table_schema;
+        
+        // Get primary key information (use schema-qualified name)
         const pkResult = await client.query(`
           SELECT 
             a.attname as column_name
@@ -1230,7 +1326,7 @@ export async function handleDatabaseTool(
           JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
           WHERE i.indrelid = $1::regclass
             AND i.indisprimary = true
-        `, [tableName]);
+        `, [`${tableSchema}.${tableName}`]);
         
         const primaryKeys = new Set(pkResult.rows.map((row: any) => row.column_name));
         
@@ -1248,7 +1344,11 @@ export async function handleDatabaseTool(
         return {
           content: [{ 
             type: 'text', 
-            text: JSON.stringify(columns, null, 2) 
+            text: JSON.stringify({
+              table_name: tableName,
+              table_schema: tableSchema,
+              columns: columns
+            }, null, 2) 
           }] 
         };
       } catch (error: any) {
@@ -1270,19 +1370,6 @@ export async function handleDatabaseTool(
 
     case 'create_table': {
       const { projectId, tableName, columns } = args;
-      
-      if (!projectId) {
-        return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              error: 'Project ID is required',
-              hint: 'Project ID must be provided as a parameter or auto-detected from MCP key. Ensure you are using a valid MCP key in the x-access-token header.'
-            }, null, 2) 
-          }],
-          isError: true
-        };
-      }
       
       if (!tableName) {
         return {
@@ -1738,19 +1825,6 @@ export async function handleDatabaseTool(
     case 'create_foreign_key': {
       const { projectId, tableName, columnName, referencedTable, referencedColumn, onDelete = 'RESTRICT', onUpdate = 'RESTRICT' } = args;
       
-      if (!projectId) {
-        return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              error: 'Project ID is required',
-              hint: 'Project ID must be provided as a parameter or auto-detected from MCP key. Ensure you are using a valid MCP key in the x-access-token header.'
-            }, null, 2) 
-          }],
-          isError: true
-        };
-      }
-      
       if (!tableName || !columnName || !referencedTable || !referencedColumn) {
         return {
           content: [{ 
@@ -1980,6 +2054,28 @@ export async function handleDatabaseTool(
       }
       
       try {
+        // Check if pg_cron extension is installed
+        const extensionCheck = await client.query(`
+          SELECT EXISTS(
+            SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
+          ) as extension_exists
+        `);
+        
+        if (!extensionCheck.rows[0].extension_exists) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ 
+                success: true,
+                message: 'No cron jobs found. pg_cron extension is not installed.',
+                hint: 'To use cron jobs, install the pg_cron extension: CREATE EXTENSION IF NOT EXISTS pg_cron;',
+                data: [],
+                extension_installed: false
+              }, null, 2) 
+            }]
+          };
+        }
+        
         const result = await client.query(`
           SELECT 
             jobid,
@@ -2000,13 +2096,31 @@ export async function handleDatabaseTool(
             type: 'text', 
             text: JSON.stringify({ 
               success: true, 
-              message: 'Cron jobs fetched successfully',
-              data: result.rows 
+              message: result.rows.length === 0 ? 'No cron jobs found' : 'Cron jobs fetched successfully',
+              data: result.rows,
+              extension_installed: true
             }, null, 2) 
           }]
         };
       } catch (error: any) {
         console.error('Error listing cron jobs:', error);
+        
+        // Check if error is due to missing extension
+        if (error.message && error.message.includes('relation "cron.job" does not exist')) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ 
+                success: true,
+                message: 'No cron jobs found. pg_cron extension is not installed.',
+                hint: 'To use cron jobs, install the pg_cron extension: CREATE EXTENSION IF NOT EXISTS pg_cron;',
+                data: [],
+                extension_installed: false
+              }, null, 2) 
+            }]
+          };
+        }
+        
         return {
           content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
           isError: true
@@ -2259,7 +2373,99 @@ export async function handleDatabaseTool(
     }
 
     default:
-      throw new Error(`Unknown database tool: ${toolName}`);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ error: `Unknown database tool: ${toolName}` }, null, 2)
+        }],
+        isError: true
+      };
   }
 }
+
+/**
+ * Internal handler that works with MCPToolsConfig
+ */
+async function handleDatabaseToolInternal(
+  toolName: string,
+  args: any,
+  config: MCPToolsConfig,
+  context?: ToolExecutionContext
+): Promise<MCPToolResult> {
+  // Use the legacy handler which has the same signature for the tool logic
+  return handleDatabaseTool(toolName, args, config);
+}
+
+/**
+ * Database tools module
+ */
+export const databaseToolModule: ToolModule = {
+  category: ToolCategory.DATABASE,
+  metadata: {
+    name: 'database',
+    description: 'Database management tools',
+    category: ToolCategory.DATABASE,
+  },
+  createTools: (config: MCPToolsConfig): Tool[] => createDatabaseTools(config),
+  handleTool: handleDatabaseToolInternal,
+  getToolNames: (): string[] => {
+    return [
+      'search_docs',
+      'list_tables',
+      'list_extensions',
+      'list_migrations',
+      'apply_migration',
+      'execute_sql',
+      'get_logs',
+      'get_advisors',
+      'generate_typescript_types',
+      'create_schema',
+      'delete_schema',
+      'create_table',
+      'get_table_schema',
+      'insert_data',
+      'bulk_insert_data',
+      'update_data',
+      'delete_data',
+      'select_data',
+      'drop_table',
+      'create_foreign_key',
+      'list_all_constraints',
+      'drop_constraint',
+      'list_foreign_keys',
+      'list_cron_jobs',
+      'create_cron_job',
+      'update_cron_job',
+      'delete_cron_job',
+      'toggle_cron_job',
+      'get_cron_job_history',
+    ];
+  },
+  getClientSafeTools: (): string[] => {
+    // Client-safe database tools (based on original CLIENT_SAFE_TOOLS)
+    return [
+      'select_data',
+      'insert_data',
+      'update_data',
+      'delete_data',
+      'bulk_insert_data',
+      'get_table_schema',
+      'list_tables',
+      'create_table',
+      'drop_table',
+      'create_foreign_key',
+      'create_schema',
+      'list_extensions',
+      'list_migrations',
+      'apply_migration',
+      'execute_sql',
+      'list_cron_jobs',
+      'create_cron_job',
+      'update_cron_job',
+      'delete_cron_job',
+      'toggle_cron_job',
+      'get_cron_job_history',
+    ];
+  },
+};
 

@@ -133,13 +133,21 @@ const ApiRoutes = {
     REGENERATE_MCP_KEY: (projectId: string) => `/api/credentials/${projectId}/mcp-key/regenerate`,
   },
   
-  // MCP routes
+  // MCP routes - Admin API (SuperTokens authentication, all tools)
   MCP: {
     CALL: '/api/mcp/call',
     TOOLS: '/api/mcp/tools',
+    PROTOCOL: '/api/mcp/protocol',
     INFO: '/api/mcp/info',
     HEALTH: '/api/mcp/health',
     EXECUTE: '/api/mcp/tools/execute',
+  },
+  
+  // Client MCP routes - Client API (MCP keys/API keys, restricted tools)
+  CLIENT_MCP: {
+    CALL: '/app-api/mcp/call',
+    TOOLS: '/app-api/mcp/tools',
+    PROTOCOL: '/app-api/mcp/protocol',
   },
   
   // Health routes

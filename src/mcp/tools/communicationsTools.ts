@@ -1,7 +1,9 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { Pool } from 'pg';
 import nodemailer from 'nodemailer';
+import { ToolModule, ToolCategory, MCPToolsConfig, MCPToolResult, ToolExecutionContext } from '../registry/types';
 
+// Legacy export for backward compatibility during migration
 export interface CommunicationsToolsConfig {
   pool: Pool;
 }
@@ -242,6 +244,7 @@ export function createCommunicationsTools(config: CommunicationsToolsConfig): To
   ];
 }
 
+// Legacy export for backward compatibility during migration
 export async function handleCommunicationsTool(
   name: string,
   args: any,
@@ -645,7 +648,54 @@ export async function handleCommunicationsTool(
     }
 
     default:
-      throw new Error(`Unknown communications tool: ${name}`);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ error: `Unknown communications tool: ${name}` }, null, 2)
+        }],
+        isError: true
+      };
   }
 }
+
+/**
+ * Internal handler that works with MCPToolsConfig
+ */
+async function handleCommunicationsToolInternal(
+  toolName: string,
+  args: any,
+  config: MCPToolsConfig,
+  context?: ToolExecutionContext
+): Promise<MCPToolResult> {
+  return handleCommunicationsTool(toolName, args, config);
+}
+
+/**
+ * Communications tools module
+ */
+export const communicationsToolModule: ToolModule = {
+  category: ToolCategory.COMMUNICATIONS,
+  metadata: {
+    name: 'communications',
+    description: 'Email and communication management tools',
+    category: ToolCategory.COMMUNICATIONS,
+  },
+  createTools: (config: MCPToolsConfig): Tool[] => createCommunicationsTools(config),
+  handleTool: handleCommunicationsToolInternal,
+  getToolNames: (): string[] => {
+    return [
+      'list_email_providers',
+      'get_email_provider',
+      'create_email_provider',
+      'update_email_provider',
+      'delete_email_provider',
+      'test_email_connection',
+      'send_email',
+    ];
+  },
+  getClientSafeTools: (): string[] => {
+    // No communications tools are client-safe (admin only)
+    return [];
+  },
+};
 

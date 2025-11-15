@@ -13,6 +13,7 @@ import { DatabaseInitializer } from './services/DatabaseInitializer';
 import { HealthCheckService } from './services/HealthCheckService';
 import OrganizationsRouter from './routers/OrganizationsRouter';
 import MCPController from './controllers/MCPController';
+import ClientMCPController from './controllers/ClientMCPController';
 import DatabaseController from './controllers/DatabaseController';
 import ProjectsController from './controllers/ProjectsController';
 import StorageController from './controllers/StorageController';
@@ -152,9 +153,10 @@ import { createStorageRouter } from './routers/StorageRouter';
 import { router as UsersRouter } from './routers/UsersRouter';
 import { router as HealthRouter } from './routers/HealthRouter';
 import { router as MCPRouter } from './routers/MCPRouter';
-import { router as DatabaseRouter } from './routers/DatabaseRouter';
-import { AdminDatabaseRouter } from './routers/AdminDatabaseRouter';
-import { AdminStorageRouter } from './routers/AdminStorageRouter';
+import { router as ClientMCPRouter } from './routers/ClientMCPRouter';
+import { createDatabaseRouter } from './routers/DatabaseRouter';
+import { createAdminDatabaseRouter } from './routers/AdminDatabaseRouter';
+import { createAdminStorageRouter } from './routers/AdminStorageRouter';
 import { createAdminAuthRouter } from './routers/AdminAuthRouter';
 import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import { createInvitationsRouter } from './routers/InvitationsRouter';
@@ -200,6 +202,7 @@ app.get('/', (req: Request, res: Response) => {
         app_user_auth: '/app-api/auth',
         storage: '/app-api/storage',
         database: '/app-api/database',
+        mcp: '/app-api/mcp',
       },
     },
   });
@@ -207,6 +210,7 @@ app.get('/', (req: Request, res: Response) => {
 
 // Initialize controllers
 MCPController.initialize(pool, s3Client);
+ClientMCPController.initialize(pool, s3Client);
 DatabaseController.initialize(pool);
 ProjectsController.initialize(pool);
 StorageController.initialize({ pool, s3Client });
@@ -254,8 +258,8 @@ app.use('/api/invitations', InvitationsRouter);
 app.use('/api/credentials', CredentialsRouter);
 app.use('/api/health', HealthRouter);
 app.use('/api/mcp', MCPRouter);
-app.use('/api/database', AdminDatabaseRouter);
-app.use('/api/storage', AdminStorageRouter);
+app.use('/api/database', createAdminDatabaseRouter(pool));
+app.use('/api/storage', createAdminStorageRouter(pool, s3Client));
 app.use('/api/auth', createAdminAuthRouter(pool));
 
 // ============================================================================
@@ -266,7 +270,9 @@ app.use('/app-api/auth', AuthManagementRouter);
 // Storage operations (supports both API key and SuperTokens via hybrid auth)
 app.use('/app-api/storage', createStorageRouter(pool));
 // Database operations (supports both API key and SuperTokens via hybrid auth)
-app.use('/app-api/database', DatabaseRouter);
+app.use('/app-api/database', createDatabaseRouter(pool));
+// Client MCP operations (restricted tool set, MCP keys/API keys only)
+app.use('/app-api/mcp', ClientMCPRouter);
 
 // SuperTokens error handler - MUST come after your routes
 app.use(supertokensErrorHandler() as ErrorRequestHandler);
@@ -317,6 +323,7 @@ const startServer = async () => {
     console.log(`   🔐 App Auth: http://localhost:${port}/app-api/auth`);
     console.log(`   💾 Storage: http://localhost:${port}/app-api/storage`);
     console.log(`   🗄️  Database: http://localhost:${port}/app-api/database`);
+    console.log(`   🔧 MCP: http://localhost:${port}/app-api/mcp`);
     console.log(`\n🔌 WebSocket: ws://localhost:${port}`);
     console.log('='.repeat(60) + '\n');
   });

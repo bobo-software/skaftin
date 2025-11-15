@@ -1,53 +1,25 @@
-import express from 'express';
-import DatabaseController from '../controllers/DatabaseController';
-import { hybridAuthAndVerifyProject } from '../middleware/hybridAuthMiddleware';
+import { Router } from 'express';
+import { Pool } from 'pg';
+import { createDatabaseRouteDefinitions } from './definitions/databaseRoutes';
+import { createMiddlewareBuilder } from './builders/MiddlewareBuilder';
+import { applyClientRoutes } from './helpers/routeHelper';
 
-const router = express.Router();
+/**
+ * Create client database router
+ * Uses hybrid authentication (API key or SuperTokens) with project ID from API key or URL
+ */
+export function createDatabaseRouter(pool: Pool): Router {
+  const router = Router();
+  const middlewareBuilder = createMiddlewareBuilder(pool, false); // isAdmin = false
+  const routes = createDatabaseRouteDefinitions();
 
-// All database routes require authentication (SuperTokens OR API key) AND project access verification
-// Project ID is extracted from API key automatically, or can be provided in URL for SuperTokens
-// GET routes
-router.get('/tables', hybridAuthAndVerifyProject, DatabaseController.listTables);
-router.get('/tables/:tableName/schema', hybridAuthAndVerifyProject, DatabaseController.getTableSchema);
-router.get('/tables/:tableName/select', hybridAuthAndVerifyProject, DatabaseController.selectDataGet);
+  // Apply routes with hybrid middleware and client paths
+  applyClientRoutes(router, routes, middlewareBuilder.buildAuthChain());
 
-// POST routes
-router.post('/tables/create', hybridAuthAndVerifyProject, DatabaseController.createTable);
-router.post('/tables/:tableName/rename', hybridAuthAndVerifyProject, DatabaseController.renameTable);
-router.post('/tables/:tableName/select', hybridAuthAndVerifyProject, DatabaseController.selectData);
-router.post('/tables/:tableName/insert', hybridAuthAndVerifyProject, DatabaseController.insertData);
-router.post('/tables/:tableName/bulk-insert', hybridAuthAndVerifyProject, DatabaseController.bulkInsertData);
-router.post('/tables/:tableName/columns', hybridAuthAndVerifyProject, DatabaseController.addColumn);
-router.post('/query', hybridAuthAndVerifyProject, DatabaseController.executeQuery);
+  return router;
+}
 
-// PUT routes
-router.put('/tables/:tableName/update', hybridAuthAndVerifyProject, DatabaseController.updateData);
-router.put('/tables/:tableName/columns/:columnName', hybridAuthAndVerifyProject, DatabaseController.alterColumn);
-
-// DELETE routes
-router.delete('/tables/:tableName/delete', hybridAuthAndVerifyProject, DatabaseController.deleteData);
-router.delete('/tables/:tableName/columns/:columnName', hybridAuthAndVerifyProject, DatabaseController.dropColumn);
-router.delete('/tables/:tableName', hybridAuthAndVerifyProject, DatabaseController.dropTable);
-
-// Constraint routes
-router.get('/tables/:tableName/constraints', hybridAuthAndVerifyProject, DatabaseController.listConstraints);
-router.get('/tables/:tableName/foreign-keys', hybridAuthAndVerifyProject, DatabaseController.listForeignKeys);
-router.post('/tables/:tableName/constraints/foreign-key', hybridAuthAndVerifyProject, DatabaseController.createForeignKey);
-router.post('/tables/:tableName/constraints/unique', hybridAuthAndVerifyProject, DatabaseController.createUniqueConstraint);
-router.post('/tables/:tableName/constraints/primary-key', hybridAuthAndVerifyProject, DatabaseController.createPrimaryKeyConstraint);
-router.post('/tables/:tableName/constraints/check', hybridAuthAndVerifyProject, DatabaseController.createCheckConstraint);
-router.delete('/tables/:tableName/constraints/:constraintName', hybridAuthAndVerifyProject, DatabaseController.dropConstraint);
-
-// Cron routes
-router.get('/cron', hybridAuthAndVerifyProject, DatabaseController.listCronJobs);
-router.get('/cron/:jobId/history', hybridAuthAndVerifyProject, DatabaseController.getCronJobHistory);
-router.post('/cron', hybridAuthAndVerifyProject, DatabaseController.createCronJob);
-router.put('/cron/:jobId', hybridAuthAndVerifyProject, DatabaseController.updateCronJob);
-router.patch('/cron/:jobId/toggle', hybridAuthAndVerifyProject, DatabaseController.toggleCronJob);
-router.delete('/cron/:jobId', hybridAuthAndVerifyProject, DatabaseController.deleteCronJob);
-
-// Import/Export routes
-router.post('/import', hybridAuthAndVerifyProject, DatabaseController.importDatabaseDump);
-
-export { router };
+// Export as both factory and direct router for backward compatibility
+export const DatabaseRouter = createDatabaseRouter;
+export { DatabaseRouter as router };
 
