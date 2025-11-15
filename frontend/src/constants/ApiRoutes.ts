@@ -155,6 +155,14 @@ const ApiRoutes = {
     SERVER: '/api/health',
     DATABASE: '/api/health/db',
     MINIO: '/api/health/minio',
+  },
+  
+  // Analytics routes
+  ANALYTICS: {
+    OVERVIEW: (projectId: string) => `/api/analytics/${projectId}/overview`,
+    API: (projectId: string) => `/api/analytics/${projectId}/api`,
+    DATABASE: (projectId: string) => `/api/analytics/${projectId}/database`,
+    STORAGE: (projectId: string) => `/api/analytics/${projectId}/storage`,
   }
 }
 

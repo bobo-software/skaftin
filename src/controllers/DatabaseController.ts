@@ -6,6 +6,7 @@ import { emitDatabaseChange } from '../utils/websocketEmitter';
 import { Pool } from 'pg';
 import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
 import { HybridAuthRequest } from '../middleware/hybridAuthMiddleware';
+import { AnalyticsService } from '../services/AnalyticsService';
 
 // Extended request type that can have projectId from middleware or params
 type DatabaseRequest = (SuperTokensAuthenticatedRequest | HybridAuthRequest) & {
@@ -261,6 +262,32 @@ class DatabaseController {
       const executionTime = Date.now() - startTime;
 
       client.release();
+
+      // Track database query metric
+      const projectIdNum = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+      if (!isNaN(projectIdNum)) {
+        // Determine query type from query string
+        const queryType = query.trim().split(/\s+/)[0].toUpperCase() || 'SELECT';
+        // Extract table name if possible (simple regex, may not catch all cases)
+        const tableMatch = query.match(/(?:FROM|INTO|UPDATE|DELETE\s+FROM)\s+["']?(\w+)["']?/i);
+        const tableName = tableMatch ? tableMatch[1] : undefined;
+        
+        // Get user ID if available
+        const userId = (req as any).session?.getUserId?.() || (req as any).user?.userId || undefined;
+        const apiKeyId = (req as any).apiKeyId || undefined;
+
+        AnalyticsService.recordDatabaseMetric({
+          projectId: projectIdNum,
+          queryType,
+          tableName,
+          executionTimeMs: executionTime,
+          rowsAffected: result.rowCount || undefined,
+          userId: userId?.toString(),
+          apiKeyId,
+        }).catch((error) => {
+          console.error('Error recording database metric:', error);
+        });
+      }
 
       ResponseUtils.success(res, 'Query executed successfully', {
         rows: result.rows,
