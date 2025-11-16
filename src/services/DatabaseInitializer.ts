@@ -617,6 +617,174 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize analytics tables using Drizzle
+   * Always creates in public schema
+   */
+  async initializeAnalyticsTables(): Promise<void> {
+    try {
+      // API Metrics table - tracks all API requests
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.api_metrics (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          endpoint VARCHAR(500) NOT NULL,
+          method VARCHAR(10) NOT NULL,
+          status_code INTEGER,
+          response_time_ms INTEGER NOT NULL,
+          user_id VARCHAR(255),
+          api_key_id INTEGER REFERENCES public.api_credentials(id) ON DELETE SET NULL,
+          ip_address VARCHAR(45),
+          user_agent TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ API metrics table creation error:', err.message);
+      }
+    }
+
+    try {
+      // Database Metrics table - tracks database queries
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.database_metrics (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          query_type VARCHAR(20) NOT NULL,
+          table_name VARCHAR(255),
+          execution_time_ms INTEGER NOT NULL,
+          rows_affected INTEGER,
+          user_id VARCHAR(255),
+          api_key_id INTEGER REFERENCES public.api_credentials(id) ON DELETE SET NULL,
+          query_hash VARCHAR(64),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Database metrics table creation error:', err.message);
+      }
+    }
+
+    try {
+      // Storage Metrics table - tracks storage operations
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.storage_metrics (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          operation_type VARCHAR(50) NOT NULL CHECK (operation_type IN ('upload', 'download', 'delete', 'list', 'search')),
+          file_path VARCHAR(1000),
+          file_size_bytes BIGINT,
+          bucket_name VARCHAR(255),
+          user_id VARCHAR(255),
+          api_key_id INTEGER REFERENCES public.api_credentials(id) ON DELETE SET NULL,
+          success BOOLEAN DEFAULT true,
+          error_message TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Storage metrics table creation error:', err.message);
+      }
+    }
+
+    try {
+      // Analytics Aggregates table - pre-aggregated metrics for faster queries
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.analytics_aggregates (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          metric_type VARCHAR(50) NOT NULL CHECK (metric_type IN ('api', 'database', 'storage')),
+          aggregation_period VARCHAR(20) NOT NULL CHECK (aggregation_period IN ('hour', 'day', 'week', 'month')),
+          period_start TIMESTAMP NOT NULL,
+          period_end TIMESTAMP NOT NULL,
+          total_count BIGINT DEFAULT 0,
+          total_response_time_ms BIGINT DEFAULT 0,
+          avg_response_time_ms NUMERIC(10, 2),
+          error_count BIGINT DEFAULT 0,
+          success_count BIGINT DEFAULT 0,
+          endpoint VARCHAR(500),
+          table_name VARCHAR(255),
+          operation_type VARCHAR(50),
+          metadata JSONB DEFAULT '{}',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(project_id, metric_type, aggregation_period, period_start, COALESCE(endpoint, ''), COALESCE(table_name, ''), COALESCE(operation_type, ''))
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Analytics aggregates table creation error:', err.message);
+      }
+    }
+
+    try {
+      // Create indexes for api_metrics
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_api_metrics_project_time ON public.api_metrics(project_id, created_at);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_api_metrics_endpoint ON public.api_metrics(endpoint, created_at);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_api_metrics_status_code ON public.api_metrics(status_code);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_api_metrics_user_id ON public.api_metrics(user_id, created_at);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ API metrics index creation error:', err.message);
+      }
+    }
+
+    try {
+      // Create indexes for database_metrics
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_database_metrics_project_time ON public.database_metrics(project_id, created_at);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_database_metrics_table_name ON public.database_metrics(table_name, created_at);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_database_metrics_query_type ON public.database_metrics(query_type, created_at);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ Database metrics index creation error:', err.message);
+      }
+    }
+
+    try {
+      // Create indexes for storage_metrics
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_storage_metrics_project_time ON public.storage_metrics(project_id, created_at);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_storage_metrics_operation_type ON public.storage_metrics(operation_type, created_at);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ Storage metrics index creation error:', err.message);
+      }
+    }
+
+    try {
+      // Create indexes for analytics_aggregates
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_analytics_aggregates_project_period ON public.analytics_aggregates(project_id, metric_type, aggregation_period, period_start);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ Analytics aggregates index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Analytics tables initialized');
+  }
+
+  /**
    * Initialize all database tables
    * Order matters: organizations must be created before organization_members and projects
    */
@@ -630,6 +798,7 @@ export class DatabaseInitializer {
     await this.initializeProjectInvitationsTable();
     await this.initializeApiCredentialsTable();
     await this.initializeAuthSettingsTable();
+    await this.initializeAnalyticsTables();
   }
 
   /**

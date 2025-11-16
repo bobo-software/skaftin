@@ -162,7 +162,9 @@ import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import { createInvitationsRouter } from './routers/InvitationsRouter';
 import { createCredentialsRouter } from './routers/CredentialsRouter';
 import { createAuthRouter } from './routers/AuthRouter';
+import { createAnalyticsRouter } from './routers/AnalyticsRouter';
 import { initializeApiKeyMiddleware } from './middleware/apiKeyMiddleware';
+import { AnalyticsService } from './services/AnalyticsService';
 
 // ============================================================================
 // SERVICE INITIALIZATION
@@ -192,6 +194,7 @@ app.get('/', (req: Request, res: Response) => {
         communications: '/api/communications',
         invitations: '/api/invitations',
         credentials: '/api/credentials',
+        analytics: '/api/analytics',
         users: '/api/users',
         health: '/api/health',
         mcp: '/api/mcp',
@@ -238,6 +241,12 @@ const AuthManagementRouter = createAuthRouter(pool);
 // Initialize Admin Router (for managing SuperTokens users)
 const AdminRouter = createAdminRouter(pool);
 
+// Initialize Analytics Router
+const AnalyticsRouter = createAnalyticsRouter(pool);
+
+// Initialize Analytics Service
+AnalyticsService.initialize(pool);
+
 // Register routers
 // Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
 
@@ -256,6 +265,7 @@ app.use('/api/users', UsersRouter);
 app.use('/api/communications', CommunicationsRouter);
 app.use('/api/invitations', InvitationsRouter);
 app.use('/api/credentials', CredentialsRouter);
+app.use('/api/analytics', AnalyticsRouter);
 app.use('/api/health', HealthRouter);
 app.use('/api/mcp', MCPRouter);
 app.use('/api/database', createAdminDatabaseRouter(pool));

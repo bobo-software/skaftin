@@ -13,6 +13,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import ResponseUtils from '../utils/ResponseUtils';
+import { AnalyticsService } from '../services/AnalyticsService';
 
 interface StorageControllerConfig {
   pool: Pool;
@@ -44,6 +45,38 @@ class StorageController {
       return req.params.projectId;
     }
     return null;
+  }
+
+  /**
+   * Helper to record storage metrics
+   */
+  private static recordStorageMetric(
+    projectId: string,
+    operationType: 'upload' | 'download' | 'delete' | 'list' | 'search',
+    data: {
+      filePath?: string;
+      fileSizeBytes?: number;
+      bucketName?: string;
+      success?: boolean;
+      errorMessage?: string;
+    },
+    req: Request & { projectId?: number }
+  ) {
+    const projectIdNum = parseInt(projectId, 10);
+    if (isNaN(projectIdNum)) return;
+
+    const userId = (req as any).session?.getUserId?.() || (req as any).user?.userId || undefined;
+    const apiKeyId = (req as any).apiKeyId || undefined;
+
+    AnalyticsService.recordStorageMetric({
+      projectId: projectIdNum,
+      operationType,
+      ...data,
+      userId: userId?.toString(),
+      apiKeyId,
+    }).catch((error) => {
+      console.error('Error recording storage metric:', error);
+    });
   }
 
   /**
@@ -302,6 +335,12 @@ class StorageController {
         etag: obj.ETag,
       })) || [];
 
+      // Track storage metric
+      this.recordStorageMetric(projectId, 'list', {
+        bucketName,
+        success: true,
+      }, req);
+
       ResponseUtils.success(res, 'Files listed successfully', {
         files,
         count: files.length,
@@ -309,6 +348,15 @@ class StorageController {
       });
     } catch (error: any) {
       console.error('List files error:', error);
+      
+      // Track failed operation
+      const projectId = StorageController.getProjectId(req);
+      if (projectId) {
+        this.recordStorageMetric(projectId, 'list', {
+          success: false,
+          errorMessage: error.message,
+        }, req);
+      }
       
       if (error.name === 'NoSuchBucket') {
         return ResponseUtils.error(res, 'Bucket not found', null, null, 404);
@@ -382,6 +430,12 @@ class StorageController {
         etag: file.ETag,
       }));
 
+      // Track storage metric
+      this.recordStorageMetric(projectId, 'search', {
+        bucketName,
+        success: true,
+      }, req);
+
       ResponseUtils.success(res, 'Search completed successfully', {
         files: results,
         count: results.length,
@@ -389,6 +443,15 @@ class StorageController {
       });
     } catch (error: any) {
       console.error('Search files error:', error);
+      
+      // Track failed operation
+      const projectId = StorageController.getProjectId(req);
+      if (projectId) {
+        this.recordStorageMetric(projectId, 'search', {
+          success: false,
+          errorMessage: error.message,
+        }, req);
+      }
       
       if (error.name === 'NoSuchBucket') {
         return ResponseUtils.error(res, 'Bucket not found', null, null, 404);
@@ -433,6 +496,14 @@ class StorageController {
 
       await StorageController.s3Client.send(command);
 
+      // Track storage metric
+      this.recordStorageMetric(projectId, 'upload', {
+        filePath,
+        fileSizeBytes: buffer.length,
+        bucketName,
+        success: true,
+      }, req);
+
       ResponseUtils.success(res, 'File uploaded successfully', {
         filePath,
         size: buffer.length,
@@ -441,6 +512,16 @@ class StorageController {
       }, 201);
     } catch (error: any) {
       console.error('Upload file error:', error);
+      
+      // Track failed operation
+      const projectId = StorageController.getProjectId(req);
+      if (projectId) {
+        this.recordStorageMetric(projectId, 'upload', {
+          filePath: req.body?.filePath,
+          success: false,
+          errorMessage: error.message,
+        }, req);
+      }
       
       if (error.name === 'NoSuchBucket') {
         return ResponseUtils.error(res, 'Bucket not found', null, null, 404);
@@ -482,6 +563,14 @@ class StorageController {
 
       await StorageController.s3Client.send(command);
 
+      // Track storage metric
+      this.recordStorageMetric(projectId, 'upload', {
+        filePath: fileName,
+        fileSizeBytes: req.file.size,
+        bucketName,
+        success: true,
+      }, req);
+
       ResponseUtils.success(res, 'File uploaded successfully', {
         fileName,
         originalName: req.file.originalname,
@@ -491,6 +580,16 @@ class StorageController {
       }, 201);
     } catch (error: any) {
       console.error('Upload multipart file error:', error);
+      
+      // Track failed operation
+      const projectId = StorageController.getProjectId(req);
+      if (projectId) {
+        this.recordStorageMetric(projectId, 'upload', {
+          success: false,
+          errorMessage: error.message,
+        }, req);
+      }
+      
       ResponseUtils.error(res, 'Failed to upload file', error);
     }
   }
@@ -529,13 +628,14 @@ class StorageController {
         return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
       }
 
-      // Check if file exists
+      // Check if file exists and get file size
       const headCommand = new HeadObjectCommand({
         Bucket: bucketName,
         Key: filePath,
       });
 
-      await StorageController.s3Client.send(headCommand);
+      const headResult = await StorageController.s3Client.send(headCommand);
+      const fileSize = headResult.ContentLength || 0;
 
       // Generate presigned URL for download (valid for 1 hour)
       const getCommand = new GetObjectCommand({
@@ -546,6 +646,14 @@ class StorageController {
 
       const signedUrl = await getSignedUrl(StorageController.s3Client, getCommand, { expiresIn: 3600 });
 
+      // Track storage metric
+      this.recordStorageMetric(projectId, 'download', {
+        filePath,
+        fileSizeBytes: fileSize,
+        bucketName,
+        success: true,
+      }, req);
+
       // Return signed URL or redirect
       if (req.query.returnUrl === 'true') {
         ResponseUtils.success(res, 'Download URL generated', { url: signedUrl });
@@ -554,6 +662,16 @@ class StorageController {
       }
     } catch (error: any) {
       console.error('Download file error:', error);
+      
+      // Track failed operation
+      const projectId = StorageController.getProjectId(req);
+      if (projectId) {
+        this.recordStorageMetric(projectId, 'download', {
+          filePath: req.params?.filePath,
+          success: false,
+          errorMessage: error.message,
+        }, req);
+      }
       
       if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
         return ResponseUtils.error(res, 'File not found', null, null, 404);
@@ -600,12 +718,29 @@ class StorageController {
 
       await StorageController.s3Client.send(command);
 
+      // Track storage metric
+      this.recordStorageMetric(projectId, 'delete', {
+        filePath,
+        bucketName,
+        success: true,
+      }, req);
+
       ResponseUtils.success(res, 'File deleted successfully', {
         filePath,
         bucket: bucketName,
       });
     } catch (error: any) {
       console.error('Delete file error:', error);
+      
+      // Track failed operation
+      const projectId = StorageController.getProjectId(req);
+      if (projectId) {
+        this.recordStorageMetric(projectId, 'delete', {
+          filePath: req.params?.filePath,
+          success: false,
+          errorMessage: error.message,
+        }, req);
+      }
       
       if (error.name === 'NoSuchBucket') {
         return ResponseUtils.error(res, 'Bucket not found', null, null, 404);

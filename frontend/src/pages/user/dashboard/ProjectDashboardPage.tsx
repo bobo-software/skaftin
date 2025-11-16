@@ -9,6 +9,7 @@ import ProjectStorageTab from './storage/ProjectStoageTab';
 import ProjectOverviewTab from './overview/ProjectOverviewTab';
 import ProjectSettingsTab from './settings/ProjectSettingsTab';
 import ProjectCommunicationsTab from './communications/ProjectCommunicationsTab';
+import ProjectAnalyticsTab from './analytics/ProjectAnalyticsTab';
 import AuthTab from './auth/AuthTab';
 
 const ProjectDashboardPage = () => {
@@ -130,6 +131,7 @@ const ProjectDashboardPage = () => {
             <Route path="overview" element={projectId ? <ProjectOverviewTab /> : null} />
             <Route path="database" element={projectId ? <ProjectDatabaseTab projectId={projectId} /> : null} />
             <Route path="storage" element={projectId ? <ProjectStorageTab /> : null} />
+            <Route path="analytics" element={projectId ? <ProjectAnalyticsTab /> : null} />
             <Route path="auth/*" element={projectId ? <AuthTab /> : null} />
             <Route path="communications" element={projectId ? <ProjectCommunicationsTab /> : null} />
             <Route path="settings" element={projectId ? <ProjectSettingsTab /> : null} />
