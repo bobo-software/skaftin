@@ -59,6 +59,40 @@ export interface SendEmailRequest {
   }>;
 }
 
+export interface SmsProvider {
+  id?: number;
+  project_id: string;
+  name: string;
+  provider_type: 'mymobileapi' | 'sa_mobile_sms';
+  post_url: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CreateSmsProviderRequest {
+  name: string;
+  provider_type: 'mymobileapi' | 'sa_mobile_sms';
+  api_key: string;
+  api_secret: string;
+  post_url: string;
+  is_active?: boolean;
+}
+
+export interface UpdateSmsProviderRequest {
+  name?: string;
+  provider_type?: 'mymobileapi' | 'sa_mobile_sms';
+  api_key?: string;
+  api_secret?: string;
+  post_url?: string;
+  is_active?: boolean;
+}
+
+export interface SendSmsMessage {
+  content: string;
+  destination: string;
+}
+
 class CommunicationsService {
   private getToken(): string {
     return localStorage.getItem('skaftin-token') || 'session-managed-by-supertokens';
@@ -211,6 +245,91 @@ class CommunicationsService {
     } catch (error: any) {
       console.error('Error sending email:', error);
       throw new Error(error.message || 'Failed to send email');
+    }
+  }
+
+  // ---------- SMS PROVIDERS ----------
+
+  async listSmsProviders(projectId: string): Promise<SmsProvider[]> {
+    try {
+      const response = await RequestUtils.get(
+        ApiRoutes.COMMUNICATIONS.LIST_SMS_PROVIDERS(projectId),
+        this.getToken()
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to list SMS providers');
+    } catch (error: any) {
+      console.error('Error listing SMS providers:', error);
+      throw new Error(error.message || 'Failed to list SMS providers');
+    }
+  }
+
+  async createSmsProvider(projectId: string, data: CreateSmsProviderRequest): Promise<SmsProvider> {
+    try {
+      const response = await RequestUtils.post(
+        ApiRoutes.COMMUNICATIONS.CREATE_SMS_PROVIDER(projectId),
+        this.getToken(),
+        data
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to create SMS provider');
+    } catch (error: any) {
+      console.error('Error creating SMS provider:', error);
+      throw new Error(error.message || 'Failed to create SMS provider');
+    }
+  }
+
+  async updateSmsProvider(projectId: string, providerId: string, data: UpdateSmsProviderRequest): Promise<SmsProvider> {
+    try {
+      const response = await RequestUtils.put(
+        ApiRoutes.COMMUNICATIONS.UPDATE_SMS_PROVIDER(projectId, providerId),
+        this.getToken(),
+        data
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to update SMS provider');
+    } catch (error: any) {
+      console.error('Error updating SMS provider:', error);
+      throw new Error(error.message || 'Failed to update SMS provider');
+    }
+  }
+
+  async deleteSmsProvider(projectId: string, providerId: string): Promise<void> {
+    try {
+      const response = await RequestUtils.delete(
+        ApiRoutes.COMMUNICATIONS.DELETE_SMS_PROVIDER(projectId, providerId),
+        this.getToken(),
+        {}
+      );
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to delete SMS provider');
+      }
+    } catch (error: any) {
+      console.error('Error deleting SMS provider:', error);
+      throw new Error(error.message || 'Failed to delete SMS provider');
+    }
+  }
+
+  async sendSms(projectId: string, messages: SendSmsMessage[]): Promise<any> {
+    try {
+      const response = await RequestUtils.post(
+        ApiRoutes.COMMUNICATIONS.SEND_SMS(projectId),
+        this.getToken(),
+        { messages }
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to send SMS');
+    } catch (error: any) {
+      console.error('Error sending SMS:', error);
+      throw new Error(error.message || 'Failed to send SMS');
     }
   }
 }

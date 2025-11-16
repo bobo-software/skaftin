@@ -14,9 +14,13 @@ export interface AuthSettings {
   email_provider_id?: number;
   sms_provider_id?: number;
   send_registration_email: boolean;
+  send_registration_sms?: boolean;
   send_verification_email: boolean;
+  send_verification_sms?: boolean;
   send_password_reset_email: boolean;
+  send_password_reset_sms?: boolean;
   send_welcome_email: boolean;
+  send_welcome_sms?: boolean;
   settings_json: any;
   created_at: string;
   updated_at: string;
@@ -34,9 +38,13 @@ export interface UpdateAuthSettingsRequest {
   email_provider_id?: number;
   sms_provider_id?: number;
   send_registration_email?: boolean;
+  send_registration_sms?: boolean;
   send_verification_email?: boolean;
+  send_verification_sms?: boolean;
   send_password_reset_email?: boolean;
+  send_password_reset_sms?: boolean;
   send_welcome_email?: boolean;
+  send_welcome_sms?: boolean;
   settings_json?: any;
 }
 
@@ -45,6 +53,14 @@ export interface EmailProvider {
   name: string;
   provider_type: string;
   from_email: string;
+  is_active: boolean;
+}
+
+export interface SmsProvider {
+  id: number;
+  name: string;
+  provider_type: string;
+  post_url: string;
   is_active: boolean;
 }
 
@@ -246,6 +262,47 @@ class AuthSettingsService {
     } catch (error: any) {
       console.error('Error getting email providers:', error);
       throw new Error(error.message || 'Failed to get email providers');
+    }
+  }
+
+  /**
+   * Get available SMS providers for the project
+   */
+  async getSmsProviders(projectId: string): Promise<SmsProvider[]> {
+    try {
+      const response = await RequestUtils.get(
+        `/api/auth/${projectId}/settings/sms-providers`,
+        this.getToken()
+      );
+
+      if (response.success) {
+        return response.data;
+      }
+
+      throw new Error(response.error || 'Failed to get SMS providers');
+    } catch (error: any) {
+      console.error('Error getting SMS providers:', error);
+      throw new Error(error.message || 'Failed to get SMS providers');
+    }
+  }
+
+  /**
+   * Test SMS provider configuration
+   */
+  async testSmsProvider(projectId: string, destination: string, message?: string): Promise<void> {
+    try {
+      const response = await RequestUtils.post(
+        `/api/auth/${projectId}/settings/test-sms-provider`,
+        this.getToken(),
+        { test_destination: destination, message }
+      );
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to test SMS provider');
+      }
+    } catch (error: any) {
+      console.error('Error testing SMS provider:', error);
+      throw new Error(error.message || 'Failed to test SMS provider');
     }
   }
 }
