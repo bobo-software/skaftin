@@ -1,18 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Mail, CheckCircle, AlertCircle, Settings, ExternalLink, Send, Save } from 'lucide-react';
-import AuthSettingsService, { AuthSettings, EmailProvider } from '../../../../../services/AuthSettingsService';
+import { Mail, CheckCircle, AlertCircle, Settings, ExternalLink, Save, MessageSquare } from 'lucide-react';
+import AuthSettingsService, { AuthSettings, EmailProvider, SmsProvider } from '../../../../../services/AuthSettingsService';
 import { AppButton } from '../../../../../components/ComponentsIndex';
 
 const AuthEmailSettingsTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const [settings, setSettings] = useState<AuthSettings | null>(null);
   const [emailProviders, setEmailProviders] = useState<EmailProvider[]>([]);
+  const [smsProviders, setSmsProviders] = useState<SmsProvider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<number | undefined>();
-  const [testEmail, setTestEmail] = useState('');
+  const [selectedSmsProvider, setSelectedSmsProvider] = useState<number | undefined>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchSettings = useCallback(async () => {
@@ -23,6 +23,7 @@ const AuthEmailSettingsTab = () => {
       const data = await AuthSettingsService.getAuthSettings(projectId);
       setSettings(data);
       setSelectedProvider(data.email_provider_id);
+      setSelectedSmsProvider(data.sms_provider_id);
     } catch (error: any) {
       console.error('Error fetching settings:', error);
       setMessage({ type: 'error', text: error.message });
@@ -42,12 +43,23 @@ const AuthEmailSettingsTab = () => {
     }
   }, [projectId]);
 
+  const fetchSmsProviders = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const providers = await AuthSettingsService.getSmsProviders(projectId);
+      setSmsProviders(providers);
+    } catch (error) {
+      console.error('Error fetching SMS providers:', error);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     if (projectId) {
       fetchSettings();
       fetchEmailProviders();
+      fetchSmsProviders();
     }
-  }, [projectId, fetchSettings, fetchEmailProviders]);
+  }, [projectId, fetchSettings, fetchEmailProviders, fetchSmsProviders]);
 
   const handleSaveProvider = async () => {
     if (!projectId || !settings) return;
@@ -77,22 +89,56 @@ const AuthEmailSettingsTab = () => {
     }
   };
 
-  const handleTestEmail = async () => {
-    if (!projectId || !testEmail) return;
-
-    setTesting(true);
+  const handleSaveSmsProvider = async () => {
+    if (!projectId) return;
+    setSaving(true);
     setMessage(null);
-
     try {
-      await AuthSettingsService.testEmailProvider(projectId, testEmail);
-      setMessage({ type: 'success', text: 'Test email sent successfully! Check your inbox.' });
-      setTimeout(() => setMessage(null), 5000);
+      await AuthSettingsService.updateAuthSettings(projectId, {
+        sms_provider_id: selectedSmsProvider,
+      });
+      setMessage({ type: 'success', text: 'SMS settings saved successfully!' });
+      await fetchSettings();
+      setTimeout(() => setMessage(null), 3000);
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message });
     } finally {
-      setTesting(false);
+      setSaving(false);
     }
   };
+
+  const handleSaveNotifications = async () => {
+    if (!projectId || !settings) return;
+
+    setSaving(true);
+    setMessage(null);
+
+    try {
+      await AuthSettingsService.updateAuthSettings(projectId, {
+        send_registration_email: settings.send_registration_email,
+        send_registration_sms: settings.send_registration_sms,
+        send_verification_email: settings.send_verification_email,
+        send_verification_sms: settings.send_verification_sms,
+        send_password_reset_email: settings.send_password_reset_email,
+        send_password_reset_sms: settings.send_password_reset_sms,
+        send_welcome_email: settings.send_welcome_email,
+        send_welcome_sms: settings.send_welcome_sms,
+      });
+      
+      setMessage({ type: 'success', text: 'Notification settings saved successfully!' });
+      
+      // Refresh settings to get updated values from server
+      await fetchSettings();
+      
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Test email/SMS are available in Communications tab; no test actions here
 
   if (loading) {
     return (
@@ -109,9 +155,9 @@ const AuthEmailSettingsTab = () => {
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-dark-900 dark:text-white mb-2">Email Settings</h1>
+          <h1 className="text-2xl font-bold text-dark-900 dark:text-white mb-2">Messaging Settings</h1>
           <p className="text-dark-600 dark:text-dark-400">
-            Configure email templates and providers for authentication emails.
+            Configure email and SMS templates and providers for authentication.
           </p>
         </div>
 
@@ -203,141 +249,227 @@ const AuthEmailSettingsTab = () => {
           )}
         </div>
 
-        {/* Test Email */}
-        {emailProviders.length > 0 && selectedProvider && (
-          <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6 mb-6">
-            <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">Test Email</h3>
-            
+        {/* Test Email removed (use Communications tab) */}
+
+        {/* SMS Provider Selection */}
+        <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-dark-900 dark:text-white flex items-center gap-2">
+              <MessageSquare className="w-5 h-5" />
+              SMS Provider
+            </h3>
+            <Link
+              to={`/projects/${projectId}/communications`}
+              className="flex items-center gap-2 text-sm text-primary-600 hover:text-primary-700"
+            >
+              <Settings className="w-4 h-4" />
+              Manage Providers
+              <ExternalLink className="w-3 h-3" />
+            </Link>
+          </div>
+
+          {smsProviders.length === 0 ? (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <div className="flex items-start">
+                <MessageSquare className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-3 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium mb-2">
+                    No SMS Provider Configured
+                  </p>
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300 mb-3">
+                    To send authentication SMS, configure an SMS provider first.
+                  </p>
+                  <Link
+                    to={`/projects/${projectId}/communications`}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Configure SMS Provider
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ) : (
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Test Email Address
+                  Select Provider for Auth SMS
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    type="email"
-                    value={testEmail}
-                    onChange={(e) => setTestEmail(e.target.value)}
-                    placeholder="Enter email to send test"
-                    className="flex-1 px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
-                  />
-                  <AppButton
-                    onClick={handleTestEmail}
-                    disabled={testing || !testEmail}
-                    icon={<Send className="w-5 h-5" />}
-                  >
-                    {testing ? 'Sending...' : 'Send Test'}
-                  </AppButton>
-                </div>
+                <select
+                  value={selectedSmsProvider || ''}
+                  onChange={(e) => setSelectedSmsProvider(e.target.value ? parseInt(e.target.value) : undefined)}
+                  className="w-full px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+                >
+                  <option value="">No provider selected</option>
+                  {smsProviders.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.name} ({provider.provider_type})
+                    </option>
+                  ))}
+                </select>
                 <p className="text-sm text-dark-600 dark:text-dark-400 mt-1">
-                  Send a test email to verify your provider configuration.
+                  This provider will be used for OTP and other auth SMS messages.
                 </p>
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* Email Toggles */}
+              <div className="flex justify-end">
+                <AppButton
+                  onClick={handleSaveSmsProvider}
+                  disabled={saving || selectedSmsProvider === settings?.sms_provider_id}
+                >
+                  {saving ? 'Saving...' : 'Save Provider'}
+                </AppButton>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Test SMS removed (use Communications tab) */}
+        {/* Notifications */}
         {settings && (
           <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6 mb-6">
-            <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">Email Notifications</h3>
+            <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">Notifications</h3>
             <p className="text-sm text-dark-600 dark:text-dark-400 mb-6">
-              Control which emails are automatically sent during user registration and authentication flows.
+              Control which notifications (email or SMS) are automatically sent during user registration and authentication flows.
             </p>
             
-            <div className="space-y-4">
-              {/* Registration Email Toggle */}
-              <div className="flex items-center justify-between py-3 border-b border-dark-100 dark:border-dark-700">
-                <div className="flex-1">
-                  <label className="font-medium text-dark-900 dark:text-white">Send Registration Email</label>
+            <div className="space-y-6">
+              {/* Registration Notification */}
+              <div className="border-b border-dark-100 dark:border-dark-700 pb-4">
+                <div className="mb-3">
+                  <label className="font-medium text-dark-900 dark:text-white">Registration Notification</label>
                   <p className="text-sm text-dark-600 dark:text-dark-400">
-                    Send welcome email with OTP code when users register
+                    Send welcome message with OTP code when users register
                   </p>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={settings.send_registration_email || false}
-                    onChange={(e) => setSettings({ ...settings, send_registration_email: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
-                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.send_registration_email || false}
+                      onChange={(e) => setSettings({ ...settings, send_registration_email: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-dark-700 dark:text-dark-300">Email</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.send_registration_sms || false}
+                      onChange={(e) => setSettings({ ...settings, send_registration_sms: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-dark-700 dark:text-dark-300">SMS</span>
+                  </label>
+                </div>
               </div>
 
-              {/* Verification Email Toggle */}
-              <div className="flex items-center justify-between py-3 border-b border-dark-100 dark:border-dark-700">
-                <div className="flex-1">
-                  <label className="font-medium text-dark-900 dark:text-white">Send Verification Email</label>
+              {/* Verification Notification */}
+              <div className="border-b border-dark-100 dark:border-dark-700 pb-4">
+                <div className="mb-3">
+                  <label className="font-medium text-dark-900 dark:text-white">Verification Notification</label>
                   <p className="text-sm text-dark-600 dark:text-dark-400">
-                    Send email verification link when users change their email address
+                    Send verification code when users need to verify their contact information
                   </p>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={settings.send_verification_email || false}
-                    onChange={(e) => setSettings({ ...settings, send_verification_email: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
-                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.send_verification_email || false}
+                      onChange={(e) => setSettings({ ...settings, send_verification_email: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-dark-700 dark:text-dark-300">Email</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.send_verification_sms || false}
+                      onChange={(e) => setSettings({ ...settings, send_verification_sms: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-dark-700 dark:text-dark-300">SMS</span>
+                  </label>
+                </div>
               </div>
 
-              {/* Password Reset Email Toggle */}
-              <div className="flex items-center justify-between py-3 border-b border-dark-100 dark:border-dark-700">
-                <div className="flex-1">
-                  <label className="font-medium text-dark-900 dark:text-white">Send Password Reset Email</label>
+              {/* Password Reset Notification */}
+              <div className="border-b border-dark-100 dark:border-dark-700 pb-4">
+                <div className="mb-3">
+                  <label className="font-medium text-dark-900 dark:text-white">Password Reset Notification</label>
                   <p className="text-sm text-dark-600 dark:text-dark-400">
-                    Send reset link when users request password reset
+                    Send reset code when users request password reset
                   </p>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={settings.send_password_reset_email !== undefined ? settings.send_password_reset_email : true}
-                    onChange={(e) => setSettings({ ...settings, send_password_reset_email: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
-                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.send_password_reset_email !== undefined ? settings.send_password_reset_email : true}
+                      onChange={(e) => setSettings({ ...settings, send_password_reset_email: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-dark-700 dark:text-dark-300">Email</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.send_password_reset_sms || false}
+                      onChange={(e) => setSettings({ ...settings, send_password_reset_sms: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-dark-700 dark:text-dark-300">SMS</span>
+                  </label>
+                </div>
               </div>
 
-              {/* Welcome Email Toggle */}
-              <div className="flex items-center justify-between py-3">
-                <div className="flex-1">
-                  <label className="font-medium text-dark-900 dark:text-white">Send Welcome Email</label>
+              {/* Welcome Notification */}
+              <div className="pb-2">
+                <div className="mb-3">
+                  <label className="font-medium text-dark-900 dark:text-white">Welcome Notification</label>
                   <p className="text-sm text-dark-600 dark:text-dark-400">
                     Send welcome message after successful registration
                   </p>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={settings.send_welcome_email || false}
-                    onChange={(e) => setSettings({ ...settings, send_welcome_email: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
-                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.send_welcome_email || false}
+                      onChange={(e) => setSettings({ ...settings, send_welcome_email: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-dark-700 dark:text-dark-300">Email</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.send_welcome_sms || false}
+                      onChange={(e) => setSettings({ ...settings, send_welcome_sms: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-dark-700 dark:text-dark-300">SMS</span>
+                  </label>
+                </div>
               </div>
             </div>
 
             <div className="flex justify-end mt-6 pt-4 border-t border-dark-200 dark:border-dark-700">
               <AppButton
-                onClick={handleSaveProvider}
+                onClick={handleSaveNotifications}
                 disabled={saving}
                 icon={<Save className="w-4 h-4" />}
               >
-                {saving ? 'Saving...' : 'Save Email Settings'}
+                {saving ? 'Saving...' : 'Save Notifications'}
               </AppButton>
             </div>
 
-            {!settings.email_provider_id && (
+            {(!settings.email_provider_id && !settings.sms_provider_id) && (
               <div className="mt-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
                 <p className="text-sm text-yellow-800 dark:text-yellow-200">
                   <AlertCircle className="w-4 h-4 inline mr-1" />
-                  Configure an email provider above to enable email notifications.
+                  Configure an email or SMS provider above to enable notifications.
                 </p>
               </div>
             )}

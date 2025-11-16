@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Save, Mail, AlertCircle, CheckCircle } from 'lucide-react';
-import AuthSettingsService, { AuthSettings, EmailProvider } from '../../../../../services/AuthSettingsService';
+import AuthSettingsService, { AuthSettings, EmailProvider, SmsProvider } from '../../../../../services/AuthSettingsService';
 import RolesService, { Role } from '../../../../../services/RolesService';
 import { AppButton } from '../../../../../components/ComponentsIndex';
 
@@ -9,6 +9,7 @@ const AuthGeneralSettingsTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const [settings, setSettings] = useState<AuthSettings | null>(null);
   const [emailProviders, setEmailProviders] = useState<EmailProvider[]>([]);
+  const [smsProviders, setSmsProviders] = useState<SmsProvider[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -40,6 +41,16 @@ const AuthGeneralSettingsTab = () => {
     }
   }, [projectId]);
 
+  const fetchSmsProviders = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const providers = await AuthSettingsService.getSmsProviders(projectId);
+      setSmsProviders(providers);
+    } catch (error) {
+      console.error('Error fetching SMS providers:', error);
+    }
+  }, [projectId]);
+
   const fetchRoles = useCallback(async () => {
     if (!projectId) return;
     
@@ -55,9 +66,10 @@ const AuthGeneralSettingsTab = () => {
     if (projectId) {
       fetchSettings();
       fetchEmailProviders();
+      fetchSmsProviders();
       fetchRoles();
     }
-  }, [projectId, fetchSettings, fetchEmailProviders, fetchRoles]);
+  }, [projectId, fetchSettings, fetchEmailProviders, fetchSmsProviders, fetchRoles]);
 
   const handleSave = async () => {
     if (!projectId || !settings) return;
@@ -76,6 +88,7 @@ const AuthGeneralSettingsTab = () => {
         auth_enabled: settings.auth_enabled,
         default_role_id: settings.default_role_id,
         email_provider_id: settings.email_provider_id,
+        sms_provider_id: settings.sms_provider_id,
       });
       setMessage({ type: 'success', text: 'Settings saved successfully!' });
       setTimeout(() => setMessage(null), 3000);
@@ -234,6 +247,66 @@ const AuthGeneralSettingsTab = () => {
                     type="checkbox"
                     checked={settings.require_email_verification}
                     onChange={(e) => setSettings({ ...settings, require_email_verification: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* SMS Settings */}
+          <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6">
+            <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">SMS Settings</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block font-medium text-dark-900 dark:text-white mb-2">
+                  SMS Provider
+                </label>
+                {smsProviders.length === 0 ? (
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                    <div className="flex items-start">
+                      <Mail className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-2 mt-0.5" />
+                      <div>
+                        <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">No SMS provider configured</p>
+                        <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                          Please configure an SMS provider in the Communications section to send OTP codes.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <select
+                    value={settings.sms_provider_id || ''}
+                    onChange={(e) => setSettings({ ...settings, sms_provider_id: e.target.value ? parseInt(e.target.value) : undefined })}
+                    className="w-full px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+                  >
+                    <option value="">No provider selected</option>
+                    {smsProviders.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.name} ({provider.provider_type})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-sm text-dark-600 dark:text-dark-400 mt-1">
+                  Select the SMS provider to use for sending OTP codes and notifications
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="font-medium text-dark-900 dark:text-white">Require Phone Verification</label>
+                  <p className="text-sm text-dark-600 dark:text-dark-400">
+                    Users must verify their phone via OTP before accessing the app
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.require_phone_verification}
+                    onChange={(e) => setSettings({ ...settings, require_phone_verification: e.target.checked })}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>

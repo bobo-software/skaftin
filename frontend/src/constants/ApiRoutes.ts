@@ -58,6 +58,11 @@ const ApiRoutes = {
   // Storage routes - Admin API (SuperTokens authentication)
   // Project ID is provided in the URL path
   STORAGE: {
+    // Bucket operations
+    LIST_BUCKETS: '/api/storage/buckets',
+    CREATE_BUCKET: '/api/storage/buckets',
+    DELETE_BUCKET: (bucketName: string) => `/api/storage/buckets/${bucketName}`,
+    
     // File operations
     LIST_FILES: (projectId: string) => `/api/storage/${projectId}/files`,
     SEARCH_FILES: (projectId: string) => `/api/storage/${projectId}/search`,
@@ -108,6 +113,15 @@ const ApiRoutes = {
     TEST_CONNECTION: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}/test`,
     // Email sending
     SEND_EMAIL: (projectId: string) => `/api/communications/${projectId}/email/send`,
+    // SMS provider management
+    LIST_SMS_PROVIDERS: (projectId: string) => `/api/communications/${projectId}/sms/providers`,
+    GET_SMS_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/sms/providers/${providerId}`,
+    CREATE_SMS_PROVIDER: (projectId: string) => `/api/communications/${projectId}/sms/providers`,
+    UPDATE_SMS_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/sms/providers/${providerId}`,
+    DELETE_SMS_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/sms/providers/${providerId}`,
+    // SMS sending
+    SEND_SMS: (projectId: string) => `/api/communications/${projectId}/sms/send`,
+    SEND_SMS_BASIC: (projectId: string) => `/api/communications/${projectId}/sms/send-basic`,
   },
   
   // Invitations routes

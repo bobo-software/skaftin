@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, NavLink, useParams } from 'react-router-dom';
-import { Users, Shield, Settings, Mail, Lock, Sliders } from 'lucide-react';
+import { Users, Shield, Settings, MessageSquare, Lock, Sliders } from 'lucide-react';
 import AuthUsersTab from './tabs/AuthUsersTab';
 import AuthRolesTab from './tabs/AuthRolesTab';
 import AuthCustomFieldsTab from './tabs/AuthCustomFieldsTab';
@@ -13,7 +13,7 @@ const AuthTab = () => {
     { path: 'users', icon: Users, label: 'Users' },
     { path: 'roles', icon: Shield, label: 'Roles' },
     { path: 'fields', icon: Sliders, label: 'Custom Fields' },
-    { path: 'email-settings', icon: Mail, label: 'Email Settings' },
+    { path: 'messaging', icon: MessageSquare, label: 'Messaging' },
     { path: 'security', icon: Lock, label: 'Security' },
     { path: 'general', icon: Settings, label: 'General' },
   ];
@@ -52,7 +52,7 @@ const AuthTab = () => {
           <Route path="users" element={<AuthUsersTab />} />
           <Route path="roles" element={<AuthRolesTab />} />
           <Route path="fields" element={<AuthCustomFieldsTab />} />
-          <Route path="email-settings" element={<AuthEmailSettingsTab />} />
+          <Route path="messaging" element={<AuthEmailSettingsTab />} />
           <Route path="security" element={<SecurityPlaceholder />} />
           <Route path="general" element={<AuthGeneralSettingsTab />} />
           <Route path="*" element={<Navigate to="users" replace />} />

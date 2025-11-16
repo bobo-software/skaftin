@@ -19,9 +19,13 @@ interface AuthSettings {
   email_provider_id?: number;
   sms_provider_id?: number;
   send_registration_email: boolean;
+  send_registration_sms?: boolean;
   send_verification_email: boolean;
+  send_verification_sms?: boolean;
   send_password_reset_email: boolean;
+  send_password_reset_sms?: boolean;
   send_welcome_email: boolean;
+  send_welcome_sms?: boolean;
   settings_json: any;
   created_at: Date;
   updated_at: Date;
@@ -39,9 +43,13 @@ interface UpdateAuthSettingsRequest {
   email_provider_id?: number;
   sms_provider_id?: number;
   send_registration_email?: boolean;
+  send_registration_sms?: boolean;
   send_verification_email?: boolean;
+  send_verification_sms?: boolean;
   send_password_reset_email?: boolean;
+  send_password_reset_sms?: boolean;
   send_welcome_email?: boolean;
+  send_welcome_sms?: boolean;
   settings_json?: any;
 }
 
@@ -88,10 +96,26 @@ class AuthSettingsController {
           [projectId]
         );
 
-        return ResponseUtils.success(res, 'Auth settings created', createResult.rows[0], 201);
+        const settings = createResult.rows[0];
+        // Extract SMS notification settings from settings_json
+        const settingsJson = settings.settings_json || {};
+        settings.send_registration_sms = settingsJson.send_registration_sms || false;
+        settings.send_verification_sms = settingsJson.send_verification_sms || false;
+        settings.send_password_reset_sms = settingsJson.send_password_reset_sms || false;
+        settings.send_welcome_sms = settingsJson.send_welcome_sms || false;
+
+        return ResponseUtils.success(res, 'Auth settings created', settings, 201);
       }
 
-      ResponseUtils.success(res, 'Auth settings fetched successfully', result.rows[0]);
+      const settings = result.rows[0];
+      // Extract SMS notification settings from settings_json
+      const settingsJson = settings.settings_json || {};
+      settings.send_registration_sms = settingsJson.send_registration_sms || false;
+      settings.send_verification_sms = settingsJson.send_verification_sms || false;
+      settings.send_password_reset_sms = settingsJson.send_password_reset_sms || false;
+      settings.send_welcome_sms = settingsJson.send_welcome_sms || false;
+
+      ResponseUtils.success(res, 'Auth settings fetched successfully', settings);
     } catch (error) {
       console.error('Error fetching auth settings:', error);
       ResponseUtils.error(res, 'Failed to fetch auth settings', error);
@@ -189,6 +213,36 @@ class AuthSettingsController {
         values.push(updates.send_welcome_email);
       }
 
+      // Handle SMS notification settings (stored in settings_json for now)
+      if (updates.send_registration_sms !== undefined || 
+          updates.send_verification_sms !== undefined || 
+          updates.send_password_reset_sms !== undefined || 
+          updates.send_welcome_sms !== undefined) {
+        // Get current settings_json or initialize empty object
+        const currentSettingsResult = await AuthSettingsController.pool.query(
+          'SELECT settings_json FROM auth_settings WHERE project_id = $1',
+          [projectId]
+        );
+        const currentSettingsJson = currentSettingsResult.rows[0]?.settings_json || {};
+        
+        // Update SMS notification settings
+        if (updates.send_registration_sms !== undefined) {
+          currentSettingsJson.send_registration_sms = updates.send_registration_sms;
+        }
+        if (updates.send_verification_sms !== undefined) {
+          currentSettingsJson.send_verification_sms = updates.send_verification_sms;
+        }
+        if (updates.send_password_reset_sms !== undefined) {
+          currentSettingsJson.send_password_reset_sms = updates.send_password_reset_sms;
+        }
+        if (updates.send_welcome_sms !== undefined) {
+          currentSettingsJson.send_welcome_sms = updates.send_welcome_sms;
+        }
+        
+        updateFields.push(`settings_json = $${paramIndex++}`);
+        values.push(JSON.stringify(currentSettingsJson));
+      }
+
       if (updates.settings_json !== undefined) {
         updateFields.push(`settings_json = $${paramIndex++}`);
         values.push(JSON.stringify(updates.settings_json));
@@ -219,10 +273,26 @@ class AuthSettingsController {
           [projectId]
         );
 
-        return ResponseUtils.success(res, 'Auth settings created', createResult.rows[0], 201);
+        const settings = createResult.rows[0];
+        // Extract SMS notification settings from settings_json
+        const settingsJson = settings.settings_json || {};
+        settings.send_registration_sms = settingsJson.send_registration_sms || false;
+        settings.send_verification_sms = settingsJson.send_verification_sms || false;
+        settings.send_password_reset_sms = settingsJson.send_password_reset_sms || false;
+        settings.send_welcome_sms = settingsJson.send_welcome_sms || false;
+
+        return ResponseUtils.success(res, 'Auth settings created', settings, 201);
       }
 
-      ResponseUtils.success(res, 'Auth settings updated successfully', result.rows[0]);
+      const settings = result.rows[0];
+      // Extract SMS notification settings from settings_json
+      const settingsJson = settings.settings_json || {};
+      settings.send_registration_sms = settingsJson.send_registration_sms || false;
+      settings.send_verification_sms = settingsJson.send_verification_sms || false;
+      settings.send_password_reset_sms = settingsJson.send_password_reset_sms || false;
+      settings.send_welcome_sms = settingsJson.send_welcome_sms || false;
+
+      ResponseUtils.success(res, 'Auth settings updated successfully', settings);
     } catch (error) {
       console.error('Error updating auth settings:', error);
       ResponseUtils.error(res, 'Failed to update auth settings', error);
@@ -935,6 +1005,112 @@ Skaftin Platform - Email Testing Service
     } catch (error) {
       console.error('Error fetching email providers:', error);
       ResponseUtils.error(res, 'Failed to fetch email providers', error);
+    }
+  }
+
+  /**
+   * Get available SMS providers for the project
+   * GET /api/auth/:projectId/settings/sms-providers
+   */
+  static async getSmsProviders(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    try {
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      const providersResult = await AuthSettingsController.pool.query(
+        `SELECT id, name, provider_type, post_url, is_active
+         FROM sms_providers
+         WHERE project_id = $1 AND is_active = true
+         ORDER BY created_at ASC`,
+        [projectId]
+      );
+
+      ResponseUtils.success(res, 'SMS providers fetched successfully', providersResult.rows);
+    } catch (error) {
+      console.error('Error fetching SMS providers:', error);
+      ResponseUtils.error(res, 'Failed to fetch SMS providers', error);
+    }
+  }
+
+  /**
+   * Test SMS provider configuration by sending a simple message
+   * POST /api/auth/:projectId/settings/test-sms-provider
+   */
+  static async testSmsProvider(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    try {
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { test_destination, message } = req.body;
+      if (!test_destination) {
+        return ResponseUtils.error(res, 'Test destination is required', null, null, 400);
+      }
+
+      // Get configured SMS provider id
+      const settingsResult = await AuthSettingsController.pool.query(
+        'SELECT sms_provider_id FROM auth_settings WHERE project_id = $1',
+        [projectId]
+      );
+      if (settingsResult.rows.length === 0 || !settingsResult.rows[0].sms_provider_id) {
+        return ResponseUtils.error(
+          res,
+          'SMS provider not configured. Please configure an SMS provider first.',
+          null,
+          null,
+          400
+        );
+      }
+      const smsProviderId = settingsResult.rows[0].sms_provider_id;
+
+      // Fetch provider credentials
+      const providerQuery = `
+        SELECT provider_type, api_key, api_secret, post_url, is_active
+        FROM sms_providers
+        WHERE id = $1 AND project_id = $2 AND is_active = true
+      `;
+      const providerResult = await AuthSettingsController.pool.query(providerQuery, [smsProviderId, projectId]);
+      if (providerResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'SMS provider not found or inactive', null, null, 404);
+      }
+      const provider = providerResult.rows[0];
+
+      // Send test SMS
+      const axios = require('axios');
+      const credentials = `${provider.api_key}:${provider.api_secret}`;
+      const base64Credentials = Buffer.from(credentials).toString('base64');
+      const headers = { Authorization: `Basic ${base64Credentials}`, 'Content-Type': 'application/json' };
+      const payload = {
+        messages: [
+          {
+            content: message || 'Test SMS from Skaftin auth settings',
+            destination: test_destination,
+          },
+        ],
+      };
+      await axios.post(provider.post_url, JSON.stringify(payload), { headers });
+
+      ResponseUtils.success(res, 'Test SMS sent successfully', {
+        destination: test_destination,
+      });
+    } catch (error: any) {
+      console.error('❌ Error testing SMS provider:', error);
+      ResponseUtils.error(
+        res,
+        'Failed to send test SMS',
+        error,
+        error?.message || 'Unknown error occurred'
+      );
     }
   }
 }

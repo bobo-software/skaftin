@@ -168,7 +168,7 @@ const ProjectAnalyticsTab = () => {
       </div>
 
       {loading ? (
-        <LoadingSpinner message="Loading analytics..." />
+        <LoadingSpinner text="Loading analytics..." />
       ) : error ? (
         <ErrorMessage message={error} />
       ) : (
