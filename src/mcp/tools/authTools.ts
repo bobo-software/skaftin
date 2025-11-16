@@ -381,7 +381,7 @@ export function createAuthTools(config: AuthToolsConfig): Tool[] {
     },
     {
       name: 'apply_custom_field',
-      description: 'Apply a custom field (add column to app_users table)',
+      description: 'Apply a custom field (add column to skaftin_system_users table)',
       inputSchema: {
         type: 'object',
         properties: {
@@ -525,7 +525,7 @@ export async function handleAuthTool(
 
       if (role_id) {
         whereConditions.push(`EXISTS (
-          SELECT 1 FROM ${schemaName}.app_user_roles ur 
+          SELECT 1 FROM ${schemaName}.skaftin_system_user_roles ur 
           WHERE ur.app_user_id = u.id AND ur.role_id = $${paramIndex}
         )`);
         queryParams.push(parseInt(role_id));
@@ -543,9 +543,9 @@ export async function handleAuthTool(
             ) FILTER (WHERE r.id IS NOT NULL), 
             '[]'
           ) as roles
-        FROM ${schemaName}.app_users u
-        LEFT JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
-        LEFT JOIN ${schemaName}.app_roles r ON ur.role_id = r.id
+        FROM ${schemaName}.skaftin_system_users u
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         ${whereClause}
         GROUP BY u.id
         ORDER BY u.created_at DESC
@@ -579,9 +579,9 @@ export async function handleAuthTool(
             ) FILTER (WHERE r.id IS NOT NULL), 
             '[]'
           ) as roles
-        FROM ${schemaName}.app_users u
-        LEFT JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
-        LEFT JOIN ${schemaName}.app_roles r ON ur.role_id = r.id
+        FROM ${schemaName}.skaftin_system_users u
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         WHERE u.id = $1
         GROUP BY u.id
       `;
@@ -612,7 +612,7 @@ export async function handleAuthTool(
       // For MCP tools, we'll create users directly without SuperTokens integration
       // SuperTokens integration is handled by the controller when called via HTTP
       const insertQuery = `
-        INSERT INTO ${schemaName}.app_users (name, email, phone, metadata, is_active)
+        INSERT INTO ${schemaName}.skaftin_system_users (name, email, phone, metadata, is_active)
         VALUES ($1, $2, $3, $4, true)
         RETURNING *
       `;
@@ -624,7 +624,7 @@ export async function handleAuthTool(
       if (role_ids && Array.isArray(role_ids) && role_ids.length > 0) {
         for (const roleId of role_ids) {
           await pool.query(
-            `INSERT INTO ${schemaName}.app_user_roles (app_user_id, role_id)
+            `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
              VALUES ($1, $2)
              ON CONFLICT (app_user_id, role_id) DO NOTHING`,
             [newUser.id, roleId]
@@ -689,7 +689,7 @@ export async function handleAuthTool(
       values.push(parseInt(userId));
 
       const updateQuery = `
-        UPDATE ${schemaName}.app_users
+        UPDATE ${schemaName}.skaftin_system_users
         SET ${updateFields.join(', ')}
         WHERE id = $${paramIndex}
         RETURNING *
@@ -719,13 +719,13 @@ export async function handleAuthTool(
       }
 
       if (permanent) {
-        await pool.query(`DELETE FROM ${schemaName}.app_users WHERE id = $1`, [parseInt(userId)]);
+        await pool.query(`DELETE FROM ${schemaName}.skaftin_system_users WHERE id = $1`, [parseInt(userId)]);
         return {
           content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'User permanently deleted' }, null, 2) }],
         };
       } else {
         await pool.query(
-          `UPDATE ${schemaName}.app_users SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          `UPDATE ${schemaName}.skaftin_system_users SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
           [parseInt(userId)]
         );
         return {
@@ -745,7 +745,7 @@ export async function handleAuthTool(
       }
 
       await pool.query(
-        `INSERT INTO ${schemaName}.app_user_roles (app_user_id, role_id)
+        `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
          VALUES ($1, $2)
          ON CONFLICT (app_user_id, role_id) DO NOTHING`,
         [parseInt(userId), roleId]
@@ -777,14 +777,14 @@ export async function handleAuthTool(
           SELECT 
             r.*,
             COUNT(DISTINCT ur.app_user_id) as user_count
-          FROM ${schemaName}.app_roles r
-          LEFT JOIN ${schemaName}.app_user_roles ur ON r.id = ur.role_id
+          FROM ${schemaName}.skaftin_system_roles r
+          LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON r.id = ur.role_id
           GROUP BY r.id
           ORDER BY r.is_system_role DESC, r.created_at ASC
         `;
       } else {
         rolesQuery = `
-          SELECT * FROM ${schemaName}.app_roles
+          SELECT * FROM ${schemaName}.skaftin_system_roles
           ORDER BY is_system_role DESC, created_at ASC
         `;
       }

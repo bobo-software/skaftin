@@ -80,7 +80,7 @@ class AppAuthController {
 
       // Check if email already exists in this project
       const existingUser = await AppAuthController.pool.query(
-        `SELECT id FROM ${schemaName}.app_users WHERE email = $1`,
+        `SELECT id FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
         [email]
       );
 
@@ -110,7 +110,7 @@ class AppAuthController {
 
       // Create app user in database
       const insertResult = await AppAuthController.pool.query(
-        `INSERT INTO ${schemaName}.app_users 
+        `INSERT INTO ${schemaName}.skaftin_system_users 
          (supertokens_user_id, name, email, phone, metadata, is_active, email_verified)
          VALUES ($1, $2, $3, $4, $5, $6, false)
          RETURNING id, name, email, phone, is_active, created_at`,
@@ -127,7 +127,7 @@ class AppAuthController {
 
       if (defaultRoleResult.rows.length > 0 && defaultRoleResult.rows[0].default_role_id) {
         await AppAuthController.pool.query(
-          `INSERT INTO ${schemaName}.app_user_roles (app_user_id, role_id)
+          `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
            VALUES ($1, $2)`,
           [user.id, defaultRoleResult.rows[0].default_role_id]
         );
@@ -174,7 +174,7 @@ class AppAuthController {
           
           // Store OTP in user metadata
           await AppAuthController.pool.query(
-            `UPDATE ${schemaName}.app_users 
+            `UPDATE ${schemaName}.skaftin_system_users 
              SET metadata = jsonb_set(
                jsonb_set(COALESCE(metadata, '{}'), '{otp}', $1::jsonb),
                '{otp_expires_at}', $2::jsonb
@@ -189,7 +189,7 @@ class AppAuthController {
           // If OTP email fails, activate user immediately (don't block registration)
           if (!user.is_active) {
             await AppAuthController.pool.query(
-              `UPDATE ${schemaName}.app_users SET is_active = true WHERE id = $1`,
+              `UPDATE ${schemaName}.skaftin_system_users SET is_active = true WHERE id = $1`,
               [user.id]
             );
             user.is_active = true;
@@ -285,9 +285,9 @@ class AppAuthController {
            ) FILTER (WHERE r.id IS NOT NULL), 
            '[]'
          ) as roles
-         FROM ${schemaName}.app_users u
-         LEFT JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
-         LEFT JOIN ${schemaName}.app_roles r ON ur.role_id = r.id
+        FROM ${schemaName}.skaftin_system_users u
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
          WHERE u.email = $1
          GROUP BY u.id`,
         [email]
@@ -422,9 +422,9 @@ class AppAuthController {
            ) FILTER (WHERE r.id IS NOT NULL), 
            '[]'
          ) as roles
-         FROM ${schemaName}.app_users u
-         LEFT JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
-         LEFT JOIN ${schemaName}.app_roles r ON ur.role_id = r.id
+         FROM ${schemaName}.skaftin_system_users u
+         LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+         LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
          WHERE u.supertokens_user_id = $1
          GROUP BY u.id`,
         [supertokensUserId]
@@ -501,10 +501,10 @@ class AppAuthController {
       let queryParams: any[] = [];
 
       if (user_id) {
-        userQuery = `SELECT id, name, email, metadata, is_active FROM ${schemaName}.app_users WHERE id = $1`;
+        userQuery = `SELECT id, name, email, metadata, is_active FROM ${schemaName}.skaftin_system_users WHERE id = $1`;
         queryParams = [parseInt(user_id)];
       } else {
-        userQuery = `SELECT id, name, email, metadata, is_active FROM ${schemaName}.app_users WHERE email = $1`;
+        userQuery = `SELECT id, name, email, metadata, is_active FROM ${schemaName}.skaftin_system_users WHERE email = $1`;
         queryParams = [email];
       }
 
@@ -560,7 +560,7 @@ class AppAuthController {
 
       // Activate user and mark email as verified
       await AppAuthController.pool.query(
-        `UPDATE ${schemaName}.app_users 
+        `UPDATE ${schemaName}.skaftin_system_users 
          SET is_active = true,
              email_verified = true,
              metadata = metadata - 'otp' - 'otp_expires_at',

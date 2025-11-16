@@ -117,7 +117,7 @@ class CustomFieldsController {
 
       let fieldsQuery = `
         SELECT *
-        FROM ${schemaName}.app_user_custom_fields
+        FROM ${schemaName}.skaftin_system_user_custom_fields
       `;
 
       if (include_inactive !== 'true') {
@@ -157,7 +157,7 @@ class CustomFieldsController {
       }
 
       const result = await CustomFieldsController.pool.query(
-        `SELECT * FROM ${schemaName}.app_user_custom_fields WHERE id = $1`,
+        `SELECT * FROM ${schemaName}.skaftin_system_user_custom_fields WHERE id = $1`,
         [parseInt(fieldId)]
       );
 
@@ -211,7 +211,7 @@ class CustomFieldsController {
 
       // Check if field_name already exists
       const existingField = await CustomFieldsController.pool.query(
-        `SELECT id FROM ${schemaName}.app_user_custom_fields WHERE field_name = $1`,
+        `SELECT id FROM ${schemaName}.skaftin_system_user_custom_fields WHERE field_name = $1`,
         [fieldData.field_name]
       );
 
@@ -248,7 +248,7 @@ class CustomFieldsController {
 
       // Create custom field
       const insertQuery = `
-        INSERT INTO ${schemaName}.app_user_custom_fields 
+        INSERT INTO ${schemaName}.skaftin_system_user_custom_fields 
         (field_name, field_label, field_type, is_required, default_value, options, 
          reference_table, reference_column, validation_rules, display_order, is_active)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
@@ -345,7 +345,7 @@ class CustomFieldsController {
       values.push(parseInt(fieldId));
 
       const updateQuery = `
-        UPDATE ${schemaName}.app_user_custom_fields
+        UPDATE ${schemaName}.skaftin_system_user_custom_fields
         SET ${updateFields.join(', ')}
         WHERE id = $${paramIndex}
         RETURNING *
@@ -389,7 +389,7 @@ class CustomFieldsController {
       if (permanent === 'true') {
         // Permanent deletion
         const result = await CustomFieldsController.pool.query(
-          `DELETE FROM ${schemaName}.app_user_custom_fields WHERE id = $1 RETURNING field_name`,
+          `DELETE FROM ${schemaName}.skaftin_system_user_custom_fields WHERE id = $1 RETURNING field_name`,
           [parseInt(fieldId)]
         );
 
@@ -404,7 +404,7 @@ class CustomFieldsController {
       } else {
         // Soft delete (deactivate)
         const result = await CustomFieldsController.pool.query(
-          `UPDATE ${schemaName}.app_user_custom_fields 
+          `UPDATE ${schemaName}.skaftin_system_user_custom_fields 
            SET is_active = false, updated_at = CURRENT_TIMESTAMP 
            WHERE id = $1
            RETURNING *`,
@@ -424,7 +424,7 @@ class CustomFieldsController {
   }
 
   /**
-   * Apply a custom field (add column to app_users table)
+   * Apply a custom field (add column to skaftin_system_users table)
    * POST /api/auth/:projectId/fields/:fieldId/apply
    * Note: This is an advanced feature that alters the table structure
    */
@@ -447,7 +447,7 @@ class CustomFieldsController {
 
       // Get the custom field
       const fieldResult = await CustomFieldsController.pool.query(
-        `SELECT * FROM ${schemaName}.app_user_custom_fields WHERE id = $1`,
+        `SELECT * FROM ${schemaName}.skaftin_system_user_custom_fields WHERE id = $1`,
         [parseInt(fieldId)]
       );
 
@@ -492,7 +492,7 @@ class CustomFieldsController {
         SELECT EXISTS (
           SELECT FROM information_schema.columns 
           WHERE table_schema = $1 
-            AND table_name = 'app_users' 
+            AND table_name = 'skaftin_system_users' 
             AND column_name = $2
         )
         `,
@@ -502,17 +502,17 @@ class CustomFieldsController {
       if (columnCheck.rows[0].exists) {
         return ResponseUtils.error(
           res,
-          'Column already exists in app_users table',
+          'Column already exists in skaftin_system_users table',
           null,
           null,
           400
         );
       }
 
-      // Add column to app_users table
+      // Add column to skaftin_system_users table
       const notNullClause = field.is_required ? 'NOT NULL' : '';
       const alterTableQuery = `
-        ALTER TABLE ${schemaName}.app_users 
+        ALTER TABLE ${schemaName}.skaftin_system_users 
         ADD COLUMN ${field.field_name} ${columnType} ${notNullClause} ${defaultClause}
       `;
 
@@ -522,7 +522,7 @@ class CustomFieldsController {
       if (field.field_type === 'reference' && field.reference_table && field.reference_column) {
         try {
           const fkQuery = `
-            ALTER TABLE ${schemaName}.app_users 
+            ALTER TABLE ${schemaName}.skaftin_system_users 
             ADD CONSTRAINT fk_${field.field_name} 
             FOREIGN KEY (${field.field_name}) 
             REFERENCES ${schemaName}.${field.reference_table}(${field.reference_column})
@@ -536,7 +536,7 @@ class CustomFieldsController {
         }
       }
 
-      ResponseUtils.success(res, `Column '${field.field_name}' added to app_users table successfully`);
+      ResponseUtils.success(res, `Column '${field.field_name}' added to skaftin_system_users table successfully`);
     } catch (error) {
       console.error('Error applying custom field:', error);
       ResponseUtils.error(res, 'Failed to apply custom field', error);

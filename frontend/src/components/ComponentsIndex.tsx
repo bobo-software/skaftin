@@ -42,3 +42,12 @@ export { default as ProjectSidebar } from './dashboard/ProjectSidebar';
 export { default as DashboardNavbar } from './dashboard/DashboardNavbar';
 export { default as AccountDropdown } from './dashboard/AccountDropdown';
 export { default as OrganizationSwitcher } from './dashboard/OrganizationSwitcher';
+
+// ---------- Workflows Components ---------- //
+export { default as WorkflowEditor } from './workflows/WorkflowEditor';
+export { default as WorkflowStartNode } from './workflows/StartNode';
+export { default as WorkflowHttpRequestNode } from './workflows/HttpRequestNode';
+export { default as WorkflowDbSelectNode } from './workflows/DbSelectNode';
+export { default as AddNodeModal } from './workflows/AddNodeModal';
+export { default as ResultPreview } from './workflows/ResultPreview';
+export { default as WorkflowDisplayNode } from './workflows/DisplayNode';

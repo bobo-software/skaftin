@@ -471,13 +471,64 @@ export class DatabaseInitializer {
 
   /**
    * Initialize auth tables for a specific project schema
-   * Creates app_users, app_roles, app_user_roles, and app_user_custom_fields tables
+   * Creates skaftin_system_users, skaftin_system_roles, skaftin_system_user_roles, and skaftin_system_user_custom_fields tables
    */
   async initializeProjectAuthTables(schemaName: string, projectId: number): Promise<void> {
     try {
-      // Create app_users table in project schema
+      // Backward-compatible rename: if legacy app_* tables exist, rename them to skaftin_system_*
       await this.db.execute(sql.raw(`
-        CREATE TABLE IF NOT EXISTS ${schemaName}.app_users (
+        DO $$
+        BEGIN
+          -- Users table
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = '${schemaName}' AND table_name = 'app_users'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = '${schemaName}' AND table_name = 'skaftin_system_users'
+          ) THEN
+            EXECUTE format('ALTER TABLE %I.app_users RENAME TO skaftin_system_users', '${schemaName}');
+          END IF;
+          
+          -- Roles table
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = '${schemaName}' AND table_name = 'app_roles'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = '${schemaName}' AND table_name = 'skaftin_system_roles'
+          ) THEN
+            EXECUTE format('ALTER TABLE %I.app_roles RENAME TO skaftin_system_roles', '${schemaName}');
+          END IF;
+          
+          -- User roles junction
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = '${schemaName}' AND table_name = 'app_user_roles'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = '${schemaName}' AND table_name = 'skaftin_system_user_roles'
+          ) THEN
+            EXECUTE format('ALTER TABLE %I.app_user_roles RENAME TO skaftin_system_user_roles', '${schemaName}');
+          END IF;
+          
+          -- Custom fields
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = '${schemaName}' AND table_name = 'app_user_custom_fields'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = '${schemaName}' AND table_name = 'skaftin_system_user_custom_fields'
+          ) THEN
+            EXECUTE format('ALTER TABLE %I.app_user_custom_fields RENAME TO skaftin_system_user_custom_fields', '${schemaName}');
+          END IF;
+        END
+        $$;
+      `));
+
+      // Create skaftin_system_users table in project schema
+      await this.db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_users (
           id SERIAL PRIMARY KEY,
           supertokens_user_id VARCHAR(255) UNIQUE,
           name VARCHAR(255) NOT NULL,
@@ -493,22 +544,22 @@ export class DatabaseInitializer {
         );
       `));
 
-      // Create indexes for app_users
+      // Create indexes for skaftin_system_users
       await this.db.execute(sql.raw(`
-        CREATE INDEX IF NOT EXISTS idx_app_users_email ON ${schemaName}.app_users(email);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_email ON ${schemaName}.skaftin_system_users(email);
       `));
       await this.db.execute(sql.raw(`
-        CREATE INDEX IF NOT EXISTS idx_app_users_supertokens_user_id ON ${schemaName}.app_users(supertokens_user_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_supertokens_user_id ON ${schemaName}.skaftin_system_users(supertokens_user_id);
       `));
       await this.db.execute(sql.raw(`
-        CREATE INDEX IF NOT EXISTS idx_app_users_is_active ON ${schemaName}.app_users(is_active);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_is_active ON ${schemaName}.skaftin_system_users(is_active);
       `));
 
-      console.log(`✅ app_users table created in schema: ${schemaName}`);
+      console.log(`✅ skaftin_system_users table created in schema: ${schemaName}`);
 
-      // Create app_roles table in project schema
+      // Create skaftin_system_roles table in project schema
       await this.db.execute(sql.raw(`
-        CREATE TABLE IF NOT EXISTS ${schemaName}.app_roles (
+        CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_roles (
           id SERIAL PRIMARY KEY,
           role_name VARCHAR(255) NOT NULL,
           role_key VARCHAR(100) NOT NULL UNIQUE,
@@ -521,19 +572,19 @@ export class DatabaseInitializer {
         );
       `));
 
-      // Create index for app_roles
+      // Create index for skaftin_system_roles
       await this.db.execute(sql.raw(`
-        CREATE INDEX IF NOT EXISTS idx_app_roles_role_key ON ${schemaName}.app_roles(role_key);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_roles_role_key ON ${schemaName}.skaftin_system_roles(role_key);
       `));
       await this.db.execute(sql.raw(`
-        CREATE INDEX IF NOT EXISTS idx_app_roles_is_system_role ON ${schemaName}.app_roles(is_system_role);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_roles_is_system_role ON ${schemaName}.skaftin_system_roles(is_system_role);
       `));
 
-      console.log(`✅ app_roles table created in schema: ${schemaName}`);
+      console.log(`✅ skaftin_system_roles table created in schema: ${schemaName}`);
 
       // Insert default roles (Admin and User)
       await this.db.execute(sql.raw(`
-        INSERT INTO ${schemaName}.app_roles (role_name, role_key, description, permissions, session_duration_minutes, is_system_role)
+        INSERT INTO ${schemaName}.skaftin_system_roles (role_name, role_key, description, permissions, session_duration_minutes, is_system_role)
         VALUES 
           ('Admin', 'admin', 'Administrator with full access', '["*"]', 60, true),
           ('User', 'user', 'Standard user with limited access', '["read"]', 10080, true)
@@ -542,31 +593,31 @@ export class DatabaseInitializer {
 
       console.log(`✅ Default roles seeded in schema: ${schemaName}`);
 
-      // Create app_user_roles junction table
+      // Create skaftin_system_user_roles junction table
       await this.db.execute(sql.raw(`
-        CREATE TABLE IF NOT EXISTS ${schemaName}.app_user_roles (
+        CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_user_roles (
           id SERIAL PRIMARY KEY,
-          app_user_id INTEGER NOT NULL REFERENCES ${schemaName}.app_users(id) ON DELETE CASCADE,
-          role_id INTEGER NOT NULL REFERENCES ${schemaName}.app_roles(id) ON DELETE CASCADE,
+          app_user_id INTEGER NOT NULL REFERENCES ${schemaName}.skaftin_system_users(id) ON DELETE CASCADE,
+          role_id INTEGER NOT NULL REFERENCES ${schemaName}.skaftin_system_roles(id) ON DELETE CASCADE,
           assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           assigned_by VARCHAR(255),
           UNIQUE(app_user_id, role_id)
         );
       `));
 
-      // Create indexes for app_user_roles
+      // Create indexes for skaftin_system_user_roles
       await this.db.execute(sql.raw(`
-        CREATE INDEX IF NOT EXISTS idx_app_user_roles_app_user_id ON ${schemaName}.app_user_roles(app_user_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_user_roles_app_user_id ON ${schemaName}.skaftin_system_user_roles(app_user_id);
       `));
       await this.db.execute(sql.raw(`
-        CREATE INDEX IF NOT EXISTS idx_app_user_roles_role_id ON ${schemaName}.app_user_roles(role_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_user_roles_role_id ON ${schemaName}.skaftin_system_user_roles(role_id);
       `));
 
-      console.log(`✅ app_user_roles table created in schema: ${schemaName}`);
+      console.log(`✅ skaftin_system_user_roles table created in schema: ${schemaName}`);
 
-      // Create app_user_custom_fields table
+      // Create skaftin_system_user_custom_fields table
       await this.db.execute(sql.raw(`
-        CREATE TABLE IF NOT EXISTS ${schemaName}.app_user_custom_fields (
+        CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_user_custom_fields (
           id SERIAL PRIMARY KEY,
           field_name VARCHAR(255) NOT NULL UNIQUE,
           field_label VARCHAR(255) NOT NULL,
@@ -584,19 +635,19 @@ export class DatabaseInitializer {
         );
       `));
 
-      // Create index for app_user_custom_fields
+      // Create index for skaftin_system_user_custom_fields
       await this.db.execute(sql.raw(`
-        CREATE INDEX IF NOT EXISTS idx_app_user_custom_fields_field_name ON ${schemaName}.app_user_custom_fields(field_name);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_user_custom_fields_field_name ON ${schemaName}.skaftin_system_user_custom_fields(field_name);
       `));
       await this.db.execute(sql.raw(`
-        CREATE INDEX IF NOT EXISTS idx_app_user_custom_fields_is_active ON ${schemaName}.app_user_custom_fields(is_active);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_user_custom_fields_is_active ON ${schemaName}.skaftin_system_user_custom_fields(is_active);
       `));
 
-      console.log(`✅ app_user_custom_fields table created in schema: ${schemaName}`);
+      console.log(`✅ skaftin_system_user_custom_fields table created in schema: ${schemaName}`);
 
       // Update auth_settings with default role
       const defaultRoleResult = await this.db.execute(sql.raw(`
-        SELECT id FROM ${schemaName}.app_roles WHERE role_key = 'user' LIMIT 1;
+        SELECT id FROM ${schemaName}.skaftin_system_roles WHERE role_key = 'user' LIMIT 1;
       `));
 
       if (defaultRoleResult.rows.length > 0) {

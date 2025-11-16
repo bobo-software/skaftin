@@ -81,15 +81,15 @@ class RolesController {
           SELECT 
             r.*,
             COUNT(DISTINCT ur.app_user_id) as user_count
-          FROM ${schemaName}.app_roles r
-          LEFT JOIN ${schemaName}.app_user_roles ur ON r.id = ur.role_id
+          FROM ${schemaName}.skaftin_system_roles r
+          LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON r.id = ur.role_id
           GROUP BY r.id
           ORDER BY r.is_system_role DESC, r.created_at ASC
         `;
       } else {
         rolesQuery = `
           SELECT *
-          FROM ${schemaName}.app_roles
+          FROM ${schemaName}.skaftin_system_roles
           ORDER BY is_system_role DESC, created_at ASC
         `;
       }
@@ -128,8 +128,8 @@ class RolesController {
         SELECT 
           r.*,
           COUNT(DISTINCT ur.app_user_id) as user_count
-        FROM ${schemaName}.app_roles r
-        LEFT JOIN ${schemaName}.app_user_roles ur ON r.id = ur.role_id
+        FROM ${schemaName}.skaftin_system_roles r
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON r.id = ur.role_id
         WHERE r.id = $1
         GROUP BY r.id
       `;
@@ -192,7 +192,7 @@ class RolesController {
 
       // Check if role_key already exists
       const existingRole = await RolesController.pool.query(
-        `SELECT id FROM ${schemaName}.app_roles WHERE role_key = $1`,
+        `SELECT id FROM ${schemaName}.skaftin_system_roles WHERE role_key = $1`,
         [role_key]
       );
 
@@ -202,7 +202,7 @@ class RolesController {
 
       // Create role
       const insertQuery = `
-        INSERT INTO ${schemaName}.app_roles 
+        INSERT INTO ${schemaName}.skaftin_system_roles 
         (role_name, role_key, description, permissions, session_duration_minutes, is_system_role)
         VALUES ($1, $2, $3, $4, $5, false)
         RETURNING *
@@ -247,7 +247,7 @@ class RolesController {
 
       // Check if role exists and is not a system role
       const roleCheck = await RolesController.pool.query(
-        `SELECT * FROM ${schemaName}.app_roles WHERE id = $1`,
+        `SELECT * FROM ${schemaName}.skaftin_system_roles WHERE id = $1`,
         [parseInt(roleId)]
       );
 
@@ -300,7 +300,7 @@ class RolesController {
       values.push(parseInt(roleId));
 
       const updateQuery = `
-        UPDATE ${schemaName}.app_roles
+        UPDATE ${schemaName}.skaftin_system_roles
         SET ${updateFields.join(', ')}
         WHERE id = $${paramIndex}
         RETURNING *
@@ -338,7 +338,7 @@ class RolesController {
 
       // Check if role exists and is not a system role
       const roleCheck = await RolesController.pool.query(
-        `SELECT * FROM ${schemaName}.app_roles WHERE id = $1`,
+        `SELECT * FROM ${schemaName}.skaftin_system_roles WHERE id = $1`,
         [parseInt(roleId)]
       );
 
@@ -354,7 +354,7 @@ class RolesController {
 
       // Check if role has users assigned
       const userCount = await RolesController.pool.query(
-        `SELECT COUNT(*) as count FROM ${schemaName}.app_user_roles WHERE role_id = $1`,
+        `SELECT COUNT(*) as count FROM ${schemaName}.skaftin_system_user_roles WHERE role_id = $1`,
         [parseInt(roleId)]
       );
 
@@ -372,7 +372,7 @@ class RolesController {
 
       // Delete role
       await RolesController.pool.query(
-        `DELETE FROM ${schemaName}.app_roles WHERE id = $1`,
+        `DELETE FROM ${schemaName}.skaftin_system_roles WHERE id = $1`,
         [parseInt(roleId)]
       );
 
@@ -405,7 +405,7 @@ class RolesController {
       }
 
       const result = await RolesController.pool.query(
-        `SELECT permissions FROM ${schemaName}.app_roles WHERE id = $1`,
+        `SELECT permissions FROM ${schemaName}.skaftin_system_roles WHERE id = $1`,
         [parseInt(roleId)]
       );
 
@@ -450,7 +450,7 @@ class RolesController {
 
       // Update permissions
       const result = await RolesController.pool.query(
-        `UPDATE ${schemaName}.app_roles
+        `UPDATE ${schemaName}.skaftin_system_roles
          SET permissions = $1, updated_at = CURRENT_TIMESTAMP
          WHERE id = $2
          RETURNING *`,
@@ -502,7 +502,7 @@ class RolesController {
 
       // Update session duration
       const result = await RolesController.pool.query(
-        `UPDATE ${schemaName}.app_roles
+        `UPDATE ${schemaName}.skaftin_system_roles
          SET session_duration_minutes = $1, updated_at = CURRENT_TIMESTAMP
          WHERE id = $2
          RETURNING *`,

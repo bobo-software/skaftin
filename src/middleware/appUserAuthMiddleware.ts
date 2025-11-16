@@ -169,7 +169,7 @@ export function verifyAppUserToken(pool: Pool) {
       }
 
       const userResult = await pool.query(
-        `SELECT id, email, is_active FROM ${req.schemaName}.app_users WHERE id = $1`,
+        `SELECT id, email, is_active FROM ${req.schemaName}.skaftin_system_users WHERE id = $1`,
         [decoded.userId]
       );
 
