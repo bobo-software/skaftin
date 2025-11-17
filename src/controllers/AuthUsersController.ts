@@ -145,9 +145,9 @@ class AuthUsersController {
             ) FILTER (WHERE r.id IS NOT NULL), 
             '[]'
           ) as roles
-        FROM ${schemaName}.app_users u
-        LEFT JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
-        LEFT JOIN ${schemaName}.app_roles r ON ur.role_id = r.id
+        FROM ${schemaName}.skaftin_system_users u
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         ${whereClause}
         GROUP BY u.id
         ORDER BY u.created_at DESC
@@ -161,7 +161,7 @@ class AuthUsersController {
       // Get total count
       const countQuery = `
         SELECT COUNT(DISTINCT u.id) as total
-        FROM ${schemaName}.app_users u
+        FROM ${schemaName}.skaftin_system_users u
         ${whereClause}
       `;
 

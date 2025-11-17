@@ -329,7 +329,7 @@ class AuthSettingsController {
 
       // Get role session duration
       const roleResult = await AuthSettingsController.pool.query(
-        `SELECT role_name, role_key, session_duration_minutes FROM ${schemaName}.app_roles WHERE id = $1`,
+        `SELECT role_name, role_key, session_duration_minutes FROM ${schemaName}.skaftin_system_roles WHERE id = $1`,
         [parseInt(roleId)]
       );
 
@@ -420,10 +420,10 @@ class AuthSettingsController {
       let queryParams: any[] = [];
 
       if (user_id) {
-        userQuery = `SELECT id, name, email FROM ${schemaName}.app_users WHERE id = $1`;
+        userQuery = `SELECT id, name, email FROM ${schemaName}.skaftin_system_users WHERE id = $1`;
         queryParams = [user_id];
       } else {
-        userQuery = `SELECT id, name, email FROM ${schemaName}.app_users WHERE email = $1`;
+        userQuery = `SELECT id, name, email FROM ${schemaName}.skaftin_system_users WHERE email = $1`;
         queryParams = [email];
       }
 
@@ -461,7 +461,7 @@ class AuthSettingsController {
 
       // Store verification token in user metadata
       await AuthSettingsController.pool.query(
-        `UPDATE ${schemaName}.app_users 
+        `UPDATE ${schemaName}.skaftin_system_users 
          SET metadata = jsonb_set(COALESCE(metadata, '{}'), '{verification_token}', $1::jsonb),
              metadata = jsonb_set(metadata, '{verification_expires_at}', $2::jsonb)
          WHERE id = $3`,
@@ -548,7 +548,7 @@ class AuthSettingsController {
 
       // Check if user exists
       const userResult = await AuthSettingsController.pool.query(
-        `SELECT id, name, email FROM ${schemaName}.app_users WHERE email = $1`,
+        `SELECT id, name, email FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
         [email]
       );
 
@@ -587,7 +587,7 @@ class AuthSettingsController {
 
       // Store reset token in user metadata
       await AuthSettingsController.pool.query(
-        `UPDATE ${schemaName}.app_users 
+        `UPDATE ${schemaName}.skaftin_system_users 
          SET metadata = jsonb_set(COALESCE(metadata, '{}'), '{reset_token}', $1::jsonb),
              metadata = jsonb_set(metadata, '{reset_expires_at}', $2::jsonb)
          WHERE id = $3`,
@@ -644,7 +644,7 @@ class AuthSettingsController {
 
       // Get user with OTP data
       const userResult = await AuthSettingsController.pool.query(
-        `SELECT id, name, email, metadata, is_active FROM ${schemaName}.app_users WHERE id = $1`,
+        `SELECT id, name, email, metadata, is_active FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
         [parseInt(user_id)]
       );
 
@@ -698,7 +698,7 @@ class AuthSettingsController {
 
       // Activate user and mark email as verified
       await AuthSettingsController.pool.query(
-        `UPDATE ${schemaName}.app_users 
+        `UPDATE ${schemaName}.skaftin_system_users 
          SET is_active = true,
              email_verified = true,
              metadata = metadata - 'otp' - 'otp_expires_at',
@@ -786,7 +786,7 @@ class AuthSettingsController {
            role_key,
            session_duration_minutes,
            is_system_role
-         FROM ${schemaName}.app_roles
+         FROM ${schemaName}.skaftin_system_roles
          ORDER BY is_system_role DESC, role_name ASC`
       );
 

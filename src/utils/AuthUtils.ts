@@ -51,7 +51,7 @@ export class AuthUtils {
         }
       }
 
-      // 2. Delete from app_users tables (either specific project or all)
+      // 2. Delete from skaftin_system_users tables (either specific project or all)
       if (projectId) {
         // Delete from specific project only
         const schemaResult = await pool.query(
@@ -114,7 +114,7 @@ export class AuthUtils {
 
       // Check if user exists
       const userCheck = await client.query(
-        `SELECT id FROM ${schemaName}.app_users WHERE email = $1`,
+        `SELECT id FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
         [email]
       );
 
@@ -127,13 +127,13 @@ export class AuthUtils {
 
       // Delete role assignments
       const roleDeleteResult = await client.query(
-        `DELETE FROM ${schemaName}.app_user_roles WHERE app_user_id = $1`,
+        `DELETE FROM ${schemaName}.skaftin_system_user_roles WHERE app_user_id = $1`,
         [userId]
       );
 
       // Delete user
       await client.query(
-        `DELETE FROM ${schemaName}.app_users WHERE id = $1`,
+        `DELETE FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
         [userId]
       );
 
@@ -213,9 +213,9 @@ export class AuthUtils {
         hashedPassword = await bcrypt.hash(userData.password, 10);
       }
 
-      // 3. Create in app_users table
+      // 3. Create in skaftin_system_users table
       const insertQuery = `
-        INSERT INTO ${schemaName}.app_users 
+        INSERT INTO ${schemaName}.skaftin_system_users 
         (supertokens_user_id, name, email, password, phone, metadata, is_active, email_verified, phone_verified)
         VALUES ($1, $2, $3, $4, $5, $6, true, false, false)
         RETURNING *
@@ -236,7 +236,7 @@ export class AuthUtils {
       if (userData.role_ids && userData.role_ids.length > 0) {
         for (const roleId of userData.role_ids) {
           await client.query(
-            `INSERT INTO ${schemaName}.app_user_roles (app_user_id, role_id)
+            `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
              VALUES ($1, $2)
              ON CONFLICT (app_user_id, role_id) DO NOTHING`,
             [newUser.id, roleId]
@@ -293,7 +293,7 @@ export class AuthUtils {
 
       // 1. Get user info
       const userResult = await client.query(
-        `SELECT * FROM ${schemaName}.app_users WHERE id = $1`,
+        `SELECT * FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
         [userId]
       );
 
@@ -312,13 +312,13 @@ export class AuthUtils {
       if (permanent) {
         // 2. Delete role assignments
         await client.query(
-          `DELETE FROM ${schemaName}.app_user_roles WHERE app_user_id = $1`,
+          `DELETE FROM ${schemaName}.skaftin_system_user_roles WHERE app_user_id = $1`,
           [userId]
         );
 
         // 3. Delete user from database
         await client.query(
-          `DELETE FROM ${schemaName}.app_users WHERE id = $1`,
+          `DELETE FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
           [userId]
         );
 
@@ -336,7 +336,7 @@ export class AuthUtils {
       } else {
         // Soft delete
         await client.query(
-          `UPDATE ${schemaName}.app_users 
+          `UPDATE ${schemaName}.skaftin_system_users 
            SET is_active = false, updated_at = CURRENT_TIMESTAMP 
            WHERE id = $1`,
           [userId]
@@ -375,7 +375,7 @@ export class AuthUtils {
   }
 
   /**
-   * Check if email exists in project's app_users
+   * Check if email exists in project's skaftin_system_users
    */
   static async emailExistsInProject(
     pool: Pool,
@@ -384,7 +384,7 @@ export class AuthUtils {
     excludeUserId?: number
   ): Promise<boolean> {
     try {
-      let query = `SELECT id FROM ${schemaName}.app_users WHERE email = $1`;
+      let query = `SELECT id FROM ${schemaName}.skaftin_system_users WHERE email = $1`;
       const params: any[] = [email];
 
       if (excludeUserId) {

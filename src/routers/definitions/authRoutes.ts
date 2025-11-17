@@ -264,7 +264,7 @@ export function createAuthRouteDefinitions(isAdmin: boolean): RouteDefinition[] 
       method: 'post',
       path: createPath('/fields/:fieldId/apply', isAdmin),
       handler: CustomFieldsController.applyCustomField,
-      description: 'Apply custom field (add column to app_users table)',
+      description: 'Apply custom field (add column to skaftin_system_users table)',
       requiresProject: true,
       requiresAuth: true,
     },

@@ -1,0 +1,68 @@
+/* React Flow custom styling for dark theme */
+.react-flow {
+  background-color: rgb(249 250 251);
+}
+
+.dark .react-flow {
+  background-color: rgb(17 24 39);
+}
+
+.react-flow__node {
+  font-family: inherit;
+}
+
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+.react-flow__handle-left {
+  left: -6px;
+}
+
+.react-flow__handle-right {
+  right: -6px;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: rgb(59 130 246);
+}
+
+.react-flow__controls {
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+.react-flow__controls-button {
+  border-bottom: 1px solid rgb(229 231 235);
+  background: white;
+  color: rgb(55 65 81);
+}
+
+.dark .react-flow__controls-button {
+  border-bottom-color: rgb(55 65 81);
+  background: rgb(31 41 55);
+  color: rgb(209 213 219);
+}
+
+.react-flow__controls-button:hover {
+  background: rgb(243 244 246);
+}
+
+.dark .react-flow__controls-button:hover {
+  background: rgb(55 65 81);
+}
+
+.react-flow__minimap {
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+.react-flow__background {
+  opacity: 0.5;
+}
+
