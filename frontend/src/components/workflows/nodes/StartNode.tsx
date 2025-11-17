@@ -1,10 +1,9 @@
 import { Handle, Position } from 'reactflow';
 import { Play } from 'lucide-react';
-import { StartNodeData } from '../types/workflow.types';
-import NodeWrapper from './shared/NodeWrapper';
-import NodeActions from './shared/NodeActions';
-import { useNodeConnection } from '../hooks/useNodeConnection';
-import { useNodeOperations } from '../hooks/useNodeOperations';
+import { StartNodeData } from '../../../types/workflow.types';
+import { NodeWrapper, NodeActions } from '@components/ComponentsIndex';
+import { useNodeConnection } from '@hooks/useNodeConnection';
+import { useNodeOperations } from '@hooks/useNodeOperations';
 
 interface StartNodeProps { id: string; data: StartNodeData; selected?: boolean; }
 

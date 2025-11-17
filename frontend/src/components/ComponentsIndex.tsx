@@ -45,9 +45,14 @@ export { default as OrganizationSwitcher } from './dashboard/OrganizationSwitche
 
 // ---------- Workflows Components ---------- //
 export { default as WorkflowEditor } from './workflows/WorkflowEditor';
-export { default as WorkflowStartNode } from './workflows/StartNode';
-export { default as WorkflowHttpRequestNode } from './workflows/HttpRequestNode';
-export { default as WorkflowDbSelectNode } from './workflows/DbSelectNode';
-export { default as AddNodeModal } from './workflows/AddNodeModal';
+export { default as StartNode } from './workflows/nodes/StartNode';
+export { default as HttpRequestNode } from './workflows/nodes/HttpRequestNode';
+export { default as DbSelectNode } from './workflows/nodes/DbSelectNode';
+export { default as DisplayNode } from './workflows/nodes/DisplayNode';
+export { default as AddNodeModal } from './modals/AddNodeModal';
 export { default as ResultPreview } from './workflows/ResultPreview';
-export { default as WorkflowDisplayNode } from './workflows/DisplayNode';
+export { default as JsonTree } from './workflows/JsonTree';
+
+// ---------- Workflow Shared Components ---------- //
+export { default as NodeWrapper } from './workflows/NodeWrapper';
+export { default as NodeActions } from './workflows/NodeActions';

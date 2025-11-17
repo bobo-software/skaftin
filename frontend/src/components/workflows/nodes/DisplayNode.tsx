@@ -1,14 +1,12 @@
-import { Handle, Position } from 'reactflow';
 import { Eye, FileText, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
-import useWorkflowStore from '../../../../../stores/workflows/useWorkflowStore';
-import useDatabaseStore from '../../../../../stores/data/useDatabaseStore';
-import { DisplayNodeData, DbSelectNodeData } from '../types/workflow.types';
-import NodeWrapper from './shared/NodeWrapper';
-import NodeActions from './shared/NodeActions';
-import { useNodeConnection } from '../hooks/useNodeConnection';
-import { useNodeOperations } from '../hooks/useNodeOperations';
-import type { Column } from '../../../../../stores/data/useDatabaseStore';
+import useWorkflowStore from '@stores/workflows/useWorkflowStore';
+import useDatabaseStore from '@stores/data/useDatabaseStore';
+import { DisplayNodeData, DbSelectNodeData } from '../../../types/workflow.types';
+import { NodeWrapper, NodeActions } from '@components/ComponentsIndex';
+import { useNodeConnection } from '@hooks/useNodeConnection';
+import { useNodeOperations } from '@hooks/useNodeOperations';
+import type { Column } from '@stores/data/useDatabaseStore';
 
 interface DisplayNodeProps {
 	id: string;
@@ -218,7 +216,7 @@ const DisplayNode = ({ id, data, selected }: DisplayNodeProps) => {
 		return extracted;
 	}, [sourcePayload, data.keyPath]);
 	
-	// Format value for display, handling arrays specially
+	// Format value for display, handling arrays and objects specially
 	const valueString = useMemo(() => {
 		if (value == null) return '';
 		
@@ -229,6 +227,11 @@ const DisplayNode = ({ id, data, selected }: DisplayNodeProps) => {
 				return JSON.stringify(value, null, 2);
 			}
 			return `[${value.slice(0, 3).map(v => JSON.stringify(v)).join(', ')}, ...] (${value.length} items)`;
+		}
+		
+		// Handle objects (including null which is typeof 'object')
+		if (typeof value === 'object' && value !== null) {
+			return JSON.stringify(value, null, 2);
 		}
 		
 		return String(value);
@@ -242,7 +245,7 @@ const DisplayNode = ({ id, data, selected }: DisplayNodeProps) => {
 			id={id}
 			selected={selected}
 			isConnected={isConnected}
-			minWidth="260px"
+			minWidth="200px"
 		>
 			<NodeActions selected={selected || false} onDelete={handleDelete} />
 			<div className="flex items-center space-x-2 mb-2">
@@ -295,7 +298,7 @@ const DisplayNode = ({ id, data, selected }: DisplayNodeProps) => {
 			<div className="flex items-center justify-between mb-1">
 				<div className="text-xs text-dark-500 dark:text-dark-400">From: {sourceLabel}</div>
 			</div>
-			<div className="text-sm font-mono bg-dark-50 dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 min-h-[28px] break-all max-h-[200px] overflow-auto">
+			<div className="text-sm font-mono bg-dark-50 dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 min-h-[28px] break-all max-h-[500px] overflow-auto">
 				{value != null ? (
 					Array.isArray(value) ? (
 						<div className="space-y-1">

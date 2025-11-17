@@ -1,6 +1,6 @@
 import { useProjectStore } from '../../../../stores/StoresIndex';
 import { GitBranch } from 'lucide-react';
-import WorkflowEditor from './components/WorkflowEditor';
+import WorkflowEditor from '@components/workflows/WorkflowEditor';
 
 interface ProjectWorkflowsTabProps {
   projectId: string;

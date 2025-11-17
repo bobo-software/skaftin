@@ -1,10 +1,9 @@
 import { Handle, Position, useReactFlow } from 'reactflow';
 import { Globe, Send, Plus } from 'lucide-react';
-import { HttpRequestNodeData } from '../types/workflow.types';
-import NodeWrapper from './shared/NodeWrapper';
-import NodeActions from './shared/NodeActions';
-import { useNodeConnection } from '../hooks/useNodeConnection';
-import { useNodeOperations } from '../hooks/useNodeOperations';
+import { HttpRequestNodeData } from '../../../types/workflow.types';
+import { NodeWrapper, NodeActions } from '../../ComponentsIndex';
+import { useNodeConnection } from '../../../hooks/useNodeConnection';
+import { useNodeOperations } from '../../../hooks/useNodeOperations';
 
 interface HttpRequestNodeProps { id: string; data: HttpRequestNodeData; selected?: boolean; }
 

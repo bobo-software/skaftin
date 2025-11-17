@@ -1,17 +1,15 @@
 import { Handle, Position } from 'reactflow';
 import { Database, Eye, Plus, FileText, X } from 'lucide-react';
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import useDatabaseStore from '../../../../../stores/data/useDatabaseStore';
-import RequestUtils from '../../../../../utils/RequestUtils';
-import ApiRoutes from '../../../../../constants/ApiRoutes';
-import { DbSelectNodeData } from '../types/workflow.types';
-import useWorkflowStore from '../../../../../stores/workflows/useWorkflowStore';
-import JsonTree from '../../../../../components/workflows/JsonTree';
-import NodeWrapper from './shared/NodeWrapper';
-import NodeActions from './shared/NodeActions';
-import { useNodeConnection } from '../hooks/useNodeConnection';
-import { useNodeOperations } from '../hooks/useNodeOperations';
-import type { Column } from '../../../../../stores/data/useDatabaseStore';
+import useDatabaseStore from '../../../stores/data/useDatabaseStore';
+import RequestUtils from '../../../utils/RequestUtils';
+import ApiRoutes from '../../../constants/ApiRoutes';
+import { DbSelectNodeData } from '../../../types/workflow.types';
+import useWorkflowStore from '../../../stores/workflows/useWorkflowStore';
+import { JsonTree, NodeWrapper, NodeActions } from '../../ComponentsIndex';
+import { useNodeConnection } from '../../../hooks/useNodeConnection';
+import { useNodeOperations } from '../../../hooks/useNodeOperations';
+import type { Column } from '../../../stores/data/useDatabaseStore';
 
 interface DbSelectNodeProps {
   id: string;

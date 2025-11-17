@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import useWorkflowStore from '../../../../../stores/workflows/useWorkflowStore';
+import useWorkflowStore from '../stores/workflows/useWorkflowStore';
 
 /**
  * Hook to get connection status and information for a node

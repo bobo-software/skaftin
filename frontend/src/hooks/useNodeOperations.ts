@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useReactFlow } from 'reactflow';
-import useWorkflowStore from '../../../../../stores/workflows/useWorkflowStore';
+import useWorkflowStore from '@stores/workflows/useWorkflowStore';
 
 /**
  * Hook for common node operations
