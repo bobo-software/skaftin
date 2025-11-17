@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import { Pool } from 'pg';
 import { S3Client } from '@aws-sdk/client-s3';
@@ -48,7 +49,7 @@ export class MCPServer {
     });
 
     // Handle tool calls
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    this.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const { name, arguments: args } = request.params;
 
       try {
@@ -64,7 +65,8 @@ export class MCPServer {
 
         // Execute tool via router
         const result = await router.routeTool(name, args || {}, context);
-        return result;
+        // Cast to CallToolResult - the SDK accepts content array which matches our MCPToolResult
+        return result as CallToolResult;
       } catch (error: any) {
         console.error(`Error executing tool ${name}:`, error);
         return {
@@ -81,8 +83,7 @@ export class MCPServer {
               ),
             },
           ],
-          isError: true,
-        };
+        } as CallToolResult;
       }
     });
   }
