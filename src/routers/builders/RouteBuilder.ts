@@ -6,19 +6,19 @@ import { MiddlewareBuilder } from './MiddlewareBuilder';
  * Fluent route builder for creating route definitions
  */
 export class RouteBuilder {
-  private method: HttpMethod;
-  private path: RoutePath;
-  private handler: RouteHandler;
-  private middleware: Middleware[] = [];
-  private description?: string;
-  private requiresProject: boolean = false;
-  private requiresAuth: boolean = true;
+  private _method?: HttpMethod;
+  private _path?: RoutePath;
+  private _handler?: RouteHandler;
+  private _middleware: Middleware[] = [];
+  private _description?: string;
+  private _requiresProject: boolean = false;
+  private _requiresAuth: boolean = true;
 
   /**
    * Set HTTP method
    */
   method(method: HttpMethod): this {
-    this.method = method;
+    this._method = method;
     return this;
   }
 
@@ -26,7 +26,7 @@ export class RouteBuilder {
    * Set route path
    */
   path(path: RoutePath): this {
-    this.path = path;
+    this._path = path;
     return this;
   }
 
@@ -34,7 +34,7 @@ export class RouteBuilder {
    * Set route handler
    */
   handler(handler: RouteHandler): this {
-    this.handler = handler;
+    this._handler = handler;
     return this;
   }
 
@@ -42,7 +42,7 @@ export class RouteBuilder {
    * Add middleware
    */
   middleware(...middleware: Middleware[]): this {
-    this.middleware.push(...middleware);
+    this._middleware.push(...middleware);
     return this;
   }
 
@@ -50,7 +50,7 @@ export class RouteBuilder {
    * Set description
    */
   description(description: string): this {
-    this.description = description;
+    this._description = description;
     return this;
   }
 
@@ -58,7 +58,7 @@ export class RouteBuilder {
    * Mark route as requiring project context
    */
   requiresProject(required: boolean = true): this {
-    this.requiresProject = required;
+    this._requiresProject = required;
     return this;
   }
 
@@ -66,7 +66,7 @@ export class RouteBuilder {
    * Mark route as requiring authentication
    */
   requiresAuth(required: boolean = true): this {
-    this.requiresAuth = required;
+    this._requiresAuth = required;
     return this;
   }
 
@@ -74,18 +74,18 @@ export class RouteBuilder {
    * Build route definition
    */
   build(): RouteDefinition {
-    if (!this.method || !this.path || !this.handler) {
+    if (!this._method || !this._path || !this._handler) {
       throw new Error('RouteBuilder: method, path, and handler must be set');
     }
 
     return {
-      method: this.method,
-      path: this.path,
-      handler: this.handler,
-      middleware: this.middleware.length > 0 ? this.middleware : undefined,
-      description: this.description,
-      requiresProject: this.requiresProject,
-      requiresAuth: this.requiresAuth,
+      method: this._method,
+      path: this._path,
+      handler: this._handler,
+      middleware: this._middleware.length > 0 ? this._middleware : undefined,
+      description: this._description,
+      requiresProject: this._requiresProject,
+      requiresAuth: this._requiresAuth,
     };
   }
 }
@@ -96,8 +96,8 @@ export class RouteBuilder {
 export class RouteGroupBuilder {
   private basePath: string;
   private routes: RouteDefinition[] = [];
-  private groupMiddleware: Middleware[] = [];
-  private description?: string;
+  private _groupMiddleware: Middleware[] = [];
+  private _description?: string;
 
   constructor(basePath: string) {
     this.basePath = basePath;
@@ -123,7 +123,7 @@ export class RouteGroupBuilder {
    * Set group middleware (applied to all routes)
    */
   groupMiddleware(...middleware: Middleware[]): this {
-    this.groupMiddleware.push(...middleware);
+    this._groupMiddleware.push(...middleware);
     return this;
   }
 
@@ -131,7 +131,7 @@ export class RouteGroupBuilder {
    * Set group description
    */
   description(description: string): this {
-    this.description = description;
+    this._description = description;
     return this;
   }
 
@@ -142,8 +142,8 @@ export class RouteGroupBuilder {
     return {
       basePath: this.basePath,
       routes: this.routes,
-      groupMiddleware: this.groupMiddleware.length > 0 ? this.groupMiddleware : undefined,
-      description: this.description,
+      groupMiddleware: this._groupMiddleware.length > 0 ? this._groupMiddleware : undefined,
+      description: this._description,
     };
   }
 }
