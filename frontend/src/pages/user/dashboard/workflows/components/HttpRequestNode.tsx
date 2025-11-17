@@ -1,14 +1,18 @@
 import { Handle, Position, useReactFlow } from 'reactflow';
-import { Globe, Send, Trash2, Plus } from 'lucide-react';
+import { Globe, Send, Plus } from 'lucide-react';
 import { HttpRequestNodeData } from '../types/workflow.types';
+import NodeWrapper from './shared/NodeWrapper';
+import NodeActions from './shared/NodeActions';
+import { useNodeConnection } from '../hooks/useNodeConnection';
+import { useNodeOperations } from '../hooks/useNodeOperations';
 
 interface HttpRequestNodeProps { id: string; data: HttpRequestNodeData; selected?: boolean; }
 
 const HttpRequestNode = ({ id, data, selected }: HttpRequestNodeProps) => {
   const rf = useReactFlow();
-  const handleDelete = () => {
-    rf.setNodes((nds) => nds.filter((n) => n.id !== id));
-  };
+  const { isConnected } = useNodeConnection(id);
+  const { handleDelete } = useNodeOperations(id);
+  
   const addNodeAndConnect = (sourceHandle: 'success' | 'fail') => {
     const current = rf.getNode(id) as any;
     const baseX = current?.position?.x ?? 0;
@@ -38,24 +42,13 @@ const HttpRequestNode = ({ id, data, selected }: HttpRequestNodeProps) => {
   };
 
   return (
-    <div
-      className={`relative px-4 py-3 shadow-lg rounded-lg border-2 min-w-[280px] bg-white dark:bg-dark-800 ${
-        selected
-          ? 'border-primary-500 dark:border-primary-400'
-          : 'border-dark-200 dark:border-dark-700'
-      }`}
+    <NodeWrapper
+      id={id}
+      selected={selected}
+      isConnected={isConnected}
+      minWidth="280px"
     >
-      {selected && (
-        <div className="absolute -top-3 -right-3 bg-white dark:bg-dark-800 border border-dark-200 dark:border-dark-700 rounded shadow p-1 z-10 flex items-center space-x-1">
-          <button
-            onClick={handleDelete}
-            className="p-1 rounded hover:bg-dark-100 dark:hover:bg-dark-700"
-            title="Delete"
-          >
-            <Trash2 className="w-4 h-4 text-red-500" />
-          </button>
-        </div>
-      )}
+      <NodeActions selected={selected || false} onDelete={handleDelete} />
       <div className="flex items-center space-x-2 mb-2">
         <Globe className="w-4 h-4 text-primary-600 dark:text-primary-400" />
         <div className="font-semibold text-sm text-dark-900 dark:text-white flex-1 truncate">
@@ -134,7 +127,7 @@ const HttpRequestNode = ({ id, data, selected }: HttpRequestNodeProps) => {
         position={Position.Left}
         className="w-3 h-3 bg-primary-500 dark:bg-primary-400"
       />
-    </div>
+    </NodeWrapper>
   );
 };
 

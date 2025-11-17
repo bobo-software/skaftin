@@ -14,14 +14,23 @@ interface WorkflowUiState {
   showConsole: boolean;
 }
 
+export type NodeRunStatus = 'idle' | 'running' | 'success' | 'fail';
+
+interface NodeResult {
+  status: 'success' | 'fail';
+  payload: any;
+  timestamp: string;
+}
+
 interface WorkflowStore {
+  // State
   nodes: Node[];
   edges: Edge[];
   nodeIdCounter: number;
   ui: WorkflowUiState;
   logs: LogEntry[];
-  runStatuses: Record<string, 'idle' | 'running' | 'success' | 'fail'>;
-  nodeResults: Record<string, { status: 'success' | 'fail'; payload: any; timestamp: string }>;
+  runStatuses: Record<string, NodeRunStatus>;
+  nodeResults: Record<string, NodeResult>;
 
   // Node/Edge operations
   setNodes: (updater: (nds: Node[]) => Node[]) => void;
@@ -29,6 +38,8 @@ interface WorkflowStore {
   onConnect: (conn: Connection) => void;
   addNode: (node: Node) => void;
   removeNodeById: (id: string) => void;
+  deleteNode: (id: string) => void; // Deletes node and connected edges
+  updateNodeData: <T = any>(nodeId: string, data: Partial<T>) => void;
   nextNodeId: () => number;
 
   // UI
@@ -39,10 +50,16 @@ interface WorkflowStore {
   addLog: (entry: Omit<LogEntry, 'timestamp'> & { timestamp?: string }) => void;
   clearLogs: () => void;
 
-  // Run/checklist
+  // Run/execution
   clearRun: () => void;
-  setNodeRunStatus: (nodeId: string, status: 'idle' | 'running' | 'success' | 'fail') => void;
+  setNodeRunStatus: (nodeId: string, status: NodeRunStatus) => void;
   setNodeResult: (nodeId: string, status: 'success' | 'fail', payload: any) => void;
+
+  // Selectors/Helpers
+  getNodeConnections: (nodeId: string) => { incoming: Edge[]; outgoing: Edge[] };
+  isNodeConnected: (nodeId: string) => boolean;
+  getNodeResult: (nodeId: string) => NodeResult | undefined;
+  getNodeRunStatus: (nodeId: string) => NodeRunStatus;
 
   reset: () => void;
 }
@@ -50,6 +67,7 @@ interface WorkflowStore {
 const useWorkflowStore = create<WorkflowStore>()(
   devtools(
     (set, get) => ({
+      // Initial state
       nodes: [],
       edges: [],
       nodeIdCounter: 1,
@@ -61,6 +79,7 @@ const useWorkflowStore = create<WorkflowStore>()(
       runStatuses: {},
       nodeResults: {},
 
+      // Node/Edge operations
       setNodes: (updater) => set((state) => ({ nodes: updater(state.nodes) })),
       setEdges: (updater) => set((state) => ({ edges: updater(state.edges) })),
       onConnect: (conn) =>
@@ -68,12 +87,24 @@ const useWorkflowStore = create<WorkflowStore>()(
       addNode: (node) => set((state) => ({ nodes: [...state.nodes, node] })),
       removeNodeById: (id) =>
         set((state) => ({ nodes: state.nodes.filter((n) => n.id !== id) })),
+      deleteNode: (id) =>
+        set((state) => ({
+          nodes: state.nodes.filter((n) => n.id !== id),
+          edges: state.edges.filter((e) => e.source !== id && e.target !== id),
+        })),
+      updateNodeData: (nodeId, data) =>
+        set((state) => ({
+          nodes: state.nodes.map((n) =>
+            n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n
+          ),
+        })),
       nextNodeId: () => {
         const id = get().nodeIdCounter;
         set({ nodeIdCounter: id + 1 });
         return id;
       },
 
+      // UI operations
       toggleMinimap: () =>
         set((state) => ({
           ui: { ...state.ui, showMinimap: !state.ui.showMinimap },
@@ -83,6 +114,7 @@ const useWorkflowStore = create<WorkflowStore>()(
           ui: { ...state.ui, showConsole: !state.ui.showConsole },
         })),
 
+      // Log operations
       addLog: (entry) =>
         set((state) => ({
           logs: [
@@ -97,6 +129,7 @@ const useWorkflowStore = create<WorkflowStore>()(
         })),
       clearLogs: () => set({ logs: [] }),
 
+      // Run/execution operations
       clearRun: () => set({ runStatuses: {} }),
       setNodeRunStatus: (nodeId, status) =>
         set((state) => ({
@@ -110,6 +143,26 @@ const useWorkflowStore = create<WorkflowStore>()(
           },
         })),
 
+      // Selectors/Helpers
+      getNodeConnections: (nodeId) => {
+        const state = get();
+        return {
+          incoming: state.edges.filter((e) => e.target === nodeId),
+          outgoing: state.edges.filter((e) => e.source === nodeId),
+        };
+      },
+      isNodeConnected: (nodeId) => {
+        const state = get();
+        return state.edges.some((e) => e.source === nodeId || e.target === nodeId);
+      },
+      getNodeResult: (nodeId) => {
+        return get().nodeResults[nodeId];
+      },
+      getNodeRunStatus: (nodeId) => {
+        return get().runStatuses[nodeId] || 'idle';
+      },
+
+      // Reset
       reset: () =>
         set({
           nodes: [],

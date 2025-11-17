@@ -37,6 +37,7 @@ export interface DbSelectNodeData {
   projectId: string;
   table?: string;
   limit?: number;
+  schema?: Array<{ column_name: string; data_type: string; is_nullable: boolean; column_default?: string; character_maximum_length?: number }>;
   onLog?: (entry: { nodeId: string; type: string; data: any; timestamp?: string }) => void;
 }
 

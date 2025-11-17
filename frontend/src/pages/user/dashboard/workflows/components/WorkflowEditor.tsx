@@ -62,16 +62,11 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   useEffect(() => {
     nodeResultsRef.current = nodeResults;
   }, [nodeResults]);
-  // Debug: log when selection changes (avoid render spam)
-  useEffect(() => {
-    if (selectedRunNodeId) {
-      // eslint-disable-next-line no-console
-      console.log('[WorkflowEditor] selected run node', selectedRunNodeId);
-    }
-  }, [selectedRunNodeId]);
   const [showAddNode, setShowAddNode] = useState(false);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
   const rf = useReactFlow();
+  
+  // Memoize node types to avoid React Flow warnings about recreating nodeTypes object
   const nodeTypesMemo = useMemo(
     () => ({
       start: StartNode,
@@ -153,19 +148,13 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   );
 
   const handleRun = useCallback(() => {
-    // Debug: starting run
-    // eslint-disable-next-line no-console
-    console.log('[WorkflowEditor] handleRun invoked', { nodes, edges, projectId });
-    // Build a simple list of nodes directly connected from any start node
+    // Build a list of nodes directly connected from any start node
     const startNodeIds = nodes.filter((n) => n.type === 'start').map((n) => n.id);
     const firstLayerTargets = edges
       .filter((e) => startNodeIds.includes(e.source))
       .map((e) => e.target);
     // Deduplicate
     const uniqueTargets = Array.from(new Set(firstLayerTargets));
-    // Debug: targets to run
-    // eslint-disable-next-line no-console
-    console.log('[WorkflowEditor] run targets', uniqueTargets);
     // Reset statuses and set to running, then mark success (placeholder)
     clearRun();
     if (uniqueTargets.length > 0) {
@@ -175,40 +164,46 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
     }
     uniqueTargets.forEach((nodeId, idx) => {
       setTimeout(() => {
-        // eslint-disable-next-line no-console
-        console.log('[WorkflowEditor] node running', nodeId);
         setNodeRunStatus(nodeId, 'running');
-        // Simulate quick success; this is where actual execution would branch
-        setTimeout(() => {
-          setNodeRunStatus(nodeId, 'success');
-          // eslint-disable-next-line no-console
-          console.log('[WorkflowEditor] node success', nodeId);
-          // Log node result payload if available
-          const resultEntry = nodeResultsRef.current[nodeId];
-          if (resultEntry) {
-            // eslint-disable-next-line no-console
-            console.log('[WorkflowEditor] node result payload', { nodeId, status: resultEntry.status, payload: resultEntry.payload });
+        
+        // Check if this node type handles its own execution
+        const node = nodes.find((n) => n.id === nodeId);
+        const nodeType = node?.type;
+        
+        // Nodes like dbSelect execute themselves when status becomes 'running'
+        // So we don't need to set success automatically for them
+        const selfExecutingNodes = ['dbSelect'];
+        if (!selfExecutingNodes.includes(nodeType || '')) {
+          // Simulate quick success for nodes that don't execute themselves
+          setTimeout(() => {
+            setNodeRunStatus(nodeId, 'success');
+            
+            // Log node result payload if available
+            const resultEntry = nodeResultsRef.current[nodeId];
+            if (resultEntry) {
+              addLog({
+                nodeId,
+                type: 'nodeResult',
+                data: {
+                  status: resultEntry.status,
+                  summary:
+                    Array.isArray((resultEntry as any).payload?.rows)
+                      ? { rowsCount: (resultEntry as any).payload.rows.length }
+                      : undefined,
+                },
+              });
+            }
             addLog({
               nodeId,
-              type: 'nodeResult',
-              data: {
-                status: resultEntry.status,
-                summary:
-                  Array.isArray((resultEntry as any).payload?.rows)
-                    ? { rowsCount: (resultEntry as any).payload.rows.length }
-                    : undefined,
-              },
+              type: 'runStatus',
+              data: { status: 'success' },
             });
-          }
-          addLog({
-            nodeId,
-            type: 'runStatus',
-            data: { status: 'success' },
-          });
-        }, 200);
+          }, 200);
+        }
       }, idx * 150);
     });
-    // After run, print an aggregate summary of all available node results
+    
+    // After run, create an aggregate summary of all available node results
     setTimeout(() => {
       const summary = uniqueTargets.map((id) => {
         const r = nodeResultsRef.current[id];
@@ -216,8 +211,6 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
           Array.isArray((r as any)?.payload?.rows) ? (r as any).payload.rows.length : undefined;
         return { nodeId: id, status: r?.status ?? runStatuses[id], rowsCount };
       });
-      // eslint-disable-next-line no-console
-      console.log('[WorkflowEditor] run summary', summary);
       addLog({
         nodeId: 'workflow',
         type: 'runSummary',
