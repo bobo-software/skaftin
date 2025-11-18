@@ -1,4 +1,4 @@
-# 🚀 Skaftin Platform - Supabase/Appwrite Alternative
+# 🚀 Skaftin Platform
 
 A comprehensive self-hosted backend-as-a-service platform designed for modern application development.  
 Built with Node.js, TypeScript, PostgreSQL, and MinIO — providing database management, file storage, authentication, and MCP integration for AI-assisted development.
@@ -165,7 +165,7 @@ MIT License © 2025
 
 This backend gives you:
 
-Full control like Appwrite/Supabase
+Full Control like a BAAS
 
 Self-hosted OAuth via Authentik
 

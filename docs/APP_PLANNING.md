@@ -1,7 +1,7 @@
 # 🚀 Skaftin Platform - Development Plan
 
 ## 📋 Project Overview
-Building a self-hosted Supabase/Appwrite alternative with Node.js, TypeScript, PostgreSQL, MinIO, and React frontend.
+Building a self-hosted BAAS with Node.js, TypeScript, PostgreSQL, MinIO, and React frontend.
 
 ## 🎯 Core Objectives
 - **V1 Goal**: Basic authentication, project creation, database management, and file storage

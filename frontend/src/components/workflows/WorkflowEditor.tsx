@@ -13,15 +13,23 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import '../../styles/WorkflowEditor.css';
-import { Play, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Map, ListPlus } from 'lucide-react';
+import { Play, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Map, ListPlus, Loader2 } from 'lucide-react';
 import {
 	AddNodeModal,
 	ResultPreview,
 } from '@components/ComponentsIndex';
+import ExecutionLogsPanel from './ExecutionLogsPanel';
+import RequestUtils from '../../utils/RequestUtils';
+import ApiRoutes from '../../constants/ApiRoutes';
 import StartNode from './nodes/StartNode';
 import HttpRequestNode from './nodes/HttpRequestNode';
 import DbSelectNode from './nodes/DbSelectNode';
 import DisplayNode from './nodes/DisplayNode';
+import ConditionNode from './nodes/ConditionNode';
+import ForLoopNode from './nodes/ForLoopNode';
+import DbInsertNode from './nodes/DbInsertNode';
+import DbDeleteNode from './nodes/DbDeleteNode';
+import DbUpdateNode from './nodes/DbUpdateNode';
 import { createNode } from '@utils/workflowUtils';
 import useWorkflowStore from '@stores/workflows/useWorkflowStore';
 
@@ -45,11 +53,17 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   const logs = useWorkflowStore((s) => s.logs);
   const runStatuses = useWorkflowStore((s) => s.runStatuses);
   const setNodeRunStatus = useWorkflowStore((s) => s.setNodeRunStatus);
+  const setNodeResult = useWorkflowStore((s) => s.setNodeResult);
   const clearRun = useWorkflowStore((s) => s.clearRun);
+  const clearLogs = useWorkflowStore((s) => s.clearLogs);
   const [selectedRunNodeId, setSelectedRunNodeId] = useState<string | null>(null);
   const [showResultModal, setShowResultModal] = useState(false);
   const nodeResults = useWorkflowStore((s) => s.nodeResults);
   const nodeResultsRef = useRef(nodeResults);
+  const [workflowId, setWorkflowId] = useState<number | null>(null);
+  const [executionId, setExecutionId] = useState<number | null>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
 
   
   useEffect(() => {
@@ -66,6 +80,11 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
       httpRequest: HttpRequestNode,
       dbSelect: DbSelectNode,
       display: DisplayNode,
+      condition: ConditionNode,
+      forLoop: ForLoopNode,
+      dbInsert: DbInsertNode,
+      dbDelete: DbDeleteNode,
+      dbUpdate: DbUpdateNode,
     }),
     []
   );
@@ -109,7 +128,7 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   }, [nextNodeId, projectId, setNodes, addLog, toggleConsole]);
 
   const addNodeAtViewportCenter = useCallback(
-    (type: 'start' | 'http' | 'db' | 'display') => {
+    (type: 'start' | 'http' | 'db' | 'display' | 'condition' | 'forLoop' | 'dbInsert' | 'dbDelete' | 'dbUpdate') => {
       // For now, add at a random position; we can enhance with container center later
       if (type === 'start') {
         addStartNode();
@@ -117,13 +136,33 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
         addHttpRequestNode();
       } else if (type === 'db') {
         addDbSelectNode();
-      } else {
+      } else if (type === 'display') {
         const idNum = nextNodeId();
         const newNode = createNode('display', idNum);
         setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'condition') {
+        const idNum = nextNodeId();
+        const newNode = createNode('condition', idNum);
+        setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'forLoop') {
+        const idNum = nextNodeId();
+        const newNode = createNode('forLoop', idNum);
+        setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'dbInsert') {
+        const idNum = nextNodeId();
+        const newNode = createNode('dbInsert', idNum, undefined, { projectId });
+        setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'dbDelete') {
+        const idNum = nextNodeId();
+        const newNode = createNode('dbDelete', idNum, undefined, { projectId });
+        setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'dbUpdate') {
+        const idNum = nextNodeId();
+        const newNode = createNode('dbUpdate', idNum, undefined, { projectId });
+        setNodes((nds) => [...nds, newNode]);
       }
     },
-    [addHttpRequestNode, addDbSelectNode, addStartNode, nextNodeId, rf, setNodes]
+    [addHttpRequestNode, addDbSelectNode, addStartNode, nextNodeId, projectId, setNodes]
   );
 
   const handlePaneClick = useCallback(
@@ -140,77 +179,123 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
     [addHttpRequestNode, rf]
   );
 
-  const handleRun = useCallback(() => {
-    // Build a list of nodes directly connected from any start node
-    const startNodeIds = nodes.filter((n) => n.type === 'start').map((n) => n.id);
-    const firstLayerTargets = edges
-      .filter((e) => startNodeIds.includes(e.source))
-      .map((e) => e.target);
-    // Deduplicate
-    const uniqueTargets = Array.from(new Set(firstLayerTargets));
-    // Reset statuses and set to running, then mark success (placeholder)
+  const handleRun = useCallback(async () => {
+    if (isExecuting) return;
+
+    setIsExecuting(true);
     clearRun();
-    if (uniqueTargets.length > 0) {
-      setSelectedRunNodeId(uniqueTargets[0]);
-    } else {
-      setSelectedRunNodeId(null);
-    }
-    uniqueTargets.forEach((nodeId, idx) => {
-      setTimeout(() => {
-        setNodeRunStatus(nodeId, 'running');
-        
-        // Check if this node type handles its own execution
-        const node = nodes.find((n) => n.id === nodeId);
-        const nodeType = node?.type;
-        
-        // Nodes like dbSelect execute themselves when status becomes 'running'
-        // So we don't need to set success automatically for them
-        const selfExecutingNodes = ['dbSelect'];
-        if (!selfExecutingNodes.includes(nodeType || '')) {
-          // Simulate quick success for nodes that don't execute themselves
-          setTimeout(() => {
-            setNodeRunStatus(nodeId, 'success');
-            
-            // Log node result payload if available
-            const resultEntry = nodeResultsRef.current[nodeId];
-            if (resultEntry) {
-              addLog({
-                nodeId,
-                type: 'nodeResult',
-                data: {
-                  status: resultEntry.status,
-                  summary:
-                    Array.isArray((resultEntry as any).payload?.rows)
-                      ? { rowsCount: (resultEntry as any).payload.rows.length }
-                      : undefined,
-                },
-              });
-            }
-            addLog({
-              nodeId,
-              type: 'runStatus',
-              data: { status: 'success' },
-            });
-          }, 200);
+    setExecutionId(null);
+    clearLogs();
+
+    try {
+      // Save workflow first if it doesn't have an ID
+      let currentWorkflowId = workflowId;
+      if (!currentWorkflowId) {
+        const saveResult = await saveWorkflow(projectId, `Workflow ${Date.now()}`, 'Auto-saved for execution');
+        if (!saveResult.success || !saveResult.workflowId) {
+          addLog({
+            nodeId: 'workflow',
+            type: 'error',
+            data: { message: saveResult.error || 'Failed to save workflow before execution' },
+          });
+          setIsExecuting(false);
+          return;
         }
-      }, idx * 150);
-    });
-    
-    // After run, create an aggregate summary of all available node results
-    setTimeout(() => {
-      const summary = uniqueTargets.map((id) => {
-        const r = nodeResultsRef.current[id];
-        const rowsCount =
-          Array.isArray((r as any)?.payload?.rows) ? (r as any).payload.rows.length : undefined;
-        return { nodeId: id, status: r?.status ?? runStatuses[id], rowsCount };
-      });
+        currentWorkflowId = saveResult.workflowId;
+        setWorkflowId(currentWorkflowId);
+      }
+
+      // Execute workflow via backend API
+      const token = localStorage.getItem('skaftin-token') || '';
+      const url = ApiRoutes.WORKFLOWS.EXECUTE(projectId, currentWorkflowId);
+      
       addLog({
         nodeId: 'workflow',
-        type: 'runSummary',
-        data: summary,
+        type: 'info',
+        data: { message: `Executing workflow ${currentWorkflowId}...` },
       });
-    }, uniqueTargets.length * 150 + 400);
-  }, [addLog, clearRun, edges, nodes, setNodeRunStatus]);
+
+      const response = await RequestUtils.post(url, token, { inputs: {}, triggeredBy: 'manual' });
+
+      if (response && response.success !== false) {
+        const result = (response as any).data || response;
+        const execId = result.executionId || result.id;
+
+        if (execId) {
+          setExecutionId(execId);
+          addLog({
+            nodeId: 'workflow',
+            type: 'info',
+            data: { message: `Execution started (ID: ${execId})` },
+          });
+
+          // Poll for execution completion and fetch logs
+          const pollInterval = setInterval(async () => {
+            try {
+              const logsUrl = ApiRoutes.WORKFLOWS.GET_EXECUTION_LOGS(projectId, currentWorkflowId!, execId);
+              const logsResponse = await RequestUtils.get(logsUrl, token);
+
+              if (logsResponse && logsResponse.success !== false) {
+                const logsData = (logsResponse as any).data || logsResponse;
+                const execution = logsData.execution;
+
+                // Update node statuses based on logs
+                if (logsData.nodeLogs) {
+                  logsData.nodeLogs.forEach((nodeLog: any) => {
+                    if (nodeLog.status === 'success') {
+                      setNodeRunStatus(nodeLog.nodeId, 'success');
+                      setNodeResult(nodeLog.nodeId, 'success', nodeLog.resultData);
+                    } else if (nodeLog.status === 'fail') {
+                      setNodeRunStatus(nodeLog.nodeId, 'fail');
+                      setNodeResult(nodeLog.nodeId, 'fail', { error: nodeLog.errorMessage });
+                    } else if (nodeLog.status === 'skipped') {
+                      setNodeRunStatus(nodeLog.nodeId, 'idle');
+                    }
+                  });
+                }
+
+                // Stop polling if execution is complete
+                if (execution.status === 'completed' || execution.status === 'failed') {
+                  clearInterval(pollInterval);
+                  setIsExecuting(false);
+                  addLog({
+                    nodeId: 'workflow',
+                    type: execution.status === 'completed' ? 'success' : 'error',
+                    data: {
+                      message: `Execution ${execution.status}`,
+                      executionId: execId,
+                    },
+                  });
+                }
+              }
+            } catch (err) {
+              console.error('Error polling execution logs:', err);
+            }
+          }, 500); // Poll every 500ms
+
+          // Stop polling after 30 seconds max
+          setTimeout(() => {
+            clearInterval(pollInterval);
+            setIsExecuting(false);
+          }, 30000);
+        }
+      } else {
+        addLog({
+          nodeId: 'workflow',
+          type: 'error',
+          data: { message: (response as any)?.message || 'Failed to execute workflow' },
+        });
+        setIsExecuting(false);
+      }
+    } catch (error) {
+      addLog({
+        nodeId: 'workflow',
+        type: 'error',
+        data: { message: error instanceof Error ? error.message : 'Failed to execute workflow' },
+      });
+      setIsExecuting(false);
+    }
+  }, [isExecuting, workflowId, projectId, saveWorkflow, clearRun, clearLogs, addLog, setNodeRunStatus, setNodeResult]);
 
   const onInit = useCallback((instance: ReactFlowInstance) => {
     reactFlowInstance.current = instance;
@@ -274,10 +359,20 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
         <div className="flex items-center space-x-4">
           <button
             onClick={handleRun}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors font-medium"
+            disabled={isExecuting}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
           >
-            <Play className="w-4 h-4" />
-            <span>Run</span>
+            {isExecuting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Running...</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-4 h-4" />
+                <span>Run</span>
+              </>
+            )}
           </button>
         
         </div>
@@ -474,29 +569,6 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
                   </div>
                 </div>
               )}
-              <div className="text-xs text-dark-500 dark:text-dark-400 mb-3">
-              {showConsole && (
-        <div className="bg-white dark:bg-dark-800 border-t border-dark-200 dark:border-dark-700 px-4 py-2 h-40 overflow-auto">
-          {logs.length === 0 ? (
-            <div className="text-xs text-dark-500 dark:text-dark-400">No output yet</div>
-          ) : (
-            <div className="space-y-2">
-              {logs.slice(-50).map((log, idx) => (
-                <div key={`${log.timestamp}-${idx}`} className="text-xs">
-                  <div className="text-dark-600 dark:text-dark-400">
-                    <span className="font-semibold">{log.type}</span>
-                    <span className="ml-2 text-[10px] opacity-70">[{log.timestamp}]</span>
-                    <span className="ml-2 opacity-80">node: {log.nodeId}</span>
-                  </div>
-                  <pre className="mt-1 bg-dark-50 dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded p-2 whitespace-pre-wrap break-all">
-                    {JSON.stringify(log.data, null, 2)}
-                  </pre>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
               {/* Result Modal */}
               {showResultModal && selectedRunNodeId && nodeResults[selectedRunNodeId] && (
                 <ResultPreview
@@ -506,14 +578,19 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
                   onClose={() => setShowResultModal(false)}
                 />
               )}
-              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Console Panel */}
-     
+      {/* Execution Logs Panel */}
+      {showConsole && (
+        <ExecutionLogsPanel
+          projectId={projectId}
+          workflowId={workflowId}
+          executionId={executionId}
+        />
+      )}
     </div>
   );
 };

@@ -836,6 +836,118 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize workflow tables
+   */
+  async initializeWorkflowTables(): Promise<void> {
+    try {
+      // Create workflow_execution_status enum
+      await this.db.execute(sql`
+        DO $$ BEGIN
+          CREATE TYPE workflow_execution_status AS ENUM ('pending', 'running', 'completed', 'failed', 'cancelled');
+        EXCEPTION
+          WHEN duplicate_object THEN null;
+        END $$;
+      `);
+
+      // Create workflows table
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.workflows (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          enabled BOOLEAN DEFAULT true NOT NULL,
+          schedule VARCHAR(100),
+          cron_job_id INTEGER,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          created_by VARCHAR(255)
+        );
+      `);
+
+      // Create workflow_nodes table
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.workflow_nodes (
+          id SERIAL PRIMARY KEY,
+          workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+          node_id VARCHAR(100) NOT NULL,
+          type VARCHAR(50) NOT NULL,
+          position_x INTEGER NOT NULL,
+          position_y INTEGER NOT NULL,
+          data JSONB NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          UNIQUE(workflow_id, node_id)
+        );
+      `);
+
+      // Create workflow_edges table
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.workflow_edges (
+          id SERIAL PRIMARY KEY,
+          workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+          source_node_id VARCHAR(100) NOT NULL,
+          target_node_id VARCHAR(100) NOT NULL,
+          source_handle VARCHAR(100),
+          target_handle VARCHAR(100),
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+      `);
+
+      // Create workflow_executions table
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.workflow_executions (
+          id SERIAL PRIMARY KEY,
+          workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+          status workflow_execution_status DEFAULT 'pending' NOT NULL,
+          started_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          completed_at TIMESTAMP,
+          triggered_by VARCHAR(50),
+          input_data JSONB,
+          result_data JSONB,
+          error_message TEXT,
+          execution_log JSONB,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+      `);
+
+      // Create workflow_node_executions table
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.workflow_node_executions (
+          id SERIAL PRIMARY KEY,
+          execution_id INTEGER NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
+          node_id VARCHAR(100) NOT NULL,
+          status VARCHAR(20) NOT NULL,
+          started_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          completed_at TIMESTAMP,
+          result_data JSONB,
+          error_message TEXT,
+          execution_time_ms INTEGER,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+      `);
+
+      // Create workflow_schedules table
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.workflow_schedules (
+          id SERIAL PRIMARY KEY,
+          workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE UNIQUE,
+          cron_job_id INTEGER NOT NULL,
+          schedule VARCHAR(100) NOT NULL,
+          enabled BOOLEAN DEFAULT true NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+        );
+      `);
+
+      console.log('✅ Workflow tables initialized');
+    } catch (err: any) {
+      console.error('❌ Error initializing workflow tables:', err);
+      // Don't throw - allow server to continue
+    }
+  }
+
+  /**
    * Initialize all database tables
    * Order matters: organizations must be created before organization_members and projects
    */
@@ -850,6 +962,7 @@ export class DatabaseInitializer {
     await this.initializeApiCredentialsTable();
     await this.initializeAuthSettingsTable();
     await this.initializeAnalyticsTables();
+    await this.initializeWorkflowTables();
   }
 
   /**

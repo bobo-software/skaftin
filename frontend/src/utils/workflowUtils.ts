@@ -1,8 +1,15 @@
 import { Node } from 'reactflow';
 
 export type WorkflowNodeType = 'start' | 'httpRequest' | 'dbSelect';
-// include display
-export type ExtendedWorkflowNodeType = WorkflowNodeType | 'display';
+// include display and new node types
+export type ExtendedWorkflowNodeType = 
+  | WorkflowNodeType 
+  | 'display' 
+  | 'condition' 
+  | 'forLoop' 
+  | 'dbInsert' 
+  | 'dbDelete' 
+  | 'dbUpdate';
 
 export function buildNodeId(prefix: string, idNum: number) {
 	return `${prefix}-${idNum}`;
@@ -14,8 +21,18 @@ export function createNode(
 	position?: { x: number; y: number },
 	extraData?: Record<string, any>
 ): Node {
-	const idPrefix = type === 'start' ? 'start' : type === 'httpRequest' ? 'http' : 'db';
-	const resolvedPrefix = type === 'display' ? 'display' : idPrefix;
+	const idPrefix = 
+		type === 'start' ? 'start' 
+		: type === 'httpRequest' ? 'http' 
+		: type === 'dbSelect' ? 'db' 
+		: type === 'display' ? 'display'
+		: type === 'condition' ? 'condition'
+		: type === 'forLoop' ? 'forLoop'
+		: type === 'dbInsert' ? 'dbInsert'
+		: type === 'dbDelete' ? 'dbDelete'
+		: type === 'dbUpdate' ? 'dbUpdate'
+		: 'node';
+	const resolvedPrefix = idPrefix;
 	const base = {
 		id: buildNodeId(resolvedPrefix, idNum),
 		type,
@@ -68,12 +85,81 @@ export function createNode(
 	}
 
 	// display
+	if (type === 'display') {
+		return {
+			...base,
+			data: {
+				label: 'Display',
+				sourceNodeId: undefined,
+				keyPath: '',
+				...extraData,
+			},
+		};
+	}
+
+	// condition
+	if (type === 'condition') {
+		return {
+			...base,
+			data: {
+				label: 'Condition',
+				condition: '',
+				...extraData,
+			},
+		};
+	}
+
+	// forLoop
+	if (type === 'forLoop') {
+		return {
+			...base,
+			data: {
+				label: 'For Loop',
+				sourceNodeId: undefined,
+				arrayPath: 'rows',
+				itemVariableName: 'item',
+				...extraData,
+			},
+		};
+	}
+
+	// dbInsert
+	if (type === 'dbInsert') {
+		return {
+			...base,
+			data: {
+				label: 'Insert Data',
+				projectId: extraData?.projectId,
+				table: undefined,
+				fieldMappings: [],
+				...extraData,
+			},
+		};
+	}
+
+	// dbDelete
+	if (type === 'dbDelete') {
+		return {
+			...base,
+			data: {
+				label: 'Delete Data',
+				projectId: extraData?.projectId,
+				table: undefined,
+				where: [],
+				...extraData,
+			},
+		};
+	}
+
+	// dbUpdate
 	return {
 		...base,
 		data: {
-			label: 'Display',
-			sourceNodeId: undefined,
-			keyPath: '',
+			label: 'Update Data',
+			projectId: extraData?.projectId,
+			table: undefined,
+			updates: [],
+			where: [],
 			...extraData,
 		},
 	};

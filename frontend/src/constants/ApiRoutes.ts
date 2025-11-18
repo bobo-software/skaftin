@@ -98,8 +98,20 @@ const ApiRoutes = {
     CREATE_FOREIGN_KEY: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/foreign-key`,
     CREATE_UNIQUE_CONSTRAINT: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/unique`,
     CREATE_PRIMARY_KEY: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/primary-key`,
-    CREATE_CHECK_CONSTRAINT: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/check`,
-    DROP_CONSTRAINT: (projectId: string, tableName: string, constraintName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/${constraintName}`,
+  },
+  
+  // Workflows routes
+  WORKFLOWS: {
+    LIST: (projectId: string) => `/api/workflows/${projectId}`,
+    GET: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}`,
+    CREATE: (projectId: string) => `/api/workflows/${projectId}`,
+    UPDATE: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}`,
+    DELETE: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}`,
+    EXECUTE: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}/execute`,
+    GET_EXECUTIONS: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}/executions`,
+    GET_EXECUTION_LOGS: (projectId: string, workflowId: number, executionId: number) => `/api/workflows/${projectId}/${workflowId}/executions/${executionId}/logs`,
+    SCHEDULE: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}/schedule`,
+    UNSCHEDULE: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}/schedule`,
   },
   
   // Communications routes

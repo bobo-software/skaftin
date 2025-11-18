@@ -163,6 +163,7 @@ import { createInvitationsRouter } from './routers/InvitationsRouter';
 import { createCredentialsRouter } from './routers/CredentialsRouter';
 import { createAuthRouter } from './routers/AuthRouter';
 import { createAnalyticsRouter } from './routers/AnalyticsRouter';
+import { createWorkflowsRouter } from './routers/WorkflowsRouter';
 import { initializeApiKeyMiddleware } from './middleware/apiKeyMiddleware';
 import { AnalyticsService } from './services/AnalyticsService';
 
@@ -271,6 +272,7 @@ app.use('/api/mcp', MCPRouter);
 app.use('/api/database', createAdminDatabaseRouter(pool));
 app.use('/api/storage', createAdminStorageRouter(pool, s3Client));
 app.use('/api/auth', createAdminAuthRouter(pool));
+app.use('/api/workflows', createWorkflowsRouter(pool, `http://localhost:${port}`));
 
 // ============================================================================
 // CLIENT-FACING ROUTES (/app-api/*) - API Key / App User JWT authentication

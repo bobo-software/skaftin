@@ -1,8 +1,8 @@
-import { Database, Globe2, PlaySquare, Eye } from 'lucide-react';
+import { Database, Globe2, PlaySquare, Eye, GitBranch, Repeat, Plus, Trash2, Edit } from 'lucide-react';
 
 interface AddNodeModalProps {
 	onClose: () => void;
-	onAdd: (type: 'start' | 'http' | 'db' | 'display') => void;
+	onAdd: (type: 'start' | 'http' | 'db' | 'display' | 'condition' | 'forLoop' | 'dbInsert' | 'dbDelete' | 'dbUpdate') => void;
 }
 
 const AddNodeModal = ({ onClose, onAdd }: AddNodeModalProps) => {
@@ -50,7 +50,6 @@ const AddNodeModal = ({ onClose, onAdd }: AddNodeModalProps) => {
 							<div className="text-xs text-dark-500 dark:text-dark-400">Select data from a table</div>
 						</div>
 					</button>
-				</div>
 				<button
 					onClick={() => onAdd('display')}
 					className="flex items-center space-x-3 p-3 rounded border border-dark-200 dark:border-dark-700 hover:bg-dark-50 dark:hover:bg-dark-900 text-left"
@@ -61,6 +60,57 @@ const AddNodeModal = ({ onClose, onAdd }: AddNodeModalProps) => {
 						<div className="text-xs text-dark-500 dark:text-dark-400">Show a field from previous result</div>
 					</div>
 				</button>
+				<button
+					onClick={() => onAdd('condition')}
+					className="flex items-center space-x-3 p-3 rounded border border-dark-200 dark:border-dark-700 hover:bg-dark-50 dark:hover:bg-dark-900 text-left"
+				>
+					<GitBranch className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+					<div>
+						<div className="text-sm font-medium text-dark-900 dark:text-white">Condition</div>
+						<div className="text-xs text-dark-500 dark:text-dark-400">Branch based on condition</div>
+					</div>
+				</button>
+				<button
+					onClick={() => onAdd('forLoop')}
+					className="flex items-center space-x-3 p-3 rounded border border-dark-200 dark:border-dark-700 hover:bg-dark-50 dark:hover:bg-dark-900 text-left"
+				>
+					<Repeat className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+					<div>
+						<div className="text-sm font-medium text-dark-900 dark:text-white">For Loop</div>
+						<div className="text-xs text-dark-500 dark:text-dark-400">Iterate over an array</div>
+					</div>
+				</button>
+				<button
+					onClick={() => onAdd('dbInsert')}
+					className="flex items-center space-x-3 p-3 rounded border border-dark-200 dark:border-dark-700 hover:bg-dark-50 dark:hover:bg-dark-900 text-left"
+				>
+					<Plus className="w-4 h-4 text-green-600 dark:text-green-400" />
+					<div>
+						<div className="text-sm font-medium text-dark-900 dark:text-white">Insert Data</div>
+						<div className="text-xs text-dark-500 dark:text-dark-400">Insert data into a table</div>
+					</div>
+				</button>
+				<button
+					onClick={() => onAdd('dbDelete')}
+					className="flex items-center space-x-3 p-3 rounded border border-dark-200 dark:border-dark-700 hover:bg-dark-50 dark:hover:bg-dark-900 text-left"
+				>
+					<Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+					<div>
+						<div className="text-sm font-medium text-dark-900 dark:text-white">Delete Data</div>
+						<div className="text-xs text-dark-500 dark:text-dark-400">Delete data from a table</div>
+					</div>
+				</button>
+				<button
+					onClick={() => onAdd('dbUpdate')}
+					className="flex items-center space-x-3 p-3 rounded border border-dark-200 dark:border-dark-700 hover:bg-dark-50 dark:hover:bg-dark-900 text-left"
+				>
+					<Edit className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+					<div>
+						<div className="text-sm font-medium text-dark-900 dark:text-white">Update Data</div>
+						<div className="text-xs text-dark-500 dark:text-dark-400">Update data in a table</div>
+					</div>
+				</button>
+				</div>
 			</div>
 		</div>
 	);

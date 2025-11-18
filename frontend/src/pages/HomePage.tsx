@@ -15,6 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useAppStore } from '../stores/StoresIndex';
+import { AppButton } from '@/components/ComponentsIndex';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -60,13 +61,6 @@ const HomePage = () => {
     }
   ];
 
-  const stats = [
-    { label: "Projects Created", value: "1,000+", icon: <Rocket className="w-5 h-5" /> },
-    { label: "Files Stored", value: "10M+", icon: <Cloud className="w-5 h-5" /> },
-    { label: "Database Queries", value: "100M+", icon: <Database className="w-5 h-5" /> },
-    { label: "Active Users", value: "5,000+", icon: <Users className="w-5 h-5" /> }
-  ];
-
   return (
     <div className="min-h-screen ring">
       {/* Navigation */}
@@ -102,11 +96,6 @@ const HomePage = () => {
       <section className="pt-20 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="text-center">
-            <div className="inline-flex items-center px-4 py-2 rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 text-sm font-medium mb-8">
-              <Star className="w-4 h-4 mr-2" />
-              Supabase/Appwrite Alternative
-            </div>
-
             <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-dark-900 dark:text-white mb-6">
               Build Apps with
               <span className="text-gradient block mt-2">Skaftin Platform</span>
@@ -118,34 +107,26 @@ const HomePage = () => {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
-              <button
+              <AppButton
                 onClick={() => navigate('/login')}
-                className="btn-primary text-lg px-8 py-4"
+                variant="primary"
+                size="lg"
               >
                 Start Building
                 <ArrowRight className="w-5 h-5 ml-2" />
-              </button>
-              <button
-                className="btn-secondary text-lg px-8 py-4"
+              </AppButton>
+
+              <AppButton
                 onClick={() => setIsVideoPlaying(!isVideoPlaying)}
+                variant="secondary"
+                size="lg"
               >
                 <Play className="w-5 h-5 mr-2" />
                 Watch Demo
-              </button>
+              </AppButton>
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 max-w-4xl mx-auto">
-              {stats.map((stat, index) => (
-                <div key={index} className="text-center">
-                  <div className="flex items-center justify-center w-12 h-12 bg-primary-100 dark:bg-primary-900/20 rounded-lg mx-auto mb-3">
-                    {stat.icon}
-                  </div>
-                  <div className="text-2xl font-bold text-dark-900 dark:text-white">{stat.value}</div>
-                  <div className="text-sm text-dark-600 dark:text-dark-400">{stat.label}</div>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </section>
@@ -187,21 +168,21 @@ const HomePage = () => {
           <h2 className="text-4xl font-bold text-dark-900 dark:text-white mb-6">
             Ready to build something amazing?
           </h2>
-          <p className="text-xl text-dark-600 dark:text-dark-300 mb-8">
-            Join thousands of developers building with Skaftin Platform.
-          </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button
-              onClick={() => navigate('/login')}
-              className="btn-primary text-lg px-8 py-4"
+            <AppButton onClick={() => navigate('/login')}
+              variant="primary"
+              size="lg"
             >
               Get Started Free
               <ArrowRight className="w-5 h-5 ml-2" />
-            </button>
-            <button className="btn-secondary text-lg px-8 py-4">
+            </AppButton>
+            <AppButton onClick={() => window.open('https://github.com/sklftn/sklftn', '_blank')}
+              variant="secondary"
+              size="lg"
+            >
               <Github className="w-5 h-5 mr-2" />
               View on GitHub
-            </button>
+            </AppButton>
           </div>
         </div>
       </section>

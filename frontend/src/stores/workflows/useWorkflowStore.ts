@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { Edge, Node, addEdge, Connection } from 'reactflow';
+import RequestUtils from '../../utils/RequestUtils';
+import ApiRoutes from '../../constants/ApiRoutes';
+import { WorkflowDefinition } from '../../types/workflow.types';
 
 interface LogEntry {
   nodeId: string;
@@ -60,6 +63,11 @@ interface WorkflowStore {
   isNodeConnected: (nodeId: string) => boolean;
   getNodeResult: (nodeId: string) => NodeResult | undefined;
   getNodeRunStatus: (nodeId: string) => NodeRunStatus;
+
+  // Persistence
+  saveWorkflow: (projectId: string, name: string, description?: string, schedule?: string) => Promise<{ success: boolean; workflowId?: number; error?: string }>;
+  loadWorkflow: (projectId: string, workflowId: number) => Promise<{ success: boolean; error?: string }>;
+  listWorkflows: (projectId: string) => Promise<{ success: boolean; workflows?: any[]; error?: string }>;
 
   reset: () => void;
 }
@@ -160,6 +168,137 @@ const useWorkflowStore = create<WorkflowStore>()(
       },
       getNodeRunStatus: (nodeId) => {
         return get().runStatuses[nodeId] || 'idle';
+      },
+
+      // Persistence
+      saveWorkflow: async (projectId: string, name: string, description?: string, schedule?: string) => {
+        const state = get();
+        const token = localStorage.getItem('skaftin-token') || '';
+        
+        try {
+          const workflowData: WorkflowDefinition = {
+            name,
+            description,
+            projectId,
+            enabled: true,
+            schedule,
+            nodes: state.nodes.map((n) => ({
+              id: n.id,
+              type: n.type as any,
+              position: n.position,
+              data: n.data,
+            })),
+            edges: state.edges.map((e) => ({
+              id: e.id,
+              source: e.source,
+              target: e.target,
+              sourceHandle: e.sourceHandle,
+              targetHandle: e.targetHandle,
+            })),
+          };
+
+          const url = ApiRoutes.WORKFLOWS.CREATE(projectId);
+          const response = await RequestUtils.post(url, token, workflowData);
+
+          if (response && response.success !== false) {
+            return {
+              success: true,
+              workflowId: (response as any).data?.id || (response as any).id,
+            };
+          }
+
+          return {
+            success: false,
+            error: (response as any)?.message || 'Failed to save workflow',
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to save workflow',
+          };
+        }
+      },
+
+      loadWorkflow: async (projectId: string, workflowId: number) => {
+        const token = localStorage.getItem('skaftin-token') || '';
+        
+        try {
+          const url = ApiRoutes.WORKFLOWS.GET(projectId, workflowId);
+          const response = await RequestUtils.get(url, token);
+
+          if (response && response.success !== false) {
+            const workflow = (response as any).data || response;
+            
+            // Convert workflow nodes and edges to React Flow format
+            const nodes: Node[] = workflow.nodes.map((n: any) => ({
+              id: n.id,
+              type: n.type,
+              position: n.position,
+              data: n.data,
+            }));
+
+            const edges: Edge[] = workflow.edges.map((e: any) => ({
+              id: e.id,
+              source: e.source,
+              target: e.target,
+              sourceHandle: e.sourceHandle,
+              targetHandle: e.targetHandle,
+            }));
+
+            // Find max node ID to set counter
+            const maxId = Math.max(
+              ...nodes.map((n) => {
+                const match = n.id.match(/-(\d+)$/);
+                return match ? parseInt(match[1], 10) : 0;
+              }),
+              0
+            );
+
+            set({
+              nodes,
+              edges,
+              nodeIdCounter: maxId + 1,
+            });
+
+            return { success: true };
+          }
+
+          return {
+            success: false,
+            error: (response as any)?.message || 'Failed to load workflow',
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to load workflow',
+          };
+        }
+      },
+
+      listWorkflows: async (projectId: string) => {
+        const token = localStorage.getItem('skaftin-token') || '';
+        
+        try {
+          const url = ApiRoutes.WORKFLOWS.LIST(projectId);
+          const response = await RequestUtils.get(url, token);
+
+          if (response && response.success !== false) {
+            return {
+              success: true,
+              workflows: (response as any).data || response,
+            };
+          }
+
+          return {
+            success: false,
+            error: (response as any)?.message || 'Failed to list workflows',
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to list workflows',
+          };
+        }
       },
 
       // Reset
