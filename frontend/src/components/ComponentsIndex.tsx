@@ -56,3 +56,5 @@ export { default as JsonTree } from './workflows/JsonTree';
 // ---------- Workflow Shared Components ---------- //
 export { default as NodeWrapper } from './workflows/NodeWrapper';
 export { default as NodeActions } from './workflows/NodeActions';
+export { SchemaIcon } from './workflows/SchemaIcon';
+export { NodeOutputTypeIndicator } from './workflows/NodeOutputTypeIndicator';

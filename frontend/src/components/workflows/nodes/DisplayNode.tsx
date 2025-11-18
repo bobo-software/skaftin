@@ -1,11 +1,12 @@
 import { Eye, FileText, X, ChevronDown, ChevronUp } from 'lucide-react';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import useWorkflowStore from '@stores/workflows/useWorkflowStore';
-import useDatabaseStore from '@stores/data/useDatabaseStore';
-import { DisplayNodeData, DbSelectNodeData } from '../../../types/workflow.types';
+import { DisplayNodeData } from '../../../types/workflow.types';
 import { NodeWrapper, NodeActions } from '@components/ComponentsIndex';
+import { NodeOutputTypeIndicator } from '../NodeOutputTypeIndicator';
 import { useNodeConnection } from '@hooks/useNodeConnection';
 import { useNodeOperations } from '@hooks/useNodeOperations';
+import { useNodeSchema } from '@hooks/useNodeSchema';
 import type { Column } from '@stores/data/useDatabaseStore';
 
 interface DisplayNodeProps {
@@ -89,16 +90,9 @@ function buildKeyPathSuggestions(payload: any, maxDepth = 3, maxArray = 5): stri
 }
 
 const DisplayNode = ({ id, data, selected }: DisplayNodeProps) => {
-	const nodes = useWorkflowStore((s) => s.nodes);
-	const edges = useWorkflowStore((s) => s.edges);
-	const setNodes = useWorkflowStore((s) => s.setNodes);
-	const updateNodeData = useWorkflowStore((s) => s.updateNodeData);
 	const results = useWorkflowStore((s) => s.nodeResults);
-	const getTableSchema = useDatabaseStore((s) => s.getTableSchema);
-	const [showConfig, setShowConfig] = useState(false);
+	const updateNodeData = useWorkflowStore((s) => s.updateNodeData);
 	const [showSchemaModal, setShowSchemaModal] = useState(false);
-	const [schemaColumns, setSchemaColumns] = useState<Column[]>([]);
-	const [schemaLoading, setSchemaLoading] = useState(false);
 	const [expandedSections, setExpandedSections] = useState({
 		arrayAccess: false,
 		columns: false,
@@ -107,69 +101,13 @@ const DisplayNode = ({ id, data, selected }: DisplayNodeProps) => {
 	const { isConnected } = useNodeConnection(id);
 	const { handleDelete } = useNodeOperations(id);
 
-	// Auto-detect source node from connected edges
-	useEffect(() => {
-		// Find edges where this node is the target
-		const incomingEdges = edges.filter((e) => e.target === id);
-		if (incomingEdges.length > 0) {
-			// Use the first incoming edge's source
-			const sourceNodeId = incomingEdges[0].source;
-			// Only update if it's different from current value
-			if (data.sourceNodeId !== sourceNodeId) {
-				updateNodeData<DisplayNodeData>(id, { sourceNodeId });
-			}
-		} else if (data.sourceNodeId) {
-			// Clear sourceNodeId if no incoming edges
-			updateNodeData<DisplayNodeData>(id, { sourceNodeId: undefined });
-		}
-	}, [edges, id, data.sourceNodeId, updateNodeData]);
-
-	const sourceNode = useMemo(() => {
-		return nodes.find((n) => n.id === data.sourceNodeId);
-	}, [data.sourceNodeId, nodes]);
-
-	const sourceLabel = useMemo(() => {
-		return (sourceNode?.data as any)?.label ?? data.sourceNodeId ?? 'None';
-	}, [sourceNode, data.sourceNodeId]);
-
-	// Get schema from connected dbSelect node
-	useEffect(() => {
-		if (!sourceNode || sourceNode.type !== 'dbSelect') {
-			setSchemaColumns([]);
-			return;
-		}
-
-		const sourceData = sourceNode.data as DbSelectNodeData;
-
-		// First, try to use schema stored in the source node (preferred - no API call needed)
-		if (sourceData?.schema && sourceData.schema.length > 0) {
-			setSchemaColumns(sourceData.schema as Column[]);
-			setSchemaLoading(false);
-			return;
-		}
-
-		// Fallback: fetch schema if not stored in source node
-		const tableName = sourceData?.table;
-		const projectId = sourceData?.projectId;
-
-		if (!tableName || !projectId) {
-			setSchemaColumns([]);
-			return;
-		}
-
-		setSchemaLoading(true);
-		getTableSchema(projectId, tableName)
-			.then((columns) => {
-				setSchemaColumns(columns);
-			})
-			.catch((error) => {
-				console.error('[DisplayNode] failed to fetch table schema', error);
-				setSchemaColumns([]);
-			})
-			.finally(() => {
-				setSchemaLoading(false);
-			});
-	}, [sourceNode, getTableSchema, id, data.sourceNodeId]);
+	// Use the schema hook to automatically get schema from connected nodes
+	const { schema: schemaColumns, loading: schemaLoading, sourceLabel, sourceNodeId } = useNodeSchema({
+		nodeId: id,
+		sourceNodeId: data.sourceNodeId,
+		autoDetectSource: true,
+		updateNodeData: true,
+	});
 
 	// Build type-safe schema-based suggestions from table columns
 	// Only schema suggestions are used to ensure type safety
@@ -199,7 +137,7 @@ const DisplayNode = ({ id, data, selected }: DisplayNodeProps) => {
 		return Array.from(new Set(suggestions));
 	}, [schemaColumns]);
 
-	const sourceResult = data.sourceNodeId ? results[data.sourceNodeId] : undefined;
+	const sourceResult = sourceNodeId ? results[sourceNodeId] : undefined;
 	const sourcePayload = sourceResult?.payload;
 	
 	// Enhanced value extraction with array handling
@@ -253,47 +191,16 @@ const DisplayNode = ({ id, data, selected }: DisplayNodeProps) => {
 				<div className="font-semibold text-sm text-dark-900 dark:text-white flex-1 truncate">
 					{data.label || 'Display'}
 				</div>
-				<button
-					onClick={() => setShowConfig((v) => !v)}
-					className="text-xs px-2 py-0.5 rounded bg-dark-100 dark:bg-dark-700 hover:bg-dark-200 dark:hover:bg-dark-600 text-dark-900 dark:text-white"
-				>
-					{showConfig ? 'Close' : 'Configure'}
-				</button>
+				<NodeOutputTypeIndicator nodeId={id} sourceNodeId={sourceNodeId} position="header" />
 			</div>
 
-			{showConfig && (
-				<div className="mb-2 space-y-2">
-					<div className="text-xs text-dark-500 dark:text-dark-400">Key Path</div>
-					<input
-						value={data.keyPath ?? ''}
-						onChange={(e) => {
-							const newKeyPath = e.target.value || undefined;
-							updateNodeData<DisplayNodeData>(id, { keyPath: newKeyPath });
-						}}
-						placeholder="e.g. rows.0.name"
-						className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
-					/>
-					{schemaLoading && (
-						<div className="text-xs text-dark-500 dark:text-dark-400 mt-1">Loading schema...</div>
-					)}
-					{!schemaColumns.length && !schemaLoading && (
-						<div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-							⚠ Schema not available. Connect to a DbSelect node with a table selected.
-						</div>
-					)}
-					{schemaColumns.length > 0 && (
-						<div className="mt-2">
-							<button
-								onClick={() => setShowSchemaModal(true)}
-								className="w-full px-3 py-2 text-sm rounded bg-primary-600 hover:bg-primary-700 text-white flex items-center justify-center space-x-2 transition-colors"
-							>
-								<FileText className="w-4 h-4" />
-								<span>Select from Schema</span>
-							</button>
-						</div>
-					)}
+			{/* Display current configuration */}
+			<div className="px-4 py-2">
+				<div className="text-xs text-dark-500 dark:text-dark-400 mb-1">Key Path</div>
+				<div className="text-sm text-dark-900 dark:text-white bg-dark-50 dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 font-mono">
+					{data.keyPath || 'Not set'}
 				</div>
-			)}
+			</div>
 
 			<div className="flex items-center justify-between mb-1">
 				<div className="text-xs text-dark-500 dark:text-dark-400">From: {sourceLabel}</div>

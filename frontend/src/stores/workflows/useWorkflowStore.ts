@@ -80,7 +80,7 @@ const useWorkflowStore = create<WorkflowStore>()(
       edges: [],
       nodeIdCounter: 1,
       ui: {
-        showMinimap: true,
+        showMinimap: false,
         showConsole: true,
       },
       logs: [],
@@ -90,8 +90,47 @@ const useWorkflowStore = create<WorkflowStore>()(
       // Node/Edge operations
       setNodes: (updater) => set((state) => ({ nodes: updater(state.nodes) })),
       setEdges: (updater) => set((state) => ({ edges: updater(state.edges) })),
-      onConnect: (conn) =>
-        set((state) => ({ edges: addEdge(conn, state.edges) })),
+      onConnect: (conn) => {
+        const state = get();
+        const newEdges = addEdge(conn, state.edges);
+        // Log connection for debugging
+        const sourceNode = state.nodes.find((n) => n.id === conn.source);
+        const targetNode = state.nodes.find((n) => n.id === conn.target);
+        const edgeId = conn.id || `${conn.source}-${conn.sourceHandle}-${conn.target}`;
+        
+        console.log('[Connection] Node connected:', {
+          source: conn.source,
+          sourceType: sourceNode?.type,
+          sourceHandle: conn.sourceHandle,
+          target: conn.target,
+          targetType: targetNode?.type,
+          targetHandle: conn.targetHandle,
+          edgeId,
+        });
+        
+        // Add to workflow logs
+        set((prevState) => ({
+          edges: newEdges,
+          logs: [
+            ...prevState.logs,
+            {
+              nodeId: conn.source || 'system',
+              type: 'nodeConnection',
+              data: {
+                action: 'connected',
+                source: conn.source,
+                sourceType: sourceNode?.type,
+                sourceHandle: conn.sourceHandle,
+                target: conn.target,
+                targetType: targetNode?.type,
+                targetHandle: conn.targetHandle,
+                edgeId,
+              },
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        }));
+      },
       addNode: (node) => set((state) => ({ nodes: [...state.nodes, node] })),
       removeNodeById: (id) =>
         set((state) => ({ nodes: state.nodes.filter((n) => n.id !== id) })),
@@ -307,7 +346,7 @@ const useWorkflowStore = create<WorkflowStore>()(
           nodes: [],
           edges: [],
           nodeIdCounter: 1,
-          ui: { showMinimap: true, showConsole: true },
+          ui: { showMinimap: false, showConsole: true },
           logs: [],
           runStatuses: {},
           nodeResults: {},

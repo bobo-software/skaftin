@@ -16,9 +16,11 @@ import '../../styles/WorkflowEditor.css';
 import { Play, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Map, ListPlus, Loader2 } from 'lucide-react';
 import {
 	AddNodeModal,
+	AppButton,
 	ResultPreview,
 } from '@components/ComponentsIndex';
 import ExecutionLogsPanel from './ExecutionLogsPanel';
+import WorkflowSidebar from './sidebar/WorkflowSidebar';
 import RequestUtils from '../../utils/RequestUtils';
 import ApiRoutes from '../../constants/ApiRoutes';
 import StartNode from './nodes/StartNode';
@@ -50,19 +52,18 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   const toggleMinimap = useWorkflowStore((s) => s.toggleMinimap);
   const toggleConsole = useWorkflowStore((s) => s.toggleConsole);
   const addLog = useWorkflowStore((s) => s.addLog);
-  const logs = useWorkflowStore((s) => s.logs);
-  const runStatuses = useWorkflowStore((s) => s.runStatuses);
   const setNodeRunStatus = useWorkflowStore((s) => s.setNodeRunStatus);
   const setNodeResult = useWorkflowStore((s) => s.setNodeResult);
   const clearRun = useWorkflowStore((s) => s.clearRun);
   const clearLogs = useWorkflowStore((s) => s.clearLogs);
-  const [selectedRunNodeId, setSelectedRunNodeId] = useState<string | null>(null);
-  const [showResultModal, setShowResultModal] = useState(false);
   const nodeResults = useWorkflowStore((s) => s.nodeResults);
   const nodeResultsRef = useRef(nodeResults);
   const [workflowId, setWorkflowId] = useState<number | null>(null);
   const [executionId, setExecutionId] = useState<number | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [showSidebar, setShowSidebar] = useState(true);
   const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
 
   
@@ -98,9 +99,43 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   );
   const onEdgesChange = useCallback(
     (changes: Parameters<typeof applyEdgeChanges>[0]) => {
+      // Log edge changes for debugging
+      changes.forEach((change) => {
+        if (change.type === 'remove') {
+          const edge = change.id ? edges.find((e) => e.id === change.id) : null;
+          if (edge) {
+            const sourceNode = nodes.find((n) => n.id === edge.source);
+            const targetNode = nodes.find((n) => n.id === edge.target);
+            console.log('[Connection] Edge removed:', {
+              edgeId: edge.id,
+              source: edge.source,
+              sourceType: sourceNode?.type,
+              sourceHandle: edge.sourceHandle,
+              target: edge.target,
+              targetType: targetNode?.type,
+              targetHandle: edge.targetHandle,
+            });
+            addLog({
+              nodeId: edge.source || 'system',
+              type: 'nodeConnection',
+              data: {
+                action: 'disconnected',
+                source: edge.source,
+                sourceType: sourceNode?.type,
+                sourceHandle: edge.sourceHandle,
+                target: edge.target,
+                targetType: targetNode?.type,
+                targetHandle: edge.targetHandle,
+                edgeId: edge.id,
+              },
+              timestamp: new Date().toISOString(),
+            });
+          }
+        }
+      });
       setEdges((eds) => applyEdgeChanges(changes, eds));
     },
-    [setEdges]
+    [setEdges, edges, nodes, addLog]
   );
 
   const addStartNode = useCallback((position?: { x: number; y: number }) => {
@@ -354,27 +389,23 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
           >
             <Maximize2 className="w-4 h-4 text-dark-600 dark:text-dark-400" />
           </button>
-        </div>
 
-        <div className="flex items-center space-x-4">
-          <button
+          <AppButton
+            variant="secondary"
+            size="sm"
+            onClick={() => { setShowAddNode(true); }}
+            icon={<ListPlus className="w-4 h-4" />}
+          >
+            Add Node
+          </AppButton>
+          <AppButton
+            variant="secondary"
+            size="sm"
             onClick={handleRun}
             disabled={isExecuting}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
-          >
-            {isExecuting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Running...</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4" />
-                <span>Run</span>
-              </>
-            )}
-          </button>
-        
+            icon={<Play className="w-4 h-4" />}
+          > { `${isExecuting ? 'Running...' : 'Run Workflow'}`}
+          </AppButton>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -390,15 +421,21 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
             <Map className="w-4 h-4" />
           </button>
           <button
-            onClick={toggleConsole}
+            onClick={() => {
+              if (!showSidebar) {
+                setShowSidebar(true);
+              } else {
+                toggleConsole();
+              }
+            }}
             className={`p-2 rounded transition-colors ${
-              showConsole
+              showSidebar || showConsole
                 ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
                 : 'hover:bg-dark-100 dark:hover:bg-dark-700 text-dark-600 dark:text-dark-400'
             }`}
-            title="Toggle Console"
+            title="Toggle Sidebar"
           >
-            <span className="text-xs">Console</span>
+            <span className="text-xs">Sidebar</span>
           </button>
         </div>
       </div>
@@ -414,21 +451,29 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
         />
       )}
 
-      {/* React Flow Canvas */}
-      <div className="flex-1 min-h-0 relative" style={{ width: '100%', height: '100%' }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onInit={onInit}
-          onPaneClick={handlePaneClick}
-          nodeTypes={nodeTypesMemo}
-          fitView
-          className="bg-dark-50 dark:bg-dark-900"
-          style={{ width: '100%', height: '100%' }}
-        >
+      {/* Main Content Area */}
+      <div className="flex-1 min-h-0 flex">
+        {/* React Flow Canvas */}
+        <div className="flex-1 min-h-0 relative" style={{ width: '100%', height: '100%' }}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onInit={onInit}
+            onPaneClick={(event) => {
+              handlePaneClick(event);
+              setSelectedNodeId(null);
+            }}
+            onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
+            onNodeMouseLeave={() => setHoveredNodeId(null)}
+            onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+            nodeTypes={nodeTypesMemo}
+            fitView
+            className="bg-dark-50 dark:bg-dark-900"
+            style={{ width: '100%', height: '100%' }}
+          >
           <Background 
             color="#e5e7eb" 
             gap={16}
@@ -450,141 +495,27 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
               }}
               maskColor="rgba(0, 0, 0, 0.1)"
             />
-          )}
-        </ReactFlow>
+            )}
+          </ReactFlow>
+        </div>
+
+        {/* Right Sidebar */}
+        {showSidebar && (
+          <WorkflowSidebar
+            projectId={projectId}
+            workflowId={workflowId}
+            executionId={executionId}
+            hoveredNodeId={hoveredNodeId}
+            selectedNodeId={selectedNodeId}
+            onClose={() => setShowSidebar(false)}
+          />
+        )}
       </div>
 
-      {/* Bottom Bar */}
-      <div className="bg-white dark:bg-dark-800 border-t border-dark-200 dark:border-dark-700 px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-        <button
-            onClick={() => setShowAddNode(true)}
-            className="flex items-center space-x-2 px-3 py-2 bg-dark-100 dark:bg-dark-700 hover:bg-dark-200 dark:hover:bg-dark-600 text-dark-900 dark:text-white rounded transition-colors text-sm font-medium"
-            title="Add Node">
-            <ListPlus className="w-4 h-4" />
-            <span>Add Node</span>
-          </button>
-        </div>
-        <div className="text-xs text-dark-500 dark:text-dark-400">
-          Variables: <span className="font-semibold">0</span>
-        </div>
-      </div>
 
-      {/* Run Pane: Checklist (left) + Status Details (right) */}
-      {Object.keys(runStatuses).length > 0 && (
-        <div className="bg-white dark:bg-dark-800 border-t border-dark-200 dark:border-dark-700">
-          <div className="flex" style={{ minHeight: '180px' }}>
-            {/* Left: Checklist */}
-            <div className="w-72 border-r border-dark-200 dark:border-dark-700">
-              <div className="px-4 py-2 flex items-center justify-between">
-                <div className="text-sm font-semibold text-dark-900 dark:text-white">All blocks</div>
-                <button
-                  onClick={clearRun}
-                  className="text-xs px-2 py-1 rounded bg-dark-100 dark:bg-dark-700 hover:bg-dark-200 dark:hover:bg-dark-600 text-dark-900 dark:text-white"
-                >
-                  Clear
-                </button>
-              </div>
-              <div className="px-2 pb-2 overflow-auto" style={{ maxHeight: '240px' }}>
-                {Object.entries(runStatuses).map(([nodeId, status]) => {
-                  const node = nodes.find((n) => n.id === nodeId);
-                  const label =
-                    (node?.data as any)?.label ?? `${node?.type ?? 'node'} (${nodeId})`;
-                  const color =
-                    status === 'success'
-                      ? 'text-green-600 dark:text-green-400'
-                      : status === 'running'
-                      ? 'text-amber-600 dark:text-amber-400'
-                      : status === 'fail'
-                      ? 'text-red-600 dark:text-red-400'
-                      : 'text-dark-500 dark:text-dark-400';
-                  const symbol =
-                    status === 'success' ? '✔' : status === 'running' ? '…' : status === 'fail' ? '✖' : '•';
-                  const isSelected = selectedRunNodeId === nodeId;
-                  return (
-                    <button
-                      key={nodeId}
-                      onClick={() => setSelectedRunNodeId(nodeId)}
-                      className={`w-full text-left flex items-center justify-between text-xs rounded px-3 py-2 mb-1 ${
-                        isSelected
-                          ? 'bg-primary-50 dark:bg-primary-900/20'
-                          : 'bg-dark-50 dark:bg-dark-900'
-                      } border border-dark-200 dark:border-dark-700`}
-                    >
-                      <div className="truncate pr-2 flex items-center">
-                        <span
-                          className={`inline-block w-2 h-2 rounded-full mr-2 ${
-                            status === 'success'
-                              ? 'bg-green-500'
-                              : status === 'running'
-                              ? 'bg-amber-500'
-                              : status === 'fail'
-                              ? 'bg-red-500'
-                              : 'bg-gray-400'
-                          }`}
-                        />
-                        <span className="font-medium">{label}</span>
-                        <span className="ml-2 opacity-70">[{nodeId}]</span>
-                      </div>
-                      <div className={`ml-2 font-semibold ${color}`}>{symbol}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            {/* Right: Run Statuses */}
-            <div className="flex-1 px-6 py-4">
-              {/* Result details for selected node */}
-              {selectedRunNodeId && nodeResults[selectedRunNodeId] && (
-                <div className="mb-3">
-                  <div className="text-xs text-dark-500 dark:text-dark-400 mb-2">
-                    Node: <span className="font-medium">{selectedRunNodeId}</span>
-                    <span className="ml-2 text-[10px] opacity-70">[{nodeResults[selectedRunNodeId].timestamp}]</span>
-                  </div>
-                  <div className="relative inline-block group">
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                        nodeResults[selectedRunNodeId].status === 'success'
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                      }`}
-                    >
-                      {nodeResults[selectedRunNodeId].status === 'success' ? 'Success' : 'Fail'}
-                    </span>
-                    <button
-                      onClick={() => setShowResultModal(true)}
-                      className="ml-2 px-2 py-0.5 text-xs rounded bg-dark-100 dark:bg-dark-700 hover:bg-dark-200 dark:hover:bg-dark-600 text-dark-900 dark:text-white"
-                      title="View data"
-                    >
-                      View
-                    </button>
-                    <div className="absolute z-20 left-0 mt-2 w-[520px] hidden group-hover:block">
-                      <div className="bg-white dark:bg-dark-800 border border-dark-200 dark:border-dark-700 rounded shadow-lg p-2">
-                        <div className="text-[10px] opacity-70 mb-1">Details</div>
-                        <pre className="bg-dark-50 dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded p-2 whitespace-pre-wrap break-all text-[11px] max-h-64 overflow-auto">
-{JSON.stringify(nodeResults[selectedRunNodeId].payload, null, 2)}
-                        </pre>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {/* Result Modal */}
-              {showResultModal && selectedRunNodeId && nodeResults[selectedRunNodeId] && (
-                <ResultPreview
-                  title={`${selectedRunNodeId}`}
-                  status={nodeResults[selectedRunNodeId].status}
-                  payload={nodeResults[selectedRunNodeId].payload}
-                  onClose={() => setShowResultModal(false)}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Execution Logs Panel */}
-      {showConsole && (
+      {/* Execution Logs Panel (Legacy - hidden when sidebar is shown) */}
+      {showConsole && !showSidebar && (
         <ExecutionLogsPanel
           projectId={projectId}
           workflowId={workflowId}
@@ -605,4 +536,3 @@ const WorkflowEditor = ({ projectId }: WorkflowEditorProps) => {
 };
 
 export default WorkflowEditor;
-
