@@ -68,13 +68,8 @@ const ConsoleTab = ({ projectId, workflowId, executionId }: ConsoleTabProps) => 
       // Reset logs when executionId changes
       setLogs(null);
       setError(null);
-      // Fetch immediately
+      // Fetch logs once when executionId is set
       fetchLogs();
-      // Poll for updates every 2 seconds
-      const interval = setInterval(() => {
-        fetchLogs();
-      }, 2000);
-      return () => clearInterval(interval);
     } else {
       // Clear logs when no execution
       setLogs(null);

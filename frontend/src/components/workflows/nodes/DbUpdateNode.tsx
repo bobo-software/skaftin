@@ -5,7 +5,7 @@ import { NodeWrapper, NodeActions, NodeOutputTypeIndicator } from '../../Compone
 import { useNodeConnection } from '../../../hooks/useNodeConnection';
 import { useNodeOperations } from '../../../hooks/useNodeOperations';
 import { useNodeSchema } from '../../../hooks/useNodeSchema';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import useWorkflowStore from '../../../stores/workflows/useWorkflowStore';
 import useDatabaseStore from '../../../stores/data/useDatabaseStore';
 import type { Column } from '../../../stores/data/useDatabaseStore';
