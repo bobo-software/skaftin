@@ -33,16 +33,45 @@ const CsvImportModal = ({
   const [columnMapping, setColumnMapping] = useState<{[key: string]: string}>({});
   const [errors, setErrors] = useState<string[]>([]);
   const [importError, setImportError] = useState<string>('');
+  const [dragActive, setDragActive] = useState(false);
+  const [excludeIdColumn, setExcludeIdColumn] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && file.type === 'text/csv') {
+    if (file) {
+      processFile(file);
+    }
+  };
+
+  const processFile = (file: File) => {
+    // Check if it's a CSV file by extension or MIME type
+    if (file.name.endsWith('.csv') || file.type === 'text/csv' || file.type === 'text/plain') {
       setCsvFile(file);
       setImportError('');
       parseCsvFile(file);
     } else {
       setImportError('Please select a valid CSV file.');
+    }
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFile(e.dataTransfer.files[0]);
     }
   };
 
@@ -119,7 +148,18 @@ const CsvImportModal = ({
     }
 
     // Check for required columns (non-nullable)
-    const requiredColumns = tableColumns.filter(col => !col.is_nullable);
+    // Exclude 'id' column from required check if excludeIdColumn is enabled
+    const requiredColumns = tableColumns.filter(col => {
+      if (!col.is_nullable) {
+        // If we're excluding ID column and this is the ID column, don't require it
+        if (excludeIdColumn && col.column_name.toLowerCase() === 'id') {
+          return false; // ID column is optional when excludeIdColumn is true
+        }
+        return true;
+      }
+      return false;
+    });
+    
     const mappedRequiredColumns = requiredColumns.filter(col => 
       Object.values(columnMapping).includes(col.column_name)
     );
@@ -137,9 +177,9 @@ const CsvImportModal = ({
 
   const handleNext = () => {
     if (step === 'mapping') {
-      if (validateMapping()) {
-        setStep('preview');
-      }
+      // Run validation to show any errors, but always allow proceeding to preview
+      validateMapping();
+      setStep('preview');
     }
   };
 
@@ -151,15 +191,25 @@ const CsvImportModal = ({
       const obj: any = {};
       csvData.headers.forEach((header, index) => {
         const tableColumn = columnMapping[header];
+        // Skip ID column if excludeIdColumn is true and it's mapped to 'id'
         if (tableColumn && row[index] !== undefined) {
-          obj[tableColumn] = row[index] || null;
+          // Exclude ID column if option is enabled and column is 'id' (case-insensitive)
+          if (!(excludeIdColumn && tableColumn.toLowerCase() === 'id')) {
+            obj[tableColumn] = row[index] || null;
+          }
         }
       });
       return obj;
-    });
+    }).filter(obj => Object.keys(obj).length > 0); // Remove empty objects
 
     onImport(transformedData, columnMapping);
   };
+
+  // Check if CSV has an 'id' column mapped
+  const hasIdColumn = csvData ? csvData.headers.some(header => {
+    const mappedColumn = columnMapping[header];
+    return mappedColumn && mappedColumn.toLowerCase() === 'id';
+  }) : false;
 
   const handleClose = () => {
     setStep('upload');
@@ -168,6 +218,8 @@ const CsvImportModal = ({
     setColumnMapping({});
     setErrors([]);
     setImportError('');
+    setDragActive(false);
+    setExcludeIdColumn(true);
     onClose();
   };
 
@@ -247,14 +299,29 @@ const CsvImportModal = ({
                 </p>
               </div>
 
-              <div className="border-2 border-dashed border-primary-300 dark:border-primary-600 rounded-lg p-8 text-center hover:border-primary-400 dark:hover:border-primary-500 transition-colors">
+              <div
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                  dragActive
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                    : 'border-primary-300 dark:border-primary-600 hover:border-primary-400 dark:hover:border-primary-500'
+                }`}
+                onDragEnter={handleDrag}
+                onDragLeave={handleDrag}
+                onDragOver={handleDrag}
+                onDrop={handleDrop}
+              >
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".csv"
+                  accept=".csv,text/csv,text/plain"
                   onChange={handleFileSelect}
                   className="hidden"
                 />
+                <Upload className={`w-12 h-12 mx-auto mb-4 ${
+                  dragActive
+                    ? 'text-primary-600 dark:text-primary-400'
+                    : 'text-primary-500'
+                }`} />
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 font-medium"
@@ -370,6 +437,30 @@ const CsvImportModal = ({
                 </p>
               </div>
 
+              {hasIdColumn && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  <div className="flex items-start space-x-3">
+                    <input
+                      type="checkbox"
+                      id="exclude-id-column"
+                      checked={excludeIdColumn}
+                      onChange={(e) => setExcludeIdColumn(e.target.checked)}
+                      className="mt-1 w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <div className="flex-1">
+                      <label htmlFor="exclude-id-column" className="text-sm font-medium text-blue-900 dark:text-blue-200 cursor-pointer">
+                        Exclude ID column (let database generate new IDs)
+                      </label>
+                      <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                        {excludeIdColumn 
+                          ? 'The ID column will be excluded from import. New rows will get auto-generated IDs.'
+                          : 'Warning: Including the ID column may cause duplicate key errors if IDs already exist in the table.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-dark-50 dark:bg-dark-700 rounded-lg p-4">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -421,7 +512,6 @@ const CsvImportModal = ({
               <AppButton
                 variant="primary"
                 onClick={handleNext}
-                disabled={errors.length > 0}
                 icon={<CheckCircle className="w-4 h-4" />}
               >
                 Next: Preview

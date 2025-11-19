@@ -6,7 +6,8 @@ import {
   Search,
   Download
 } from 'lucide-react';
-import { AppButton, AppText } from '../ComponentsIndex';
+import { AppButton, AppText, ExportModal } from '../ComponentsIndex';
+import type { ExportFormat } from '../modals/ExportModal';
 
 interface DataTableProps {
   data: any[];
@@ -50,6 +51,8 @@ const DataTable = ({
   const [editingCell, setEditingCell] = useState<{rowIndex: number, column: string} | null>(null);
   const [editValue, setEditValue] = useState<string>('');
   const [jumpToPage, setJumpToPage] = useState('');
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
 
   // Get columns from data if not provided
   const tableColumns = columns || (data.length > 0 ? Object.keys(data[0]) : []);
@@ -229,6 +232,124 @@ const DataTable = ({
     paginatedData.every((_, index) => selectedRows.has(startIndex + index));
   const isIndeterminate = selectedRows.size > 0 && !isAllSelected;
 
+  // Get selected data
+  const getSelectedData = () => {
+    if (selectedRows.size === 0) return sortedData;
+    const selectedIndices = Array.from(selectedRows);
+    return selectedIndices.map(index => sortedData[index]).filter(Boolean);
+  };
+
+  // Export functions
+  const exportToCsv = (dataToExport: any[]) => {
+    if (dataToExport.length === 0) return;
+
+    const headers = tableColumns;
+    const csvRows = [
+      headers.join(','),
+      ...dataToExport.map(row =>
+        headers.map(header => {
+          const value = row[header];
+          if (value === null || value === undefined) return '';
+          // Escape quotes and wrap in quotes if contains comma, newline, or quote
+          const stringValue = String(value);
+          if (stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('"')) {
+            return `"${stringValue.replace(/"/g, '""')}"`;
+          }
+          return stringValue;
+        }).join(',')
+      )
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `export_${new Date().getTime()}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportToJson = (dataToExport: any[]) => {
+    if (dataToExport.length === 0) return;
+
+    const jsonContent = JSON.stringify(dataToExport, null, 2);
+    const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `export_${new Date().getTime()}.json`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportToExcel = (dataToExport: any[]) => {
+    if (dataToExport.length === 0) return;
+
+    // For Excel export, we'll create a CSV file with .xlsx extension
+    // Note: For true Excel format, you'd need a library like xlsx or exceljs
+    // This is a simple implementation that creates a CSV that Excel can open
+    const headers = tableColumns;
+    const csvRows = [
+      headers.join(','),
+      ...dataToExport.map(row =>
+        headers.map(header => {
+          const value = row[header];
+          if (value === null || value === undefined) return '';
+          const stringValue = String(value);
+          if (stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('"')) {
+            return `"${stringValue.replace(/"/g, '""')}"`;
+          }
+          return stringValue;
+        }).join(',')
+      )
+    ];
+
+    const csvContent = csvRows.join('\n');
+    // Create a CSV file but name it .xlsx - Excel will open it
+    const blob = new Blob([csvContent], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `export_${new Date().getTime()}.xlsx`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExport = async (format: ExportFormat) => {
+    setExportLoading(true);
+    try {
+      const dataToExport = getSelectedData();
+      
+      // Small delay to show loading state
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      switch (format) {
+        case 'csv':
+          exportToCsv(dataToExport);
+          break;
+        case 'json':
+          exportToJson(dataToExport);
+          break;
+        case 'excel':
+          exportToExcel(dataToExport);
+          break;
+      }
+
+      setShowExportModal(false);
+    } catch (error) {
+      console.error('Error exporting data:', error);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -264,6 +385,14 @@ const DataTable = ({
         <div className="flex items-center space-x-2">
           {selectedRows.size > 0 && (
             <div className="flex items-center space-x-2 mr-4">
+              <AppButton 
+                variant="primary" 
+                size="sm"
+                icon={<Download className="w-4 h-4" />}
+                onClick={() => setShowExportModal(true)}
+              >
+                Export
+              </AppButton>
               <AppButton 
                 variant="danger" 
                 size="sm"
@@ -587,6 +716,16 @@ const DataTable = ({
           </div>
         </div>
       )}
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onExport={handleExport}
+        selectedCount={selectedRows.size}
+        totalCount={sortedData.length}
+        loading={exportLoading}
+      />
     </div>
   );
 };
