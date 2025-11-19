@@ -56,6 +56,12 @@ export class VariableResolver {
       if (!ref.nodeId) {
         throw new Error(`Node ID is required for node variable reference: ${ref.fullPath}`);
       }
+      
+      // Check if this is a loop variable (e.g., {{item.id}})
+      if (context.iterationContext && ref.nodeId === context.iterationContext.variableName) {
+        return this.getNestedValue(context.iterationContext.item, ref.path);
+      }
+      
       const nodeResult = context.nodeResults[ref.nodeId];
       if (!nodeResult) {
         throw new Error(`Node result not found for nodeId: ${ref.nodeId}`);
@@ -93,6 +99,10 @@ export class VariableResolver {
       try {
         if (parts[0] === 'inputs') {
           value = this.getNestedValue(context.inputs, parts.slice(1).join('.'));
+        } else if (context.iterationContext && parts[0] === context.iterationContext.variableName) {
+          // Check if this is a loop variable (e.g., {{item.id}})
+          const itemPath = parts.slice(1).join('.');
+          value = this.getNestedValue(context.iterationContext.item, itemPath);
         } else {
           const nodeId = parts[0];
           const nodePath = parts.slice(1).join('.') || 'data';

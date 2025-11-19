@@ -1,10 +1,12 @@
 import { Handle, Position } from 'reactflow';
 import { Database, Trash2 } from 'lucide-react';
 import { DbDeleteNodeData } from '../../../types/workflow.types';
-import { NodeWrapper, NodeActions } from '../../ComponentsIndex';
+import { NodeWrapper, NodeActions, NodeOutputTypeIndicator } from '../../ComponentsIndex';
 import { useNodeConnection } from '../../../hooks/useNodeConnection';
 import { useNodeOperations } from '../../../hooks/useNodeOperations';
-import { useState } from 'react';
+import { useNodeSchema } from '../../../hooks/useNodeSchema';
+import { useState, useMemo } from 'react';
+import useWorkflowStore from '../../../stores/workflows/useWorkflowStore';
 
 interface DbDeleteNodeProps {
   id: string;
@@ -15,8 +17,35 @@ interface DbDeleteNodeProps {
 const DbDeleteNode = ({ id, data, selected }: DbDeleteNodeProps) => {
   const { isConnected } = useNodeConnection(id);
   const { handleDelete } = useNodeOperations(id);
+  const nodes = useWorkflowStore((s) => s.nodes);
   const [table] = useState(data.table || '');
 
+  // Get schema from connected source node (for ForLoop connections)
+  const { sourceNode, sourceNodeId } = useNodeSchema({
+    nodeId: id,
+    autoDetectSource: true,
+    updateNodeData: false,
+  });
+
+  // Get item schema from ForLoop source
+  const itemSchema = useMemo(() => {
+    if (sourceNode?.type === 'forLoop') {
+      const forLoopData = sourceNode.data as any;
+      const loopSourceNodeId = forLoopData?.sourceNodeId;
+      
+      if (loopSourceNodeId) {
+        const loopSourceNode = nodes.find((n) => n.id === loopSourceNodeId);
+        if (loopSourceNode?.type === 'dbSelect') {
+          const loopSourceData = loopSourceNode.data as any;
+          return Array.isArray(loopSourceData?.schema) ? loopSourceData.schema : [];
+        }
+      }
+    }
+    return [];
+  }, [sourceNode, nodes]);
+
+  // Determine if connected to ForLoop
+  const isConnectedToForLoop = sourceNode?.type === 'forLoop';
 
   return (
     <NodeWrapper
@@ -31,6 +60,7 @@ const DbDeleteNode = ({ id, data, selected }: DbDeleteNodeProps) => {
         <div className="font-semibold text-sm text-dark-900 dark:text-white flex-1 truncate">
           {data.label || 'Delete Data'}
         </div>
+        <NodeOutputTypeIndicator nodeId={id} sourceNodeId={sourceNodeId} position="header" />
       </div>
 
       <div className="px-4 py-3">
@@ -41,6 +71,11 @@ const DbDeleteNode = ({ id, data, selected }: DbDeleteNodeProps) => {
           <div className="text-sm text-dark-900 dark:text-dark-100">
             {table ? `Delete from ${table}` : 'Not configured'}
           </div>
+          {isConnectedToForLoop && itemSchema.length > 0 && (
+            <div className="text-xs text-purple-600 dark:text-purple-400 mt-1">
+              🔄 Connected to loop - {itemSchema.length} item field{itemSchema.length !== 1 ? 's' : ''} available
+            </div>
+          )}
         </div>
       </div>
 

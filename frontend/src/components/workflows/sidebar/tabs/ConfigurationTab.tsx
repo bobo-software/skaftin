@@ -29,13 +29,30 @@ const ConfigurationTab = ({ nodeId }: ConfigurationTabProps) => {
   const node = useMemo(() => nodes.find((n) => n.id === nodeId), [nodes, nodeId]);
 
   // Get schema for database nodes
-  const { schema: itemSchema, sourceNode } = useNodeSchema({
+  const { schema, sourceNode } = useNodeSchema({
     nodeId,
     autoDetectSource: true,
     updateNodeData: false,
   });
 
   const isConnectedToForLoop = sourceNode?.type === 'forLoop';
+
+  // Get item schema from ForLoop source (similar to DbUpdateNode)
+  const itemSchema = useMemo(() => {
+    if (sourceNode?.type === 'forLoop') {
+      const forLoopData = sourceNode.data as any;
+      const loopSourceNodeId = forLoopData?.sourceNodeId;
+      
+      if (loopSourceNodeId) {
+        const loopSourceNode = nodes.find((n) => n.id === loopSourceNodeId);
+        if (loopSourceNode?.type === 'dbSelect') {
+          const loopSourceData = loopSourceNode.data as any;
+          return Array.isArray(loopSourceData?.schema) ? loopSourceData.schema : [];
+        }
+      }
+    }
+    return [];
+  }, [sourceNode, nodes]);
 
   // Track if there are unsaved changes - MUST be before early return
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -72,7 +89,7 @@ const ConfigurationTab = ({ nodeId }: ConfigurationTabProps) => {
       case 'dbInsert':
         return <DbInsertConfig nodeId={nodeId} nodeData={nodeData} projectId={projectId} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
       case 'dbDelete':
-        return <DbDeleteConfig nodeId={nodeId} nodeData={nodeData} projectId={projectId} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
+        return <DbDeleteConfig nodeId={nodeId} nodeData={nodeData} projectId={projectId} isConnectedToForLoop={isConnectedToForLoop} itemSchema={itemSchema} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
       case 'condition':
         return <ConditionConfig nodeId={nodeId} nodeData={nodeData} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
       default:
@@ -697,8 +714,19 @@ const ForLoopConfig = ({
   const [sourceNodeId, setSourceNodeId] = useState(nodeData?.sourceNodeId || '');
   const [arrayPath, setArrayPath] = useState(nodeData?.arrayPath || 'rows');
   const [itemVariableName, setItemVariableName] = useState(nodeData?.itemVariableName || 'item');
+  const [expandedSections, setExpandedSections] = useState({
+    columns: false,
+  });
 
   const availableNodes = useMemo(() => nodes.filter((n) => n.id !== nodeId && n.type !== 'start'), [nodes, nodeId]);
+
+  // Get schema from the source node
+  const { schema: schemaColumns, loading: schemaLoading, sourceLabel } = useNodeSchema({
+    nodeId,
+    sourceNodeId: sourceNodeId || nodeData?.sourceNodeId,
+    autoDetectSource: false,
+    updateNodeData: false,
+  });
 
   const handleSave = () => {
     updateNodeData<ForLoopNodeData>(nodeId, {
@@ -746,6 +774,67 @@ const ForLoopConfig = ({
           placeholder="rows"
           className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 font-mono"
         />
+        {schemaColumns.length > 0 && (
+          <div className="mt-2 border border-dark-200 dark:border-dark-700 rounded-lg overflow-hidden">
+            <button
+              onClick={() =>
+                setExpandedSections((prev) => ({
+                  ...prev,
+                  columns: !prev.columns,
+                }))
+              }
+              className="w-full flex items-center justify-between px-3 py-2 bg-dark-50 dark:bg-dark-900 hover:bg-dark-100 dark:hover:bg-dark-700 transition-colors"
+            >
+              <div className="text-xs font-semibold text-dark-700 dark:text-dark-300">
+                Select from Schema <span className="text-dark-500 dark:text-dark-400 font-normal">({schemaColumns.length} columns)</span>
+              </div>
+              {expandedSections.columns ? (
+                <ChevronUp className="w-4 h-4 text-dark-500 dark:text-dark-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-dark-500 dark:text-dark-400" />
+              )}
+            </button>
+            {expandedSections.columns && (
+              <div className="p-2 space-y-1 max-h-[300px] overflow-y-auto">
+                {/* Array path options */}
+                <button
+                  onClick={() => {
+                    setArrayPath('rows');
+                    setExpandedSections((prev) => ({ ...prev, columns: false }));
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm rounded bg-white dark:bg-dark-800 hover:bg-dark-50 dark:hover:bg-dark-700 border border-dark-200 dark:border-dark-700 transition-colors"
+                >
+                  <div className="font-mono text-primary-600 dark:text-primary-400">rows</div>
+                  <div className="text-xs text-dark-500 dark:text-dark-400 mt-0.5">All rows array (most common)</div>
+                </button>
+                {/* Column options */}
+                {schemaColumns.map((col) => (
+                  <button
+                    key={col.column_name}
+                    onClick={() => {
+                      setArrayPath(`rows.0.${col.column_name}`);
+                      setExpandedSections((prev) => ({ ...prev, columns: false }));
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm rounded bg-white dark:bg-dark-800 hover:bg-dark-50 dark:hover:bg-dark-700 border border-dark-200 dark:border-dark-700 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="font-mono text-primary-600 dark:text-primary-400">
+                        rows.0.{col.column_name}
+                      </div>
+                      <div className="text-xs text-dark-500 dark:text-dark-400">
+                        {col.data_type}
+                        {col.character_maximum_length && `(${col.character_maximum_length})`}
+                      </div>
+                    </div>
+                    <div className="text-xs text-dark-500 dark:text-dark-400 mt-0.5">
+                      {col.column_name} • {col.is_nullable ? 'Nullable' : 'Not Null'}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div>
         <label className="text-xs text-dark-500 dark:text-dark-400 mb-1 block">Item Variable Name</label>
@@ -1133,12 +1222,16 @@ const DbDeleteConfig = ({
   nodeId, 
   nodeData, 
   projectId,
+  isConnectedToForLoop,
+  itemSchema,
   setHasUnsavedChanges,
   setSaveHandler,
 }: { 
   nodeId: string; 
   nodeData: any; 
   projectId: string;
+  isConnectedToForLoop: boolean;
+  itemSchema: Column[];
   setHasUnsavedChanges: (value: boolean) => void;
   setSaveHandler: (handler: () => void) => void;
 }) => {
@@ -1198,6 +1291,14 @@ const DbDeleteConfig = ({
 
   return (
     <div className="space-y-3">
+      {isConnectedToForLoop && itemSchema.length > 0 && (
+        <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded p-2 mb-3">
+          <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-1">🔄 Connected to ForLoop</div>
+          <div className="text-xs text-purple-600 dark:text-purple-400">
+            Use <span className="font-mono">{"{{item.fieldName}}"}</span> in values to reference loop items.
+          </div>
+        </div>
+      )}
       <div>
         <label className="text-xs text-dark-500 dark:text-dark-400 mb-1 block">Table</label>
         <select
@@ -1216,13 +1317,24 @@ const DbDeleteConfig = ({
       {table && (
         <div>
           <label className="text-xs text-dark-500 dark:text-dark-400 mb-2 block">WHERE Conditions</label>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {whereConditions.map((condition: any, index: number) => (
-              <div key={index} className="flex items-center space-x-2">
+              <div key={index} className="space-y-2 border border-dark-200 dark:border-dark-700 rounded p-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-dark-700 dark:text-dark-300">Condition {index + 1}</div>
+                  {whereConditions.length > 1 && (
+                    <button
+                      onClick={() => handleRemoveCondition(index)}
+                      className="px-2 py-1 text-xs rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
                 <select
                   value={condition.field}
                   onChange={(e) => handleConditionChange(index, 'field', e.target.value)}
-                  className="flex-1 text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
+                  className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
                 >
                   <option value="">Select column</option>
                   {schemaColumns.map((col) => (
@@ -1234,7 +1346,7 @@ const DbDeleteConfig = ({
                 <select
                   value={condition.operator}
                   onChange={(e) => handleConditionChange(index, 'operator', e.target.value)}
-                  className="text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
+                  className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
                 >
                   {operators.map((op) => (
                     <option key={op} value={op}>
@@ -1242,21 +1354,34 @@ const DbDeleteConfig = ({
                     </option>
                   ))}
                 </select>
-                <input
-                  type="text"
-                  value={condition.value}
-                  onChange={(e) => handleConditionChange(index, 'value', e.target.value)}
-                  placeholder="Value"
-                  className="flex-1 text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
-                />
-                {whereConditions.length > 1 && (
-                  <button
-                    onClick={() => handleRemoveCondition(index)}
-                    className="px-2 py-1 text-xs rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={condition.value}
+                    onChange={(e) => handleConditionChange(index, 'value', e.target.value)}
+                    placeholder={isConnectedToForLoop ? "Value or {{item.fieldName}}" : "Value"}
+                    className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 pr-20"
+                  />
+                  {isConnectedToForLoop && itemSchema.length > 0 && (
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          handleConditionChange(index, 'value', `{{item.${e.target.value}}}`);
+                          e.target.value = '';
+                        }
+                      }}
+                      className="absolute right-1 top-1 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700 rounded px-1 py-0.5"
+                      title="Insert item field"
+                    >
+                      <option value="">+ Item field</option>
+                      {itemSchema.map((col) => (
+                        <option key={col.column_name} value={col.column_name}>
+                          {col.column_name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </div>
             ))}
             <button

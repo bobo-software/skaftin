@@ -23,6 +23,7 @@ const ForLoopNode = ({ id, data, selected }: ForLoopNodeProps) => {
   const [showSchemaModal, setShowSchemaModal] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     arrayAccess: false,
+    columns: false,
   });
   // Use the schema hook to automatically get schema from connected nodes
   const { schema: schemaColumns, loading: schemaLoading, sourceLabel, sourceNodeId: detectedSourceNodeId } = useNodeSchema({
@@ -53,14 +54,17 @@ const ForLoopNode = ({ id, data, selected }: ForLoopNodeProps) => {
       </div>
 
       <div className="px-4 py-3">
-        <div className="w-full text-left bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-3 py-2">
+        <button
+          onClick={() => setShowSchemaModal(true)}
+          className="w-full text-left bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-3 py-2 hover:bg-dark-50 dark:hover:bg-dark-800 transition-colors"
+        >
           <div className="text-[11px] uppercase tracking-wide text-dark-400 dark:text-dark-500 mb-1">
             Loop Configuration
           </div>
           <div className="text-sm text-dark-900 dark:text-dark-100">
             {currentSourceNodeId ? `Loop over ${sourceLabel}.${arrayPath}` : 'Not configured'}
           </div>
-        </div>
+        </button>
       </div>
 
       {/* Schema Selection Modal */}
@@ -151,6 +155,55 @@ const ForLoopNode = ({ id, data, selected }: ForLoopNodeProps) => {
                             First item (if payload is directly an array)
                           </div>
                         </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Column Options */}
+                  <div className="border border-dark-200 dark:border-dark-700 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() =>
+                        setExpandedSections((prev) => ({
+                          ...prev,
+                          columns: !prev.columns,
+                        }))
+                      }
+                      className="w-full flex items-center justify-between px-3 py-2 bg-dark-50 dark:bg-dark-900 hover:bg-dark-100 dark:hover:bg-dark-700 transition-colors"
+                    >
+                      <div className="text-xs font-semibold text-dark-700 dark:text-dark-300">
+                        Columns (First Row) <span className="text-dark-500 dark:text-dark-400 font-normal">({schemaColumns.length})</span>
+                      </div>
+                      {expandedSections.columns ? (
+                        <ChevronUp className="w-4 h-4 text-dark-500 dark:text-dark-400" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-dark-500 dark:text-dark-400" />
+                      )}
+                    </button>
+                    {expandedSections.columns && (
+                      <div className="p-2 space-y-1 max-h-[300px] overflow-y-auto">
+                        {schemaColumns.map((col) => (
+                          <button
+                            key={col.column_name}
+                            onClick={() => {
+                              handleUpdateData<ForLoopNodeData>(id, { arrayPath: `rows.0.${col.column_name}` });
+                              setShowSchemaModal(false);
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm rounded bg-white dark:bg-dark-800 hover:bg-dark-50 dark:hover:bg-dark-700 border border-dark-200 dark:border-dark-700 transition-colors"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="font-mono text-primary-600 dark:text-primary-400">
+                                rows.0.{col.column_name}
+                              </div>
+                              <div className="text-xs text-dark-500 dark:text-dark-400">
+                                {col.data_type}
+                                {col.character_maximum_length && `(${col.character_maximum_length})`}
+                              </div>
+                            </div>
+                            <div className="text-xs text-dark-500 dark:text-dark-400 mt-0.5">
+                              {col.column_name} • {col.is_nullable ? 'Nullable' : 'Not Null'}
+                            </div>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>

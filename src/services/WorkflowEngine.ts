@@ -9,6 +9,8 @@ import {
   WorkflowExecutionContext,
   NodeExecutionResult,
   WorkflowExecutionStatus,
+  ForLoopExecutionResult,
+  ForLoopIterationContext,
 } from '../types/workflow.types';
 import { NodeExecutorRegistry } from './workflows/executors/NodeExecutorRegistry';
 
@@ -224,21 +226,19 @@ export class WorkflowEngine {
               }
             }
           } else if (node.type === 'forLoop') {
-            // ForLoop node will be handled by its executor
-            // The executor will execute child nodes for each iteration
+            await this.executeForLoopIterations(
+              workflow,
+              nodeId,
+              nodeResult,
+              context,
+              client,
+              workflowId,
+              executionId
+            );
           }
 
           // Save node execution result
-          await db.insert(workflowNodeExecutions).values({
-            execution_id: executionId,
-            node_id: nodeId,
-            status: nodeResult.status,
-            result_data: nodeResult.data,
-            error_message: nodeResult.error || null,
-            execution_time_ms: nodeResult.executionTimeMs,
-            started_at: new Date(nodeResult.timestamp),
-            completed_at: new Date(),
-          });
+          await this.saveNodeExecution(executionId, nodeId, nodeResult);
 
           // If node failed and it's critical, stop execution
           if (nodeResult.status === 'fail' && node.type !== 'condition') {
@@ -262,15 +262,7 @@ export class WorkflowEngine {
 
           context.nodeResults[nodeId] = nodeResult;
 
-          await db.insert(workflowNodeExecutions).values({
-            execution_id: executionId,
-            node_id: nodeId,
-            status: 'fail',
-            error_message: nodeResult.error || null,
-            execution_time_ms: nodeResult.executionTimeMs,
-            started_at: new Date(),
-            completed_at: new Date(),
-          });
+          await this.saveNodeExecution(executionId, nodeId, nodeResult);
 
           executionStatus = 'failed';
           executionError = `Node ${nodeId} error: ${nodeResult.error}`;
@@ -321,36 +313,58 @@ export class WorkflowEngine {
 
   /**
    * Build execution order using topological sort
+   * Excludes child nodes of forLoop nodes (they're executed inside the loop)
    */
   private buildExecutionOrder(
     nodes: WorkflowNode[],
     edges: WorkflowEdge[]
   ): string[] {
-    // Find start nodes (nodes with no incoming edges)
+    // Find child nodes of forLoop nodes (these will be executed inside the loop)
+    const forLoopNodes = nodes.filter((n) => n.type === 'forLoop');
+    const forLoopChildNodeIds = new Set<string>();
+    for (const forLoopNode of forLoopNodes) {
+      const childEdges = edges.filter((e) => e.source === forLoopNode.id);
+      for (const childEdge of childEdges) {
+        forLoopChildNodeIds.add(childEdge.target);
+      }
+    }
+
+    // Find start nodes (nodes with no incoming edges, excluding forLoop children)
     const startNodes = nodes.filter(
-      (node) => !edges.some((edge) => edge.target === node.id)
+      (node) => 
+        !forLoopChildNodeIds.has(node.id) &&
+        !edges.some((edge) => edge.target === node.id)
     );
 
     if (startNodes.length === 0) {
       return [];
     }
 
-    // Build adjacency list
+    // Build adjacency list (excluding edges from forLoop to their children)
     const graph: Map<string, string[]> = new Map();
     const inDegree: Map<string, number> = new Map();
 
-    // Initialize
+    // Initialize (excluding forLoop children)
     for (const node of nodes) {
-      graph.set(node.id, []);
-      inDegree.set(node.id, 0);
+      if (!forLoopChildNodeIds.has(node.id)) {
+        graph.set(node.id, []);
+        inDegree.set(node.id, 0);
+      }
     }
 
-    // Build graph
+    // Build graph (excluding edges from forLoop to their children)
     for (const edge of edges) {
-      const sourceList = graph.get(edge.source) || [];
-      sourceList.push(edge.target);
-      graph.set(edge.source, sourceList);
-      inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1);
+      // Skip edges from forLoop nodes to their children
+      if (forLoopChildNodeIds.has(edge.target)) {
+        continue;
+      }
+
+      if (graph.has(edge.source) && graph.has(edge.target)) {
+        const sourceList = graph.get(edge.source) || [];
+        sourceList.push(edge.target);
+        graph.set(edge.source, sourceList);
+        inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1);
+      }
     }
 
     // Topological sort
@@ -386,6 +400,196 @@ export class WorkflowEngine {
       (e) => e.source === sourceNodeId && e.sourceHandle === branch
     );
     return branchEdges.map((e) => e.target);
+  }
+
+  /**
+   * Execute child nodes for each iteration of a forLoop node
+   */
+  private async executeForLoopIterations(
+    workflow: WorkflowDefinition,
+    forLoopNodeId: string,
+    forLoopResult: NodeExecutionResult,
+    context: WorkflowExecutionContext,
+    client: PoolClient,
+    workflowId: number,
+    executionId: number
+  ): Promise<void> {
+    const loopData = forLoopResult.data as ForLoopExecutionResult;
+
+    // Get child nodes (nodes connected from this forLoop node)
+    const childNodeIds = workflow.edges
+      .filter((e) => e.source === forLoopNodeId)
+      .map((e) => e.target);
+
+    if (childNodeIds.length === 0 || !loopData.iterations) {
+      return;
+    }
+
+    console.log(
+      `[Workflow ${workflowId}] [Execution ${executionId}] [Node ${forLoopNodeId}] Executing ${loopData.iterations.length} iterations for ${childNodeIds.length} child node(s)`
+    );
+
+    // Declare iterationExecutionContext outside the loop so it's accessible after
+    let iterationExecutionContext: WorkflowExecutionContext = context;
+
+    // Execute child nodes for each iteration
+    for (const iteration of loopData.iterations) {
+      const iterationContext: ForLoopIterationContext = {
+        item: iteration.item,
+        index: iteration.index,
+        variableName: iteration.variableName,
+      };
+
+      // Create a new context with iteration context for child nodes
+      iterationExecutionContext = {
+        ...context,
+        iterationContext,
+      };
+
+      // Execute each child node with the iteration context
+      for (const childNodeId of childNodeIds) {
+        await this.executeChildNodeInIteration(
+          workflow,
+          childNodeId,
+          iterationContext,
+          iterationExecutionContext,
+          client,
+          workflowId,
+          executionId
+        );
+      }
+    }
+
+    // Update main context with results from last iteration
+    this.updateContextWithLastIterationResults(
+      context,
+      iterationExecutionContext,
+      childNodeIds
+    );
+  }
+
+  /**
+   * Execute a single child node within a forLoop iteration
+   */
+  private async executeChildNodeInIteration(
+    workflow: WorkflowDefinition,
+    childNodeId: string,
+    iterationContext: ForLoopIterationContext,
+    iterationExecutionContext: WorkflowExecutionContext,
+    client: PoolClient,
+    workflowId: number,
+    executionId: number
+  ): Promise<void> {
+    const childNode = workflow.nodes.find((n) => n.id === childNodeId);
+    if (!childNode) {
+      console.warn(
+        `[Workflow ${workflowId}] [Execution ${executionId}] Child node ${childNodeId} not found`
+      );
+      return;
+    }
+
+    const startTime = Date.now();
+    let childNodeResult: NodeExecutionResult;
+
+    try {
+      console.log(
+        `[Workflow ${workflowId}] [Execution ${executionId}] [Node ${childNodeId}] [Iteration ${iterationContext.index}] Executing ${childNode.type} node`
+      );
+
+      // Create executor for child node
+      const childExecutor = NodeExecutorRegistry.createExecutor(
+        childNode.type,
+        client,
+        iterationExecutionContext
+      );
+
+      // Execute child node with iteration context
+      childNodeResult = await childExecutor.execute(
+        childNode,
+        iterationExecutionContext
+      );
+      childNodeResult.executionTimeMs = Date.now() - startTime;
+
+      console.log(
+        `[Workflow ${workflowId}] [Execution ${executionId}] [Node ${childNodeId}] [Iteration ${iterationContext.index}] Execution completed`
+      );
+      console.log(
+        `[Workflow ${workflowId}] [Execution ${executionId}] [Node ${childNodeId}] [Iteration ${iterationContext.index}] Status: ${childNodeResult.status}`
+      );
+
+      // Store result in context (overwrite previous iteration results)
+      iterationExecutionContext.nodeResults[childNodeId] = childNodeResult;
+
+      // Save child node execution result
+      await this.saveNodeExecution(
+        executionId,
+        childNodeId,
+        childNodeResult
+      );
+
+      // If child node failed, log but continue with next iteration
+      if (childNodeResult.status === 'fail') {
+        console.error(
+          `[Workflow ${workflowId}] [Execution ${executionId}] [Node ${childNodeId}] [Iteration ${iterationContext.index}] Node failed, continuing with next iteration`
+        );
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        `[Workflow ${workflowId}] [Execution ${executionId}] [Node ${childNodeId}] [Iteration ${iterationContext.index}] Execution error:`,
+        errorMessage
+      );
+
+      childNodeResult = {
+        nodeId: childNodeId,
+        status: 'fail',
+        error: errorMessage,
+        executionTimeMs: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+      };
+
+      iterationExecutionContext.nodeResults[childNodeId] = childNodeResult;
+
+      await this.saveNodeExecution(executionId, childNodeId, childNodeResult);
+    }
+  }
+
+  /**
+   * Update main context with results from the last iteration
+   */
+  private updateContextWithLastIterationResults(
+    context: WorkflowExecutionContext,
+    iterationExecutionContext: WorkflowExecutionContext,
+    childNodeIds: string[]
+  ): void {
+    for (const childNodeId of childNodeIds) {
+      if (iterationExecutionContext.nodeResults[childNodeId]) {
+        // Keep the last iteration's result
+        context.nodeResults[childNodeId] =
+          iterationExecutionContext.nodeResults[childNodeId];
+      }
+    }
+  }
+
+  /**
+   * Save node execution result to database
+   */
+  private async saveNodeExecution(
+    executionId: number,
+    nodeId: string,
+    result: NodeExecutionResult
+  ): Promise<void> {
+    await db.insert(workflowNodeExecutions).values({
+      execution_id: executionId,
+      node_id: nodeId,
+      status: result.status,
+      result_data: result.data,
+      error_message: result.error || null,
+      execution_time_ms: result.executionTimeMs,
+      started_at: new Date(result.timestamp),
+      completed_at: new Date(),
+    });
   }
 }
 

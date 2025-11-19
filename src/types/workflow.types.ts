@@ -51,6 +51,7 @@ export interface WorkflowExecutionContext {
   nodeResults: Record<string, NodeExecutionResult>;
   variables: Record<string, any>; // Resolved variables for substitution
   startTime: Date;
+  iterationContext?: ForLoopIterationContext; // Current for loop iteration context
 }
 
 // Workflow definition (loaded from database)
@@ -93,5 +94,17 @@ export interface ForLoopIterationContext {
   item: any;
   index: number;
   variableName: string;
+}
+
+// For loop execution result
+export interface ForLoopExecutionResult {
+  array: any[];
+  arrayLength: number;
+  variableName: string;
+  iterations: Array<{
+    index: number;
+    item: any;
+    variableName: string;
+  }>;
 }
 
