@@ -15,6 +15,7 @@ import { ConditionNodeExecutor } from './ConditionNodeExecutor';
 import { ForLoopNodeExecutor } from './ForLoopNodeExecutor';
 import { HttpRequestNodeExecutor } from './HttpRequestNodeExecutor';
 import { DisplayNodeExecutor } from './DisplayNodeExecutor';
+import { EmailNodeExecutor } from './EmailNodeExecutor';
 
 /**
  * Registry for node executors
@@ -48,6 +49,8 @@ export class NodeExecutorRegistry {
         return new HttpRequestNodeExecutor(client, context);
       case 'display':
         return new DisplayNodeExecutor(client, context);
+      case 'email':
+        return new EmailNodeExecutor(client, context);
       default:
         throw new Error(`Unknown node type: ${nodeType}`);
     }
@@ -59,6 +62,7 @@ export class NodeExecutorRegistry {
   static isSupported(nodeType: string): boolean {
     const supportedTypes = [
       'start',
+      'email',
       'dbSelect',
       'dbInsert',
       'dbDelete',

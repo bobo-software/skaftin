@@ -9,7 +9,8 @@ export type NodeType =
   | 'forLoop' 
   | 'dbInsert' 
   | 'dbDelete' 
-  | 'dbUpdate';
+  | 'dbUpdate'
+  | 'email';
 
 export type WorkflowExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type NodeExecutionStatus = 'success' | 'fail' | 'skipped';

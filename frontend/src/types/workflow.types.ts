@@ -8,7 +8,8 @@ export type NodeType =
   | 'forLoop' 
   | 'dbInsert' 
   | 'dbDelete' 
-  | 'dbUpdate';
+  | 'dbUpdate'
+  | 'email';
 
 // Base workflow node interface
 export interface WorkflowNode {
@@ -105,6 +106,16 @@ export interface DbUpdateNodeData {
   }>;
   where?: Array<{ field: string; operator: string; value: any }>;
   schema?: Array<{ column_name: string; data_type: string; is_nullable: boolean; column_default?: string; character_maximum_length?: number }>;
+}
+
+export interface EmailNodeData {
+  label: string;
+  projectId: string;
+  templateId?: number;
+  templateName?: string;
+  recipientEmail?: string; // Can contain variables like "{{nodeId.field}}"
+  providerId?: number;
+  variableMappings?: Record<string, string>; // Maps template variables to values/variables (e.g., { "name": "{{nodeId.field}}", "email": "user@example.com" })
 }
 
 // Workflow execution types

@@ -15,7 +15,9 @@ import {
   DisplayNodeData,
   ForLoopNodeData,
   ConditionNodeData,
+  EmailNodeData,
 } from '../../../../types/workflow.types';
+import CommunicationsService, { EmailTemplate, EmailProvider } from '../../../../services/CommunicationsService';
 
 interface ConfigurationTabProps {
   nodeId: string;
@@ -87,11 +89,13 @@ const ConfigurationTab = ({ nodeId }: ConfigurationTabProps) => {
       case 'dbUpdate':
         return <DbUpdateConfig nodeId={nodeId} nodeData={nodeData} projectId={projectId} isConnectedToForLoop={isConnectedToForLoop} itemSchema={itemSchema} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
       case 'dbInsert':
-        return <DbInsertConfig nodeId={nodeId} nodeData={nodeData} projectId={projectId} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
+        return <DbInsertConfig nodeId={nodeId} nodeData={nodeData} projectId={projectId} isConnectedToForLoop={isConnectedToForLoop} itemSchema={itemSchema} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
       case 'dbDelete':
         return <DbDeleteConfig nodeId={nodeId} nodeData={nodeData} projectId={projectId} isConnectedToForLoop={isConnectedToForLoop} itemSchema={itemSchema} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
       case 'condition':
         return <ConditionConfig nodeId={nodeId} nodeData={nodeData} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
+      case 'email':
+        return <EmailConfig nodeId={nodeId} nodeData={nodeData} projectId={projectId} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
       default:
         return (
           <div className="text-xs text-dark-500 dark:text-dark-400">
@@ -991,13 +995,34 @@ const DbUpdateConfig = ({
                       </option>
                     ))}
                   </select>
-                  <input
-                    type="text"
-                    value={update.value}
-                    onChange={(e) => handleUpdateChange(index, 'value', e.target.value)}
-                    placeholder={isConnectedToForLoop ? "Value or {{item.fieldName}}" : "Value"}
-                    className="flex-1 text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
-                  />
+                  <div className="flex-1 relative">
+                    <input
+                      type="text"
+                      value={update.value}
+                      onChange={(e) => handleUpdateChange(index, 'value', e.target.value)}
+                      placeholder={isConnectedToForLoop ? "Value or {{item.fieldName}}" : "Value"}
+                      className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 pr-28"
+                    />
+                    {isConnectedToForLoop && itemSchema.length > 0 && (
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handleUpdateChange(index, 'value', `{{item.${e.target.value}}}`);
+                            e.target.value = '';
+                          }
+                        }}
+                        className="absolute right-1 top-1 text-xs font-medium bg-purple-500 dark:bg-purple-600 hover:bg-purple-600 dark:hover:bg-purple-500 text-white border border-purple-600 dark:border-purple-500 rounded px-2 py-1 shadow-sm cursor-pointer transition-colors"
+                        title="Insert item field"
+                      >
+                        <option value="" className="bg-white dark:bg-dark-800 text-dark-900 dark:text-white">+ Item field</option>
+                        {itemSchema.map((col) => (
+                          <option key={col.column_name} value={col.column_name} className="bg-white dark:bg-dark-800 text-dark-900 dark:text-white">
+                            {col.column_name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
                   {updates.length > 1 && (
                     <button
                       onClick={() => handleRemoveUpdate(index)}
@@ -1019,13 +1044,24 @@ const DbUpdateConfig = ({
           </div>
           <div>
             <label className="text-xs text-dark-500 dark:text-dark-400 mb-2 block">WHERE Conditions</label>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {whereConditions.map((condition: any, index: number) => (
-                <div key={index} className="flex items-center space-x-2">
+                <div key={index} className="space-y-2 border border-dark-200 dark:border-dark-700 rounded p-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-semibold text-dark-700 dark:text-dark-300">Condition {index + 1}</div>
+                    {whereConditions.length > 1 && (
+                      <button
+                        onClick={() => handleRemoveCondition(index)}
+                        className="px-2 py-1 text-xs rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                   <select
                     value={condition.field}
                     onChange={(e) => handleConditionChange(index, 'field', e.target.value)}
-                    className="flex-1 text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
+                    className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
                   >
                     <option value="">Select column</option>
                     {schemaColumns.map((col) => (
@@ -1037,7 +1073,7 @@ const DbUpdateConfig = ({
                   <select
                     value={condition.operator}
                     onChange={(e) => handleConditionChange(index, 'operator', e.target.value)}
-                    className="text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
+                    className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
                   >
                     {operators.map((op) => (
                       <option key={op} value={op}>
@@ -1045,21 +1081,34 @@ const DbUpdateConfig = ({
                       </option>
                     ))}
                   </select>
-                  <input
-                    type="text"
-                    value={condition.value}
-                    onChange={(e) => handleConditionChange(index, 'value', e.target.value)}
-                    placeholder={isConnectedToForLoop ? "Value or {{item.fieldName}}" : "Value"}
-                    className="flex-1 text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
-                  />
-                  {whereConditions.length > 1 && (
-                    <button
-                      onClick={() => handleRemoveCondition(index)}
-                      className="px-2 py-1 text-xs rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={condition.value}
+                      onChange={(e) => handleConditionChange(index, 'value', e.target.value)}
+                      placeholder={isConnectedToForLoop ? "Value or {{item.fieldName}}" : "Value"}
+                      className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 pr-28"
+                    />
+                    {isConnectedToForLoop && itemSchema.length > 0 && (
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handleConditionChange(index, 'value', `{{item.${e.target.value}}}`);
+                            e.target.value = '';
+                          }
+                        }}
+                        className="absolute right-1 top-1 text-xs font-medium bg-purple-500 dark:bg-purple-600 hover:bg-purple-600 dark:hover:bg-purple-500 text-white border border-purple-600 dark:border-purple-500 rounded px-2 py-1 shadow-sm cursor-pointer transition-colors"
+                        title="Insert item field"
+                      >
+                        <option value="" className="bg-white dark:bg-dark-800 text-dark-900 dark:text-white">+ Item field</option>
+                        {itemSchema.map((col) => (
+                          <option key={col.column_name} value={col.column_name} className="bg-white dark:bg-dark-800 text-dark-900 dark:text-white">
+                            {col.column_name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
                 </div>
               ))}
               <button
@@ -1081,12 +1130,16 @@ const DbInsertConfig = ({
   nodeId, 
   nodeData, 
   projectId,
+  isConnectedToForLoop,
+  itemSchema,
   setHasUnsavedChanges,
   setSaveHandler,
 }: { 
   nodeId: string; 
   nodeData: any; 
   projectId: string;
+  isConnectedToForLoop: boolean;
+  itemSchema: Column[];
   setHasUnsavedChanges: (value: boolean) => void;
   setSaveHandler: (handler: () => void) => void;
 }) => {
@@ -1153,6 +1206,14 @@ const DbInsertConfig = ({
 
   return (
     <div className="space-y-3">
+      {isConnectedToForLoop && itemSchema.length > 0 && (
+        <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded p-2 mb-3">
+          <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-1">🔄 Connected to ForLoop</div>
+          <div className="text-xs text-purple-600 dark:text-purple-400">
+            Use <span className="font-mono">{"{{item.fieldName}}"}</span> in values to reference loop items.
+          </div>
+        </div>
+      )}
       <div>
         <label className="text-xs text-dark-500 dark:text-dark-400 mb-1 block">Table</label>
         <select
@@ -1171,46 +1232,96 @@ const DbInsertConfig = ({
       {table && (
         <div>
           <label className="text-xs text-dark-500 dark:text-dark-400 mb-2 block">Field Mappings</label>
-          <div className="space-y-2">
-            {fieldMappings.map((mapping: any, index: number) => (
-              <div key={index} className="flex items-center space-x-2">
-                <select
-                  value={mapping.column}
-                  onChange={(e) => handleFieldChange(index, 'column', e.target.value)}
-                  className="flex-1 text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
-                >
-                  <option value="">Select column</option>
-                  {schemaColumns.map((col) => (
-                    <option key={col.column_name} value={col.column_name}>
-                      {col.column_name} ({col.data_type})
-                    </option>
+          <div className="border border-dark-200 dark:border-dark-700 rounded overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full table-fixed ">
+                <colgroup>
+                  <col className="w-[40%]" />
+                  <col className="w-[50%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
+                <thead className="bg-dark-50 dark:bg-dark-900 ">
+                  <tr>
+                    <th className="text-left py-2 px-3 text-xs font-semibold text-dark-700 dark:text-dark-300 border-b border-dark-200 dark:border-dark-700">
+                      Column
+                    </th>
+                    <th className="text-left py-2 px-3 text-xs font-semibold text-dark-700 dark:text-dark-300 border-b border-dark-200 dark:border-dark-700">
+                      Value
+                    </th>
+                    <th className="text-left py-2 px-3 text-xs font-semibold text-dark-700 dark:text-dark-300 border-b border-dark-200 dark:border-dark-700">
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fieldMappings.map((mapping: any, index: number) => (
+                    <tr key={index} className={index % 2 === 0 ? 'bg-white dark:bg-dark-800' : 'bg-dark-50 dark:bg-dark-900'}>
+                      <td className="py-2 px-3 align-top">
+                        <select
+                          value={mapping.column}
+                          onChange={(e) => handleFieldChange(index, 'column', e.target.value)}
+                          className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 min-w-0"
+                        >
+                          <option value="">Select column</option>
+                          {schemaColumns.map((col) => (
+                            <option key={col.column_name} value={col.column_name}>
+                              {col.column_name} ({col.data_type})
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2 px-3 align-top ">
+                        <div className="flex flex-col gap-1">
+                          <input
+                            type="text"
+                            value={mapping.value}
+                            onChange={(e) => handleFieldChange(index, 'value', e.target.value)}
+                            placeholder={isConnectedToForLoop ? "Value or {{item.fieldName}}" : "Value"}
+                            className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 min-w-0"
+                          />
+                          {isConnectedToForLoop && itemSchema.length > 0 && (
+                            <select
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  handleFieldChange(index, 'value', `{{item.${e.target.value}}}`);
+                                  e.target.value = '';
+                                }
+                              }}
+                              className="w-fit text-xs font-medium bg-purple-500 dark:bg-purple-600 hover:bg-purple-600 dark:hover:bg-purple-500 text-white border border-purple-600 dark:border-purple-500 rounded px-2 py-1 shadow-sm cursor-pointer transition-colors"
+                              title="Insert item field"
+                            >
+                              <option value="" className="bg-white dark:bg-dark-800 text-dark-900 dark:text-white">+ Item field</option>
+                              {itemSchema.map((col) => (
+                                <option key={col.column_name} value={col.column_name} className="bg-white dark:bg-dark-800 text-dark-900 dark:text-white">
+                                  {col.column_name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2 px-3 align-top">
+                        {fieldMappings.length > 1 && (
+                          <button
+                            onClick={() => handleRemoveField(index)}
+                            className="px-2 py-1 text-xs rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
                   ))}
-                </select>
-                <input
-                  type="text"
-                  value={mapping.value}
-                  onChange={(e) => handleFieldChange(index, 'value', e.target.value)}
-                  placeholder="Value"
-                  className="flex-1 text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
-                />
-                {fieldMappings.length > 1 && (
-                  <button
-                    onClick={() => handleRemoveField(index)}
-                    className="px-2 py-1 text-xs rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            ))}
-            <button
-              onClick={handleAddField}
-              className="flex items-center space-x-1 text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add Field</span>
-            </button>
+                </tbody>
+              </table>
+            </div>
           </div>
+          <button
+            onClick={handleAddField}
+            className="mt-2 flex items-center space-x-1 text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
+          >
+            <Plus className="w-3 h-3" />
+            <span>Add Field</span>
+          </button>
         </div>
       )}
     </div>
@@ -1360,7 +1471,7 @@ const DbDeleteConfig = ({
                     value={condition.value}
                     onChange={(e) => handleConditionChange(index, 'value', e.target.value)}
                     placeholder={isConnectedToForLoop ? "Value or {{item.fieldName}}" : "Value"}
-                    className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 pr-20"
+                    className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 pr-28"
                   />
                   {isConnectedToForLoop && itemSchema.length > 0 && (
                     <select
@@ -1370,12 +1481,12 @@ const DbDeleteConfig = ({
                           e.target.value = '';
                         }
                       }}
-                      className="absolute right-1 top-1 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700 rounded px-1 py-0.5"
+                      className="absolute right-1 top-1 text-xs font-medium bg-purple-500 dark:bg-purple-600 hover:bg-purple-600 dark:hover:bg-purple-500 text-white border border-purple-600 dark:border-purple-500 rounded px-2 py-1 shadow-sm cursor-pointer transition-colors"
                       title="Insert item field"
                     >
-                      <option value="">+ Item field</option>
+                      <option value="" className="bg-white dark:bg-dark-800 text-dark-900 dark:text-white">+ Item field</option>
                       {itemSchema.map((col) => (
-                        <option key={col.column_name} value={col.column_name}>
+                        <option key={col.column_name} value={col.column_name} className="bg-white dark:bg-dark-800 text-dark-900 dark:text-white">
                           {col.column_name}
                         </option>
                       ))}
@@ -1465,6 +1576,393 @@ const ConditionConfig = ({
           placeholder="False"
           className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
         />
+      </div>
+    </div>
+  );
+};
+
+// Email Configuration
+const EmailConfig = ({ 
+  nodeId, 
+  nodeData, 
+  projectId,
+  setHasUnsavedChanges,
+  setSaveHandler,
+}: { 
+  nodeId: string; 
+  nodeData: any; 
+  projectId: string;
+  setHasUnsavedChanges: (value: boolean) => void;
+  setSaveHandler: (handler: () => void) => void;
+}) => {
+  const updateNodeData = useWorkflowStore((s) => s.updateNodeData);
+  const [templateId, setTemplateId] = useState<number | undefined>(nodeData?.templateId);
+  const [templateName, setTemplateName] = useState<string | undefined>(nodeData?.templateName);
+  const [recipientEmail, setRecipientEmail] = useState<string>(nodeData?.recipientEmail || '');
+  const [providerId, setProviderId] = useState<number | undefined>(nodeData?.providerId);
+  const [variableMappings, setVariableMappings] = useState<Record<string, string>>(nodeData?.variableMappings || {});
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [providers, setProviders] = useState<EmailProvider[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [loadingProviders, setLoadingProviders] = useState(false);
+
+  // Load templates and providers
+  useEffect(() => {
+    if (projectId) {
+      console.log('[EmailConfig] Loading templates and providers for project:', projectId);
+      setLoadingTemplates(true);
+      CommunicationsService.listEmailTemplates(projectId)
+        .then((data) => {
+          console.log('[EmailConfig] Loaded templates:', data);
+          data.forEach((template) => {
+            console.log(`[EmailConfig] Template "${template.name}" (ID: ${template.id}):`, {
+              variables: template.variables,
+              variablesType: typeof template.variables,
+              variablesIsArray: Array.isArray(template.variables),
+            });
+          });
+          setTemplates(data);
+          setLoadingTemplates(false);
+        })
+        .catch((error) => {
+          console.error('[EmailConfig] Error loading templates:', error);
+          setLoadingTemplates(false);
+        });
+
+      setLoadingProviders(true);
+      CommunicationsService.listEmailProviders(projectId)
+        .then((data) => {
+          console.log('[EmailConfig] Loaded providers:', data);
+          setProviders(data.filter((p) => p.is_active));
+          setLoadingProviders(false);
+        })
+        .catch((error) => {
+          console.error('[EmailConfig] Error loading providers:', error);
+          setLoadingProviders(false);
+        });
+    }
+  }, [projectId]);
+
+  // Sync state when nodeData changes
+  useEffect(() => {
+    setTemplateId(nodeData?.templateId);
+    setTemplateName(nodeData?.templateName);
+    setRecipientEmail(nodeData?.recipientEmail || '');
+    setProviderId(nodeData?.providerId);
+    setVariableMappings(nodeData?.variableMappings || {});
+  }, [nodeData]);
+
+  // Initialize variable mappings when templates are loaded and a template is selected
+  useEffect(() => {
+    if (templateId && templates.length > 0) {
+      const selectedTemplate = templates.find((t) => t.id === templateId);
+      if (selectedTemplate) {
+        let templateVariables: string[] = [];
+        if (selectedTemplate.variables) {
+          if (Array.isArray(selectedTemplate.variables)) {
+            templateVariables = selectedTemplate.variables;
+          } else if (typeof selectedTemplate.variables === 'string') {
+            try {
+              const parsed = JSON.parse(selectedTemplate.variables);
+              templateVariables = Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+              templateVariables = [];
+            }
+          }
+        }
+        
+        // Initialize mappings for variables that don't have values yet
+        const currentMappings = variableMappings || {};
+        const newMappings: Record<string, string> = { ...currentMappings };
+        let hasNewMappings = false;
+        
+        templateVariables.forEach((varName) => {
+          if (!(varName in newMappings)) {
+            newMappings[varName] = '';
+            hasNewMappings = true;
+          }
+        });
+        
+        // Remove mappings for variables that are no longer in the template
+        Object.keys(newMappings).forEach((key) => {
+          if (!templateVariables.includes(key)) {
+            delete newMappings[key];
+            hasNewMappings = true;
+          }
+        });
+        
+        if (hasNewMappings) {
+          console.log('[EmailConfig] Initializing variable mappings:', newMappings);
+          setVariableMappings(newMappings);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates, templateId]);
+
+  const handleSave = () => {
+    updateNodeData<EmailNodeData>(nodeId, {
+      templateId,
+      templateName,
+      recipientEmail: recipientEmail || undefined,
+      providerId,
+      variableMappings: Object.keys(variableMappings).length > 0 ? variableMappings : undefined,
+    });
+  };
+
+  useEffect(() => {
+    setSaveHandler(() => handleSave);
+  }, [templateId, templateName, recipientEmail, providerId, variableMappings, nodeId, updateNodeData, setSaveHandler]);
+
+  useEffect(() => {
+    const hasChanges =
+      templateId !== (nodeData?.templateId || undefined) ||
+      templateName !== (nodeData?.templateName || undefined) ||
+      recipientEmail !== (nodeData?.recipientEmail || '') ||
+      providerId !== (nodeData?.providerId || undefined) ||
+      JSON.stringify(variableMappings) !== JSON.stringify(nodeData?.variableMappings || {});
+    setHasUnsavedChanges(hasChanges);
+  }, [templateId, templateName, recipientEmail, providerId, variableMappings, nodeData, setHasUnsavedChanges]);
+
+  // Get schema from connected source node for variable suggestions
+  const { schema: schemaColumns, sourceLabel } = useNodeSchema({
+    nodeId,
+    autoDetectSource: true,
+    updateNodeData: false,
+  });
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs text-dark-500 dark:text-dark-400 mb-1 block">
+          Email Provider <span className="text-red-500">*</span>
+        </label>
+        {loadingProviders ? (
+          <div className="text-xs text-dark-500 dark:text-dark-400">Loading providers...</div>
+        ) : (
+          <select
+            value={providerId || ''}
+            onChange={(e) => {
+              const selectedId = e.target.value ? parseInt(e.target.value) : undefined;
+              setProviderId(selectedId);
+            }}
+            className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
+          >
+            <option value="">Select provider...</option>
+            {providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {!loadingProviders && providers.length === 0 && (
+          <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+            ⚠ No active email providers found. Create one in Communications settings.
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label className="text-xs text-dark-500 dark:text-dark-400 mb-1 block">
+          Email Template <span className="text-red-500">*</span>
+        </label>
+        {loadingTemplates ? (
+          <div className="text-xs text-dark-500 dark:text-dark-400">Loading templates...</div>
+        ) : (
+          <select
+            value={templateId || ''}
+            onChange={(e) => {
+              const selectedId = e.target.value ? parseInt(e.target.value) : undefined;
+              const selectedTemplate = templates.find((t) => t.id === selectedId);
+              setTemplateId(selectedId);
+              setTemplateName(selectedTemplate?.name);
+              
+              // Initialize variable mappings for new template
+              if (selectedTemplate) {
+                let templateVariables: string[] = [];
+                if (selectedTemplate.variables) {
+                  if (Array.isArray(selectedTemplate.variables)) {
+                    templateVariables = selectedTemplate.variables;
+                  } else if (typeof selectedTemplate.variables === 'string') {
+                    try {
+                      const parsed = JSON.parse(selectedTemplate.variables);
+                      templateVariables = Array.isArray(parsed) ? parsed : [];
+                    } catch (e) {
+                      templateVariables = [];
+                    }
+                  }
+                }
+                
+                // Initialize empty mappings for new variables, keep existing ones
+                const newMappings: Record<string, string> = { ...variableMappings };
+                templateVariables.forEach((varName) => {
+                  if (!(varName in newMappings)) {
+                    newMappings[varName] = '';
+                  }
+                });
+                // Remove mappings for variables that are no longer in the template
+                Object.keys(newMappings).forEach((key) => {
+                  if (!templateVariables.includes(key)) {
+                    delete newMappings[key];
+                  }
+                });
+                setVariableMappings(newMappings);
+              } else {
+                setVariableMappings({});
+              }
+            }}
+            className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
+          >
+            <option value="">Select template...</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {!loadingTemplates && templates.length === 0 && (
+          <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+            ⚠ No email templates found. Create one in Communications settings.
+          </div>
+        )}
+        {templateId && (() => {
+          const selectedTemplate = templates.find((t) => t.id === templateId);
+          console.log('[EmailConfig] Selected template:', {
+            templateId,
+            selectedTemplate,
+            templateName: selectedTemplate?.name,
+            rawVariables: selectedTemplate?.variables,
+            variablesType: typeof selectedTemplate?.variables,
+          });
+          
+          // Handle variables - could be array or JSON string
+          let templateVariables: string[] = [];
+          if (selectedTemplate?.variables) {
+            if (Array.isArray(selectedTemplate.variables)) {
+              templateVariables = selectedTemplate.variables;
+            } else if (typeof selectedTemplate.variables === 'string') {
+              try {
+                const parsed = JSON.parse(selectedTemplate.variables);
+                templateVariables = Array.isArray(parsed) ? parsed : [];
+              } catch (e) {
+                console.warn('[EmailConfig] Failed to parse variables as JSON:', e);
+                templateVariables = [];
+              }
+            }
+          }
+          
+          console.log('[EmailConfig] Processed variables:', templateVariables);
+          
+          if (templateVariables.length > 0) {
+            return (
+              <div className="mt-2 space-y-2">
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-2">
+                  <div className="text-xs font-semibold text-amber-800 dark:text-amber-200 mb-1">
+                    Required Variables:
+                  </div>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {templateVariables.map((variable) => (
+                      <span
+                        key={variable}
+                        className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800"
+                      >
+                        {'{{'}{variable}{'}}'}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="text-xs text-amber-700 dark:text-amber-300">
+                    Map these variables to values or workflow variables below.
+                  </div>
+                </div>
+                
+                {/* Variable Input Fields */}
+                <div className="space-y-2">
+                  {templateVariables.map((variable) => (
+                    <div key={variable}>
+                      <label className="text-xs text-dark-500 dark:text-dark-400 mb-1 block">
+                        <span className="font-mono">{'{{'}{variable}{'}}'}</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={variableMappings[variable] || ''}
+                        onChange={(e) => {
+                          setVariableMappings({
+                            ...variableMappings,
+                            [variable]: e.target.value,
+                          });
+                        }}
+                        placeholder={`Value or {{nodeId.field}} for ${variable}`}
+                        className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 font-mono"
+                      />
+                      {schemaColumns.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {schemaColumns.slice(0, 3).map((col) => (
+                            <button
+                              key={col.column_name}
+                              type="button"
+                              onClick={() => {
+                                const variableValue = `{{${sourceLabel}.rows.0.${col.column_name}}}`;
+                                setVariableMappings({
+                                  ...variableMappings,
+                                  [variable]: variableValue,
+                                });
+                              }}
+                              className="text-xs px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors"
+                            >
+                              {col.column_name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          } else {
+            console.log('[EmailConfig] No variables found for template');
+          }
+          return null;
+        })()}
+      </div>
+
+      <div>
+        <label className="text-xs text-dark-500 dark:text-dark-400 mb-1 block">
+          Recipient Email <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="text"
+          value={recipientEmail}
+          onChange={(e) => setRecipientEmail(e.target.value)}
+          placeholder="user@example.com or {{nodeId.field}}"
+          className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 font-mono"
+        />
+        <div className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+          Enter email address or use variable like <code className="bg-dark-100 dark:bg-dark-800 px-1 rounded">{'{{nodeId.field}}'}</code>
+        </div>
+        {schemaColumns.length > 0 && (
+          <div className="mt-2">
+            <div className="text-xs text-dark-500 dark:text-dark-400 mb-1">
+              Available from {sourceLabel}:
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {schemaColumns.slice(0, 5).map((col) => (
+                <button
+                  key={col.column_name}
+                  onClick={() => {
+                    const variable = `{{${sourceLabel}.rows.0.${col.column_name}}}`;
+                    setRecipientEmail(variable);
+                  }}
+                  className="text-xs px-2 py-1 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors"
+                >
+                  {col.column_name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

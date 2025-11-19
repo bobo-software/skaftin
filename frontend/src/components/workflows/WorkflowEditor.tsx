@@ -13,7 +13,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import '../../styles/WorkflowEditor.css';
-import { Play, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Map, ListPlus, Loader2 } from 'lucide-react';
+import { Play, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Map, ListPlus, Loader2, Save } from 'lucide-react';
 import {
 	AddNodeModal,
 	AppButton,
@@ -32,15 +32,18 @@ import ForLoopNode from './nodes/ForLoopNode';
 import DbInsertNode from './nodes/DbInsertNode';
 import DbDeleteNode from './nodes/DbDeleteNode';
 import DbUpdateNode from './nodes/DbUpdateNode';
+import EmailNode from './nodes/EmailNode';
 import { createNode } from '@utils/workflowUtils';
 import useWorkflowStore from '@stores/workflows/useWorkflowStore';
 
 interface WorkflowEditorProps {
   projectId: string;
+  workflowId?: number | null;
+  onWorkflowCreated?: (workflowId: number) => void;
 }
 
 // Inner component that must be rendered inside ReactFlowProvider
-const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
+const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflowCreated }: WorkflowEditorProps) => {
   const nodes = useWorkflowStore((s) => s.nodes);
   const edges = useWorkflowStore((s) => s.edges);
   const setNodes = useWorkflowStore((s) => s.setNodes);
@@ -58,18 +61,27 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   const clearLogs = useWorkflowStore((s) => s.clearLogs);
   const nodeResults = useWorkflowStore((s) => s.nodeResults);
   const nodeResultsRef = useRef(nodeResults);
-  const [workflowId, setWorkflowId] = useState<number | null>(null);
+  const [workflowId, setWorkflowId] = useState<number | null>(propWorkflowId || null);
   const [executionId, setExecutionId] = useState<number | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
   const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
+  const updateWorkflow = useWorkflowStore((s) => s.updateWorkflow);
+  const [isSaving, setIsSaving] = useState(false);
 
   
   useEffect(() => {
     nodeResultsRef.current = nodeResults;
   }, [nodeResults]);
+
+  // Sync workflowId from prop
+  useEffect(() => {
+    if (propWorkflowId !== undefined) {
+      setWorkflowId(propWorkflowId);
+    }
+  }, [propWorkflowId]);
   const [showAddNode, setShowAddNode] = useState(false);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
   const rf = useReactFlow();
@@ -86,6 +98,7 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
       dbInsert: DbInsertNode,
       dbDelete: DbDeleteNode,
       dbUpdate: DbUpdateNode,
+      email: EmailNode,
     }),
     []
   );
@@ -163,7 +176,7 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   }, [nextNodeId, projectId, setNodes, addLog, toggleConsole]);
 
   const addNodeAtViewportCenter = useCallback(
-    (type: 'start' | 'http' | 'db' | 'display' | 'condition' | 'forLoop' | 'dbInsert' | 'dbDelete' | 'dbUpdate') => {
+    (type: 'start' | 'http' | 'db' | 'display' | 'condition' | 'forLoop' | 'dbInsert' | 'dbDelete' | 'dbUpdate' | 'email') => {
       // For now, add at a random position; we can enhance with container center later
       if (type === 'start') {
         addStartNode();
@@ -194,6 +207,10 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
       } else if (type === 'dbUpdate') {
         const idNum = nextNodeId();
         const newNode = createNode('dbUpdate', idNum, undefined, { projectId });
+        setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'email') {
+        const idNum = nextNodeId();
+        const newNode = createNode('email', idNum, undefined, { projectId });
         setNodes((nds) => [...nds, newNode]);
       }
     },
@@ -238,6 +255,7 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
         }
         currentWorkflowId = saveResult.workflowId;
         setWorkflowId(currentWorkflowId);
+        onWorkflowCreated?.(currentWorkflowId);
       }
 
       // Execute workflow via backend API
@@ -330,7 +348,7 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
       });
       setIsExecuting(false);
     }
-  }, [isExecuting, workflowId, projectId, saveWorkflow, clearRun, clearLogs, addLog, setNodeRunStatus, setNodeResult]);
+  }, [isExecuting, workflowId, projectId, saveWorkflow, clearRun, clearLogs, addLog, setNodeRunStatus, setNodeResult, onWorkflowCreated]);
 
   const onInit = useCallback((instance: ReactFlowInstance) => {
     reactFlowInstance.current = instance;
@@ -347,6 +365,67 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   const handleFitView = useCallback(() => {
     reactFlowInstance.current?.fitView();
   }, []);
+
+  const handleSave = useCallback(async () => {
+    if (isSaving) return;
+
+    setIsSaving(true);
+    try {
+      if (workflowId) {
+        // Update existing workflow
+        const result = await updateWorkflow(
+          projectId,
+          workflowId,
+          `Workflow ${workflowId}`, // TODO: Get actual name from workflow metadata
+          undefined,
+          undefined
+        );
+        if (result.success) {
+          addLog({
+            nodeId: 'workflow',
+            type: 'success',
+            data: { message: 'Workflow saved successfully' },
+          });
+        } else {
+          addLog({
+            nodeId: 'workflow',
+            type: 'error',
+            data: { message: result.error || 'Failed to save workflow' },
+          });
+        }
+      } else {
+        // Create new workflow
+        const result = await saveWorkflow(
+          projectId,
+          `Workflow ${Date.now()}`,
+          'Auto-saved workflow'
+        );
+        if (result.success && result.workflowId) {
+          setWorkflowId(result.workflowId);
+          onWorkflowCreated?.(result.workflowId);
+          addLog({
+            nodeId: 'workflow',
+            type: 'success',
+            data: { message: 'Workflow created successfully' },
+          });
+        } else {
+          addLog({
+            nodeId: 'workflow',
+            type: 'error',
+            data: { message: result.error || 'Failed to create workflow' },
+          });
+        }
+      }
+    } catch (error) {
+      addLog({
+        nodeId: 'workflow',
+        type: 'error',
+        data: { message: error instanceof Error ? error.message : 'Failed to save workflow' },
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }, [isSaving, workflowId, projectId, updateWorkflow, saveWorkflow, addLog, onWorkflowCreated]);
 
   return (
     <div className="h-full flex flex-col bg-dark-50 dark:bg-dark-900 ring">
@@ -399,12 +478,22 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
             Add Node
           </AppButton>
           <AppButton
+            variant="primary"
+            size="sm"
+            onClick={handleSave}
+            disabled={isSaving}
+            icon={<Save className="w-4 h-4" />}
+          >
+            {isSaving ? 'Saving...' : 'Save'}
+          </AppButton>
+          <AppButton
             variant="secondary"
             size="sm"
             onClick={handleRun}
             disabled={isExecuting}
             icon={<Play className="w-4 h-4" />}
-          > { `${isExecuting ? 'Running...' : 'Run Workflow'}`}
+          >
+            {isExecuting ? 'Running...' : 'Run Workflow'}
           </AppButton>
         </div>
 
@@ -527,10 +616,10 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
 };
 
 // Wrapper that provides the required store context
-const WorkflowEditor = ({ projectId }: WorkflowEditorProps) => {
+const WorkflowEditor = ({ projectId, workflowId, onWorkflowCreated }: WorkflowEditorProps) => {
   return (
     <ReactFlowProvider>
-      <WorkflowEditorInner projectId={projectId} />
+      <WorkflowEditorInner projectId={projectId} workflowId={workflowId} onWorkflowCreated={onWorkflowCreated} />
     </ReactFlowProvider>
   );
 };

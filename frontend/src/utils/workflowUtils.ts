@@ -9,7 +9,8 @@ export type ExtendedWorkflowNodeType =
   | 'forLoop' 
   | 'dbInsert' 
   | 'dbDelete' 
-  | 'dbUpdate';
+  | 'dbUpdate'
+  | 'email';
 
 export function buildNodeId(prefix: string, idNum: number) {
 	return `${prefix}-${idNum}`;
@@ -31,6 +32,7 @@ export function createNode(
 		: type === 'dbInsert' ? 'dbInsert'
 		: type === 'dbDelete' ? 'dbDelete'
 		: type === 'dbUpdate' ? 'dbUpdate'
+		: type === 'email' ? 'email'
 		: 'node';
 	const resolvedPrefix = idPrefix;
 	const base = {
@@ -152,14 +154,31 @@ export function createNode(
 	}
 
 	// dbUpdate
+	if (type === 'dbUpdate') {
+		return {
+			...base,
+			data: {
+				label: 'Update Data',
+				projectId: extraData?.projectId,
+				table: undefined,
+				updates: [],
+				where: [],
+				...extraData,
+			},
+		};
+	}
+
+	// email
 	return {
 		...base,
 		data: {
-			label: 'Update Data',
+			label: 'Send Email',
 			projectId: extraData?.projectId,
-			table: undefined,
-			updates: [],
-			where: [],
+			templateId: undefined,
+			templateName: undefined,
+			recipientEmail: undefined,
+			providerId: undefined,
+			variableMappings: undefined,
 			...extraData,
 		},
 	};

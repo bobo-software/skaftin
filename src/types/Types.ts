@@ -144,7 +144,15 @@ export interface Project {
   organization_id: number;
   user_id: string; // Creator user ID (for audit)
   schema_name: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ProjectBucket {
+  id: number;
+  project_id: number;
   bucket_name: string;
+  description: string | null;
   created_at: Date;
   updated_at: Date;
 }

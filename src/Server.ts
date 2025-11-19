@@ -16,6 +16,7 @@ import MCPController from './controllers/MCPController';
 import ClientMCPController from './controllers/ClientMCPController';
 import DatabaseController from './controllers/DatabaseController';
 import ProjectsController from './controllers/ProjectsController';
+import ProjectBucketsController from './controllers/ProjectBucketsController';
 import StorageController from './controllers/StorageController';
 import GraphQLController from './controllers/GraphQLController';
 import CommunicationsController from './controllers/CommunicationsController';
@@ -148,6 +149,7 @@ app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 import { router as AuthCompatibilityRouter } from './routers/AuthCompatibilityRouter';
 import { createAdminRouter } from './routers/AdminRouter';
 import { router as ProjectsRouter } from './routers/ProjectsRouter';
+import { router as ProjectBucketsRouter } from './routers/ProjectBucketsRouter';
 import { router as FilesRouter } from './routers/FilesRouter';
 import { createStorageRouter } from './routers/StorageRouter';
 import { router as UsersRouter } from './routers/UsersRouter';
@@ -217,6 +219,7 @@ MCPController.initialize(pool, s3Client);
 ClientMCPController.initialize(pool, s3Client);
 DatabaseController.initialize(pool);
 ProjectsController.initialize(pool);
+ProjectBucketsController.initialize(pool);
 StorageController.initialize({ pool, s3Client });
 
 // Initialize API key middleware
@@ -261,6 +264,7 @@ app.use('/api/admin', AdminRouter);
 // Platform management routes
 app.use('/api/organizations', OrganizationsRouter);
 app.use('/api/projects', ProjectsRouter);
+app.use('/api/projects', ProjectBucketsRouter);
 app.use('/api/files', FilesRouter);
 app.use('/api/users', UsersRouter);
 app.use('/api/communications', CommunicationsRouter);

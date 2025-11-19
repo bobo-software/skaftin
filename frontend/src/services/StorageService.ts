@@ -5,14 +5,14 @@ class StorageService {
   /**
    * List files in a project bucket
    */
-  static async listFiles(projectId: string, prefix?: string, maxKeys: number = 1000): Promise<any> {
+  static async listFiles(projectId: string, bucketName: string, prefix?: string, maxKeys: number = 1000): Promise<any> {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const params = new URLSearchParams();
       if (prefix) params.append('prefix', prefix);
       params.append('maxKeys', maxKeys.toString());
       
-      const url = `${ApiRoutes.STORAGE.LIST_FILES(projectId)}?${params.toString()}`;
+      const url = `${ApiRoutes.STORAGE.LIST_FILES(projectId, bucketName)}?${params.toString()}`;
       const result = await RequestUtils.get(url, token);
       
       return result;
@@ -26,7 +26,8 @@ class StorageService {
    * Search files in a project bucket
    */
   static async searchFiles(
-    projectId: string, 
+    projectId: string,
+    bucketName: string,
     query: string, 
     fileType?: string, 
     dateRange?: { start: string; end: string }
@@ -34,7 +35,7 @@ class StorageService {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.post(
-        ApiRoutes.STORAGE.SEARCH_FILES(projectId),
+        ApiRoutes.STORAGE.SEARCH_FILES(projectId, bucketName),
         token,
         { query, fileType, dateRange }
       );
@@ -49,7 +50,7 @@ class StorageService {
   /**
    * Upload file (base64 upload for custom paths)
    */
-  static async uploadFile(projectId: string, filePath: string, file: File): Promise<any> {
+  static async uploadFile(projectId: string, bucketName: string, filePath: string, file: File): Promise<any> {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       
@@ -65,7 +66,7 @@ class StorageService {
       });
       
       const result = await RequestUtils.post(
-        ApiRoutes.STORAGE.UPLOAD_FILE(projectId),
+        ApiRoutes.STORAGE.UPLOAD_FILE(projectId, bucketName),
         token,
         { 
           filePath, 
@@ -88,13 +89,13 @@ class StorageService {
   /**
    * Upload file (multipart form data) - for backward compatibility
    */
-  static async uploadFileMultipart(projectId: string, file: File): Promise<any> {
+  static async uploadFileMultipart(projectId: string, bucketName: string, file: File): Promise<any> {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(ApiRoutes.STORAGE.UPLOAD_FILE_MULTIPART(projectId), {
+      const response = await fetch(ApiRoutes.STORAGE.UPLOAD_FILE_MULTIPART(projectId, bucketName), {
         method: 'POST',
         headers: {
           ...(token && token !== 'session-managed-by-supertokens' ? { Authorization: `Bearer ${token}` } : {}),
@@ -115,7 +116,8 @@ class StorageService {
    * Upload file with custom path (base64)
    */
   static async uploadFileWithPath(
-    projectId: string, 
+    projectId: string,
+    bucketName: string,
     filePath: string, 
     fileContent: string, 
     contentType?: string,
@@ -124,7 +126,7 @@ class StorageService {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.post(
-        ApiRoutes.STORAGE.UPLOAD_FILE(projectId),
+        ApiRoutes.STORAGE.UPLOAD_FILE(projectId, bucketName),
         token,
         { filePath, fileContent, contentType, metadata }
       );
@@ -139,10 +141,10 @@ class StorageService {
   /**
    * Download file (returns URL, component handles opening)
    */
-  static async downloadFile(projectId: string, filePath: string): Promise<any> {
+  static async downloadFile(projectId: string, bucketName: string, filePath: string): Promise<any> {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
-      const url = `${ApiRoutes.STORAGE.DOWNLOAD_FILE(projectId, filePath)}?returnUrl=true`;
+      const url = `${ApiRoutes.STORAGE.DOWNLOAD_FILE(projectId, bucketName, filePath)}?returnUrl=true`;
       const result = await RequestUtils.get(url, token);
       
       return result;
@@ -155,11 +157,11 @@ class StorageService {
   /**
    * Delete file
    */
-  static async deleteFile(projectId: string, filePath: string): Promise<any> {
+  static async deleteFile(projectId: string, bucketName: string, filePath: string): Promise<any> {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.delete(
-        ApiRoutes.STORAGE.DELETE_FILE(projectId, filePath),
+        ApiRoutes.STORAGE.DELETE_FILE(projectId, bucketName, filePath),
         token,
         {}
       );
@@ -174,11 +176,11 @@ class StorageService {
   /**
    * Get file metadata
    */
-  static async getFileMetadata(projectId: string, filePath: string): Promise<any> {
+  static async getFileMetadata(projectId: string, bucketName: string, filePath: string): Promise<any> {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.get(
-        ApiRoutes.STORAGE.GET_FILE_METADATA(projectId, filePath),
+        ApiRoutes.STORAGE.GET_FILE_METADATA(projectId, bucketName, filePath),
         token
       );
       
@@ -192,12 +194,13 @@ class StorageService {
   /**
    * Create folder by uploading a marker file
    */
-  static async createFolder(projectId: string, folderPath: string): Promise<any> {
+  static async createFolder(projectId: string, bucketName: string, folderPath: string): Promise<any> {
     try {
       // Create folder by uploading an empty .folder marker file
       const markerPath = `${folderPath}/.folder`;
       const result = await this.uploadFileWithPath(
         projectId,
+        bucketName,
         markerPath,
         '', // Empty base64 content
         'application/x-directory',
@@ -214,11 +217,11 @@ class StorageService {
   /**
    * Rename folder
    */
-  static async renameFolder(projectId: string, oldPath: string, newPath: string): Promise<any> {
+  static async renameFolder(projectId: string, bucketName: string, oldPath: string, newPath: string): Promise<any> {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.put(
-        ApiRoutes.STORAGE.RENAME_FOLDER(projectId),
+        ApiRoutes.STORAGE.RENAME_FOLDER(projectId, bucketName),
         token,
         { oldPath, newPath }
       );
@@ -233,11 +236,11 @@ class StorageService {
   /**
    * Delete folder and all its contents
    */
-  static async deleteFolder(projectId: string, folderPath: string): Promise<any> {
+  static async deleteFolder(projectId: string, bucketName: string, folderPath: string): Promise<any> {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.delete(
-        ApiRoutes.STORAGE.DELETE_FOLDER(projectId, folderPath),
+        ApiRoutes.STORAGE.DELETE_FOLDER(projectId, bucketName, folderPath),
         token,
         {}
       );
@@ -246,57 +249,6 @@ class StorageService {
     } catch (error) {
       console.error('Error deleting folder:', error);
       return { success: false, error: 'Failed to delete folder' };
-    }
-  }
-
-  /**
-   * List buckets
-   */
-  static async listBuckets(includeStats: boolean = false): Promise<any> {
-    try {
-      const token = localStorage.getItem('skaftin-token') || '';
-      const url = `${ApiRoutes.STORAGE.LIST_BUCKETS}?includeStats=${includeStats}`;
-      const result = await RequestUtils.get(url, token);
-      
-      return result;
-    } catch (error) {
-      console.error('Error listing buckets:', error);
-      return { success: false, error: 'Failed to list buckets' };
-    }
-  }
-
-  /**
-   * Create bucket
-   */
-  static async createBucket(projectId: string, bucketName: string, region: string = 'us-east-1'): Promise<any> {
-    try {
-      const token = localStorage.getItem('skaftin-token') || '';
-      const result = await RequestUtils.post(
-        ApiRoutes.STORAGE.CREATE_BUCKET,
-        token,
-        { projectId, bucketName, region }
-      );
-      
-      return result;
-    } catch (error) {
-      console.error('Error creating bucket:', error);
-      return { success: false, error: 'Failed to create bucket' };
-    }
-  }
-
-  /**
-   * Delete bucket
-   */
-  static async deleteBucket(bucketName: string, force: boolean = false): Promise<any> {
-    try {
-      const token = localStorage.getItem('skaftin-token') || '';
-      const url = `${ApiRoutes.STORAGE.DELETE_BUCKET(bucketName)}?force=${force}`;
-      const result = await RequestUtils.delete(url, token, {});
-      
-      return result;
-    } catch (error) {
-      console.error('Error deleting bucket:', error);
-      return { success: false, error: 'Failed to delete bucket' };
     }
   }
 }

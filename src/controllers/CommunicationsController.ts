@@ -572,6 +572,363 @@ class CommunicationsController {
       });
     }
   };
+
+  /**
+   * List all email templates for a project
+   */
+  listEmailTemplates = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId } = req.params;
+
+      console.log('[CommunicationsController] Listing email templates for project:', projectId);
+
+      const query = `
+        SELECT id, project_id, name, subject, html_content, text_content, variables, 
+               created_at, updated_at
+        FROM email_templates
+        WHERE project_id = $1
+        ORDER BY created_at DESC
+      `;
+
+      const result = await this.pool.query(query, [projectId]);
+
+      // Parse variables from JSONB if needed
+      const templates = result.rows.map((row) => {
+        let variables = row.variables;
+        if (typeof variables === 'string') {
+          try {
+            variables = JSON.parse(variables);
+          } catch (e) {
+            console.warn('[CommunicationsController] Failed to parse variables for template:', row.id, e);
+            variables = [];
+          }
+        }
+        if (!Array.isArray(variables)) {
+          variables = [];
+        }
+        return {
+          ...row,
+          variables,
+        };
+      });
+
+      console.log('[CommunicationsController] Returning templates:', templates.map(t => ({
+        id: t.id,
+        name: t.name,
+        variables: t.variables,
+        variablesType: typeof t.variables,
+      })));
+
+      res.json({
+        success: true,
+        data: templates,
+        count: templates.length,
+      });
+    } catch (error: any) {
+      console.error('Error listing email templates:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to list email templates',
+        message: error.message,
+      });
+    }
+  };
+
+  /**
+   * Get a specific email template by ID
+   */
+  getEmailTemplate = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId, templateId } = req.params;
+
+      const query = `
+        SELECT id, project_id, name, subject, html_content, text_content, variables, 
+               created_at, updated_at
+        FROM email_templates
+        WHERE id = $1 AND project_id = $2
+      `;
+
+      const result = await this.pool.query(query, [templateId, projectId]);
+
+      if (result.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          error: 'Email template not found',
+        });
+        return;
+      }
+
+      // Parse variables from JSONB response
+      const template = result.rows[0];
+      let parsedVariables = template.variables;
+      if (typeof parsedVariables === 'string') {
+        try {
+          parsedVariables = JSON.parse(parsedVariables);
+        } catch (e) {
+          console.warn('[CommunicationsController] Failed to parse variables:', e);
+          parsedVariables = [];
+        }
+      }
+      if (!Array.isArray(parsedVariables)) {
+        parsedVariables = [];
+      }
+
+      res.json({
+        success: true,
+        data: {
+          ...template,
+          variables: parsedVariables,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error getting email template:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get email template',
+        message: error.message,
+      });
+    }
+  };
+
+  /**
+   * Create a new email template
+   */
+  createEmailTemplate = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId } = req.params;
+      const { name, subject, html_content, text_content, variables } = req.body;
+
+      if (!name || !subject) {
+        res.status(400).json({
+          success: false,
+          error: 'Name and subject are required',
+        });
+        return;
+      }
+
+      const query = `
+        INSERT INTO email_templates (project_id, name, subject, html_content, text_content, variables)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, project_id, name, subject, html_content, text_content, variables, 
+                  created_at, updated_at
+      `;
+
+      const variablesJson = JSON.stringify(variables || []);
+      console.log('[CommunicationsController] Creating template with variables:', {
+        name,
+        variables,
+        variablesJson,
+      });
+
+      const result = await this.pool.query(query, [
+        projectId,
+        name,
+        subject,
+        html_content || null,
+        text_content || null,
+        variablesJson,
+      ]);
+
+      // Parse variables from JSONB response
+      const template = result.rows[0];
+      let parsedVariables = template.variables;
+      if (typeof parsedVariables === 'string') {
+        try {
+          parsedVariables = JSON.parse(parsedVariables);
+        } catch (e) {
+          console.warn('[CommunicationsController] Failed to parse variables:', e);
+          parsedVariables = [];
+        }
+      }
+      if (!Array.isArray(parsedVariables)) {
+        parsedVariables = [];
+      }
+
+      console.log('[CommunicationsController] Template created, returning:', {
+        id: template.id,
+        name: template.name,
+        variables: parsedVariables,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: {
+          ...template,
+          variables: parsedVariables,
+        },
+      });
+    } catch (error: any) {
+      if (error.code === '23505') {
+        res.status(409).json({
+          success: false,
+          error: 'Email template with this name already exists',
+        });
+        return;
+      }
+      console.error('Error creating email template:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to create email template',
+        message: error.message,
+      });
+    }
+  };
+
+  /**
+   * Update an existing email template
+   */
+  updateEmailTemplate = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId, templateId } = req.params;
+      const { name, subject, html_content, text_content, variables } = req.body;
+
+      const updates: string[] = [];
+      const values: any[] = [];
+      let paramCount = 1;
+
+      if (name !== undefined) {
+        updates.push(`name = $${paramCount++}`);
+        values.push(name);
+      }
+      if (subject !== undefined) {
+        updates.push(`subject = $${paramCount++}`);
+        values.push(subject);
+      }
+      if (html_content !== undefined) {
+        updates.push(`html_content = $${paramCount++}`);
+        values.push(html_content);
+      }
+      if (text_content !== undefined) {
+        updates.push(`text_content = $${paramCount++}`);
+        values.push(text_content);
+      }
+      if (variables !== undefined) {
+        console.log('[CommunicationsController] Updating template variables:', {
+          templateId,
+          variables,
+          variablesType: typeof variables,
+          isArray: Array.isArray(variables),
+        });
+        updates.push(`variables = $${paramCount++}`);
+        values.push(JSON.stringify(variables));
+      }
+
+      if (updates.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'No fields to update',
+        });
+        return;
+      }
+
+      updates.push(`updated_at = CURRENT_TIMESTAMP`);
+      values.push(templateId, projectId);
+
+      const query = `
+        UPDATE email_templates
+        SET ${updates.join(', ')}
+        WHERE id = $${paramCount++} AND project_id = $${paramCount++}
+        RETURNING id, project_id, name, subject, html_content, text_content, variables, 
+                  created_at, updated_at
+      `;
+
+      const result = await this.pool.query(query, values);
+
+      if (result.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          error: 'Email template not found',
+        });
+        return;
+      }
+
+      // Parse variables from JSONB response
+      const template = result.rows[0];
+      let parsedVariables = template.variables;
+      console.log('[CommunicationsController] Update - Raw variables from DB:', {
+        raw: template.variables,
+        type: typeof template.variables,
+        isArray: Array.isArray(template.variables),
+      });
+      
+      if (typeof parsedVariables === 'string') {
+        try {
+          parsedVariables = JSON.parse(parsedVariables);
+        } catch (e) {
+          console.warn('[CommunicationsController] Failed to parse variables:', e);
+          parsedVariables = [];
+        }
+      }
+      if (!Array.isArray(parsedVariables)) {
+        parsedVariables = [];
+      }
+
+      console.log('[CommunicationsController] Template updated, returning:', {
+        id: template.id,
+        name: template.name,
+        variables: parsedVariables,
+      });
+
+      res.json({
+        success: true,
+        data: {
+          ...template,
+          variables: parsedVariables,
+        },
+      });
+    } catch (error: any) {
+      if (error.code === '23505') {
+        res.status(409).json({
+          success: false,
+          error: 'Email template with this name already exists',
+        });
+        return;
+      }
+      console.error('Error updating email template:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to update email template',
+        message: error.message,
+      });
+    }
+  };
+
+  /**
+   * Delete an email template
+   */
+  deleteEmailTemplate = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId, templateId } = req.params;
+
+      const query = `
+        DELETE FROM email_templates
+        WHERE id = $1 AND project_id = $2
+        RETURNING id
+      `;
+
+      const result = await this.pool.query(query, [templateId, projectId]);
+
+      if (result.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          error: 'Email template not found',
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: 'Email template deleted successfully',
+      });
+    } catch (error: any) {
+      console.error('Error deleting email template:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to delete email template',
+        message: error.message,
+      });
+    }
+  };
 }
 
 export default CommunicationsController;

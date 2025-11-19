@@ -24,7 +24,7 @@ export function createStorageTools(config: StorageToolsConfig): Tool[] {
           },
           bucketName: {
             type: 'string',
-            description: 'Bucket name (optional, defaults to project bucket)',
+            description: 'Bucket name (required)',
           },
           query: {
             type: 'string',
@@ -43,7 +43,7 @@ export function createStorageTools(config: StorageToolsConfig): Tool[] {
             description: 'Filter files by date range',
           },
         },
-        required: ['projectId', 'query'],
+        required: ['projectId', 'bucketName', 'query'],
       },
     },
     {
@@ -58,7 +58,7 @@ export function createStorageTools(config: StorageToolsConfig): Tool[] {
           },
           bucketName: {
             type: 'string',
-            description: 'Bucket name (optional, defaults to project bucket)',
+            description: 'Bucket name (required)',
           },
           filePath: {
             type: 'string',
@@ -77,7 +77,7 @@ export function createStorageTools(config: StorageToolsConfig): Tool[] {
             description: 'Additional metadata as key-value pairs',
           },
         },
-        required: ['projectId', 'filePath', 'fileContent'],
+        required: ['projectId', 'bucketName', 'filePath', 'fileContent'],
       },
     },
     {
@@ -92,7 +92,7 @@ export function createStorageTools(config: StorageToolsConfig): Tool[] {
           },
           bucketName: {
             type: 'string',
-            description: 'Bucket name (optional, defaults to project bucket)',
+            description: 'Bucket name (required)',
           },
           filePath: {
             type: 'string',
@@ -107,12 +107,12 @@ export function createStorageTools(config: StorageToolsConfig): Tool[] {
             description: 'Byte range for partial download',
           },
         },
-        required: ['projectId', 'filePath'],
+        required: ['projectId', 'bucketName', 'filePath'],
       },
     },
     {
-      name: 'list_buckets',
-      description: 'List available MinIO buckets',
+      name: 'list_project_buckets',
+      description: 'List all buckets for a project',
       inputSchema: {
         type: 'object',
         properties: {
@@ -126,12 +126,53 @@ export function createStorageTools(config: StorageToolsConfig): Tool[] {
             default: false,
           },
         },
-        required: [],
+        required: ['projectId'],
+      },
+    },
+    {
+      name: 'create_project_bucket',
+      description: 'Create a new bucket for a project',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: {
+            type: 'string',
+            description: 'Project ID',
+          },
+          bucketName: {
+            type: 'string',
+            description: 'Name of the bucket to create (3-63 chars, lowercase alphanumeric with hyphens)',
+          },
+          description: {
+            type: 'string',
+            description: 'Optional bucket description',
+          },
+        },
+        required: ['projectId', 'bucketName'],
+      },
+    },
+    {
+      name: 'list_buckets',
+      description: 'List available MinIO buckets (deprecated - use list_project_buckets)',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          projectId: {
+            type: 'string',
+            description: 'Project ID',
+          },
+          includeStats: {
+            type: 'boolean',
+            description: 'Include bucket size and file count statistics',
+            default: false,
+          },
+        },
+        required: ['projectId'],
       },
     },
     {
       name: 'create_bucket',
-      description: 'Create new MinIO bucket',
+      description: 'Create new MinIO bucket (deprecated - use create_project_bucket)',
       inputSchema: {
         type: 'object',
         properties: {
@@ -192,7 +233,7 @@ export function createStorageTools(config: StorageToolsConfig): Tool[] {
           },
           bucketName: {
             type: 'string',
-            description: 'Bucket name (optional, defaults to project bucket)',
+            description: 'Bucket name (required)',
           },
           prefix: {
             type: 'string',
@@ -204,29 +245,26 @@ export function createStorageTools(config: StorageToolsConfig): Tool[] {
             default: 1000,
           },
         },
-        required: ['projectId'],
+        required: ['projectId', 'bucketName'],
       },
     },
   ];
 }
 
-async function getProjectBucket(pool: Pool, projectId: string): Promise<string | null> {
+// Helper to validate bucket belongs to project
+async function validateBucketForProject(pool: Pool, projectId: string, bucketName: string): Promise<boolean> {
   try {
     const client = await pool.connect();
     const result = await client.query(
-      'SELECT bucket_name FROM projects WHERE id = $1',
-      [projectId]
+      'SELECT id FROM project_buckets WHERE project_id = $1 AND bucket_name = $2',
+      [projectId, bucketName]
     );
     client.release();
     
-    if (result.rows.length === 0) {
-      return null;
-    }
-    
-    return result.rows[0].bucket_name;
+    return result.rows.length > 0;
   } catch (error) {
-    console.error('Error getting project bucket:', error);
-    return null;
+    console.error('Error validating bucket for project:', error);
+    return false;
   }
 }
 
@@ -240,14 +278,25 @@ export async function handleStorageTool(
 
   switch (toolName) {
     case 'search_bucket': {
-      const { projectId, bucketName: providedBucket, query, fileType, dateRange } = args;
+      const { projectId, bucketName, query, fileType, dateRange } = args;
       
-      const bucketName = providedBucket || await getProjectBucket(pool, projectId);
       if (!bucketName) {
         return {
           content: [{ 
             type: 'text', 
-            text: JSON.stringify({ error: 'Project not found or bucket not configured' }, null, 2) 
+            text: JSON.stringify({ error: 'Bucket name is required' }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+
+      // Validate bucket belongs to project
+      const isValid = await validateBucketForProject(pool, projectId, bucketName);
+      if (!isValid) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ error: 'Bucket not found or does not belong to this project' }, null, 2) 
           }],
           isError: true
         };
@@ -312,14 +361,25 @@ export async function handleStorageTool(
     }
 
     case 'upload_file': {
-      const { projectId, bucketName: providedBucket, filePath, fileContent, contentType, metadata } = args;
+      const { projectId, bucketName, filePath, fileContent, contentType, metadata } = args;
       
-      const bucketName = providedBucket || await getProjectBucket(pool, projectId);
       if (!bucketName) {
         return {
           content: [{ 
             type: 'text', 
-            text: JSON.stringify({ error: 'Project not found or bucket not configured' }, null, 2) 
+            text: JSON.stringify({ error: 'Bucket name is required' }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+
+      // Validate bucket belongs to project
+      const isValid = await validateBucketForProject(pool, projectId, bucketName);
+      if (!isValid) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ error: 'Bucket not found or does not belong to this project' }, null, 2) 
           }],
           isError: true
         };
@@ -353,14 +413,25 @@ export async function handleStorageTool(
     }
 
     case 'download_file': {
-      const { projectId, bucketName: providedBucket, filePath, range } = args;
+      const { projectId, bucketName, filePath, range } = args;
       
-      const bucketName = providedBucket || await getProjectBucket(pool, projectId);
       if (!bucketName) {
         return {
           content: [{ 
             type: 'text', 
-            text: JSON.stringify({ error: 'Project not found or bucket not configured' }, null, 2) 
+            text: JSON.stringify({ error: 'Bucket name is required' }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+
+      // Validate bucket belongs to project
+      const isValid = await validateBucketForProject(pool, projectId, bucketName);
+      if (!isValid) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ error: 'Bucket not found or does not belong to this project' }, null, 2) 
           }],
           isError: true
         };
@@ -413,96 +484,108 @@ export async function handleStorageTool(
       }
     }
 
+    case 'list_project_buckets':
     case 'list_buckets': {
       const { projectId, includeStats = false } = args;
       
-      // Get project bucket
-      const projectBucket = await getProjectBucket(pool, projectId);
-      if (!projectBucket) {
+      // Get all buckets for the project from database
+      const client = await pool.connect();
+      try {
+        const result = await client.query(
+          'SELECT id, bucket_name, description, created_at, updated_at FROM project_buckets WHERE project_id = $1 ORDER BY created_at',
+          [projectId]
+        );
+        
+        if (result.rows.length === 0) {
+          return {
+            content: [{ 
+              type: 'text', 
+              text: JSON.stringify({ buckets: [] }, null, 2) 
+            }] 
+          };
+        }
+        
+        const buckets = await Promise.all(
+          result.rows.map(async (row) => {
+            const bucketInfo: any = {
+              id: row.id,
+              name: row.bucket_name,
+              description: row.description,
+              creationDate: row.created_at,
+              updatedAt: row.updated_at,
+            };
+            
+            if (includeStats) {
+              try {
+                const command = new ListObjectsV2Command({
+                  Bucket: row.bucket_name,
+                  MaxKeys: 1000,
+                });
+                const objects = await s3Client.send(command);
+                
+                bucketInfo.fileCount = objects.KeyCount || 0;
+                bucketInfo.totalSize = objects.Contents?.reduce((sum: number, obj: any) => sum + (obj.Size || 0), 0) || 0;
+              } catch (error) {
+                bucketInfo.fileCount = 0;
+                bucketInfo.totalSize = 0;
+              }
+            }
+            
+            return bucketInfo;
+          })
+        );
+        
+        return { 
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ buckets }, null, 2) 
+          }] 
+        };
+      } finally {
+        client.release();
+      }
+    }
+
+    case 'create_project_bucket':
+    case 'create_bucket': {
+      const { projectId, bucketName, description } = args;
+      
+      // Validate bucket name format
+      const bucketNameRegex = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+      if (!bucketNameRegex.test(bucketName) || bucketName.length < 3 || bucketName.length > 63) {
         return {
           content: [{ 
             type: 'text', 
-            text: JSON.stringify({ error: 'Project not found' }, null, 2) 
+            text: JSON.stringify({ 
+              error: 'Bucket name must be 3-63 characters, lowercase alphanumeric with hyphens' 
+            }, null, 2) 
           }],
           isError: true
         };
       }
       
-      // For MinIO, we can't list all buckets easily without admin access
-      // So we return the project bucket with stats if requested
-      const buckets: any[] = [{
-        name: projectBucket,
-        creationDate: new Date().toISOString(), // Would need to track this
-      }];
-      
-      if (includeStats) {
-        const command = new ListObjectsV2Command({
-          Bucket: projectBucket,
-          MaxKeys: 1,
-        });
-        
-        try {
-          const response = await s3Client.send(command);
-          const fileCount = response.KeyCount || 0;
-          
-          // Get total size
-          const listAllCommand = new ListObjectsV2Command({
-            Bucket: projectBucket,
-          });
-          
-          const allObjects = await s3Client.send(listAllCommand);
-          let totalSize = 0;
-          if (allObjects.Contents) {
-            totalSize = allObjects.Contents.reduce((sum, obj) => sum + (obj.Size || 0), 0);
-          }
-          
-          buckets[0].fileCount = fileCount;
-          buckets[0].totalSize = totalSize;
-        } catch (error) {
-          // Bucket might not exist yet
-          buckets[0].fileCount = 0;
-          buckets[0].totalSize = 0;
-        }
-      }
-      
-      return { 
-        content: [{ 
-          type: 'text', 
-          text: JSON.stringify({ buckets }, null, 2) 
-        }] 
-      };
-    }
-
-    case 'create_bucket': {
-      const { projectId, bucketName, region = 'us-east-1', versioning } = args;
-      
-      // Note: MinIO doesn't support CreateBucketCommand the same way as S3
-      // We'll use HeadBucketCommand to check, then PutObjectCommand to "create"
-      // For a proper implementation, you'd need MinIO admin API or SDK
-      
+      const client = await pool.connect();
       try {
-        // Try to head the bucket first
-        const headCommand = new HeadObjectCommand({
-          Bucket: bucketName,
-          Key: '.minio.sys', // Dummy key to check bucket
-        });
+        // Check if bucket name already exists
+        const existingResult = await client.query(
+          'SELECT id FROM project_buckets WHERE bucket_name = $1',
+          [bucketName]
+        );
         
-        try {
-          await s3Client.send(headCommand);
-          // Bucket exists
+        if (existingResult.rows.length > 0) {
           return {
             content: [{ 
               type: 'text', 
               text: JSON.stringify({ 
-                success: true,
-                message: 'Bucket already exists',
-                bucket: bucketName,
+                error: 'Bucket name already exists' 
               }, null, 2) 
-            }] 
+            }],
+            isError: true
           };
-        } catch (error: any) {
-          // Bucket doesn't exist - create it by uploading a dummy file
-          // This is a workaround for MinIO without admin API
+        }
+        
+        // Create bucket in MinIO
+        try {
           const createCommand = new PutObjectCommand({
             Bucket: bucketName,
             Key: '.bucket-init',
@@ -518,19 +601,49 @@ export async function handleStorageTool(
           });
           
           await s3Client.send(deleteCommand);
-          
+        } catch (minioError: any) {
+          // If bucket already exists in MinIO, that's okay
+          if (minioError.name !== 'BucketAlreadyOwnedByYou' && minioError.name !== 'BucketAlreadyExists') {
+            return {
+              content: [{ 
+                type: 'text', 
+                text: JSON.stringify({ 
+                  error: `Failed to create bucket in storage: ${minioError.message}` 
+                }, null, 2) 
+              }],
+              isError: true
+            };
+          }
+        }
+        
+        // Create bucket record in database
+        const result = await client.query(
+          'INSERT INTO project_buckets (project_id, bucket_name, description) VALUES ($1, $2, $3) RETURNING id, bucket_name, description, created_at, updated_at',
+          [projectId, bucketName, description || null]
+        );
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              success: true,
+              message: 'Bucket created successfully',
+              bucket: result.rows[0],
+            }, null, 2) 
+          }] 
+        };
+      } catch (error: any) {
+        if (error.code === '23505') {
           return {
             content: [{ 
               type: 'text', 
               text: JSON.stringify({ 
-                success: true,
-                message: 'Bucket created successfully',
-                bucket: bucketName,
+                error: 'Bucket name already exists' 
               }, null, 2) 
-            }] 
+            }],
+            isError: true
           };
         }
-      } catch (error: any) {
         return {
           content: [{ 
             type: 'text', 
@@ -540,11 +653,27 @@ export async function handleStorageTool(
           }],
           isError: true
         };
+      } finally {
+        client.release();
       }
     }
 
     case 'delete_bucket': {
       const { projectId, bucketName, force = false } = args;
+      
+      // Validate bucket belongs to project
+      const isValid = await validateBucketForProject(pool, projectId, bucketName);
+      if (!isValid) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ 
+              error: 'Bucket not found or does not belong to this project' 
+            }, null, 2) 
+          }],
+          isError: true
+        };
+      }
       
       try {
         if (force) {
@@ -588,15 +717,23 @@ export async function handleStorageTool(
           }
         }
         
-        // Note: MinIO doesn't support DeleteBucketCommand directly
-        // In a real implementation, you'd need the admin API
-        // For now, we just verify it's empty
+        // Delete bucket record from database
+        const client = await pool.connect();
+        try {
+          await client.query(
+            'DELETE FROM project_buckets WHERE project_id = $1 AND bucket_name = $2',
+            [projectId, bucketName]
+          );
+        } finally {
+          client.release();
+        }
+        
         return {
           content: [{ 
             type: 'text', 
             text: JSON.stringify({ 
               success: true,
-              message: 'Bucket emptied successfully (use admin API for full deletion)',
+              message: 'Bucket deleted successfully',
               bucket: bucketName,
             }, null, 2) 
           }] 
@@ -615,14 +752,25 @@ export async function handleStorageTool(
     }
 
     case 'list_files': {
-      const { projectId, bucketName: providedBucket, prefix, maxKeys = 1000 } = args;
+      const { projectId, bucketName, prefix, maxKeys = 1000 } = args;
       
-      const bucketName = providedBucket || await getProjectBucket(pool, projectId);
       if (!bucketName) {
         return {
           content: [{ 
             type: 'text', 
-            text: JSON.stringify({ error: 'Project not found or bucket not configured' }, null, 2) 
+            text: JSON.stringify({ error: 'Bucket name is required' }, null, 2) 
+          }],
+          isError: true
+        };
+      }
+
+      // Validate bucket belongs to project
+      const isValid = await validateBucketForProject(pool, projectId, bucketName);
+      if (!isValid) {
+        return {
+          content: [{ 
+            type: 'text', 
+            text: JSON.stringify({ error: 'Bucket not found or does not belong to this project' }, null, 2) 
           }],
           isError: true
         };

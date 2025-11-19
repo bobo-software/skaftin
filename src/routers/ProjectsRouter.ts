@@ -9,6 +9,7 @@ router.use(authenticateAndAttachUser);
 
 // Routes that don't need project verification (user-level)
 router.get('/list', ProjectsController.getAllProjects);
+router.get('/dashboard-stats', ProjectsController.getUserDashboardStats);
 router.post('/create', ProjectsController.createProject);
 
 // Routes that need project access verification (projectId as :id)

@@ -157,7 +157,6 @@ export class DatabaseInitializer {
           name VARCHAR(255) NOT NULL,
           description TEXT,
           schema_name VARCHAR(255) NOT NULL UNIQUE,
-          bucket_name VARCHAR(255) NOT NULL UNIQUE,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -236,6 +235,47 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize project_buckets table using Drizzle
+   * Always creates in public schema
+   */
+  async initializeProjectBucketsTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.project_buckets (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          bucket_name VARCHAR(255) NOT NULL UNIQUE,
+          description TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch (err: any) {
+      // Ignore if table/sequence already exists
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Project buckets table creation error:', err.message);
+      }
+    }
+
+    try {
+      // Create indexes
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_project_buckets_project_id ON public.project_buckets(project_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_project_buckets_bucket_name ON public.project_buckets(bucket_name);
+      `);
+    } catch (err: any) {
+      // Ignore if index already exists
+      if (err.code !== '42P07') {
+        console.error('❌ Project buckets index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Project buckets table initialized');
+  }
+
+  /**
    * Initialize email_providers table using Drizzle
    * Always creates in public schema
    */
@@ -280,6 +320,45 @@ export class DatabaseInitializer {
     }
 
     console.log('✅ Email providers table initialized');
+  }
+
+  /**
+   * Initialize email_templates table using Drizzle
+   * Always creates in public schema
+   */
+  async initializeEmailTemplatesTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.email_templates (
+          id SERIAL PRIMARY KEY,
+          project_id VARCHAR(255) NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          subject VARCHAR(500) NOT NULL,
+          html_content TEXT,
+          text_content TEXT,
+          variables JSONB DEFAULT '[]'::jsonb,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(project_id, name)
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ Email templates table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_email_templates_project_id ON public.email_templates(project_id);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ Email templates index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ Email templates table initialized');
   }
 
   /**
@@ -956,7 +1035,9 @@ export class DatabaseInitializer {
     await this.initializeOrganizationsTable();
     await this.initializeOrganizationMembersTable();
     await this.initializeProjectsTable();
+    await this.initializeProjectBucketsTable();
     await this.initializeEmailProvidersTable();
+    await this.initializeEmailTemplatesTable();
     await this.initializeProjectMembersTable();
     await this.initializeProjectInvitationsTable();
     await this.initializeApiCredentialsTable();

@@ -39,6 +39,15 @@ const ApiRoutes = {
     DELETE: (id: string) => `/api/projects/delete/${id}`,
     RESET: (id: string) => `/api/projects/reset/${id}`,
     STATS: (id: string) => `/api/projects/${id}/stats`,
+    DASHBOARD_STATS: '/api/projects/dashboard-stats',
+  },
+  
+  // Project Buckets routes
+  PROJECT_BUCKETS: {
+    LIST: (projectId: string) => `/api/projects/${projectId}/buckets`,
+    CREATE: (projectId: string) => `/api/projects/${projectId}/buckets`,
+    UPDATE: (projectId: string, bucketId: number) => `/api/projects/${projectId}/buckets/${bucketId}`,
+    DELETE: (projectId: string, bucketId: number) => `/api/projects/${projectId}/buckets/${bucketId}`,
   },
   
   // Users routes
@@ -56,25 +65,23 @@ const ApiRoutes = {
   },
   
   // Storage routes - Admin API (SuperTokens authentication)
-  // Project ID is provided in the URL path
+  // Project ID and bucket name are provided in the URL path
   STORAGE: {
-    // Bucket operations
-    LIST_BUCKETS: '/api/storage/buckets',
-    CREATE_BUCKET: '/api/storage/buckets',
-    DELETE_BUCKET: (bucketName: string) => `/api/storage/buckets/${bucketName}`,
+    // Bucket operations (list buckets for a project)
+    LIST_BUCKETS: (projectId: string) => `/api/storage/${projectId}/buckets`,
     
-    // File operations
-    LIST_FILES: (projectId: string) => `/api/storage/${projectId}/files`,
-    SEARCH_FILES: (projectId: string) => `/api/storage/${projectId}/search`,
-    UPLOAD_FILE: (projectId: string) => `/api/storage/${projectId}/upload`,
-    UPLOAD_FILE_MULTIPART: (projectId: string) => `/api/storage/${projectId}/upload-multipart`,
-    DOWNLOAD_FILE: (projectId: string, filePath: string) => `/api/storage/${projectId}/download/${filePath}`,
-    DELETE_FILE: (projectId: string, filePath: string) => `/api/storage/${projectId}/files/${filePath}`,
-    GET_FILE_METADATA: (projectId: string, filePath: string) => `/api/storage/${projectId}/files/${filePath}/metadata`,
+    // File operations (require bucketName)
+    LIST_FILES: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/files`,
+    SEARCH_FILES: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/search`,
+    UPLOAD_FILE: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/upload`,
+    UPLOAD_FILE_MULTIPART: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/upload-multipart`,
+    DOWNLOAD_FILE: (projectId: string, bucketName: string, filePath: string) => `/api/storage/${projectId}/${bucketName}/download/${filePath}`,
+    DELETE_FILE: (projectId: string, bucketName: string, filePath: string) => `/api/storage/${projectId}/${bucketName}/files/${filePath}`,
+    GET_FILE_METADATA: (projectId: string, bucketName: string, filePath: string) => `/api/storage/${projectId}/${bucketName}/files/${filePath}/metadata`,
     
-    // Folder operations
-    RENAME_FOLDER: (projectId: string) => `/api/storage/${projectId}/folders/rename`,
-    DELETE_FOLDER: (projectId: string, folderPath: string) => `/api/storage/${projectId}/folders/${folderPath}`,
+    // Folder operations (require bucketName)
+    RENAME_FOLDER: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/folders/rename`,
+    DELETE_FOLDER: (projectId: string, bucketName: string, folderPath: string) => `/api/storage/${projectId}/${bucketName}/folders/${folderPath}`,
   },
   
   // Database routes - Admin API (SuperTokens authentication)
@@ -123,6 +130,12 @@ const ApiRoutes = {
     UPDATE_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}`,
     DELETE_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}`,
     TEST_CONNECTION: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}/test`,
+    // Email template management
+    LIST_EMAIL_TEMPLATES: (projectId: string) => `/api/communications/${projectId}/email/templates`,
+    GET_EMAIL_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/email/templates/${templateId}`,
+    CREATE_EMAIL_TEMPLATE: (projectId: string) => `/api/communications/${projectId}/email/templates`,
+    UPDATE_EMAIL_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/email/templates/${templateId}`,
+    DELETE_EMAIL_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/email/templates/${templateId}`,
     // Email sending
     SEND_EMAIL: (projectId: string) => `/api/communications/${projectId}/email/send`,
     // SMS provider management

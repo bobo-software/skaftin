@@ -22,7 +22,7 @@ interface StorageControllerConfig {
 
 class StorageController {
   private static pool: Pool;
-  private static s3Client: S3Client;
+  static s3Client: S3Client;
 
   /**
    * Initialize the controller with dependencies
@@ -80,83 +80,74 @@ class StorageController {
   }
 
   /**
-   * Get project bucket name from database
+   * Validate that a bucket belongs to a project
    */
-  private static async getProjectBucket(projectId: string): Promise<string | null> {
+  private static async validateBucketForProject(projectId: string, bucketName: string): Promise<boolean> {
     try {
-      // Parse project ID to integer (projects.id is serial/integer type)
       const projectIdInt = parseInt(projectId, 10);
       
       if (isNaN(projectIdInt)) {
         console.error('Invalid project ID:', projectId);
-        return null;
+        return false;
       }
       
       const result = await StorageController.pool.query(
-        'SELECT bucket_name FROM projects WHERE id = $1',
-        [projectIdInt]
+        'SELECT id FROM project_buckets WHERE project_id = $1 AND bucket_name = $2',
+        [projectIdInt, bucketName]
       );
 
-      if (result.rows.length === 0) {
-        console.log(`Project not found with ID: ${projectIdInt}`);
-        return null;
-      }
-
-      return result.rows[0].bucket_name;
+      return result.rows.length > 0;
     } catch (error) {
-      console.error('Error fetching project bucket:', error);
-      return null;
+      console.error('Error validating bucket for project:', error);
+      return false;
     }
   }
 
   /**
-   * List buckets
-   * GET /api/storage/buckets
+   * List buckets for a project
+   * GET /api/storage/:projectId/buckets
    * 
-   * - If projectId is present (from API key): Only return that project's bucket
-   * - If no projectId (platform admin): Return all buckets
+   * Returns all buckets for the specified project
    */
   static async listBuckets(req: Request & { projectId?: number }, res: Response) {
     try {
+      const projectId = StorageController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
       const { includeStats = 'false' } = req.query;
+      const projectIdInt = parseInt(projectId, 10);
       
-      // If projectId is present (client app with API key), filter to only that project's bucket
-      let projectBucketName: string | null = null;
-      if (req.projectId) {
-        projectBucketName = await StorageController.getProjectBucket(req.projectId.toString());
-        if (!projectBucketName) {
-          return ResponseUtils.error(res, 'Project bucket not found', null, null, 404);
-        }
+      if (isNaN(projectIdInt)) {
+        return ResponseUtils.error(res, 'Invalid project ID', null, null, 400);
       }
 
-      const command = new ListBucketsCommand({});
-      const response = await StorageController.s3Client.send(command);
+      // Get all buckets for the project from database
+      const result = await StorageController.pool.query(
+        'SELECT id, bucket_name, description, created_at, updated_at FROM project_buckets WHERE project_id = $1 ORDER BY created_at',
+        [projectIdInt]
+      );
 
-      if (!response.Buckets) {
-        return ResponseUtils.success(res, 'No buckets found', []);
-      }
-
-      // Filter buckets by project if projectId is present
-      let bucketsToProcess = response.Buckets;
-      if (projectBucketName) {
-        bucketsToProcess = response.Buckets.filter(b => b.Name === projectBucketName);
-        if (bucketsToProcess.length === 0) {
-          return ResponseUtils.success(res, 'No buckets found for this project', []);
-        }
+      if (result.rows.length === 0) {
+        return ResponseUtils.success(res, 'No buckets found for this project', []);
       }
 
       const buckets = await Promise.all(
-        bucketsToProcess.map(async (bucket) => {
+        result.rows.map(async (row) => {
           const bucketInfo: any = {
-            name: bucket.Name,
-            creationDate: bucket.CreationDate,
+            id: row.id,
+            name: row.bucket_name,
+            description: row.description,
+            creationDate: row.created_at,
+            updatedAt: row.updated_at,
           };
 
           // Include stats if requested
-          if (includeStats === 'true' && bucket.Name) {
+          if (includeStats === 'true' && row.bucket_name) {
             try {
               const listCommand = new ListObjectsV2Command({
-                Bucket: bucket.Name,
+                Bucket: row.bucket_name,
                 MaxKeys: 1000,
               });
               const objects = await StorageController.s3Client.send(listCommand);
@@ -181,131 +172,8 @@ class StorageController {
   }
 
   /**
-   * Create bucket
-   * POST /api/storage/buckets
-   */
-  static async createBucket(req: Request, res: Response) {
-    try {
-      const { projectId, bucketName, region = 'us-east-1' } = req.body;
-
-      if (!projectId || !bucketName) {
-        return ResponseUtils.error(res, 'projectId and bucketName are required', null, null, 400);
-      }
-
-      // Check if bucket already exists by trying to list objects
-      try {
-        const checkCommand = new ListObjectsV2Command({
-          Bucket: bucketName,
-          MaxKeys: 1,
-        });
-        await StorageController.s3Client.send(checkCommand);
-        
-        return ResponseUtils.success(res, 'Bucket already exists', {
-          bucket: bucketName,
-          existed: true,
-        });
-      } catch (error: any) {
-        // Bucket doesn't exist, create it by uploading an init file
-        try {
-          const createCommand = new PutObjectCommand({
-            Bucket: bucketName,
-            Key: '.bucket-init',
-            Body: Buffer.from(''),
-          });
-          
-          await StorageController.s3Client.send(createCommand);
-          
-          // Delete the init file
-          const deleteCommand = new DeleteObjectCommand({
-            Bucket: bucketName,
-            Key: '.bucket-init',
-          });
-          
-          await StorageController.s3Client.send(deleteCommand);
-
-          // Parse project ID and update project bucket name in database
-          const projectIdInt = parseInt(projectId, 10);
-          await StorageController.pool.query(
-            'UPDATE projects SET bucket_name = $1 WHERE id = $2',
-            [bucketName, projectIdInt]
-          );
-
-          return ResponseUtils.success(res, 'Bucket created successfully', {
-            bucket: bucketName,
-            existed: false,
-          }, 201);
-        } catch (createError: any) {
-          console.error('Bucket creation error:', createError);
-          return ResponseUtils.error(res, `Failed to create bucket: ${createError.message}`, createError);
-        }
-      }
-    } catch (error) {
-      console.error('Create bucket error:', error);
-      ResponseUtils.error(res, 'Failed to create bucket', error);
-    }
-  }
-
-  /**
-   * Delete bucket
-   * DELETE /api/storage/buckets/:bucketName
-   */
-  static async deleteBucket(req: Request, res: Response) {
-    try {
-      const { bucketName } = req.params;
-      const { force = 'false' } = req.query;
-
-      if (!bucketName) {
-        return ResponseUtils.error(res, 'bucketName is required', null, null, 400);
-      }
-
-      // List all objects in bucket
-      const listCommand = new ListObjectsV2Command({
-        Bucket: bucketName,
-        MaxKeys: 1000,
-      });
-      
-      const objects = await StorageController.s3Client.send(listCommand);
-
-      if (objects.Contents && objects.Contents.length > 0) {
-        if (force !== 'true') {
-          return ResponseUtils.error(
-            res,
-            'Bucket is not empty. Use force=true to delete all files',
-            null,
-            null,
-            400
-          );
-        }
-
-        // Delete all objects
-        const deleteCommand = new DeleteObjectsCommand({
-          Bucket: bucketName,
-          Delete: {
-            Objects: objects.Contents.map((obj) => ({ Key: obj.Key })),
-          },
-        });
-
-        await StorageController.s3Client.send(deleteCommand);
-      }
-
-      ResponseUtils.success(res, 'Bucket deleted successfully', {
-        bucket: bucketName,
-        filesDeleted: objects.Contents?.length || 0,
-      });
-    } catch (error: any) {
-      console.error('Delete bucket error:', error);
-      
-      if (error.name === 'NoSuchBucket') {
-        return ResponseUtils.error(res, 'Bucket not found', null, null, 404);
-      }
-      
-      ResponseUtils.error(res, 'Failed to delete bucket', error);
-    }
-  }
-
-  /**
    * List files in a project bucket
-   * GET /app-api/storage/files
+   * GET /api/storage/:projectId/:bucketName/files
    */
   static async listFiles(req: Request & { projectId?: number }, res: Response) {
     try {
@@ -313,12 +181,20 @@ class StorageController {
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
-      const { prefix, maxKeys = '1000' } = req.query;
-
-      const bucketName = await StorageController.getProjectBucket(projectId);
+      
+      // Get bucketName from params or body
+      const bucketName = req.params.bucketName || req.body.bucketName;
       if (!bucketName) {
-        return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
+        return ResponseUtils.error(res, 'Bucket name is required', null, null, 400);
       }
+
+      // Validate bucket belongs to project
+      const isValid = await StorageController.validateBucketForProject(projectId, bucketName);
+      if (!isValid) {
+        return ResponseUtils.error(res, 'Bucket not found or does not belong to this project', null, null, 404);
+      }
+
+      const { prefix, maxKeys = '1000' } = req.query;
 
       const command = new ListObjectsV2Command({
         Bucket: bucketName,
@@ -368,7 +244,7 @@ class StorageController {
 
   /**
    * Search files in a project bucket
-   * POST /api/storage/:projectId/search
+   * POST /api/storage/:projectId/:bucketName/search
    */
   static async searchFiles(req: Request & { projectId?: number }, res: Response) {
     try {
@@ -376,15 +252,23 @@ class StorageController {
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
+      
+      // Get bucketName from params or body
+      const bucketName = req.params.bucketName || req.body.bucketName;
+      if (!bucketName) {
+        return ResponseUtils.error(res, 'Bucket name is required', null, null, 400);
+      }
+
+      // Validate bucket belongs to project
+      const isValid = await StorageController.validateBucketForProject(projectId, bucketName);
+      if (!isValid) {
+        return ResponseUtils.error(res, 'Bucket not found or does not belong to this project', null, null, 404);
+      }
+
       const { query, fileType, dateRange } = req.body;
 
       if (!query) {
         return ResponseUtils.error(res, 'query is required', null, null, 400);
-      }
-
-      const bucketName = await StorageController.getProjectBucket(projectId);
-      if (!bucketName) {
-        return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
       }
 
       const command = new ListObjectsV2Command({
@@ -463,7 +347,7 @@ class StorageController {
 
   /**
    * Upload file to project bucket
-   * POST /api/storage/:projectId/upload
+   * POST /api/storage/:projectId/:bucketName/upload
    */
   static async uploadFile(req: Request & { projectId?: number }, res: Response) {
     try {
@@ -471,16 +355,24 @@ class StorageController {
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
+      
+      // Get bucketName from params or body
+      const bucketName = req.params.bucketName || req.body.bucketName;
+      if (!bucketName) {
+        return ResponseUtils.error(res, 'Bucket name is required', null, null, 400);
+      }
+
+      // Validate bucket belongs to project
+      const isValid = await StorageController.validateBucketForProject(projectId, bucketName);
+      if (!isValid) {
+        return ResponseUtils.error(res, 'Bucket not found or does not belong to this project', null, null, 404);
+      }
+
       const { filePath, fileContent, contentType, metadata } = req.body;
 
       // Validate required fields (allow empty string for fileContent - used for folders)
       if (!filePath || fileContent === undefined || fileContent === null) {
         return ResponseUtils.error(res, 'filePath and fileContent are required', null, null, 400);
-      }
-
-      const bucketName = await StorageController.getProjectBucket(projectId);
-      if (!bucketName) {
-        return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
       }
 
       // Decode base64 content (empty string is valid for folder markers)
@@ -533,7 +425,7 @@ class StorageController {
 
   /**
    * Upload file (multipart) to project bucket
-   * POST /api/storage/:projectId/upload-multipart
+   * POST /api/storage/:projectId/:bucketName/upload-multipart
    * This is handled by multer middleware
    */
   static async uploadFileMultipart(req: Request & { projectId?: number }, res: Response) {
@@ -543,13 +435,20 @@ class StorageController {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
 
-      if (!req.file) {
-        return ResponseUtils.error(res, 'No file uploaded', null, null, 400);
+      // Get bucketName from params or body
+      const bucketName = req.params.bucketName || req.body.bucketName;
+      if (!bucketName) {
+        return ResponseUtils.error(res, 'Bucket name is required', null, null, 400);
       }
 
-      const bucketName = await StorageController.getProjectBucket(projectId);
-      if (!bucketName) {
-        return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
+      // Validate bucket belongs to project
+      const isValid = await StorageController.validateBucketForProject(projectId, bucketName);
+      if (!isValid) {
+        return ResponseUtils.error(res, 'Bucket not found or does not belong to this project', null, null, 404);
+      }
+
+      if (!req.file) {
+        return ResponseUtils.error(res, 'No file uploaded', null, null, 400);
       }
 
       const fileName = `${Date.now()}-${req.file.originalname}`;
@@ -596,36 +495,40 @@ class StorageController {
 
   /**
    * Download file from project bucket
-   * GET /api/storage/:projectId/download/ * (wildcard path)
+   * GET /api/storage/:projectId/:bucketName/download/* (wildcard path)
    */
   static async downloadFile(req: Request & { projectId?: number }, res: Response) {
     try {
-      let { filePath } = req.params;
-      const { range } = req.query;
-
-      // Get projectId from helper (checks both middleware and params)
-      let projectId = StorageController.getProjectId(req);
-
-      // If filePath is not in params, extract it from the URL path
-      if (!filePath) {
-        const pathMatch = req.path.match(/^\/([^\/]+)\/download\/(.+)$/);
-        if (pathMatch) {
-          projectId = projectId || pathMatch[1];
-          filePath = decodeURIComponent(pathMatch[2]);
-        }
-      }
-
+      const projectId = StorageController.getProjectId(req);
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
 
-      if (!filePath) {
-        return ResponseUtils.error(res, 'File path is required', null, null, 400);
+      // Get bucketName from params or body
+      const bucketName = req.params.bucketName || req.body.bucketName;
+      if (!bucketName) {
+        return ResponseUtils.error(res, 'Bucket name is required', null, null, 400);
       }
 
-      const bucketName = await StorageController.getProjectBucket(projectId);
-      if (!bucketName) {
-        return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
+      // Validate bucket belongs to project
+      const isValid = await StorageController.validateBucketForProject(projectId, bucketName);
+      if (!isValid) {
+        return ResponseUtils.error(res, 'Bucket not found or does not belong to this project', null, null, 404);
+      }
+
+      let { filePath } = req.params;
+      const { range } = req.query;
+
+      // If filePath is not in params, extract it from the URL path
+      if (!filePath) {
+        const pathMatch = req.path.match(/\/download\/(.+)$/);
+        if (pathMatch) {
+          filePath = decodeURIComponent(pathMatch[1]);
+        }
+      }
+
+      if (!filePath) {
+        return ResponseUtils.error(res, 'File path is required', null, null, 400);
       }
 
       // Check if file exists and get file size
@@ -687,28 +590,32 @@ class StorageController {
 
   /**
    * Delete file from project bucket
-   * DELETE /app-api/storage/files/... (wildcard path)
-   * Project ID is extracted from API key automatically
+   * DELETE /api/storage/:projectId/:bucketName/files/* (wildcard path)
    */
   static async deleteFile(req: Request & { projectId?: number }, res: Response) {
     try {
-      // Get projectId from helper (checks both middleware and params)
       const projectId = StorageController.getProjectId(req);
-      
-      // Get filePath from params (set by handleWildcardPath middleware)
-      const filePath = req.params.filePath;
-
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
 
-      if (!filePath) {
-        return ResponseUtils.error(res, 'File path is required', null, null, 400);
+      // Get bucketName from params or body
+      const bucketName = req.params.bucketName || req.body.bucketName;
+      if (!bucketName) {
+        return ResponseUtils.error(res, 'Bucket name is required', null, null, 400);
       }
 
-      const bucketName = await StorageController.getProjectBucket(projectId);
-      if (!bucketName) {
-        return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
+      // Validate bucket belongs to project
+      const isValid = await StorageController.validateBucketForProject(projectId, bucketName);
+      if (!isValid) {
+        return ResponseUtils.error(res, 'Bucket not found or does not belong to this project', null, null, 404);
+      }
+      
+      // Get filePath from params (set by handleWildcardPath middleware)
+      const filePath = req.params.filePath;
+
+      if (!filePath) {
+        return ResponseUtils.error(res, 'File path is required', null, null, 400);
       }
 
       const command = new DeleteObjectCommand({
@@ -719,7 +626,7 @@ class StorageController {
       await StorageController.s3Client.send(command);
 
       // Track storage metric
-      this.recordStorageMetric(projectId, 'delete', {
+      StorageController.recordStorageMetric(projectId, 'delete', {
         filePath,
         bucketName,
         success: true,
@@ -735,7 +642,7 @@ class StorageController {
       // Track failed operation
       const projectId = StorageController.getProjectId(req);
       if (projectId) {
-        this.recordStorageMetric(projectId, 'delete', {
+        StorageController.recordStorageMetric(projectId, 'delete', {
           filePath: req.params?.filePath,
           success: false,
           errorMessage: error.message,
@@ -752,35 +659,40 @@ class StorageController {
 
   /**
    * Get file metadata
-   * GET /api/storage/:projectId/files/ * /metadata (wildcard path)
+   * GET /api/storage/:projectId/:bucketName/files/
+   * <filePath>/metadata (wildcard path)
    */
   static async getFileMetadata(req: Request & { projectId?: number }, res: Response) {
     try {
-      let { filePath } = req.params;
-
-      // Get projectId from helper (checks both middleware and params)
-      let projectId = StorageController.getProjectId(req);
-
-      // If filePath is not in params, extract it from the URL path
-      if (!filePath) {
-        const pathMatch = req.path.match(/^\/([^\/]+)\/files\/(.+)\/metadata$/);
-        if (pathMatch) {
-          projectId = projectId || pathMatch[1];
-          filePath = decodeURIComponent(pathMatch[2]);
-        }
-      }
-
+      const projectId = StorageController.getProjectId(req);
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
 
-      if (!filePath) {
-        return ResponseUtils.error(res, 'File path is required', null, null, 400);
+      // Get bucketName from params or body
+      const bucketName = req.params.bucketName || req.body.bucketName;
+      if (!bucketName) {
+        return ResponseUtils.error(res, 'Bucket name is required', null, null, 400);
       }
 
-      const bucketName = await StorageController.getProjectBucket(projectId);
-      if (!bucketName) {
-        return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
+      // Validate bucket belongs to project
+      const isValid = await StorageController.validateBucketForProject(projectId, bucketName);
+      if (!isValid) {
+        return ResponseUtils.error(res, 'Bucket not found or does not belong to this project', null, null, 404);
+      }
+
+      let { filePath } = req.params;
+
+      // If filePath is not in params, extract it from the URL path
+      if (!filePath) {
+        const pathMatch = req.path.match(/\/files\/(.+)\/metadata$/);
+        if (pathMatch) {
+          filePath = decodeURIComponent(pathMatch[1]);
+        }
+      }
+
+      if (!filePath) {
+        return ResponseUtils.error(res, 'File path is required', null, null, 400);
       }
 
       const command = new HeadObjectCommand({
@@ -816,7 +728,7 @@ class StorageController {
 
   /**
    * Rename folder (copy all files to new location and delete old ones)
-   * PUT /api/storage/:projectId/folders/rename
+   * PUT /api/storage/:projectId/:bucketName/folders/rename
    */
   static async renameFolder(req: Request & { projectId?: number }, res: Response) {
     try {
@@ -824,15 +736,23 @@ class StorageController {
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
+
+      // Get bucketName from params or body
+      const bucketName = req.params.bucketName || req.body.bucketName;
+      if (!bucketName) {
+        return ResponseUtils.error(res, 'Bucket name is required', null, null, 400);
+      }
+
+      // Validate bucket belongs to project
+      const isValid = await StorageController.validateBucketForProject(projectId, bucketName);
+      if (!isValid) {
+        return ResponseUtils.error(res, 'Bucket not found or does not belong to this project', null, null, 404);
+      }
+
       const { oldPath, newPath } = req.body;
 
       if (!oldPath || !newPath) {
         return ResponseUtils.error(res, 'oldPath and newPath are required', null, null, 400);
-      }
-
-      const bucketName = await StorageController.getProjectBucket(projectId);
-      if (!bucketName) {
-        return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
       }
 
       // Ensure paths end with / for folder operations
@@ -891,35 +811,39 @@ class StorageController {
 
   /**
    * Delete folder and all its contents
-   * DELETE /api/storage/:projectId/folders/:folderPath
+   * DELETE /api/storage/:projectId/:bucketName/folders/* (wildcard path)
    */
   static async deleteFolder(req: Request & { projectId?: number }, res: Response) {
     try {
-      let { folderPath } = req.params;
-
-      // Get projectId from helper (checks both middleware and params)
-      let projectId = StorageController.getProjectId(req);
-
-      // If folderPath is not in params, extract it from the URL path
-      if (!folderPath) {
-        const pathMatch = req.path.match(/^\/([^\/]+)\/folders\/(.+)$/);
-        if (pathMatch) {
-          projectId = projectId || pathMatch[1];
-          folderPath = decodeURIComponent(pathMatch[2]);
-        }
-      }
-
+      const projectId = StorageController.getProjectId(req);
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
 
-      if (!folderPath) {
-        return ResponseUtils.error(res, 'Folder path is required', null, null, 400);
+      // Get bucketName from params or body
+      const bucketName = req.params.bucketName || req.body.bucketName;
+      if (!bucketName) {
+        return ResponseUtils.error(res, 'Bucket name is required', null, null, 400);
       }
 
-      const bucketName = await StorageController.getProjectBucket(projectId);
-      if (!bucketName) {
-        return ResponseUtils.error(res, 'Project not found or bucket not configured', null, null, 404);
+      // Validate bucket belongs to project
+      const isValid = await StorageController.validateBucketForProject(projectId, bucketName);
+      if (!isValid) {
+        return ResponseUtils.error(res, 'Bucket not found or does not belong to this project', null, null, 404);
+      }
+
+      let { folderPath } = req.params;
+
+      // If folderPath is not in params, extract it from the URL path
+      if (!folderPath) {
+        const pathMatch = req.path.match(/\/folders\/(.+)$/);
+        if (pathMatch) {
+          folderPath = decodeURIComponent(pathMatch[1]);
+        }
+      }
+
+      if (!folderPath) {
+        return ResponseUtils.error(res, 'Folder path is required', null, null, 400);
       }
 
       // Ensure path ends with / for folder operations

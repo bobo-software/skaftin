@@ -66,8 +66,10 @@ interface WorkflowStore {
 
   // Persistence
   saveWorkflow: (projectId: string, name: string, description?: string, schedule?: string) => Promise<{ success: boolean; workflowId?: number; error?: string }>;
+  updateWorkflow: (projectId: string, workflowId: number, name: string, description?: string, schedule?: string) => Promise<{ success: boolean; error?: string }>;
   loadWorkflow: (projectId: string, workflowId: number) => Promise<{ success: boolean; error?: string }>;
   listWorkflows: (projectId: string) => Promise<{ success: boolean; workflows?: any[]; error?: string }>;
+  deleteWorkflow: (projectId: string, workflowId: number) => Promise<{ success: boolean; error?: string }>;
 
   reset: () => void;
 }
@@ -314,6 +316,53 @@ const useWorkflowStore = create<WorkflowStore>()(
         }
       },
 
+      updateWorkflow: async (projectId: string, workflowId: number, name: string, description?: string, schedule?: string) => {
+        const state = get();
+        const token = localStorage.getItem('skaftin-token') || '';
+        
+        try {
+          const workflowData: WorkflowDefinition = {
+            name,
+            description,
+            projectId,
+            enabled: true,
+            schedule,
+            nodes: state.nodes.map((n) => ({
+              id: n.id,
+              type: n.type as any,
+              position: n.position,
+              data: n.data,
+            })),
+            edges: state.edges.map((e) => ({
+              id: e.id,
+              source: e.source,
+              target: e.target,
+              sourceHandle: e.sourceHandle,
+              targetHandle: e.targetHandle,
+            })),
+          };
+
+          const url = ApiRoutes.WORKFLOWS.UPDATE(projectId, workflowId);
+          const response = await RequestUtils.put(url, token, workflowData);
+
+          if (response && response.success !== false) {
+            return {
+              success: true,
+            };
+          }
+
+          return {
+            success: false,
+            error: (response as any)?.message || 'Failed to update workflow',
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to update workflow',
+          };
+        }
+      },
+
       listWorkflows: async (projectId: string) => {
         const token = localStorage.getItem('skaftin-token') || '';
         
@@ -336,6 +385,31 @@ const useWorkflowStore = create<WorkflowStore>()(
           return {
             success: false,
             error: error instanceof Error ? error.message : 'Failed to list workflows',
+          };
+        }
+      },
+
+      deleteWorkflow: async (projectId: string, workflowId: number) => {
+        const token = localStorage.getItem('skaftin-token') || '';
+        
+        try {
+          const url = ApiRoutes.WORKFLOWS.DELETE(projectId, workflowId);
+          const response = await RequestUtils.delete(url, token, {});
+
+          if (response && response.success !== false) {
+            return {
+              success: true,
+            };
+          }
+
+          return {
+            success: false,
+            error: (response as any)?.message || 'Failed to delete workflow',
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to delete workflow',
           };
         }
       },
