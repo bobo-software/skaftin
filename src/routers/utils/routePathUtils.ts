@@ -28,15 +28,23 @@ export function getAdminPath(path: RoutePath, requiresProject: boolean = true): 
 }
 
 /**
- * Transform route path for client routes (remove :projectId prefix)
+ * Transform route path for client routes
+ * For routes that requireProject, add :projectId prefix (needed for SuperTokens users)
+ * For routes that don't requireProject, remove :projectId prefix if present
  */
-export function getClientPath(path: RoutePath): RoutePath {
+export function getClientPath(path: RoutePath, requiresProject: boolean = false): RoutePath {
   if (path instanceof RegExp) {
     return path; // Regex paths are already handled correctly
   }
   
   const pathString = path as string;
-  // Remove projectId prefix if present
+  
+  // If route requires project, ensure :projectId is in path (for SuperTokens URL param extraction)
+  if (requiresProject && !pathString.includes('/:projectId')) {
+    return `/:projectId${pathString}`;
+  }
+  
+  // Otherwise, remove projectId prefix if present (for routes that don't need it)
   return pathString.replace(/^\/:projectId/, '');
 }
 
@@ -47,7 +55,7 @@ export function getRoutePath(route: RouteDefinition, isAdmin: boolean): RoutePat
   if (isAdmin) {
     return getAdminPath(route.path, route.requiresProject);
   } else {
-    return getClientPath(route.path);
+    return getClientPath(route.path, route.requiresProject);
   }
 }
 

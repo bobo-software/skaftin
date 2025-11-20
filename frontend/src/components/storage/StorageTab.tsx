@@ -183,9 +183,9 @@ const StorageTab = () => {
             </div>
           </div>
           <div className="bg-primary-50 dark:bg-primary-900/20 rounded-lg p-4">
-            <div className="text-sm text-primary-700 dark:text-primary-300 mb-1">Bucket</div>
+            <div className="text-sm text-primary-700 dark:text-primary-300 mb-1">Buckets</div>
             <div className="text-sm font-semibold text-primary-900 dark:text-primary-100 truncate">
-              {currentProject?.bucket_name || 'N/A'}
+              Multiple buckets
             </div>
           </div>
         </div>

@@ -28,6 +28,9 @@ export function createWildcardPathHandler(isAdmin: boolean): Middleware {
       if (match.projectId) {
         req.params.projectId = match.projectId;
       }
+      if (match.bucketName) {
+        req.params.bucketName = match.bucketName;
+      }
       if (match.filePath) {
         req.params.filePath = match.filePath;
       }
@@ -72,34 +75,18 @@ export function createStorageRouteDefinitions(isAdmin: boolean): RouteDefinition
       method: 'get',
       path: '/buckets',
       handler: StorageController.listBuckets,
-      description: 'List available buckets',
-      requiresProject: !isAdmin, // Admin routes don't require project extraction
-      requiresAuth: !isAdmin, // Bucket list might be public for clients
-    },
-    {
-      method: 'post',
-      path: '/buckets',
-      handler: StorageController.createBucket,
-      description: 'Create a new bucket',
-      requiresProject: false,
-      requiresAuth: true,
-    },
-    {
-      method: 'delete',
-      path: '/buckets/:bucketName',
-      handler: StorageController.deleteBucket,
-      description: 'Delete a bucket',
-      requiresProject: false,
+      description: 'List buckets for a project',
+      requiresProject: true,
       requiresAuth: true,
     },
 
     // ============================================================================
-    // FILE ROUTES (Simple paths)
+    // FILE ROUTES (Simple paths - require bucketName)
     // ============================================================================
 
     {
       method: 'get',
-      path: '/files',
+      path: '/:bucketName/files',
       handler: StorageController.listFiles,
       description: 'List files in a project bucket',
       requiresProject: true,
@@ -107,7 +94,7 @@ export function createStorageRouteDefinitions(isAdmin: boolean): RouteDefinition
     },
     {
       method: 'post',
-      path: '/search',
+      path: '/:bucketName/search',
       handler: StorageController.searchFiles,
       description: 'Search files in a project bucket',
       requiresProject: true,
@@ -115,7 +102,7 @@ export function createStorageRouteDefinitions(isAdmin: boolean): RouteDefinition
     },
     {
       method: 'post',
-      path: '/upload',
+      path: '/:bucketName/upload',
       handler: StorageController.uploadFile,
       description: 'Upload file (base64 encoded)',
       requiresProject: true,
@@ -123,7 +110,7 @@ export function createStorageRouteDefinitions(isAdmin: boolean): RouteDefinition
     },
     {
       method: 'post',
-      path: '/upload-multipart',
+      path: '/:bucketName/upload-multipart',
       handler: StorageController.uploadFileMultipart,
       description: 'Upload file (multipart form data)',
       requiresProject: true,
@@ -132,7 +119,7 @@ export function createStorageRouteDefinitions(isAdmin: boolean): RouteDefinition
     },
     {
       method: 'put',
-      path: '/folders/rename',
+      path: '/:bucketName/folders/rename',
       handler: StorageController.renameFolder,
       description: 'Rename folder',
       requiresProject: true,
@@ -145,7 +132,7 @@ export function createStorageRouteDefinitions(isAdmin: boolean): RouteDefinition
 
     {
       method: 'get',
-      path: isAdmin ? /^\/\d+\/download\/.+$/ : /^\/download\/.+$/,
+      path: isAdmin ? /^\/\d+\/([^\/]+)\/download\/(.+)$/ : /^\/([^\/]+)\/download\/(.+)$/,
       handler: StorageController.downloadFile,
       description: 'Download file',
       requiresProject: true,
@@ -154,7 +141,7 @@ export function createStorageRouteDefinitions(isAdmin: boolean): RouteDefinition
     },
     {
       method: 'delete',
-      path: isAdmin ? /^\/\d+\/files\/.+$/ : /^\/files\/.+$/,
+      path: isAdmin ? /^\/\d+\/([^\/]+)\/files\/(.+)$/ : /^\/([^\/]+)\/files\/(.+)$/,
       handler: StorageController.deleteFile,
       description: 'Delete file',
       requiresProject: true,
@@ -163,7 +150,7 @@ export function createStorageRouteDefinitions(isAdmin: boolean): RouteDefinition
     },
     {
       method: 'get',
-      path: isAdmin ? /^\/\d+\/files\/.+\/metadata$/ : /^\/files\/.+\/metadata$/,
+      path: isAdmin ? /^\/\d+\/([^\/]+)\/files\/(.+)\/metadata$/ : /^\/([^\/]+)\/files\/(.+)\/metadata$/,
       handler: StorageController.getFileMetadata,
       description: 'Get file metadata',
       requiresProject: true,
@@ -172,7 +159,7 @@ export function createStorageRouteDefinitions(isAdmin: boolean): RouteDefinition
     },
     {
       method: 'delete',
-      path: isAdmin ? /^\/\d+\/folders\/.+$/ : /^\/folders\/.+$/,
+      path: isAdmin ? /^\/\d+\/([^\/]+)\/folders\/(.+)$/ : /^\/([^\/]+)\/folders\/(.+)$/,
       handler: StorageController.deleteFolder,
       description: 'Delete folder',
       requiresProject: true,

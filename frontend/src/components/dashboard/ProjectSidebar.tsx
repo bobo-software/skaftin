@@ -1,5 +1,5 @@
 import { NavLink, useParams } from 'react-router-dom';
-import { Database, Cloud, Settings, Home, Layers, LucideIcon, ChevronRight, ChevronLeft, Mail, Shield, BarChart3, GitBranch } from 'lucide-react';
+import { Database, Cloud, Settings, Home, Layers, LucideIcon, ChevronRight, ChevronLeft, Mail, Shield, BarChart3, GitBranch, Clock } from 'lucide-react';
 import useSidebarStore from '../../stores/state/useSidebarStore';
 
 interface NavItem {
@@ -24,6 +24,7 @@ const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSide
     { path: 'storage', icon: Cloud, label: 'Storage' },
     { path: 'analytics', icon: BarChart3, label: 'Analytics' },
     { path: 'workflows', icon: GitBranch, label: 'Workflows' },
+    { path: 'cron', icon: Clock, label: 'Cron' },
     { path: 'auth', icon: Shield, label: 'Auth' },
     { path: 'communications', icon: Mail, label: 'Communications' },
     { path: 'settings', icon: Settings, label: 'Settings' },

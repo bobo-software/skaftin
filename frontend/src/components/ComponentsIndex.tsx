@@ -23,6 +23,9 @@ export { default as CsvImportModal } from './modals/CsvImportModal';
 export { default as DatabaseImportModal } from './modals/DatabaseImportModal';
 export { default as FileUploadModal } from './modals/FileUploadModal';
 export { default as CreateTableModal } from './modals/CreateTableModal';
+export { default as ExportModal } from './modals/ExportModal';
+export { default as ScheduleWorkflowModal } from './modals/ScheduleWorkflowModal';
+export { default as WorkflowExecutionHistoryModal } from './modals/WorkflowExecutionHistoryModal';
 
 // ---------- Database Components ---------- //
 export { default as TableViewer } from './database/TableViewer';
@@ -56,3 +59,5 @@ export { default as JsonTree } from './workflows/JsonTree';
 // ---------- Workflow Shared Components ---------- //
 export { default as NodeWrapper } from './workflows/NodeWrapper';
 export { default as NodeActions } from './workflows/NodeActions';
+export { SchemaIcon } from './workflows/SchemaIcon';
+export { NodeOutputTypeIndicator } from './workflows/NodeOutputTypeIndicator';

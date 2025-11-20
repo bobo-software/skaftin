@@ -289,7 +289,7 @@ export class AnalyticsService {
     const start = timeRange.start.toISOString();
     const end = timeRange.end.toISOString();
 
-    // API metrics summary
+    // API metrics summary (only app-api routes)
     const apiMetrics = await this.pool.query(
       `SELECT 
         COUNT(*) as total_requests,
@@ -297,7 +297,8 @@ export class AnalyticsService {
         COUNT(CASE WHEN status_code >= 400 THEN 1 END) as error_count,
         COUNT(CASE WHEN status_code < 400 THEN 1 END) as success_count
       FROM public.api_metrics
-      WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3`,
+      WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3
+        AND endpoint LIKE '/app-api/%'`,
       [projectId, start, end]
     );
 
@@ -368,7 +369,7 @@ export class AnalyticsService {
       timeFormat = "DATE_TRUNC('day', created_at)";
     }
 
-    // Time series data
+    // Time series data (only app-api routes)
     const timeSeries = await this.pool.query(
       `SELECT 
         ${timeFormat} as time_period,
@@ -377,12 +378,13 @@ export class AnalyticsService {
         COUNT(CASE WHEN status_code >= 400 THEN 1 END) as error_count
       FROM public.api_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3
+        AND endpoint LIKE '/app-api/%'
       GROUP BY time_period
       ORDER BY time_period ASC`,
       [projectId, start, end]
     );
 
-    // Top endpoints
+    // Top endpoints (only app-api routes)
     const topEndpoints = await this.pool.query(
       `SELECT 
         endpoint,
@@ -392,6 +394,7 @@ export class AnalyticsService {
         COUNT(CASE WHEN status_code >= 400 THEN 1 END) as error_count
       FROM public.api_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3
+        AND endpoint LIKE '/app-api/%'
       GROUP BY endpoint, method
       ORDER BY request_count DESC
       LIMIT 10`,

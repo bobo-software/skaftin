@@ -13,24 +13,38 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import '../../styles/WorkflowEditor.css';
-import { Play, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Map, ListPlus } from 'lucide-react';
+import { Play, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Map, ListPlus, Loader2, Save, Edit2, Check, X } from 'lucide-react';
 import {
 	AddNodeModal,
+	AppButton,
 	ResultPreview,
 } from '@components/ComponentsIndex';
+import ExecutionLogsPanel from './ExecutionLogsPanel';
+import WorkflowSidebar from './sidebar/WorkflowSidebar';
+import RequestUtils from '../../utils/RequestUtils';
+import ApiRoutes from '../../constants/ApiRoutes';
 import StartNode from './nodes/StartNode';
 import HttpRequestNode from './nodes/HttpRequestNode';
 import DbSelectNode from './nodes/DbSelectNode';
 import DisplayNode from './nodes/DisplayNode';
+import ConditionNode from './nodes/ConditionNode';
+import ForLoopNode from './nodes/ForLoopNode';
+import DbInsertNode from './nodes/DbInsertNode';
+import DbDeleteNode from './nodes/DbDeleteNode';
+import DbUpdateNode from './nodes/DbUpdateNode';
+import EmailNode from './nodes/EmailNode';
+import SmsNode from './nodes/SmsNode';
 import { createNode } from '@utils/workflowUtils';
 import useWorkflowStore from '@stores/workflows/useWorkflowStore';
 
 interface WorkflowEditorProps {
   projectId: string;
+  workflowId?: number | null;
+  onWorkflowCreated?: (workflowId: number) => void;
 }
 
 // Inner component that must be rendered inside ReactFlowProvider
-const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
+const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflowCreated }: WorkflowEditorProps) => {
   const nodes = useWorkflowStore((s) => s.nodes);
   const edges = useWorkflowStore((s) => s.edges);
   const setNodes = useWorkflowStore((s) => s.setNodes);
@@ -42,30 +56,68 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   const toggleMinimap = useWorkflowStore((s) => s.toggleMinimap);
   const toggleConsole = useWorkflowStore((s) => s.toggleConsole);
   const addLog = useWorkflowStore((s) => s.addLog);
-  const logs = useWorkflowStore((s) => s.logs);
-  const runStatuses = useWorkflowStore((s) => s.runStatuses);
   const setNodeRunStatus = useWorkflowStore((s) => s.setNodeRunStatus);
+  const setNodeResult = useWorkflowStore((s) => s.setNodeResult);
   const clearRun = useWorkflowStore((s) => s.clearRun);
-  const [selectedRunNodeId, setSelectedRunNodeId] = useState<string | null>(null);
-  const [showResultModal, setShowResultModal] = useState(false);
+  const clearLogs = useWorkflowStore((s) => s.clearLogs);
   const nodeResults = useWorkflowStore((s) => s.nodeResults);
   const nodeResultsRef = useRef(nodeResults);
+  const [workflowId, setWorkflowId] = useState<number | null>(propWorkflowId || null);
+  const [executionId, setExecutionId] = useState<number | null>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
+  const updateWorkflow = useWorkflowStore((s) => s.updateWorkflow);
+  const workflowMetadata = useWorkflowStore((s) => s.workflowMetadata);
+  const setWorkflowMetadata = useWorkflowStore((s) => s.setWorkflowMetadata);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
 
   
   useEffect(() => {
     nodeResultsRef.current = nodeResults;
   }, [nodeResults]);
+
+  // Sync workflowId from prop
+  useEffect(() => {
+    if (propWorkflowId !== undefined) {
+      setWorkflowId(propWorkflowId);
+    }
+  }, [propWorkflowId]);
+
+  // Initialize edited name from metadata
+  useEffect(() => {
+    if (workflowMetadata.name) {
+      setEditedName(workflowMetadata.name);
+    } else if (workflowId) {
+      setEditedName(`Workflow ${workflowId}`);
+    } else {
+      setEditedName('New Workflow');
+    }
+  }, [workflowMetadata.name, workflowId]);
+
   const [showAddNode, setShowAddNode] = useState(false);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
   const rf = useReactFlow();
   
   // Memoize node types to avoid React Flow warnings about recreating nodeTypes object
-  const nodeTypesMemo = useMemo(
+  // Define node types outside useMemo to ensure stable reference
+  const nodeTypes = useMemo<NodeTypes>(
     () => ({
       start: StartNode,
       httpRequest: HttpRequestNode,
       dbSelect: DbSelectNode,
       display: DisplayNode,
+      condition: ConditionNode,
+      forLoop: ForLoopNode,
+      dbInsert: DbInsertNode,
+      dbDelete: DbDeleteNode,
+      dbUpdate: DbUpdateNode,
+      email: EmailNode,
+      sms: SmsNode,
     }),
     []
   );
@@ -79,9 +131,43 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   );
   const onEdgesChange = useCallback(
     (changes: Parameters<typeof applyEdgeChanges>[0]) => {
+      // Log edge changes for debugging
+      changes.forEach((change) => {
+        if (change.type === 'remove') {
+          const edge = change.id ? edges.find((e) => e.id === change.id) : null;
+          if (edge) {
+            const sourceNode = nodes.find((n) => n.id === edge.source);
+            const targetNode = nodes.find((n) => n.id === edge.target);
+            console.log('[Connection] Edge removed:', {
+              edgeId: edge.id,
+              source: edge.source,
+              sourceType: sourceNode?.type,
+              sourceHandle: edge.sourceHandle,
+              target: edge.target,
+              targetType: targetNode?.type,
+              targetHandle: edge.targetHandle,
+            });
+            addLog({
+              nodeId: edge.source || 'system',
+              type: 'nodeConnection',
+              data: {
+                action: 'disconnected',
+                source: edge.source,
+                sourceType: sourceNode?.type,
+                sourceHandle: edge.sourceHandle,
+                target: edge.target,
+                targetType: targetNode?.type,
+                targetHandle: edge.targetHandle,
+                edgeId: edge.id,
+              },
+              timestamp: new Date().toISOString(),
+            });
+          }
+        }
+      });
       setEdges((eds) => applyEdgeChanges(changes, eds));
     },
-    [setEdges]
+    [setEdges, edges, nodes, addLog]
   );
 
   const addStartNode = useCallback((position?: { x: number; y: number }) => {
@@ -109,7 +195,7 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
   }, [nextNodeId, projectId, setNodes, addLog, toggleConsole]);
 
   const addNodeAtViewportCenter = useCallback(
-    (type: 'start' | 'http' | 'db' | 'display') => {
+    (type: 'start' | 'http' | 'db' | 'display' | 'condition' | 'forLoop' | 'dbInsert' | 'dbDelete' | 'dbUpdate' | 'email' | 'sms') => {
       // For now, add at a random position; we can enhance with container center later
       if (type === 'start') {
         addStartNode();
@@ -117,13 +203,41 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
         addHttpRequestNode();
       } else if (type === 'db') {
         addDbSelectNode();
-      } else {
+      } else if (type === 'display') {
         const idNum = nextNodeId();
         const newNode = createNode('display', idNum);
         setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'condition') {
+        const idNum = nextNodeId();
+        const newNode = createNode('condition', idNum);
+        setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'forLoop') {
+        const idNum = nextNodeId();
+        const newNode = createNode('forLoop', idNum);
+        setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'dbInsert') {
+        const idNum = nextNodeId();
+        const newNode = createNode('dbInsert', idNum, undefined, { projectId });
+        setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'dbDelete') {
+        const idNum = nextNodeId();
+        const newNode = createNode('dbDelete', idNum, undefined, { projectId });
+        setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'dbUpdate') {
+        const idNum = nextNodeId();
+        const newNode = createNode('dbUpdate', idNum, undefined, { projectId });
+        setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'email') {
+        const idNum = nextNodeId();
+        const newNode = createNode('email', idNum, undefined, { projectId });
+        setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'sms') {
+        const idNum = nextNodeId();
+        const newNode = createNode('sms', idNum, undefined, { projectId });
+        setNodes((nds) => [...nds, newNode]);
       }
     },
-    [addHttpRequestNode, addDbSelectNode, addStartNode, nextNodeId, rf, setNodes]
+    [addHttpRequestNode, addDbSelectNode, addStartNode, nextNodeId, projectId, setNodes]
   );
 
   const handlePaneClick = useCallback(
@@ -140,77 +254,131 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
     [addHttpRequestNode, rf]
   );
 
-  const handleRun = useCallback(() => {
-    // Build a list of nodes directly connected from any start node
-    const startNodeIds = nodes.filter((n) => n.type === 'start').map((n) => n.id);
-    const firstLayerTargets = edges
-      .filter((e) => startNodeIds.includes(e.source))
-      .map((e) => e.target);
-    // Deduplicate
-    const uniqueTargets = Array.from(new Set(firstLayerTargets));
-    // Reset statuses and set to running, then mark success (placeholder)
+  const handleRun = useCallback(async () => {
+    if (isExecuting) return;
+
+    setIsExecuting(true);
     clearRun();
-    if (uniqueTargets.length > 0) {
-      setSelectedRunNodeId(uniqueTargets[0]);
-    } else {
-      setSelectedRunNodeId(null);
-    }
-    uniqueTargets.forEach((nodeId, idx) => {
-      setTimeout(() => {
-        setNodeRunStatus(nodeId, 'running');
-        
-        // Check if this node type handles its own execution
-        const node = nodes.find((n) => n.id === nodeId);
-        const nodeType = node?.type;
-        
-        // Nodes like dbSelect execute themselves when status becomes 'running'
-        // So we don't need to set success automatically for them
-        const selfExecutingNodes = ['dbSelect'];
-        if (!selfExecutingNodes.includes(nodeType || '')) {
-          // Simulate quick success for nodes that don't execute themselves
-          setTimeout(() => {
-            setNodeRunStatus(nodeId, 'success');
-            
-            // Log node result payload if available
-            const resultEntry = nodeResultsRef.current[nodeId];
-            if (resultEntry) {
-              addLog({
-                nodeId,
-                type: 'nodeResult',
-                data: {
-                  status: resultEntry.status,
-                  summary:
-                    Array.isArray((resultEntry as any).payload?.rows)
-                      ? { rowsCount: (resultEntry as any).payload.rows.length }
-                      : undefined,
-                },
-              });
-            }
-            addLog({
-              nodeId,
-              type: 'runStatus',
-              data: { status: 'success' },
-            });
-          }, 200);
+    setExecutionId(null);
+    clearLogs();
+
+    try {
+      // Save workflow first if it doesn't have an ID
+      let currentWorkflowId = workflowId;
+      if (!currentWorkflowId) {
+        const workflowName = editedName.trim() || `Workflow ${Date.now()}`;
+        const saveResult = await saveWorkflow(
+          projectId,
+          workflowName,
+          workflowMetadata.description || undefined,
+          workflowMetadata.schedule || undefined
+        );
+        if (!saveResult.success || !saveResult.workflowId) {
+          addLog({
+            nodeId: 'workflow',
+            type: 'error',
+            data: { message: saveResult.error || 'Failed to save workflow before execution' },
+          });
+          setIsExecuting(false);
+          return;
         }
-      }, idx * 150);
-    });
-    
-    // After run, create an aggregate summary of all available node results
-    setTimeout(() => {
-      const summary = uniqueTargets.map((id) => {
-        const r = nodeResultsRef.current[id];
-        const rowsCount =
-          Array.isArray((r as any)?.payload?.rows) ? (r as any).payload.rows.length : undefined;
-        return { nodeId: id, status: r?.status ?? runStatuses[id], rowsCount };
-      });
+        currentWorkflowId = saveResult.workflowId;
+        setWorkflowId(currentWorkflowId);
+        setWorkflowMetadata({ id: currentWorkflowId, name: workflowName });
+        onWorkflowCreated?.(currentWorkflowId);
+      }
+
+      // Execute workflow via backend API
+      const token = localStorage.getItem('skaftin-token') || '';
+      const url = ApiRoutes.WORKFLOWS.EXECUTE(projectId, currentWorkflowId);
+      
       addLog({
         nodeId: 'workflow',
-        type: 'runSummary',
-        data: summary,
+        type: 'info',
+        data: { message: `Executing workflow ${currentWorkflowId}...` },
       });
-    }, uniqueTargets.length * 150 + 400);
-  }, [addLog, clearRun, edges, nodes, setNodeRunStatus]);
+
+      const response = await RequestUtils.post(url, token, { inputs: {}, triggeredBy: 'manual' });
+
+      if (response && response.success !== false) {
+        const result = (response as any).data || response;
+        const execId = result.executionId || result.id;
+
+        if (execId) {
+          setExecutionId(execId);
+          addLog({
+            nodeId: 'workflow',
+            type: 'info',
+            data: { message: `Execution started (ID: ${execId})` },
+          });
+
+          // Poll for execution completion and fetch logs
+          const pollInterval = setInterval(async () => {
+            try {
+              const logsUrl = ApiRoutes.WORKFLOWS.GET_EXECUTION_LOGS(projectId, currentWorkflowId!, execId);
+              const logsResponse = await RequestUtils.get(logsUrl, token);
+
+              if (logsResponse && logsResponse.success !== false) {
+                const logsData = (logsResponse as any).data || logsResponse;
+                const execution = logsData.execution;
+
+                // Update node statuses based on logs
+                if (logsData.nodeLogs) {
+                  logsData.nodeLogs.forEach((nodeLog: any) => {
+                    if (nodeLog.status === 'success') {
+                      setNodeRunStatus(nodeLog.nodeId, 'success');
+                      setNodeResult(nodeLog.nodeId, 'success', nodeLog.resultData);
+                    } else if (nodeLog.status === 'fail') {
+                      setNodeRunStatus(nodeLog.nodeId, 'fail');
+                      setNodeResult(nodeLog.nodeId, 'fail', { error: nodeLog.errorMessage });
+                    } else if (nodeLog.status === 'skipped') {
+                      setNodeRunStatus(nodeLog.nodeId, 'idle');
+                    }
+                  });
+                }
+
+                // Stop polling if execution is complete
+                if (execution.status === 'completed' || execution.status === 'failed') {
+                  clearInterval(pollInterval);
+                  setIsExecuting(false);
+                  addLog({
+                    nodeId: 'workflow',
+                    type: execution.status === 'completed' ? 'success' : 'error',
+                    data: {
+                      message: `Execution ${execution.status}`,
+                      executionId: execId,
+                    },
+                  });
+                }
+              }
+            } catch (err) {
+              console.error('Error polling execution logs:', err);
+            }
+          }, 500); // Poll every 500ms
+
+          // Stop polling after 30 seconds max
+          setTimeout(() => {
+            clearInterval(pollInterval);
+            setIsExecuting(false);
+          }, 30000);
+        }
+      } else {
+        addLog({
+          nodeId: 'workflow',
+          type: 'error',
+          data: { message: (response as any)?.message || 'Failed to execute workflow' },
+        });
+        setIsExecuting(false);
+      }
+    } catch (error) {
+      addLog({
+        nodeId: 'workflow',
+        type: 'error',
+        data: { message: error instanceof Error ? error.message : 'Failed to execute workflow' },
+      });
+      setIsExecuting(false);
+    }
+  }, [isExecuting, workflowId, projectId, editedName, workflowMetadata, saveWorkflow, setWorkflowMetadata, clearRun, clearLogs, addLog, setNodeRunStatus, setNodeResult, onWorkflowCreated]);
 
   const onInit = useCallback((instance: ReactFlowInstance) => {
     reactFlowInstance.current = instance;
@@ -228,18 +396,153 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
     reactFlowInstance.current?.fitView();
   }, []);
 
+  const handleSave = useCallback(async () => {
+    if (isSaving) return;
+
+    setIsSaving(true);
+    try {
+      const workflowName = editedName.trim() || (workflowId ? `Workflow ${workflowId}` : `Workflow ${Date.now()}`);
+      
+      if (workflowId) {
+        // Update existing workflow
+        const result = await updateWorkflow(
+          projectId,
+          workflowId,
+          workflowName,
+          workflowMetadata.description || undefined,
+          workflowMetadata.schedule || undefined
+        );
+        if (result.success) {
+          setWorkflowMetadata({ name: workflowName });
+          addLog({
+            nodeId: 'workflow',
+            type: 'success',
+            data: { message: 'Workflow saved successfully' },
+          });
+        } else {
+          addLog({
+            nodeId: 'workflow',
+            type: 'error',
+            data: { message: result.error || 'Failed to save workflow' },
+          });
+        }
+      } else {
+        // Create new workflow
+        const result = await saveWorkflow(
+          projectId,
+          workflowName,
+          workflowMetadata.description || undefined,
+          workflowMetadata.schedule || undefined
+        );
+        if (result.success && result.workflowId) {
+          setWorkflowId(result.workflowId);
+          setWorkflowMetadata({ id: result.workflowId, name: workflowName });
+          onWorkflowCreated?.(result.workflowId);
+          addLog({
+            nodeId: 'workflow',
+            type: 'success',
+            data: { message: 'Workflow created successfully' },
+          });
+        } else {
+          addLog({
+            nodeId: 'workflow',
+            type: 'error',
+            data: { message: result.error || 'Failed to create workflow' },
+          });
+        }
+      }
+    } catch (error) {
+      addLog({
+        nodeId: 'workflow',
+        type: 'error',
+        data: { message: error instanceof Error ? error.message : 'Failed to save workflow' },
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }, [isSaving, workflowId, projectId, editedName, workflowMetadata, updateWorkflow, saveWorkflow, setWorkflowMetadata, addLog, onWorkflowCreated]);
+
+  const handleNameEdit = () => {
+    setIsEditingName(true);
+    setEditedName(workflowMetadata.name || (workflowId ? `Workflow ${workflowId}` : 'New Workflow'));
+  };
+
+  const handleNameSave = () => {
+    const trimmedName = editedName.trim();
+    if (trimmedName) {
+      setWorkflowMetadata({ name: trimmedName });
+      setIsEditingName(false);
+    }
+  };
+
+  const handleNameCancel = () => {
+    setEditedName(workflowMetadata.name || (workflowId ? `Workflow ${workflowId}` : 'New Workflow'));
+    setIsEditingName(false);
+  };
+
   return (
     <div className="h-full flex flex-col bg-dark-50 dark:bg-dark-900 ring">
       {/* Toolbar */}
       <div className="bg-white dark:bg-dark-800 border-b border-dark-200 dark:border-dark-700 px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => {}}
-            className="p-2 hover:bg-dark-100 dark:hover:bg-dark-700 rounded transition-colors"
-            title="Undo"
-          >
-            <Undo2 className="w-4 h-4 text-dark-600 dark:text-dark-400" />
-          </button>
+        <div className="flex items-center space-x-2 flex-1 min-w-0">
+          {/* Workflow Name Editor */}
+          {isEditingName ? (
+            <div className="flex items-center space-x-2 mr-4 flex-1 min-w-0">
+              <input
+                type="text"
+                value={editedName}
+                onChange={(e) => setEditedName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleNameSave();
+                  } else if (e.key === 'Escape') {
+                    handleNameCancel();
+                  }
+                }}
+                className="px-3 py-1 border border-primary-500 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:outline-none flex-1 min-w-0"
+                autoFocus
+                placeholder="Workflow name"
+              />
+              <button
+                onClick={handleNameSave}
+                className="p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors flex-shrink-0"
+                title="Save name"
+              >
+                <Check className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleNameCancel}
+                className="p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                title="Cancel"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-2 mr-4 flex-1 min-w-0">
+              <h2 className="text-lg font-semibold text-dark-900 dark:text-white truncate">
+                {workflowMetadata.name || (workflowId ? `Workflow ${workflowId}` : 'New Workflow')}
+              </h2>
+              <button
+                onClick={handleNameEdit}
+                className="p-1 text-dark-600 dark:text-dark-400 hover:bg-dark-100 dark:hover:bg-dark-700 rounded transition-colors flex-shrink-0"
+                title="Edit workflow name"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          
+          <div className="w-px h-6 bg-dark-200 dark:bg-dark-700 mx-2 flex-shrink-0" />
+          
+          <div className="flex items-center space-x-2 flex-shrink-0">
+            <button
+              onClick={() => {}}
+              className="p-2 hover:bg-dark-100 dark:hover:bg-dark-700 rounded transition-colors"
+              title="Undo"
+            >
+              <Undo2 className="w-4 h-4 text-dark-600 dark:text-dark-400" />
+            </button>
           <button
             onClick={() => {}}
             className="p-2 hover:bg-dark-100 dark:hover:bg-dark-700 rounded transition-colors"
@@ -269,17 +572,34 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
           >
             <Maximize2 className="w-4 h-4 text-dark-600 dark:text-dark-400" />
           </button>
-        </div>
 
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={handleRun}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors font-medium"
+          <AppButton
+            variant="secondary"
+            size="sm"
+            onClick={() => { setShowAddNode(true); }}
+            icon={<ListPlus className="w-4 h-4" />}
           >
-            <Play className="w-4 h-4" />
-            <span>Run</span>
-          </button>
-        
+            Add Node
+          </AppButton>
+          <AppButton
+            variant="primary"
+            size="sm"
+            onClick={handleSave}
+            disabled={isSaving}
+            icon={<Save className="w-4 h-4" />}
+          >
+            {isSaving ? 'Saving...' : 'Save'}
+          </AppButton>
+          <AppButton
+            variant="secondary"
+            size="sm"
+            onClick={handleRun}
+            disabled={isExecuting}
+            icon={<Play className="w-4 h-4" />}
+          >
+            {isExecuting ? 'Running...' : 'Run Workflow'}
+          </AppButton>
+          </div>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -295,15 +615,21 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
             <Map className="w-4 h-4" />
           </button>
           <button
-            onClick={toggleConsole}
+            onClick={() => {
+              if (!showSidebar) {
+                setShowSidebar(true);
+              } else {
+                toggleConsole();
+              }
+            }}
             className={`p-2 rounded transition-colors ${
-              showConsole
+              showSidebar || showConsole
                 ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
                 : 'hover:bg-dark-100 dark:hover:bg-dark-700 text-dark-600 dark:text-dark-400'
             }`}
-            title="Toggle Console"
+            title="Toggle Sidebar"
           >
-            <span className="text-xs">Console</span>
+            <span className="text-xs">Sidebar</span>
           </button>
         </div>
       </div>
@@ -319,21 +645,29 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
         />
       )}
 
-      {/* React Flow Canvas */}
-      <div className="flex-1 min-h-0 relative" style={{ width: '100%', height: '100%' }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onInit={onInit}
-          onPaneClick={handlePaneClick}
-          nodeTypes={nodeTypesMemo}
-          fitView
-          className="bg-dark-50 dark:bg-dark-900"
-          style={{ width: '100%', height: '100%' }}
-        >
+      {/* Main Content Area */}
+      <div className="flex-1 min-h-0 flex">
+        {/* React Flow Canvas */}
+        <div className="flex-1 min-h-0 relative" style={{ width: '100%', height: '100%' }}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onInit={onInit}
+            onPaneClick={(event) => {
+              handlePaneClick(event);
+              setSelectedNodeId(null);
+            }}
+            onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
+            onNodeMouseLeave={() => setHoveredNodeId(null)}
+            onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+            nodeTypes={nodeTypes}
+            fitView
+            className="bg-dark-50 dark:bg-dark-900"
+            style={{ width: '100%', height: '100%' }}
+          >
           <Background 
             color="#e5e7eb" 
             gap={16}
@@ -355,177 +689,44 @@ const WorkflowEditorInner = ({ projectId }: WorkflowEditorProps) => {
               }}
               maskColor="rgba(0, 0, 0, 0.1)"
             />
-          )}
-        </ReactFlow>
+            )}
+          </ReactFlow>
+        </div>
+
+        {/* Right Sidebar */}
+        {showSidebar && (
+          <WorkflowSidebar
+            projectId={projectId}
+            workflowId={workflowId}
+            executionId={executionId}
+            hoveredNodeId={hoveredNodeId}
+            selectedNodeId={selectedNodeId}
+            onClose={() => setShowSidebar(false)}
+          />
+        )}
       </div>
 
-      {/* Bottom Bar */}
-      <div className="bg-white dark:bg-dark-800 border-t border-dark-200 dark:border-dark-700 px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-        <button
-            onClick={() => setShowAddNode(true)}
-            className="flex items-center space-x-2 px-3 py-2 bg-dark-100 dark:bg-dark-700 hover:bg-dark-200 dark:hover:bg-dark-600 text-dark-900 dark:text-white rounded transition-colors text-sm font-medium"
-            title="Add Node">
-            <ListPlus className="w-4 h-4" />
-            <span>Add Node</span>
-          </button>
-        </div>
-        <div className="text-xs text-dark-500 dark:text-dark-400">
-          Variables: <span className="font-semibold">0</span>
-        </div>
-      </div>
 
-      {/* Run Pane: Checklist (left) + Status Details (right) */}
-      {Object.keys(runStatuses).length > 0 && (
-        <div className="bg-white dark:bg-dark-800 border-t border-dark-200 dark:border-dark-700">
-          <div className="flex" style={{ minHeight: '180px' }}>
-            {/* Left: Checklist */}
-            <div className="w-72 border-r border-dark-200 dark:border-dark-700">
-              <div className="px-4 py-2 flex items-center justify-between">
-                <div className="text-sm font-semibold text-dark-900 dark:text-white">All blocks</div>
-                <button
-                  onClick={clearRun}
-                  className="text-xs px-2 py-1 rounded bg-dark-100 dark:bg-dark-700 hover:bg-dark-200 dark:hover:bg-dark-600 text-dark-900 dark:text-white"
-                >
-                  Clear
-                </button>
-              </div>
-              <div className="px-2 pb-2 overflow-auto" style={{ maxHeight: '240px' }}>
-                {Object.entries(runStatuses).map(([nodeId, status]) => {
-                  const node = nodes.find((n) => n.id === nodeId);
-                  const label =
-                    (node?.data as any)?.label ?? `${node?.type ?? 'node'} (${nodeId})`;
-                  const color =
-                    status === 'success'
-                      ? 'text-green-600 dark:text-green-400'
-                      : status === 'running'
-                      ? 'text-amber-600 dark:text-amber-400'
-                      : status === 'fail'
-                      ? 'text-red-600 dark:text-red-400'
-                      : 'text-dark-500 dark:text-dark-400';
-                  const symbol =
-                    status === 'success' ? '✔' : status === 'running' ? '…' : status === 'fail' ? '✖' : '•';
-                  const isSelected = selectedRunNodeId === nodeId;
-                  return (
-                    <button
-                      key={nodeId}
-                      onClick={() => setSelectedRunNodeId(nodeId)}
-                      className={`w-full text-left flex items-center justify-between text-xs rounded px-3 py-2 mb-1 ${
-                        isSelected
-                          ? 'bg-primary-50 dark:bg-primary-900/20'
-                          : 'bg-dark-50 dark:bg-dark-900'
-                      } border border-dark-200 dark:border-dark-700`}
-                    >
-                      <div className="truncate pr-2 flex items-center">
-                        <span
-                          className={`inline-block w-2 h-2 rounded-full mr-2 ${
-                            status === 'success'
-                              ? 'bg-green-500'
-                              : status === 'running'
-                              ? 'bg-amber-500'
-                              : status === 'fail'
-                              ? 'bg-red-500'
-                              : 'bg-gray-400'
-                          }`}
-                        />
-                        <span className="font-medium">{label}</span>
-                        <span className="ml-2 opacity-70">[{nodeId}]</span>
-                      </div>
-                      <div className={`ml-2 font-semibold ${color}`}>{symbol}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            {/* Right: Run Statuses */}
-            <div className="flex-1 px-6 py-4">
-              {/* Result details for selected node */}
-              {selectedRunNodeId && nodeResults[selectedRunNodeId] && (
-                <div className="mb-3">
-                  <div className="text-xs text-dark-500 dark:text-dark-400 mb-2">
-                    Node: <span className="font-medium">{selectedRunNodeId}</span>
-                    <span className="ml-2 text-[10px] opacity-70">[{nodeResults[selectedRunNodeId].timestamp}]</span>
-                  </div>
-                  <div className="relative inline-block group">
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                        nodeResults[selectedRunNodeId].status === 'success'
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                      }`}
-                    >
-                      {nodeResults[selectedRunNodeId].status === 'success' ? 'Success' : 'Fail'}
-                    </span>
-                    <button
-                      onClick={() => setShowResultModal(true)}
-                      className="ml-2 px-2 py-0.5 text-xs rounded bg-dark-100 dark:bg-dark-700 hover:bg-dark-200 dark:hover:bg-dark-600 text-dark-900 dark:text-white"
-                      title="View data"
-                    >
-                      View
-                    </button>
-                    <div className="absolute z-20 left-0 mt-2 w-[520px] hidden group-hover:block">
-                      <div className="bg-white dark:bg-dark-800 border border-dark-200 dark:border-dark-700 rounded shadow-lg p-2">
-                        <div className="text-[10px] opacity-70 mb-1">Details</div>
-                        <pre className="bg-dark-50 dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded p-2 whitespace-pre-wrap break-all text-[11px] max-h-64 overflow-auto">
-{JSON.stringify(nodeResults[selectedRunNodeId].payload, null, 2)}
-                        </pre>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div className="text-xs text-dark-500 dark:text-dark-400 mb-3">
-              {showConsole && (
-        <div className="bg-white dark:bg-dark-800 border-t border-dark-200 dark:border-dark-700 px-4 py-2 h-40 overflow-auto">
-          {logs.length === 0 ? (
-            <div className="text-xs text-dark-500 dark:text-dark-400">No output yet</div>
-          ) : (
-            <div className="space-y-2">
-              {logs.slice(-50).map((log, idx) => (
-                <div key={`${log.timestamp}-${idx}`} className="text-xs">
-                  <div className="text-dark-600 dark:text-dark-400">
-                    <span className="font-semibold">{log.type}</span>
-                    <span className="ml-2 text-[10px] opacity-70">[{log.timestamp}]</span>
-                    <span className="ml-2 opacity-80">node: {log.nodeId}</span>
-                  </div>
-                  <pre className="mt-1 bg-dark-50 dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded p-2 whitespace-pre-wrap break-all">
-                    {JSON.stringify(log.data, null, 2)}
-                  </pre>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-              {/* Result Modal */}
-              {showResultModal && selectedRunNodeId && nodeResults[selectedRunNodeId] && (
-                <ResultPreview
-                  title={`${selectedRunNodeId}`}
-                  status={nodeResults[selectedRunNodeId].status}
-                  payload={nodeResults[selectedRunNodeId].payload}
-                  onClose={() => setShowResultModal(false)}
-                />
-              )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Console Panel */}
-     
+      {/* Execution Logs Panel (Legacy - hidden when sidebar is shown) */}
+      {showConsole && !showSidebar && (
+        <ExecutionLogsPanel
+          projectId={projectId}
+          workflowId={workflowId}
+          executionId={executionId}
+        />
+      )}
     </div>
   );
 };
 
 // Wrapper that provides the required store context
-const WorkflowEditor = ({ projectId }: WorkflowEditorProps) => {
+const WorkflowEditor = ({ projectId, workflowId, onWorkflowCreated }: WorkflowEditorProps) => {
   return (
     <ReactFlowProvider>
-      <WorkflowEditorInner projectId={projectId} />
+      <WorkflowEditorInner projectId={projectId} workflowId={workflowId} onWorkflowCreated={onWorkflowCreated} />
     </ReactFlowProvider>
   );
 };
 
 export default WorkflowEditor;
-

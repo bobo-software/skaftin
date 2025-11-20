@@ -2,9 +2,11 @@ import { useAppStore, useProjectStore } from "../../../stores/StoresIndex";
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import ProjectCreationLoadingPage from "./ProjectCreationLoadingPage";
-import { Database, FolderOpen, Plus, User, LogOut, Edit3, Trash2, Calendar } from "lucide-react";
+import { Database, FolderOpen, Plus, User, LogOut, Edit3, Trash2, Calendar, Cloud, Code, BarChart3, Activity } from "lucide-react";
 import { AppButton, OrganizationSwitcher } from "../../../components/ComponentsIndex";
 import CreateProjectModal from "../../../components/modals/CreateProjectModal";
+import RequestUtils from "../../../utils/RequestUtils";
+import ApiRoutes from "../../../constants/ApiRoutes";
 
 interface ProjectsOverviewPageProps {
   onProjectSelect?: (_project: any) => void;
@@ -28,6 +30,28 @@ clearError
 const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 const [showLoadingPage, setShowLoadingPage] = useState(false);
 const [creatingProject, setCreatingProject] = useState<any>(null);
+const [dashboardStats, setDashboardStats] = useState<{
+  totalProjects: number;
+  totalTables: number;
+  totalFiles: number;
+  totalApiCalls: number;
+} | null>(null);
+const [loadingStats, setLoadingStats] = useState(false);
+
+const loadDashboardStats = useCallback(async () => {
+  setLoadingStats(true);
+  try {
+    const token = localStorage.getItem('skaftin-token') || '';
+    const response = await RequestUtils.get(ApiRoutes.PROJECTS.DASHBOARD_STATS, token);
+    if (response.success && response.data) {
+      setDashboardStats(response.data);
+    }
+  } catch (error) {
+    console.error('Error loading dashboard stats:', error);
+  } finally {
+    setLoadingStats(false);
+  }
+}, []);
 
 const loadUserProjects = useCallback(async () => {
     console.log('Loading projects for user:', user?.id);
@@ -35,8 +59,9 @@ const loadUserProjects = useCallback(async () => {
 }, [user?.id, fetchProjects]);
 
 useEffect(() => {
-loadUserProjects();
-}, [loadUserProjects]);
+  loadUserProjects();
+  loadDashboardStats();
+}, [loadUserProjects, loadDashboardStats]);
 
 const handleCreateProject = () => {
 setIsCreateModalOpen(true);
@@ -47,6 +72,8 @@ const handleProjectCreated = (project: any) => {
   setIsCreateModalOpen(false);
   setCreatingProject(project);
   setShowLoadingPage(true);
+  // Refresh stats after project creation
+  loadDashboardStats();
 };
 
 const handleLoadingComplete = (project: any) => {
@@ -181,6 +208,120 @@ return (
         >
           ×
         </button>
+      </div>
+    </div>
+  )}
+
+  {/* Dashboard Metrics */}
+  {dashboardStats && (
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-dark-600 dark:text-dark-300 mb-1">Total Projects</p>
+            <p className="text-3xl font-bold text-dark-900 dark:text-white">
+              {loadingStats ? (
+                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                dashboardStats.totalProjects
+              )}
+            </p>
+          </div>
+          <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center">
+            <Database className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-dark-600 dark:text-dark-300 mb-1">Total Tables</p>
+            <p className="text-3xl font-bold text-dark-900 dark:text-white">
+              {loadingStats ? (
+                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                dashboardStats.totalTables
+              )}
+            </p>
+          </div>
+          <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+            <Database className="w-6 h-6 text-green-600 dark:text-green-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-dark-600 dark:text-dark-300 mb-1">Total Files</p>
+            <p className="text-3xl font-bold text-dark-900 dark:text-white">
+              {loadingStats ? (
+                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                dashboardStats.totalFiles
+              )}
+            </p>
+          </div>
+          <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+            <Cloud className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-dark-600 dark:text-dark-300 mb-1">API Calls</p>
+            <p className="text-3xl font-bold text-dark-900 dark:text-white">
+              {loadingStats ? (
+                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                dashboardStats.totalApiCalls.toLocaleString()
+              )}
+            </p>
+          </div>
+          <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
+            <Activity className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* Quick Actions */}
+  {projects.length > 0 && (
+    <div className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6 mb-8">
+      <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">Quick Actions</h3>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <AppButton
+          onClick={handleCreateProject}
+          variant="secondary"
+          className="w-full justify-start"
+          icon={<Plus className="w-4 h-4" />}
+        >
+          Create New Project
+        </AppButton>
+        {projects.length > 0 && (
+          <AppButton
+            onClick={() => navigate(`/projects/${projects[0].id}/analytics`)}
+            variant="secondary"
+            className="w-full justify-start"
+            icon={<BarChart3 className="w-4 h-4" />}
+          >
+            View Analytics
+          </AppButton>
+        )}
+        {projects.length > 0 && (
+          <AppButton
+            onClick={() => navigate(`/projects/${projects[0].id}/database`)}
+            variant="secondary"
+            className="w-full justify-start"
+            icon={<Code className="w-4 h-4" />}
+          >
+            Open Database
+          </AppButton>
+        )}
       </div>
     </div>
   )}

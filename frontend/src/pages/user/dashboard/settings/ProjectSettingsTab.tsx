@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useProjectStore } from '../../../../stores/StoresIndex';
 import { useNavigate } from 'react-router-dom';
 import { DeleteProjectModal, ResetProjectModal } from '../../../../components/ComponentsIndex';
-import { Settings, Users, Shield, Loader2 } from 'lucide-react';
+import { Settings, Users, Shield, Database, Loader2 } from 'lucide-react';
 import TeamTab from '../../../../components/settings/TeamTab';
 import CredentialsTab from '../../../../components/settings/CredentialsTab';
+import BackupTab from '../../../../components/settings/BackupTab';
 import ToastUtils from '../../../../utils/ToastUtils';
 
-type SettingsTabType = 'general' | 'team' | 'credentials';
+type SettingsTabType = 'general' | 'team' | 'credentials' | 'backup';
 
 const ProjectSettingsTab = () => {
   const { currentProject, updateProject, deleteProject, resetProject, loading } = useProjectStore();
@@ -139,6 +140,17 @@ const ProjectSettingsTab = () => {
             <Shield className="w-4 h-4 inline mr-2" />
             API Credentials
           </button>
+          <button
+            onClick={() => setActiveTab('backup')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'backup'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-dark-500 hover:text-dark-700 dark:text-dark-400 dark:hover:text-dark-300'
+            }`}
+          >
+            <Database className="w-4 h-4 inline mr-2" />
+            Backups
+          </button>
         </nav>
       </div>
 
@@ -191,17 +203,17 @@ const ProjectSettingsTab = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                Storage Bucket
+                Storage Buckets
               </label>
               <input
                 type="text"
-                value={currentProject?.bucket_name || ''}
+                value="Multiple buckets supported"
                 className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-dark-100 dark:bg-dark-800 text-dark-600 dark:text-dark-400"
                 disabled
                 readOnly
               />
               <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                This is the MinIO bucket name for your project files
+                This project supports multiple storage buckets. Manage buckets in the Storage tab.
               </p>
             </div>
             <button 
@@ -255,6 +267,10 @@ const ProjectSettingsTab = () => {
 
       {activeTab === 'credentials' && (
         <CredentialsTab />
+      )}
+
+      {activeTab === 'backup' && (
+        <BackupTab />
       )}
 
       {/* Delete Project Modal */}

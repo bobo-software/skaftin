@@ -11,11 +11,14 @@ import {
   ChevronRight,
   Home,
   Edit2,
-  FolderMinus
+  FolderMinus,
+  ChevronDown
 } from 'lucide-react';
 import { AppButton, AppInput, DeleteConfirmModal } from '../ComponentsIndex';
 import StorageService from '../../services/StorageService';
+import BucketService from '../../services/BucketService';
 import ToastUtils from '../../utils/ToastUtils';
+import { ProjectBucket } from '../../types/Types';
 
 interface StorageViewerProps {
   projectId: string;
@@ -34,6 +37,9 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
   projectId, 
   onStorageChange 
 }) => {
+  const [buckets, setBuckets] = useState<ProjectBucket[]>([]);
+  const [selectedBucket, setSelectedBucket] = useState<string | null>(null);
+  const [loadingBuckets, setLoadingBuckets] = useState(false);
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentPath, setCurrentPath] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -50,13 +56,38 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
   const [newFolderNameForRename, setNewFolderNameForRename] = useState('');
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
 
+  // Load buckets
+  const loadBuckets = useCallback(async () => {
+    if (!projectId) return;
+    
+    setLoadingBuckets(true);
+    try {
+      const result = await BucketService.listBuckets(projectId);
+      
+      if (result.success && result.data) {
+        setBuckets(result.data);
+        // Auto-select first bucket if available and none selected
+        if (result.data.length > 0 && !selectedBucket) {
+          setSelectedBucket(result.data[0].bucket_name);
+        }
+      } else {
+        setBuckets([]);
+      }
+    } catch (error) {
+      console.error('Error loading buckets:', error);
+      setBuckets([]);
+    } finally {
+      setLoadingBuckets(false);
+    }
+  }, [projectId, selectedBucket]);
+
   // Load files for current path
   const loadFiles = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || !selectedBucket) return;
     
     setLoading(true);
     try {
-      const result = await StorageService.listFiles(projectId, currentPath || undefined);
+      const result = await StorageService.listFiles(projectId, selectedBucket, currentPath || undefined);
       
       if (result.success && result.data) {
         const filesData = result.data.files || result.data || [];
@@ -77,11 +108,19 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [projectId, currentPath]);
+  }, [projectId, selectedBucket, currentPath]);
 
   useEffect(() => {
-    loadFiles();
-  }, [loadFiles]);
+    loadBuckets();
+  }, [loadBuckets]);
+
+  useEffect(() => {
+    if (selectedBucket) {
+      loadFiles();
+    } else {
+      setFiles([]);
+    }
+  }, [loadFiles, selectedBucket]);
 
   // Process files to show only items in current folder
   const processFilesForCurrentPath = (allFiles: any[], path: string): FileItem[] => {
@@ -179,9 +218,13 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
   };
 
   const handleDownload = async (filePath: string) => {
+    if (!selectedBucket) {
+      ToastUtils.error('Please select a bucket first');
+      return;
+    }
     try {
       ToastUtils.info('Generating download link...');
-      const result = await StorageService.downloadFile(projectId, filePath);
+      const result = await StorageService.downloadFile(projectId, selectedBucket, filePath);
       
       if (result.success && result.data?.url) {
         window.open(result.data.url, '_blank');
@@ -195,8 +238,12 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
   };
 
   const handleDelete = async (filePath: string) => {
+    if (!selectedBucket) {
+      ToastUtils.error('Please select a bucket first');
+      return;
+    }
     try {
-      const result = await StorageService.deleteFile(projectId, filePath);
+      const result = await StorageService.deleteFile(projectId, selectedBucket, filePath);
       
       if (result.success) {
         ToastUtils.success('File deleted successfully');
@@ -215,10 +262,14 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
 
   const handleBulkDelete = async () => {
     if (selectedFiles.size === 0) return;
+    if (!selectedBucket) {
+      ToastUtils.error('Please select a bucket first');
+      return;
+    }
     
     try {
       const deletePromises = Array.from(selectedFiles).map(filePath =>
-        StorageService.deleteFile(projectId, filePath)
+        StorageService.deleteFile(projectId, selectedBucket, filePath)
       );
       
       await Promise.all(deletePromises);
@@ -235,9 +286,13 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
 
   const handleDeleteFolder = async () => {
     if (!folderToDelete) return;
+    if (!selectedBucket) {
+      ToastUtils.error('Please select a bucket first');
+      return;
+    }
     
     try {
-      const result = await StorageService.deleteFolder(projectId, folderToDelete);
+      const result = await StorageService.deleteFolder(projectId, selectedBucket, folderToDelete);
       
       if (result.success) {
         ToastUtils.success('Folder deleted successfully');
@@ -266,7 +321,12 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
       pathParts[pathParts.length - 1] = newFolderNameForRename.trim();
       const newPath = pathParts.join('/');
       
-      const result = await StorageService.renameFolder(projectId, folderToRename, newPath);
+      if (!selectedBucket) {
+        ToastUtils.error('Please select a bucket first');
+        return;
+      }
+      
+      const result = await StorageService.renameFolder(projectId, selectedBucket, folderToRename, newPath);
       
       if (result.success) {
         ToastUtils.success('Folder renamed successfully');
@@ -290,11 +350,16 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
     }
 
     try {
+      if (!selectedBucket) {
+        ToastUtils.error('Please select a bucket first');
+        return;
+      }
+      
       const folderPath = currentPath 
         ? `${currentPath}/${newFolderName.trim()}`
         : newFolderName.trim();
       
-      const result = await StorageService.createFolder(projectId, folderPath);
+      const result = await StorageService.createFolder(projectId, selectedBucket, folderPath);
       
       if (result.success) {
         ToastUtils.success('Folder created successfully');
@@ -324,8 +389,13 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
       newUploading.add(fileName);
       setUploadingFiles(new Set(newUploading));
 
+      if (!selectedBucket) {
+        ToastUtils.error('Please select a bucket first');
+        return;
+      }
+      
       try {
-        const result = await StorageService.uploadFile(projectId, filePath, file);
+        const result = await StorageService.uploadFile(projectId, selectedBucket, filePath, file);
         
         if (result.success) {
           ToastUtils.success(`${fileName} uploaded successfully`);
@@ -362,6 +432,40 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
     <div className="h-full flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+        {/* Bucket Selector */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Select Bucket *
+          </label>
+          {loadingBuckets ? (
+            <div className="text-sm text-gray-500 dark:text-gray-400">Loading buckets...</div>
+          ) : buckets.length === 0 ? (
+            <div className="text-sm text-amber-600 dark:text-amber-400">
+              No buckets found. Please create a bucket first.
+            </div>
+          ) : (
+            <div className="relative">
+              <select
+                value={selectedBucket || ''}
+                onChange={(e) => {
+                  setSelectedBucket(e.target.value);
+                  setCurrentPath(''); // Reset path when bucket changes
+                  setSelectedFiles(new Set());
+                }}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                required
+              >
+                <option value="">-- Select a bucket --</option>
+                {buckets.map((bucket) => (
+                  <option key={bucket.id} value={bucket.bucket_name}>
+                    {bucket.bucket_name} {bucket.description ? `- ${bucket.description}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
             Storage Browser
@@ -379,6 +483,7 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
               variant="primary"
               size="sm"
               onClick={() => setShowCreateFolderModal(true)}
+              disabled={!selectedBucket}
             >
               <FolderPlus className="h-4 w-4 mr-2" />
               New Folder
@@ -387,6 +492,7 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
               variant="primary"
               size="sm"
               onClick={() => setShowUploadModal(true)}
+              disabled={!selectedBucket}
             >
               <Upload className="h-4 w-4 mr-2" />
               Upload Files
@@ -441,7 +547,13 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
 
       {/* File List */}
       <div className="flex-1 overflow-auto">
-        {loading ? (
+        {!selectedBucket ? (
+          <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
+            <Folder className="h-16 w-16 mb-4 opacity-50" />
+            <p className="text-lg font-medium">No bucket selected</p>
+            <p className="text-sm">Please select a bucket from the dropdown above to view files</p>
+          </div>
+        ) : loading ? (
           <div className="flex items-center justify-center h-full">
             <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
           </div>

@@ -9,7 +9,6 @@ interface Project {
   description?: string;
   organization_id?: number;
   schema_name: string;
-  bucket_name: string;
   created_at: string;
   updated_at: string;
   user_id: string;
@@ -67,7 +66,6 @@ const useProjectStore = create<ProjectStoreType>()(
                 description: p.description,
                 organization_id: p.organization_id,
                 schema_name: p.schema_name,
-                bucket_name: p.bucket_name,
                 created_at: p.created_at,
                 updated_at: p.updated_at,
                 user_id: p.user_id.toString(),
@@ -108,7 +106,6 @@ const useProjectStore = create<ProjectStoreType>()(
               description: projectData.description,
               organization_id: projectData.organization_id,
               schema_name: projectData.schema_name,
-              bucket_name: projectData.bucket_name,
               created_at: projectData.created_at,
               updated_at: projectData.updated_at,
               user_id: projectData.user_id.toString(),
@@ -274,7 +271,6 @@ const useProjectStore = create<ProjectStoreType>()(
               name: projectData.name,
               description: projectData.description,
               schema_name: projectData.schema_name,
-              bucket_name: projectData.bucket_name,
               created_at: projectData.created_at,
               updated_at: projectData.updated_at,
               user_id: projectData.user_id.toString(),

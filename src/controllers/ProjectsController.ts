@@ -126,6 +126,148 @@ class ProjectsController {
     }
   }
 
+  // Get user dashboard statistics (aggregated across all projects)
+  static async getUserDashboardStats(req: SuperTokensAuthenticatedRequest, res: Response) {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    try {
+      const userId = req.user.userId;
+
+      // Get all projects the user has access to (same logic as getAllProjects)
+      const userProjects = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.user_id, userId));
+
+      const orgProjects = await db.execute(sql`
+        SELECT DISTINCT p.* 
+        FROM projects p
+        INNER JOIN organizations o ON p.organization_id = o.id
+        INNER JOIN organization_members om ON o.id = om.organization_id
+        WHERE om.user_id = ${userId}
+        ORDER BY p.created_at
+      `);
+
+      const memberProjects = await db.execute(sql`
+        SELECT DISTINCT p.* 
+        FROM projects p
+        INNER JOIN project_members pm ON p.id = pm.project_id
+        WHERE pm.user_id = ${userId}
+        ORDER BY p.created_at
+      `);
+
+      const projectMap = new Map();
+      [...userProjects, ...(orgProjects.rows as any[]), ...(memberProjects.rows as any[])].forEach((project) => {
+        if (!projectMap.has(project.id)) {
+          projectMap.set(project.id, project);
+        }
+      });
+
+      const allProjects = Array.from(projectMap.values()) as any[];
+
+      // Aggregate statistics
+      let totalProjects = allProjects.length;
+      let totalTables = 0;
+      let totalFiles = 0;
+      let totalApiCalls = 0;
+
+      // Get stats for each project
+      for (const project of allProjects) {
+        try {
+          // Get table count
+          const client = await ProjectsController.pool.connect();
+          try {
+            await client.query(`SET search_path TO ${project.schema_name}, public`);
+            const tableResult = await client.query(`
+              SELECT COUNT(*) as count
+              FROM information_schema.tables
+              WHERE table_schema = $1
+                AND table_type = 'BASE TABLE'
+            `, [project.schema_name]);
+            totalTables += parseInt(tableResult.rows[0]?.count || '0', 10);
+          } finally {
+            client.release();
+          }
+        } catch (error) {
+          // Continue if error
+        }
+
+        try {
+          // Get file count from all buckets for this project
+          const client = await ProjectsController.pool.connect();
+          let buckets: { bucket_name: string }[] = [];
+          
+          try {
+            // Get all buckets for the project
+            const bucketsResult = await client.query(
+              'SELECT bucket_name FROM project_buckets WHERE project_id = $1',
+              [project.id]
+            );
+            buckets = bucketsResult.rows;
+          } finally {
+            client.release();
+          }
+
+          // Count files in each bucket
+          for (const bucket of buckets) {
+            try {
+              const command = new ListObjectsV2Command({
+                Bucket: bucket.bucket_name,
+              });
+              const response = await s3Client.send(command);
+              let bucketFileCount = response.KeyCount || (response.Contents?.length || 0);
+              
+              if (response.IsTruncated) {
+                let continuationToken = response.NextContinuationToken;
+                while (continuationToken) {
+                  const nextCommand = new ListObjectsV2Command({
+                    Bucket: bucket.bucket_name,
+                    ContinuationToken: continuationToken,
+                  });
+                  const nextResponse = await s3Client.send(nextCommand);
+                  bucketFileCount += nextResponse.KeyCount || (nextResponse.Contents?.length || 0);
+                  continuationToken = nextResponse.NextContinuationToken;
+                }
+              }
+              totalFiles += bucketFileCount;
+            } catch (error: any) {
+              // Continue if bucket doesn't exist
+            }
+          }
+        } catch (error: any) {
+          // Continue if error fetching buckets
+        }
+
+        try {
+          // Get API call count (only app-api routes)
+          const apiResult = await ProjectsController.pool.query(`
+            SELECT COUNT(*) as count
+            FROM public.api_metrics
+            WHERE project_id = $1
+              AND endpoint LIKE '/app-api/%'
+          `, [project.id]);
+          totalApiCalls += parseInt(apiResult.rows[0]?.count || '0', 10);
+        } catch (error) {
+          // Continue if error
+        }
+      }
+
+      const stats = {
+        totalProjects,
+        totalTables,
+        totalFiles,
+        totalApiCalls,
+      };
+
+      ResponseUtils.success(res, 'Dashboard statistics fetched successfully', stats);
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+      ResponseUtils.error(res, 'Failed to fetch dashboard statistics', error);
+    }
+  }
+
   // Get project by ID
   static async getProjectById(req: SuperTokensAuthenticatedRequest, res: Response) {
     // User info is attached by SuperTokens middleware
@@ -190,16 +332,101 @@ class ProjectsController {
 
       const project = projectResult[0];
 
-      // TODO: Get table count from project schema
-      // TODO: Get file count from MinIO bucket
-      // TODO: Get API call count from logs
+      // Get table count from project schema
+      let tableCount = 0;
+      try {
+        const client = await ProjectsController.pool.connect();
+        try {
+          await client.query(`SET search_path TO ${project.schema_name}, public`);
+          const tableResult = await client.query(`
+            SELECT COUNT(*) as count
+            FROM information_schema.tables
+            WHERE table_schema = $1
+              AND table_type = 'BASE TABLE'
+          `, [project.schema_name]);
+          tableCount = parseInt(tableResult.rows[0]?.count || '0', 10);
+        } finally {
+          client.release();
+        }
+      } catch (error) {
+        console.error('Error fetching table count:', error);
+        // Continue with 0 if there's an error
+      }
+
+      // Get file count from all MinIO buckets for this project
+      let fileCount = 0;
+      try {
+        const client = await ProjectsController.pool.connect();
+        let buckets: { bucket_name: string }[] = [];
+        
+        try {
+          // Get all buckets for the project
+          const bucketsResult = await client.query(
+            'SELECT bucket_name FROM project_buckets WHERE project_id = $1',
+            [projectId]
+          );
+          buckets = bucketsResult.rows;
+        } finally {
+          client.release();
+        }
+
+        // Count files in each bucket
+        for (const bucket of buckets) {
+          try {
+            const command = new ListObjectsV2Command({
+              Bucket: bucket.bucket_name,
+            });
+            const response = await s3Client.send(command);
+            let bucketFileCount = response.KeyCount || (response.Contents?.length || 0);
+            
+            // If there are more files, count all of them
+            if (response.IsTruncated) {
+              let continuationToken = response.NextContinuationToken;
+              while (continuationToken) {
+                const nextCommand = new ListObjectsV2Command({
+                  Bucket: bucket.bucket_name,
+                  ContinuationToken: continuationToken,
+                });
+                const nextResponse = await s3Client.send(nextCommand);
+                bucketFileCount += nextResponse.KeyCount || (nextResponse.Contents?.length || 0);
+                continuationToken = nextResponse.NextContinuationToken;
+              }
+            }
+            
+            fileCount += bucketFileCount;
+          } catch (error: any) {
+            if (error.name !== 'NoSuchBucket') {
+              console.error(`Error fetching file count for bucket ${bucket.bucket_name}:`, error);
+            }
+            // Continue with 0 if bucket doesn't exist or there's an error
+          }
+        }
+      } catch (error: any) {
+        console.error('Error fetching buckets for file count:', error);
+        // Continue with 0 if there's an error
+      }
+
+      // Get API call count from api_metrics table (only app-api routes)
+      let apiCalls = 0;
+      try {
+        const apiResult = await ProjectsController.pool.query(`
+          SELECT COUNT(*) as count
+          FROM public.api_metrics
+          WHERE project_id = $1
+            AND endpoint LIKE '/app-api/%'
+        `, [projectId]);
+        apiCalls = parseInt(apiResult.rows[0]?.count || '0', 10);
+      } catch (error) {
+        console.error('Error fetching API call count:', error);
+        // Continue with 0 if there's an error
+      }
 
       const stats = {
         projectId: project.id,
         projectName: project.name,
-        tableCount: 0,
-        fileCount: 0,
-        apiCalls: 0,
+        tableCount,
+        fileCount,
+        apiCalls,
         createdAt: project.created_at,
       };
 
@@ -251,11 +478,10 @@ class ProjectsController {
         return ResponseUtils.error(res, 'You do not have permission to create projects in this organization', null, null, 403);
       }
 
-      // Generate unique schema and bucket names
+      // Generate unique schema name
       const timestamp = Date.now();
       const sanitizedName = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
       const schemaName = `project_${sanitizedName}_${timestamp}`;
-      const bucketName = `project-${sanitizedName}-${timestamp}`;
 
       // Create project in database
       const result = await db
@@ -266,7 +492,6 @@ class ProjectsController {
           organization_id: organization_id,
           user_id: userId, // Store creator for audit purposes
           schema_name: schemaName,
-          bucket_name: bucketName,
         })
         .returning();
 
@@ -304,16 +529,8 @@ class ProjectsController {
         // Continue even if auth settings creation fails
       }
 
-      // Create MinIO bucket
-      try {
-        await s3Client.send(new CreateBucketCommand({ Bucket: bucketName }));
-        console.log(`✅ Created MinIO bucket: ${bucketName}`);
-      } catch (bucketError: any) {
-        if (bucketError.name !== 'BucketAlreadyOwnedByYou' && bucketError.name !== 'BucketAlreadyExists') {
-          console.error('❌ Error creating MinIO bucket:', bucketError);
-        }
-        // Continue even if bucket creation fails
-      }
+      // Note: Buckets are now created manually via ProjectBucketsController
+      // Projects start with no buckets
 
       // Emit WebSocket event
       emitProjectEvent(newProject.id.toString(), 'project_created', newProject);
@@ -475,7 +692,6 @@ class ProjectsController {
 
       const project = existing[0];
       const schemaName = project.schema_name;
-      const bucketName = project.bucket_name;
 
       let droppedTables = 0;
       let deletedFiles = 0;
@@ -521,52 +737,82 @@ class ProjectsController {
         console.error(`❌ ${errorMsg}`);
       }
 
-      // 2. Delete all files from MinIO bucket
+      // 2. Delete all files from all MinIO buckets for this project
       try {
-        console.log(`🗑️  Clearing bucket ${bucketName}`);
+        const client = await ProjectsController.pool.connect();
+        let buckets: { bucket_name: string }[] = [];
         
-        // List all objects in the bucket
-        let continuationToken: string | undefined;
-        let hasMore = true;
-
-        while (hasMore) {
-          const listCommand = new ListObjectsV2Command({
-            Bucket: bucketName,
-            ContinuationToken: continuationToken,
-          });
-
-          const listResponse = await s3Client.send(listCommand);
-          
-          if (listResponse.Contents && listResponse.Contents.length > 0) {
-            // Delete objects in batches
-            const deleteCommand = new DeleteObjectsCommand({
-              Bucket: bucketName,
-              Delete: {
-                Objects: listResponse.Contents.map(obj => ({ Key: obj.Key })),
-                Quiet: false,
-              },
-            });
-
-            const deleteResponse = await s3Client.send(deleteCommand);
-            const deletedCount = deleteResponse.Deleted?.length || 0;
-            deletedFiles += deletedCount;
-            
-            console.log(`  ✓ Deleted ${deletedCount} files from bucket`);
-
-            if (deleteResponse.Errors && deleteResponse.Errors.length > 0) {
-              deleteResponse.Errors.forEach(err => {
-                const errorMsg = `Failed to delete ${err.Key}: ${err.Message}`;
-                errors.push(errorMsg);
-                console.error(`  ✗ ${errorMsg}`);
-              });
-            }
-          }
-
-          hasMore = listResponse.IsTruncated || false;
-          continuationToken = listResponse.NextContinuationToken;
+        try {
+          // Get all buckets for the project
+          const bucketsResult = await client.query(
+            'SELECT bucket_name FROM project_buckets WHERE project_id = $1',
+            [projectId]
+          );
+          buckets = bucketsResult.rows;
+        } finally {
+          client.release();
         }
 
-        console.log(`🗑️  Cleared ${deletedFiles} files from bucket ${bucketName}`);
+        if (buckets.length === 0) {
+          console.log(`📦 No buckets found for project ${projectId}`);
+        } else {
+          console.log(`📦 Found ${buckets.length} bucket(s) to clear`);
+          
+          // Clear each bucket
+          for (const bucket of buckets) {
+            const bucketName = bucket.bucket_name;
+            try {
+              console.log(`🗑️  Clearing bucket ${bucketName}`);
+              
+              // List all objects in the bucket
+              let continuationToken: string | undefined;
+              let hasMore = true;
+
+              while (hasMore) {
+                const listCommand = new ListObjectsV2Command({
+                  Bucket: bucketName,
+                  ContinuationToken: continuationToken,
+                });
+
+                const listResponse = await s3Client.send(listCommand);
+                
+                if (listResponse.Contents && listResponse.Contents.length > 0) {
+                  // Delete objects in batches
+                  const deleteCommand = new DeleteObjectsCommand({
+                    Bucket: bucketName,
+                    Delete: {
+                      Objects: listResponse.Contents.map(obj => ({ Key: obj.Key })),
+                      Quiet: false,
+                    },
+                  });
+
+                  const deleteResponse = await s3Client.send(deleteCommand);
+                  const deletedCount = deleteResponse.Deleted?.length || 0;
+                  deletedFiles += deletedCount;
+                  
+                  console.log(`  ✓ Deleted ${deletedCount} files from bucket ${bucketName}`);
+
+                  if (deleteResponse.Errors && deleteResponse.Errors.length > 0) {
+                    deleteResponse.Errors.forEach(err => {
+                      const errorMsg = `Failed to delete ${err.Key}: ${err.Message}`;
+                      errors.push(errorMsg);
+                      console.error(`  ✗ ${errorMsg}`);
+                    });
+                  }
+                }
+
+                hasMore = listResponse.IsTruncated || false;
+                continuationToken = listResponse.NextContinuationToken;
+              }
+
+              console.log(`🗑️  Cleared ${deletedFiles} files from bucket ${bucketName}`);
+            } catch (error: any) {
+              const errorMsg = `Storage reset error for bucket ${bucketName}: ${error.message}`;
+              errors.push(errorMsg);
+              console.error(`❌ ${errorMsg}`);
+            }
+          }
+        }
       } catch (error: any) {
         const errorMsg = `Storage reset error: ${error.message}`;
         errors.push(errorMsg);

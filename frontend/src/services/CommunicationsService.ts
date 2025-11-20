@@ -59,6 +59,34 @@ export interface SendEmailRequest {
   }>;
 }
 
+export interface EmailTemplate {
+  id?: number;
+  project_id: string;
+  name: string;
+  subject: string;
+  html_content?: string;
+  text_content?: string;
+  variables?: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CreateEmailTemplateRequest {
+  name: string;
+  subject: string;
+  html_content?: string;
+  text_content?: string;
+  variables?: string[];
+}
+
+export interface UpdateEmailTemplateRequest {
+  name?: string;
+  subject?: string;
+  html_content?: string;
+  text_content?: string;
+  variables?: string[];
+}
+
 export interface SmsProvider {
   id?: number;
   project_id: string;
@@ -91,6 +119,28 @@ export interface UpdateSmsProviderRequest {
 export interface SendSmsMessage {
   content: string;
   destination: string;
+}
+
+export interface SmsTemplate {
+  id?: number;
+  project_id: string;
+  name: string;
+  content: string;
+  variables?: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CreateSmsTemplateRequest {
+  name: string;
+  content: string;
+  variables?: string[];
+}
+
+export interface UpdateSmsTemplateRequest {
+  name?: string;
+  content?: string;
+  variables?: string[];
 }
 
 class CommunicationsService {
@@ -248,6 +298,99 @@ class CommunicationsService {
     }
   }
 
+  // ---------- EMAIL TEMPLATES ----------
+
+  async listEmailTemplates(projectId: string): Promise<EmailTemplate[]> {
+    try {
+      const response = await RequestUtils.get(
+        ApiRoutes.COMMUNICATIONS.LIST_EMAIL_TEMPLATES(projectId),
+        this.getToken()
+      );
+
+      if (response.success) {
+        return response.data;
+      }
+
+      throw new Error(response.error || 'Failed to list email templates');
+    } catch (error: any) {
+      console.error('Error listing email templates:', error);
+      throw new Error(error.message || 'Failed to list email templates');
+    }
+  }
+
+  async getEmailTemplate(projectId: string, templateId: string): Promise<EmailTemplate> {
+    try {
+      const response = await RequestUtils.get(
+        ApiRoutes.COMMUNICATIONS.GET_EMAIL_TEMPLATE(projectId, templateId),
+        this.getToken()
+      );
+
+      if (response.success) {
+        return response.data;
+      }
+
+      throw new Error(response.error || 'Failed to get email template');
+    } catch (error: any) {
+      console.error('Error getting email template:', error);
+      throw new Error(error.message || 'Failed to get email template');
+    }
+  }
+
+  async createEmailTemplate(projectId: string, data: CreateEmailTemplateRequest): Promise<EmailTemplate> {
+    try {
+      const response = await RequestUtils.post(
+        ApiRoutes.COMMUNICATIONS.CREATE_EMAIL_TEMPLATE(projectId),
+        this.getToken(),
+        data
+      );
+
+      if (response.success) {
+        return response.data;
+      }
+
+      throw new Error(response.error || 'Failed to create email template');
+    } catch (error: any) {
+      console.error('Error creating email template:', error);
+      throw new Error(error.message || 'Failed to create email template');
+    }
+  }
+
+  async updateEmailTemplate(projectId: string, templateId: string, data: UpdateEmailTemplateRequest): Promise<EmailTemplate> {
+    try {
+      const response = await RequestUtils.put(
+        ApiRoutes.COMMUNICATIONS.UPDATE_EMAIL_TEMPLATE(projectId, templateId),
+        this.getToken(),
+        data
+      );
+
+      if (response.success) {
+        return response.data;
+      }
+
+      throw new Error(response.error || 'Failed to update email template');
+    } catch (error: any) {
+      console.error('Error updating email template:', error);
+      throw new Error(error.message || 'Failed to update email template');
+    }
+  }
+
+  async deleteEmailTemplate(projectId: string, templateId: string): Promise<void> {
+    try {
+      const response = await RequestUtils.delete(
+        ApiRoutes.COMMUNICATIONS.DELETE_EMAIL_TEMPLATE(projectId, templateId),
+        this.getToken(),
+        {}
+      );
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to delete email template');
+      }
+    } catch (error: any) {
+      console.error('Error deleting email template:', error);
+      throw new Error(error.message || 'Failed to delete email template');
+    }
+  }
+
   // ---------- SMS PROVIDERS ----------
 
   async listSmsProviders(projectId: string): Promise<SmsProvider[]> {
@@ -330,6 +473,90 @@ class CommunicationsService {
     } catch (error: any) {
       console.error('Error sending SMS:', error);
       throw new Error(error.message || 'Failed to send SMS');
+    }
+  }
+
+  // ---------- SMS TEMPLATES ----------
+
+  async listSmsTemplates(projectId: string): Promise<SmsTemplate[]> {
+    try {
+      const response = await RequestUtils.get(
+        ApiRoutes.COMMUNICATIONS.LIST_SMS_TEMPLATES(projectId),
+        this.getToken()
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to list SMS templates');
+    } catch (error: any) {
+      console.error('Error listing SMS templates:', error);
+      throw new Error(error.message || 'Failed to list SMS templates');
+    }
+  }
+
+  async getSmsTemplate(projectId: string, templateId: string): Promise<SmsTemplate> {
+    try {
+      const response = await RequestUtils.get(
+        ApiRoutes.COMMUNICATIONS.GET_SMS_TEMPLATE(projectId, templateId),
+        this.getToken()
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to get SMS template');
+    } catch (error: any) {
+      console.error('Error getting SMS template:', error);
+      throw new Error(error.message || 'Failed to get SMS template');
+    }
+  }
+
+  async createSmsTemplate(projectId: string, data: CreateSmsTemplateRequest): Promise<SmsTemplate> {
+    try {
+      const response = await RequestUtils.post(
+        ApiRoutes.COMMUNICATIONS.CREATE_SMS_TEMPLATE(projectId),
+        this.getToken(),
+        data
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to create SMS template');
+    } catch (error: any) {
+      console.error('Error creating SMS template:', error);
+      throw new Error(error.message || 'Failed to create SMS template');
+    }
+  }
+
+  async updateSmsTemplate(projectId: string, templateId: string, data: UpdateSmsTemplateRequest): Promise<SmsTemplate> {
+    try {
+      const response = await RequestUtils.put(
+        ApiRoutes.COMMUNICATIONS.UPDATE_SMS_TEMPLATE(projectId, templateId),
+        this.getToken(),
+        data
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to update SMS template');
+    } catch (error: any) {
+      console.error('Error updating SMS template:', error);
+      throw new Error(error.message || 'Failed to update SMS template');
+    }
+  }
+
+  async deleteSmsTemplate(projectId: string, templateId: string): Promise<void> {
+    try {
+      const response = await RequestUtils.delete(
+        ApiRoutes.COMMUNICATIONS.DELETE_SMS_TEMPLATE(projectId, templateId),
+        this.getToken(),
+        {}
+      );
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to delete SMS template');
+      }
+    } catch (error: any) {
+      console.error('Error deleting SMS template:', error);
+      throw new Error(error.message || 'Failed to delete SMS template');
     }
   }
 }

@@ -4,6 +4,7 @@
 
 export interface PathMatchResult {
   projectId?: string;
+  bucketName?: string;
   filePath?: string;
   folderPath?: string;
   isMetadata?: boolean;
@@ -14,18 +15,20 @@ export interface PathMatchResult {
  */
 export function matchDownloadPattern(path: string, isAdmin: boolean): PathMatchResult | null {
   if (isAdmin) {
-    const match = path.match(/^\/(\d+)\/download\/(.+)$/);
+    const match = path.match(/^\/(\d+)\/([^\/]+)\/download\/(.+)$/);
     if (match) {
       return {
         projectId: match[1],
-        filePath: decodeURIComponent(match[2]),
+        bucketName: match[2],
+        filePath: decodeURIComponent(match[3]),
       };
     }
   } else {
-    const match = path.match(/^\/download\/(.+)$/);
+    const match = path.match(/^\/([^\/]+)\/download\/(.+)$/);
     if (match) {
       return {
-        filePath: decodeURIComponent(match[1]),
+        bucketName: match[1],
+        filePath: decodeURIComponent(match[2]),
       };
     }
   }
@@ -37,18 +40,20 @@ export function matchDownloadPattern(path: string, isAdmin: boolean): PathMatchR
  */
 export function matchFoldersPattern(path: string, isAdmin: boolean): PathMatchResult | null {
   if (isAdmin) {
-    const match = path.match(/^\/(\d+)\/folders\/(.+)$/);
+    const match = path.match(/^\/(\d+)\/([^\/]+)\/folders\/(.+)$/);
     if (match) {
       return {
         projectId: match[1],
-        folderPath: decodeURIComponent(match[2]),
+        bucketName: match[2],
+        folderPath: decodeURIComponent(match[3]),
       };
     }
   } else {
-    const match = path.match(/^\/folders\/(.+)$/);
+    const match = path.match(/^\/([^\/]+)\/folders\/(.+)$/);
     if (match) {
       return {
-        folderPath: decodeURIComponent(match[1]),
+        bucketName: match[1],
+        folderPath: decodeURIComponent(match[2]),
       };
     }
   }
@@ -60,38 +65,44 @@ export function matchFoldersPattern(path: string, isAdmin: boolean): PathMatchRe
  */
 export function matchFilesPattern(path: string, isAdmin: boolean): PathMatchResult | null {
   if (isAdmin) {
-    const match = path.match(/^\/(\d+)\/files\/(.+)$/);
+    const match = path.match(/^\/(\d+)\/([^\/]+)\/files\/(.+)$/);
     if (match) {
       const projectId = match[1];
-      const filePathPart = match[2];
+      const bucketName = match[2];
+      const filePathPart = match[3];
       
       // Check if this is a metadata request
       if (filePathPart.endsWith('/metadata')) {
         return {
           projectId,
+          bucketName,
           filePath: decodeURIComponent(filePathPart.replace(/\/metadata$/, '')),
           isMetadata: true,
         };
       } else {
         return {
           projectId,
+          bucketName,
           filePath: decodeURIComponent(filePathPart),
         };
       }
     }
   } else {
-    const match = path.match(/^\/files\/(.+)$/);
+    const match = path.match(/^\/([^\/]+)\/files\/(.+)$/);
     if (match) {
-      const filePathPart = match[1];
+      const bucketName = match[1];
+      const filePathPart = match[2];
       
       // Check if this is a metadata request
       if (filePathPart.endsWith('/metadata')) {
         return {
+          bucketName,
           filePath: decodeURIComponent(filePathPart.replace(/\/metadata$/, '')),
           isMetadata: true,
         };
       } else {
         return {
+          bucketName,
           filePath: decodeURIComponent(filePathPart),
         };
       }

@@ -41,6 +41,20 @@ export function createCommunicationsRouter(pool: Pool): Router {
   // Email Sending
   router.post('/:projectId/email/send', authMiddleware, controller.sendEmail);
 
+  // Email Template Management Routes
+  router.get('/:projectId/email/templates', authMiddleware, controller.listEmailTemplates);
+  router.get('/:projectId/email/templates/:templateId', authMiddleware, controller.getEmailTemplate);
+  router.post('/:projectId/email/templates', authMiddleware, controller.createEmailTemplate);
+  router.put('/:projectId/email/templates/:templateId', authMiddleware, controller.updateEmailTemplate);
+  router.delete('/:projectId/email/templates/:templateId', authMiddleware, controller.deleteEmailTemplate);
+
+  // SMS Template Management Routes
+  router.get('/:projectId/sms/templates', authMiddleware, controller.listSmsTemplates);
+  router.get('/:projectId/sms/templates/:templateId', authMiddleware, controller.getSmsTemplate);
+  router.post('/:projectId/sms/templates', authMiddleware, controller.createSmsTemplate);
+  router.put('/:projectId/sms/templates/:templateId', authMiddleware, controller.updateSmsTemplate);
+  router.delete('/:projectId/sms/templates/:templateId', authMiddleware, controller.deleteSmsTemplate);
+
   // SMS Sending
   router.post('/:projectId/sms/send', authMiddleware, smsController.send);
   router.post('/:projectId/sms/send-basic', authMiddleware, smsController.sendBasic);

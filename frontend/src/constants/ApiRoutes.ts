@@ -39,6 +39,15 @@ const ApiRoutes = {
     DELETE: (id: string) => `/api/projects/delete/${id}`,
     RESET: (id: string) => `/api/projects/reset/${id}`,
     STATS: (id: string) => `/api/projects/${id}/stats`,
+    DASHBOARD_STATS: '/api/projects/dashboard-stats',
+  },
+  
+  // Project Buckets routes
+  PROJECT_BUCKETS: {
+    LIST: (projectId: string) => `/api/projects/${projectId}/buckets`,
+    CREATE: (projectId: string) => `/api/projects/${projectId}/buckets`,
+    UPDATE: (projectId: string, bucketId: number) => `/api/projects/${projectId}/buckets/${bucketId}`,
+    DELETE: (projectId: string, bucketId: number) => `/api/projects/${projectId}/buckets/${bucketId}`,
   },
   
   // Users routes
@@ -56,25 +65,23 @@ const ApiRoutes = {
   },
   
   // Storage routes - Admin API (SuperTokens authentication)
-  // Project ID is provided in the URL path
+  // Project ID and bucket name are provided in the URL path
   STORAGE: {
-    // Bucket operations
-    LIST_BUCKETS: '/api/storage/buckets',
-    CREATE_BUCKET: '/api/storage/buckets',
-    DELETE_BUCKET: (bucketName: string) => `/api/storage/buckets/${bucketName}`,
+    // Bucket operations (list buckets for a project)
+    LIST_BUCKETS: (projectId: string) => `/api/storage/${projectId}/buckets`,
     
-    // File operations
-    LIST_FILES: (projectId: string) => `/api/storage/${projectId}/files`,
-    SEARCH_FILES: (projectId: string) => `/api/storage/${projectId}/search`,
-    UPLOAD_FILE: (projectId: string) => `/api/storage/${projectId}/upload`,
-    UPLOAD_FILE_MULTIPART: (projectId: string) => `/api/storage/${projectId}/upload-multipart`,
-    DOWNLOAD_FILE: (projectId: string, filePath: string) => `/api/storage/${projectId}/download/${filePath}`,
-    DELETE_FILE: (projectId: string, filePath: string) => `/api/storage/${projectId}/files/${filePath}`,
-    GET_FILE_METADATA: (projectId: string, filePath: string) => `/api/storage/${projectId}/files/${filePath}/metadata`,
+    // File operations (require bucketName)
+    LIST_FILES: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/files`,
+    SEARCH_FILES: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/search`,
+    UPLOAD_FILE: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/upload`,
+    UPLOAD_FILE_MULTIPART: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/upload-multipart`,
+    DOWNLOAD_FILE: (projectId: string, bucketName: string, filePath: string) => `/api/storage/${projectId}/${bucketName}/download/${filePath}`,
+    DELETE_FILE: (projectId: string, bucketName: string, filePath: string) => `/api/storage/${projectId}/${bucketName}/files/${filePath}`,
+    GET_FILE_METADATA: (projectId: string, bucketName: string, filePath: string) => `/api/storage/${projectId}/${bucketName}/files/${filePath}/metadata`,
     
-    // Folder operations
-    RENAME_FOLDER: (projectId: string) => `/api/storage/${projectId}/folders/rename`,
-    DELETE_FOLDER: (projectId: string, folderPath: string) => `/api/storage/${projectId}/folders/${folderPath}`,
+    // Folder operations (require bucketName)
+    RENAME_FOLDER: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/folders/rename`,
+    DELETE_FOLDER: (projectId: string, bucketName: string, folderPath: string) => `/api/storage/${projectId}/${bucketName}/folders/${folderPath}`,
   },
   
   // Database routes - Admin API (SuperTokens authentication)
@@ -98,8 +105,21 @@ const ApiRoutes = {
     CREATE_FOREIGN_KEY: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/foreign-key`,
     CREATE_UNIQUE_CONSTRAINT: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/unique`,
     CREATE_PRIMARY_KEY: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/primary-key`,
-    CREATE_CHECK_CONSTRAINT: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/check`,
     DROP_CONSTRAINT: (projectId: string, tableName: string, constraintName: string) => `/api/database/${projectId}/tables/${tableName}/constraints/${constraintName}`,
+  },
+  
+  // Workflows routes
+  WORKFLOWS: {
+    LIST: (projectId: string) => `/api/workflows/${projectId}`,
+    GET: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}`,
+    CREATE: (projectId: string) => `/api/workflows/${projectId}`,
+    UPDATE: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}`,
+    DELETE: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}`,
+    EXECUTE: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}/execute`,
+    GET_EXECUTIONS: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}/executions`,
+    GET_EXECUTION_LOGS: (projectId: string, workflowId: number, executionId: number) => `/api/workflows/${projectId}/${workflowId}/executions/${executionId}/logs`,
+    SCHEDULE: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}/schedule`,
+    UNSCHEDULE: (projectId: string, workflowId: number) => `/api/workflows/${projectId}/${workflowId}/schedule`,
   },
   
   // Communications routes
@@ -111,6 +131,12 @@ const ApiRoutes = {
     UPDATE_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}`,
     DELETE_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}`,
     TEST_CONNECTION: (projectId: string, providerId: string) => `/api/communications/${projectId}/email/providers/${providerId}/test`,
+    // Email template management
+    LIST_EMAIL_TEMPLATES: (projectId: string) => `/api/communications/${projectId}/email/templates`,
+    GET_EMAIL_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/email/templates/${templateId}`,
+    CREATE_EMAIL_TEMPLATE: (projectId: string) => `/api/communications/${projectId}/email/templates`,
+    UPDATE_EMAIL_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/email/templates/${templateId}`,
+    DELETE_EMAIL_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/email/templates/${templateId}`,
     // Email sending
     SEND_EMAIL: (projectId: string) => `/api/communications/${projectId}/email/send`,
     // SMS provider management
@@ -119,6 +145,12 @@ const ApiRoutes = {
     CREATE_SMS_PROVIDER: (projectId: string) => `/api/communications/${projectId}/sms/providers`,
     UPDATE_SMS_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/sms/providers/${providerId}`,
     DELETE_SMS_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/sms/providers/${providerId}`,
+    // SMS template management
+    LIST_SMS_TEMPLATES: (projectId: string) => `/api/communications/${projectId}/sms/templates`,
+    GET_SMS_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/sms/templates/${templateId}`,
+    CREATE_SMS_TEMPLATE: (projectId: string) => `/api/communications/${projectId}/sms/templates`,
+    UPDATE_SMS_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/sms/templates/${templateId}`,
+    DELETE_SMS_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/sms/templates/${templateId}`,
     // SMS sending
     SEND_SMS: (projectId: string) => `/api/communications/${projectId}/sms/send`,
     SEND_SMS_BASIC: (projectId: string) => `/api/communications/${projectId}/sms/send-basic`,
@@ -177,6 +209,20 @@ const ApiRoutes = {
     API: (projectId: string) => `/api/analytics/${projectId}/api`,
     DATABASE: (projectId: string) => `/api/analytics/${projectId}/database`,
     STORAGE: (projectId: string) => `/api/analytics/${projectId}/storage`,
+  },
+  
+  // Backup routes
+  BACKUPS: {
+    CREATE: (projectId: string) => `/api/backups/${projectId}/create`,
+    LIST: (projectId: string) => `/api/backups/${projectId}/list`,
+    DOWNLOAD: (projectId: string, backupId: string) => `/api/backups/${projectId}/${backupId}/download`,
+    RESTORE: (projectId: string, backupId: string) => `/api/backups/${projectId}/${backupId}/restore`,
+    DELETE: (projectId: string, backupId: string) => `/api/backups/${projectId}/${backupId}`,
+    // Backup schedules
+    LIST_SCHEDULES: (projectId: string) => `/api/backups/${projectId}/schedules`,
+    CREATE_SCHEDULE: (projectId: string) => `/api/backups/${projectId}/schedules`,
+    UPDATE_SCHEDULE: (projectId: string, scheduleId: number) => `/api/backups/${projectId}/schedules/${scheduleId}`,
+    DELETE_SCHEDULE: (projectId: string, scheduleId: number) => `/api/backups/${projectId}/schedules/${scheduleId}`,
   }
 }
 

@@ -1295,6 +1295,54 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
+      // Check if pg_cron extension is installed, try to enable it if not
+      let extensionCheck = await client.query(`
+        SELECT EXISTS(
+          SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
+        ) as extension_exists
+      `);
+
+      if (!extensionCheck.rows[0].extension_exists) {
+        // Try to enable pg_cron extension
+        try {
+          await client.query('CREATE EXTENSION IF NOT EXISTS pg_cron');
+          // Verify it was created
+          extensionCheck = await client.query(`
+            SELECT EXISTS(
+              SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
+            ) as extension_exists
+          `);
+          
+          if (!extensionCheck.rows[0].extension_exists) {
+            client.release();
+            return ResponseUtils.error(
+              res,
+              'pg_cron extension could not be installed. It may require superuser privileges.',
+              null,
+              {
+                hint: 'Please install pg_cron manually: CREATE EXTENSION IF NOT EXISTS pg_cron; (requires superuser)',
+                extension_installed: false
+              },
+              400
+            );
+          }
+        } catch (extError: any) {
+          client.release();
+          // If extension creation fails, provide helpful error
+          return ResponseUtils.error(
+            res,
+            'pg_cron extension is not installed and could not be automatically enabled.',
+            extError,
+            {
+              hint: 'Please install pg_cron manually: CREATE EXTENSION IF NOT EXISTS pg_cron; (may require superuser privileges)',
+              extension_installed: false,
+              error_code: extError.code
+            },
+            400
+          );
+        }
+      }
+
       const result = await client.query(`
         SELECT 
           jobid,
@@ -1312,8 +1360,23 @@ class DatabaseController {
 
       client.release();
       ResponseUtils.success(res, 'Cron jobs fetched successfully', result.rows);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching cron jobs:', error);
+      
+      // Check if error is due to missing cron schema
+      if (error.message && error.message.includes('relation "cron.job" does not exist')) {
+        return ResponseUtils.error(
+          res,
+          'pg_cron extension is not installed. Please install it first.',
+          error,
+          {
+            hint: 'Run: CREATE EXTENSION IF NOT EXISTS pg_cron;',
+            extension_installed: false
+          },
+          400
+        );
+      }
+      
       ResponseUtils.error(res, 'Failed to fetch cron jobs', error);
     }
   }
@@ -1334,10 +1397,73 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Job name, schedule, and command are required', null, null, 400);
       }
 
+      // Validate cron schedule format (should have 5 parts separated by spaces)
+      const scheduleParts = schedule.trim().split(/\s+/);
+      if (scheduleParts.length !== 5) {
+        return ResponseUtils.error(
+          res,
+          'Invalid cron schedule format. Expected format: "minute hour day month weekday" (e.g., "*/5 * * * *")',
+          null,
+          {
+            hint: 'Cron schedule must have 5 parts separated by spaces: minute hour day month weekday',
+            received: schedule,
+            example: '*/5 * * * *'
+          },
+          400
+        );
+      }
+
       const client = await DatabaseController.getProjectClient(projectId);
       
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Check if pg_cron extension is installed, try to enable it if not
+      let extensionCheck = await client.query(`
+        SELECT EXISTS(
+          SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
+        ) as extension_exists
+      `);
+
+      if (!extensionCheck.rows[0].extension_exists) {
+        // Try to enable pg_cron extension
+        try {
+          await client.query('CREATE EXTENSION IF NOT EXISTS pg_cron');
+          // Verify it was created
+          extensionCheck = await client.query(`
+            SELECT EXISTS(
+              SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
+            ) as extension_exists
+          `);
+          
+          if (!extensionCheck.rows[0].extension_exists) {
+            client.release();
+            return ResponseUtils.error(
+              res,
+              'pg_cron extension could not be installed. It may require superuser privileges.',
+              null,
+              {
+                hint: 'Please install pg_cron manually: CREATE EXTENSION IF NOT EXISTS pg_cron; (requires superuser)',
+                extension_installed: false
+              },
+              400
+            );
+          }
+        } catch (extError: any) {
+          client.release();
+          return ResponseUtils.error(
+            res,
+            'pg_cron extension is not installed and could not be automatically enabled.',
+            extError,
+            {
+              hint: 'Please install pg_cron manually: CREATE EXTENSION IF NOT EXISTS pg_cron; (may require superuser privileges)',
+              extension_installed: false,
+              error_code: extError.code
+            },
+            400
+          );
+        }
       }
 
       // Get current schema and database info
@@ -1348,23 +1474,41 @@ class DatabaseController {
       // Set search path in the cron job command
       const fullCommand = `SET search_path TO ${currentSchema}, public; ${command}`;
 
+      // Normalize schedule format (ensure spaces between parts)
+      const normalizedSchedule = scheduleParts.join(' ');
+
       const result = await client.query(`
         SELECT cron.schedule($1, $2, $3) as jobid
-      `, [jobName, schedule, fullCommand]);
+      `, [jobName, normalizedSchedule, fullCommand]);
 
       client.release();
 
       // Emit WebSocket event
-      emitDatabaseChange(projectId, 'cron', 'create_cron_job', { jobName, schedule });
+      emitDatabaseChange(projectId, 'cron', 'create_cron_job', { jobName, schedule: normalizedSchedule });
 
       ResponseUtils.success(res, 'Cron job created successfully', {
         jobid: result.rows[0].jobid,
         jobName,
-        schedule,
+        schedule: normalizedSchedule,
         command: fullCommand
       }, 201);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating cron job:', error);
+      
+      // Check for specific pg_cron errors
+      if (error.message && error.message.includes('cron.schedule')) {
+        return ResponseUtils.error(
+          res,
+          'Failed to create cron job. Invalid schedule format or pg_cron error.',
+          error,
+          {
+            hint: 'Check that the cron schedule format is correct: "minute hour day month weekday" (e.g., "*/5 * * * *")',
+            error_details: error.message
+          },
+          400
+        );
+      }
+      
       ResponseUtils.error(res, 'Failed to create cron job', error);
     }
   }
@@ -1436,7 +1580,12 @@ class DatabaseController {
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
-      const { jobId } = req.params;
+      const jobIdParam = req.params.jobId;
+      const jobId = parseInt(jobIdParam, 10);
+
+      if (isNaN(jobId)) {
+        return ResponseUtils.error(res, 'Invalid job ID format', null, null, 400);
+      }
 
       const client = await DatabaseController.getProjectClient(projectId);
       
@@ -1444,16 +1593,81 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      await client.query(`SELECT cron.unschedule($1)`, [jobId]);
+      // Check if pg_cron extension is installed
+      const extensionCheck = await client.query(`
+        SELECT EXISTS(
+          SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
+        ) as extension_exists
+      `);
+
+      if (!extensionCheck.rows[0].extension_exists) {
+        client.release();
+        return ResponseUtils.error(
+          res,
+          'pg_cron extension is not installed',
+          null,
+          {
+            hint: 'Please install pg_cron: CREATE EXTENSION IF NOT EXISTS pg_cron;',
+            extension_installed: false
+          },
+          400
+        );
+      }
+
+      // Check if the job exists before trying to delete it
+      const jobCheck = await client.query(`
+        SELECT jobid, jobname FROM cron.job WHERE jobid = $1
+      `, [jobId]);
+
+      if (jobCheck.rows.length === 0) {
+        client.release();
+        return ResponseUtils.error(
+          res,
+          `Cron job with ID ${jobId} not found`,
+          null,
+          null,
+          404
+        );
+      }
+
+      // Delete the cron job (returns boolean: true if successful, false if not found)
+      const result = await client.query(`SELECT cron.unschedule($1) as unscheduled`, [jobId]);
 
       client.release();
+
+      // Check if unschedule was successful (returns true/false)
+      const unscheduled = result.rows[0]?.unscheduled;
+      if (unscheduled === false) {
+        return ResponseUtils.error(
+          res,
+          `Failed to unschedule cron job ${jobId}. Job may not exist or may have already been deleted.`,
+          null,
+          null,
+          404
+        );
+      }
 
       // Emit WebSocket event
       emitDatabaseChange(projectId, 'cron', 'delete_cron_job', { jobId });
 
       ResponseUtils.success(res, 'Cron job deleted successfully', { jobId });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting cron job:', error);
+      
+      // Handle specific pg_cron errors
+      if (error.message && error.message.includes('could not find valid entry')) {
+        return ResponseUtils.error(
+          res,
+          `Cron job ${req.params.jobId} not found or already deleted`,
+          error,
+          {
+            hint: 'The job may have been deleted already or never existed',
+            jobId: req.params.jobId
+          },
+          404
+        );
+      }
+      
       ResponseUtils.error(res, 'Failed to delete cron job', error);
     }
   }

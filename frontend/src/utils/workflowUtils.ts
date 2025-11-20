@@ -1,8 +1,17 @@
 import { Node } from 'reactflow';
 
 export type WorkflowNodeType = 'start' | 'httpRequest' | 'dbSelect';
-// include display
-export type ExtendedWorkflowNodeType = WorkflowNodeType | 'display';
+// include display and new node types
+export type ExtendedWorkflowNodeType = 
+  | WorkflowNodeType 
+  | 'display' 
+  | 'condition' 
+  | 'forLoop' 
+  | 'dbInsert' 
+  | 'dbDelete' 
+  | 'dbUpdate'
+  | 'email'
+  | 'sms';
 
 export function buildNodeId(prefix: string, idNum: number) {
 	return `${prefix}-${idNum}`;
@@ -14,8 +23,19 @@ export function createNode(
 	position?: { x: number; y: number },
 	extraData?: Record<string, any>
 ): Node {
-	const idPrefix = type === 'start' ? 'start' : type === 'httpRequest' ? 'http' : 'db';
-	const resolvedPrefix = type === 'display' ? 'display' : idPrefix;
+	const idPrefix = 
+		type === 'start' ? 'start' 
+		: type === 'httpRequest' ? 'http' 
+		: type === 'dbSelect' ? 'db' 
+		: type === 'display' ? 'display'
+		: type === 'condition' ? 'condition'
+		: type === 'forLoop' ? 'forLoop'
+		: type === 'dbInsert' ? 'dbInsert'
+		: type === 'dbDelete' ? 'dbDelete'
+		: type === 'dbUpdate' ? 'dbUpdate'
+		: type === 'email' ? 'email'
+		: 'node';
+	const resolvedPrefix = idPrefix;
 	const base = {
 		id: buildNodeId(resolvedPrefix, idNum),
 		type,
@@ -68,12 +88,115 @@ export function createNode(
 	}
 
 	// display
+	if (type === 'display') {
+		return {
+			...base,
+			data: {
+				label: 'Display',
+				sourceNodeId: undefined,
+				keyPath: '',
+				...extraData,
+			},
+		};
+	}
+
+	// condition
+	if (type === 'condition') {
+		return {
+			...base,
+			data: {
+				label: 'Condition',
+				condition: '',
+				...extraData,
+			},
+		};
+	}
+
+	// forLoop
+	if (type === 'forLoop') {
+		return {
+			...base,
+			data: {
+				label: 'For Loop',
+				sourceNodeId: undefined,
+				arrayPath: 'rows',
+				itemVariableName: 'item',
+				...extraData,
+			},
+		};
+	}
+
+	// dbInsert
+	if (type === 'dbInsert') {
+		return {
+			...base,
+			data: {
+				label: 'Insert Data',
+				projectId: extraData?.projectId,
+				table: undefined,
+				fieldMappings: [],
+				...extraData,
+			},
+		};
+	}
+
+	// dbDelete
+	if (type === 'dbDelete') {
+		return {
+			...base,
+			data: {
+				label: 'Delete Data',
+				projectId: extraData?.projectId,
+				table: undefined,
+				where: [],
+				...extraData,
+			},
+		};
+	}
+
+	// dbUpdate
+	if (type === 'dbUpdate') {
+		return {
+			...base,
+			data: {
+				label: 'Update Data',
+				projectId: extraData?.projectId,
+				table: undefined,
+				updates: [],
+				where: [],
+				...extraData,
+			},
+		};
+	}
+
+	// email
+	if (type === 'email') {
+		return {
+			...base,
+			data: {
+				label: 'Send Email',
+				projectId: extraData?.projectId,
+				templateId: undefined,
+				templateName: undefined,
+				recipientEmail: undefined,
+				providerId: undefined,
+				variableMappings: undefined,
+				...extraData,
+			},
+		};
+	}
+
+	// sms
 	return {
 		...base,
 		data: {
-			label: 'Display',
-			sourceNodeId: undefined,
-			keyPath: '',
+			label: 'Send SMS',
+			projectId: extraData?.projectId,
+			templateId: undefined,
+			templateName: undefined,
+			recipientPhone: undefined,
+			providerId: undefined,
+			variableMappings: undefined,
 			...extraData,
 		},
 	};

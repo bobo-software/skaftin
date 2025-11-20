@@ -12,7 +12,6 @@ interface Project {
   name: string;
   description?: string;
   schema_name: string;
-  bucket_name: string;
   created_at: string;
   updated_at: string;
 }
