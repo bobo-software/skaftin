@@ -97,6 +97,8 @@ const ConfigurationTab = ({ nodeId }: ConfigurationTabProps) => {
         return <ConditionConfig nodeId={nodeId} nodeData={nodeData} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
       case 'email':
         return <EmailConfig nodeId={nodeId} nodeData={nodeData} projectId={projectId} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
+      case 'sms':
+        return <SmsConfig nodeId={nodeId} nodeData={nodeData} projectId={projectId} setHasUnsavedChanges={setHasUnsavedChanges} setSaveHandler={setSaveHandler} />;
       default:
         return (
           <div className="text-xs text-dark-500 dark:text-dark-400">

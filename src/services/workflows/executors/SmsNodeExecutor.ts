@@ -22,6 +22,10 @@ export class SmsNodeExecutor extends BaseNodeExecutor {
         return this.fail('Recipient phone number is required', Date.now() - startTime);
       }
 
+      if (!providerId) {
+        return this.fail('SMS provider ID is required', Date.now() - startTime);
+      }
+
       // Resolve recipient phone (may contain variables)
       const resolvedRecipientPhone = this.substituteVariables(recipientPhone);
       
@@ -69,41 +73,22 @@ export class SmsNodeExecutor extends BaseNodeExecutor {
         content: resolvedContent,
       });
 
-      // Get SMS provider from public schema (if providerId is specified, otherwise use active provider)
-      let providerRecord;
-      if (providerId) {
-        const providerQuery = `
-          SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, is_active
-          FROM public.sms_providers
-          WHERE id = $1 AND project_id = $2
-        `;
-        const providerResult = await this.client.query(providerQuery, [providerId, projectId]);
+      // Get SMS provider from public schema
+      const providerQuery = `
+        SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, is_active
+        FROM public.sms_providers
+        WHERE id = $1 AND project_id = $2
+      `;
+      const providerResult = await this.client.query(providerQuery, [providerId, projectId]);
 
-        if (providerResult.rows.length === 0) {
-          return this.fail(`SMS provider with ID ${providerId} not found`, Date.now() - startTime);
-        }
+      if (providerResult.rows.length === 0) {
+        return this.fail(`SMS provider with ID ${providerId} not found`, Date.now() - startTime);
+      }
 
-        providerRecord = providerResult.rows[0];
+      const providerRecord = providerResult.rows[0];
 
-        if (!providerRecord.is_active) {
-          return this.fail('SMS provider is not active', Date.now() - startTime);
-        }
-      } else {
-        // Get active provider
-        const activeProviderQuery = `
-          SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, is_active
-          FROM public.sms_providers
-          WHERE project_id = $1 AND is_active = true
-          ORDER BY updated_at DESC, id DESC
-          LIMIT 1
-        `;
-        const activeProviderResult = await this.client.query(activeProviderQuery, [projectId]);
-        
-        if (activeProviderResult.rows.length === 0) {
-          return this.fail('No active SMS provider configured for project', Date.now() - startTime);
-        }
-        
-        providerRecord = activeProviderResult.rows[0];
+      if (!providerRecord.is_active) {
+        return this.fail('SMS provider is not active', Date.now() - startTime);
       }
 
       // Build provider instance

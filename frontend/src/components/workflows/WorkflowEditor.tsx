@@ -33,6 +33,7 @@ import DbInsertNode from './nodes/DbInsertNode';
 import DbDeleteNode from './nodes/DbDeleteNode';
 import DbUpdateNode from './nodes/DbUpdateNode';
 import EmailNode from './nodes/EmailNode';
+import SmsNode from './nodes/SmsNode';
 import { createNode } from '@utils/workflowUtils';
 import useWorkflowStore from '@stores/workflows/useWorkflowStore';
 
@@ -103,7 +104,8 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
   const rf = useReactFlow();
   
   // Memoize node types to avoid React Flow warnings about recreating nodeTypes object
-  const nodeTypesMemo = useMemo(
+  // Define node types outside useMemo to ensure stable reference
+  const nodeTypes = useMemo<NodeTypes>(
     () => ({
       start: StartNode,
       httpRequest: HttpRequestNode,
@@ -115,6 +117,7 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
       dbDelete: DbDeleteNode,
       dbUpdate: DbUpdateNode,
       email: EmailNode,
+      sms: SmsNode,
     }),
     []
   );
@@ -660,7 +663,7 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
             onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
             onNodeMouseLeave={() => setHoveredNodeId(null)}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-            nodeTypes={nodeTypesMemo}
+            nodeTypes={nodeTypes}
             fitView
             className="bg-dark-50 dark:bg-dark-900"
             style={{ width: '100%', height: '100%' }}
