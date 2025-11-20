@@ -102,9 +102,13 @@ export const NodeOutputTypeIndicator = ({
   const IndicatorContent = () => (
     <div className="relative group">
       {outputType.type === 'schema' ? (
-        <Database className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" title="Receiving schema" />
+        <span title="Receiving schema">
+          <Database className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+        </span>
       ) : (
-        <Repeat className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" title="Receiving loop items" />
+        <span title="Receiving loop items">
+          <Repeat className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+        </span>
       )}
       
       {/* Hover tooltip showing structure */}

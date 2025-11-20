@@ -79,7 +79,7 @@ class BucketService {
       const token = localStorage.getItem('skaftin-token') || '';
       const params = force ? '?force=true' : '';
       const url = `${ApiRoutes.PROJECT_BUCKETS.DELETE(projectId, bucketId)}${params}`;
-      const result = await RequestUtils.delete(url, token);
+      const result = await RequestUtils.delete(url, token, {});
       
       return result;
     } catch (error) {

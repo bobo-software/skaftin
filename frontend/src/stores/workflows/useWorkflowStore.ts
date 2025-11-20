@@ -115,7 +115,14 @@ const useWorkflowStore = create<WorkflowStore>()(
         // Log connection for debugging
         const sourceNode = state.nodes.find((n) => n.id === conn.source);
         const targetNode = state.nodes.find((n) => n.id === conn.target);
-        const edgeId = conn.id || `${conn.source}-${conn.sourceHandle}-${conn.target}`;
+        // Get the edge ID from the newly created edge
+        const newEdge = newEdges.find(e => 
+          e.source === conn.source && 
+          e.target === conn.target &&
+          e.sourceHandle === conn.sourceHandle &&
+          e.targetHandle === conn.targetHandle
+        );
+        const edgeId = newEdge?.id || `${conn.source}-${conn.sourceHandle}-${conn.target}`;
         
         console.log('[Connection] Node connected:', {
           source: conn.source,

@@ -302,7 +302,7 @@ const BackupTab = () => {
       const parsed = parseCronToSimple(schedule.schedule);
       if (parsed.intervalType && parsed.frequency) {
         setScheduleMode('simple');
-        setIntervalType(parsed.intervalType);
+        setIntervalType(parsed.intervalType as 'minute' | 'hour' | 'day' | 'week' | 'month');
         setFrequency(parsed.frequency);
       } else {
         setScheduleMode('advanced');
@@ -331,7 +331,7 @@ const BackupTab = () => {
     }
   };
 
-  const parseCronToSimple = (cron: string): { intervalType: string | null; frequency: number | null } => {
+  const parseCronToSimple = (cron: string): { intervalType: 'minute' | 'hour' | 'day' | 'week' | 'month' | null; frequency: number | null } => {
     const parts = cron.trim().split(/\s+/);
     if (parts.length !== 5) {
       return { intervalType: null, frequency: null };

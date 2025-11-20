@@ -285,7 +285,7 @@ const BucketManager: React.FC<BucketManagerProps> = ({ projectId, onBucketChange
                 <AppInput
                   type="text"
                   value={bucketName}
-                  onChange={(e) => setBucketName(e.target.value.toLowerCase())}
+                  onChange={(value) => setBucketName(String(value).toLowerCase())}
                   placeholder="my-bucket-name"
                   required
                 />
@@ -300,7 +300,7 @@ const BucketManager: React.FC<BucketManagerProps> = ({ projectId, onBucketChange
                 <AppInput
                   type="text"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(value) => setDescription(String(value))}
                   placeholder="Bucket description"
                 />
               </div>
@@ -346,7 +346,7 @@ const BucketManager: React.FC<BucketManagerProps> = ({ projectId, onBucketChange
                 <AppInput
                   type="text"
                   value={bucketName}
-                  onChange={(e) => setBucketName(e.target.value.toLowerCase())}
+                  onChange={(value) => setBucketName(String(value).toLowerCase())}
                   placeholder="my-bucket-name"
                   required
                 />
@@ -361,7 +361,7 @@ const BucketManager: React.FC<BucketManagerProps> = ({ projectId, onBucketChange
                 <AppInput
                   type="text"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(value) => setDescription(String(value))}
                   placeholder="Bucket description"
                 />
               </div>

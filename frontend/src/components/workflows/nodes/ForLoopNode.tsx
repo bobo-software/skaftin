@@ -121,7 +121,7 @@ const ForLoopNode = ({ id, data, selected }: ForLoopNodeProps) => {
                       <div className="p-2 space-y-1">
                         <button
                           onClick={() => {
-                            handleUpdateData<ForLoopNodeData>(id, { arrayPath: 'rows' });
+                            handleUpdateData<ForLoopNodeData>({ arrayPath: 'rows' });
                             setShowSchemaModal(false);
                           }}
                           className="w-full text-left px-3 py-2 text-sm rounded bg-white dark:bg-dark-800 hover:bg-dark-50 dark:hover:bg-dark-700 border border-dark-200 dark:border-dark-700 transition-colors"
@@ -133,7 +133,7 @@ const ForLoopNode = ({ id, data, selected }: ForLoopNodeProps) => {
                         </button>
                         <button
                           onClick={() => {
-                            handleUpdateData<ForLoopNodeData>(id, { arrayPath: 'rows.0' });
+                            handleUpdateData<ForLoopNodeData>({ arrayPath: 'rows.0' });
                             setShowSchemaModal(false);
                           }}
                           className="w-full text-left px-3 py-2 text-sm rounded bg-white dark:bg-dark-800 hover:bg-dark-50 dark:hover:bg-dark-700 border border-dark-200 dark:border-dark-700 transition-colors"
@@ -145,7 +145,7 @@ const ForLoopNode = ({ id, data, selected }: ForLoopNodeProps) => {
                         </button>
                         <button
                           onClick={() => {
-                            handleUpdateData<ForLoopNodeData>(id, { arrayPath: '0' });
+                            handleUpdateData<ForLoopNodeData>({ arrayPath: '0' });
                             setShowSchemaModal(false);
                           }}
                           className="w-full text-left px-3 py-2 text-sm rounded bg-white dark:bg-dark-800 hover:bg-dark-50 dark:hover:bg-dark-700 border border-dark-200 dark:border-dark-700 transition-colors"
@@ -185,7 +185,7 @@ const ForLoopNode = ({ id, data, selected }: ForLoopNodeProps) => {
                           <button
                             key={col.column_name}
                             onClick={() => {
-                              handleUpdateData<ForLoopNodeData>(id, { arrayPath: `rows.0.${col.column_name}` });
+                              handleUpdateData<ForLoopNodeData>({ arrayPath: `rows.0.${col.column_name}` });
                               setShowSchemaModal(false);
                             }}
                             className="w-full text-left px-3 py-2 text-sm rounded bg-white dark:bg-dark-800 hover:bg-dark-50 dark:hover:bg-dark-700 border border-dark-200 dark:border-dark-700 transition-colors"

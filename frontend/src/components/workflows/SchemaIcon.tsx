@@ -29,7 +29,9 @@ export const SchemaIcon = ({ schema, sourceLabel, className = '' }: SchemaIconPr
 
   return (
     <div className={`relative group ${className}`}>
-      <FileText className="w-4 h-4 text-green-600 dark:text-green-400" title="Schema loaded" />
+      <span title="Schema loaded">
+        <FileText className="w-4 h-4 text-green-600 dark:text-green-400" />
+      </span>
       {/* Schema Preview Tooltip */}
       <div className="absolute left-0 top-full mt-2 z-50 w-[320px] hidden group-hover:block">
         <div className="bg-white dark:bg-dark-800 border border-dark-200 dark:border-dark-700 rounded-lg shadow-xl p-3">

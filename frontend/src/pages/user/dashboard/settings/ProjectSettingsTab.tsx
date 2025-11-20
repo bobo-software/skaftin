@@ -203,17 +203,17 @@ const ProjectSettingsTab = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                Storage Bucket
+                Storage Buckets
               </label>
               <input
                 type="text"
-                value={currentProject?.bucket_name || ''}
+                value="Multiple buckets supported"
                 className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-dark-100 dark:bg-dark-800 text-dark-600 dark:text-dark-400"
                 disabled
                 readOnly
               />
               <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                This is the MinIO bucket name for your project files
+                This project supports multiple storage buckets. Manage buckets in the Storage tab.
               </p>
             </div>
             <button 
