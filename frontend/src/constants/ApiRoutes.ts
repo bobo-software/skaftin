@@ -208,6 +208,20 @@ const ApiRoutes = {
     API: (projectId: string) => `/api/analytics/${projectId}/api`,
     DATABASE: (projectId: string) => `/api/analytics/${projectId}/database`,
     STORAGE: (projectId: string) => `/api/analytics/${projectId}/storage`,
+  },
+  
+  // Backup routes
+  BACKUPS: {
+    CREATE: (projectId: string) => `/api/backups/${projectId}/create`,
+    LIST: (projectId: string) => `/api/backups/${projectId}/list`,
+    DOWNLOAD: (projectId: string, backupId: string) => `/api/backups/${projectId}/${backupId}/download`,
+    RESTORE: (projectId: string, backupId: string) => `/api/backups/${projectId}/${backupId}/restore`,
+    DELETE: (projectId: string, backupId: string) => `/api/backups/${projectId}/${backupId}`,
+    // Backup schedules
+    LIST_SCHEDULES: (projectId: string) => `/api/backups/${projectId}/schedules`,
+    CREATE_SCHEDULE: (projectId: string) => `/api/backups/${projectId}/schedules`,
+    UPDATE_SCHEDULE: (projectId: string, scheduleId: number) => `/api/backups/${projectId}/schedules/${scheduleId}`,
+    DELETE_SCHEDULE: (projectId: string, scheduleId: number) => `/api/backups/${projectId}/schedules/${scheduleId}`,
   }
 }
 

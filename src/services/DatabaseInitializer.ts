@@ -1064,6 +1064,46 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize backup schedules table
+   */
+  async initializeBackupSchedulesTable(): Promise<void> {
+    try {
+      // Create backup_schedules table
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.backup_schedules (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          schedule VARCHAR(100) NOT NULL,
+          enabled BOOLEAN DEFAULT true NOT NULL,
+          backup_name_prefix VARCHAR(255),
+          retention_days INTEGER,
+          created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
+          created_by VARCHAR(255),
+          last_run_at TIMESTAMP,
+          next_run_at TIMESTAMP
+        );
+      `);
+
+      // Create indexes
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_backup_schedules_project_id ON public.backup_schedules(project_id);
+      `);
+
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_backup_schedules_enabled ON public.backup_schedules(enabled);
+      `);
+
+      console.log('✅ Backup schedules table initialized');
+    } catch (err: any) {
+      console.error('❌ Error initializing backup schedules table:', err);
+      // Don't throw - allow server to continue
+    }
+  }
+
+  /**
    * Initialize all database tables
    * Order matters: organizations must be created before organization_members and projects
    */
@@ -1082,6 +1122,7 @@ export class DatabaseInitializer {
     await this.initializeAuthSettingsTable();
     await this.initializeAnalyticsTables();
     await this.initializeWorkflowTables();
+    await this.initializeBackupSchedulesTable();
   }
 
   /**
