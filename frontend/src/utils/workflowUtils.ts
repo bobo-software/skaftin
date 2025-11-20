@@ -10,7 +10,8 @@ export type ExtendedWorkflowNodeType =
   | 'dbInsert' 
   | 'dbDelete' 
   | 'dbUpdate'
-  | 'email';
+  | 'email'
+  | 'sms';
 
 export function buildNodeId(prefix: string, idNum: number) {
 	return `${prefix}-${idNum}`;
@@ -169,14 +170,31 @@ export function createNode(
 	}
 
 	// email
+	if (type === 'email') {
+		return {
+			...base,
+			data: {
+				label: 'Send Email',
+				projectId: extraData?.projectId,
+				templateId: undefined,
+				templateName: undefined,
+				recipientEmail: undefined,
+				providerId: undefined,
+				variableMappings: undefined,
+				...extraData,
+			},
+		};
+	}
+
+	// sms
 	return {
 		...base,
 		data: {
-			label: 'Send Email',
+			label: 'Send SMS',
 			projectId: extraData?.projectId,
 			templateId: undefined,
 			templateName: undefined,
-			recipientEmail: undefined,
+			recipientPhone: undefined,
 			providerId: undefined,
 			variableMappings: undefined,
 			...extraData,

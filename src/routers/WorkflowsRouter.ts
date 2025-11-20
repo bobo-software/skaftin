@@ -8,11 +8,11 @@ import WorkflowsController from '../controllers/WorkflowsController';
 /**
  * Create workflows router for admin routes
  */
-export function createWorkflowsRouter(pool: Pool, baseUrl: string = 'http://localhost:8001'): Router {
+export function createWorkflowsRouter(pool: Pool): Router {
   const router = Router();
 
   // Initialize controller
-  WorkflowsController.initialize(pool, baseUrl);
+  WorkflowsController.initialize(pool);
 
   // Create middleware builder for admin routes
   const middlewareBuilder = createMiddlewareBuilder(pool, true); // isAdmin = true

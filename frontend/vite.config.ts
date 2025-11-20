@@ -37,6 +37,13 @@ export default defineConfig({
         cookieDomainRewrite: 'localhost',
         cookiePathRewrite: '/',
       },
+      '/app-api': {
+        target: 'http://localhost:4006',
+        changeOrigin: true,
+        secure: false,
+        cookieDomainRewrite: 'localhost',
+        cookiePathRewrite: '/',
+      },
     },
   },
   preview: {

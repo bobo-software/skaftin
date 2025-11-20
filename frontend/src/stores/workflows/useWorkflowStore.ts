@@ -34,6 +34,13 @@ interface WorkflowStore {
   logs: LogEntry[];
   runStatuses: Record<string, NodeRunStatus>;
   nodeResults: Record<string, NodeResult>;
+  workflowMetadata: {
+    id: number | null;
+    name: string;
+    description: string | null;
+    enabled: boolean;
+    schedule: string | null;
+  };
 
   // Node/Edge operations
   setNodes: (updater: (nds: Node[]) => Node[]) => void;
@@ -64,6 +71,9 @@ interface WorkflowStore {
   getNodeResult: (nodeId: string) => NodeResult | undefined;
   getNodeRunStatus: (nodeId: string) => NodeRunStatus;
 
+  // Workflow metadata
+  setWorkflowMetadata: (metadata: Partial<WorkflowStore['workflowMetadata']>) => void;
+
   // Persistence
   saveWorkflow: (projectId: string, name: string, description?: string, schedule?: string) => Promise<{ success: boolean; workflowId?: number; error?: string }>;
   updateWorkflow: (projectId: string, workflowId: number, name: string, description?: string, schedule?: string) => Promise<{ success: boolean; error?: string }>;
@@ -88,6 +98,13 @@ const useWorkflowStore = create<WorkflowStore>()(
       logs: [],
       runStatuses: {},
       nodeResults: {},
+      workflowMetadata: {
+        id: null,
+        name: '',
+        description: null,
+        enabled: true,
+        schedule: null,
+      },
 
       // Node/Edge operations
       setNodes: (updater) => set((state) => ({ nodes: updater(state.nodes) })),
@@ -242,9 +259,20 @@ const useWorkflowStore = create<WorkflowStore>()(
           const response = await RequestUtils.post(url, token, workflowData);
 
           if (response && response.success !== false) {
+            const newWorkflowId = (response as any).data?.id || (response as any).id;
+            // Update metadata with the new workflow ID and name
+            set((state) => ({
+              workflowMetadata: {
+                ...state.workflowMetadata,
+                id: newWorkflowId,
+                name: name,
+                description: description || null,
+                schedule: schedule || null,
+              },
+            }));
             return {
               success: true,
-              workflowId: (response as any).data?.id || (response as any).id,
+              workflowId: newWorkflowId,
             };
           }
 
@@ -299,6 +327,13 @@ const useWorkflowStore = create<WorkflowStore>()(
               nodes,
               edges,
               nodeIdCounter: maxId + 1,
+              workflowMetadata: {
+                id: workflow.id || workflowId,
+                name: workflow.name || `Workflow ${workflowId}`,
+                description: workflow.description || null,
+                enabled: workflow.enabled !== undefined ? workflow.enabled : true,
+                schedule: workflow.schedule || null,
+              },
             });
 
             return { success: true };
@@ -315,6 +350,11 @@ const useWorkflowStore = create<WorkflowStore>()(
           };
         }
       },
+
+      setWorkflowMetadata: (metadata) =>
+        set((state) => ({
+          workflowMetadata: { ...state.workflowMetadata, ...metadata },
+        })),
 
       updateWorkflow: async (projectId: string, workflowId: number, name: string, description?: string, schedule?: string) => {
         const state = get();
@@ -424,6 +464,13 @@ const useWorkflowStore = create<WorkflowStore>()(
           logs: [],
           runStatuses: {},
           nodeResults: {},
+          workflowMetadata: {
+            id: null,
+            name: '',
+            description: null,
+            enabled: true,
+            schedule: null,
+          },
         }),
     }),
     { name: 'workflow-store' }

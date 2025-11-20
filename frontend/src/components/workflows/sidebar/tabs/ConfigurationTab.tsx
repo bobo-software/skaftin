@@ -16,8 +16,9 @@ import {
   ForLoopNodeData,
   ConditionNodeData,
   EmailNodeData,
+  SmsNodeData,
 } from '../../../../types/workflow.types';
-import CommunicationsService, { EmailTemplate, EmailProvider } from '../../../../services/CommunicationsService';
+import CommunicationsService, { EmailTemplate, EmailProvider, SmsTemplate, SmsProvider } from '../../../../services/CommunicationsService';
 
 interface ConfigurationTabProps {
   nodeId: string;
@@ -1954,6 +1955,375 @@ const EmailConfig = ({
                   onClick={() => {
                     const variable = `{{${sourceLabel}.rows.0.${col.column_name}}}`;
                     setRecipientEmail(variable);
+                  }}
+                  className="text-xs px-2 py-1 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors"
+                >
+                  {col.column_name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// SMS Configuration
+const SmsConfig = ({ 
+  nodeId, 
+  nodeData, 
+  projectId,
+  setHasUnsavedChanges,
+  setSaveHandler,
+}: { 
+  nodeId: string; 
+  nodeData: any; 
+  projectId: string;
+  setHasUnsavedChanges: (value: boolean) => void;
+  setSaveHandler: (handler: () => void) => void;
+}) => {
+  const updateNodeData = useWorkflowStore((s) => s.updateNodeData);
+  const [templateId, setTemplateId] = useState<number | undefined>(nodeData?.templateId);
+  const [templateName, setTemplateName] = useState<string | undefined>(nodeData?.templateName);
+  const [recipientPhone, setRecipientPhone] = useState<string>(nodeData?.recipientPhone || '');
+  const [providerId, setProviderId] = useState<number | undefined>(nodeData?.providerId);
+  const [variableMappings, setVariableMappings] = useState<Record<string, string>>(nodeData?.variableMappings || {});
+  const [templates, setTemplates] = useState<SmsTemplate[]>([]);
+  const [providers, setProviders] = useState<SmsProvider[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [loadingProviders, setLoadingProviders] = useState(false);
+
+  // Load templates and providers
+  useEffect(() => {
+    if (projectId) {
+      console.log('[SmsConfig] Loading templates and providers for project:', projectId);
+      setLoadingTemplates(true);
+      CommunicationsService.listSmsTemplates(projectId)
+        .then((data) => {
+          console.log('[SmsConfig] Loaded templates:', data);
+          setTemplates(data);
+          setLoadingTemplates(false);
+        })
+        .catch((error) => {
+          console.error('[SmsConfig] Error loading templates:', error);
+          setLoadingTemplates(false);
+        });
+
+      setLoadingProviders(true);
+      CommunicationsService.listSmsProviders(projectId)
+        .then((data) => {
+          console.log('[SmsConfig] Loaded providers:', data);
+          setProviders(data.filter((p) => p.is_active));
+          setLoadingProviders(false);
+        })
+        .catch((error) => {
+          console.error('[SmsConfig] Error loading providers:', error);
+          setLoadingProviders(false);
+        });
+    }
+  }, [projectId]);
+
+  // Sync state when nodeData changes
+  useEffect(() => {
+    setTemplateId(nodeData?.templateId);
+    setTemplateName(nodeData?.templateName);
+    setRecipientPhone(nodeData?.recipientPhone || '');
+    setProviderId(nodeData?.providerId);
+    setVariableMappings(nodeData?.variableMappings || {});
+  }, [nodeData]);
+
+  // Initialize variable mappings when templates are loaded and a template is selected
+  useEffect(() => {
+    if (templateId && templates.length > 0) {
+      const selectedTemplate = templates.find((t) => t.id === templateId);
+      if (selectedTemplate) {
+        let templateVariables: string[] = [];
+        if (selectedTemplate.variables) {
+          if (Array.isArray(selectedTemplate.variables)) {
+            templateVariables = selectedTemplate.variables;
+          } else if (typeof selectedTemplate.variables === 'string') {
+            try {
+              const parsed = JSON.parse(selectedTemplate.variables);
+              templateVariables = Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+              templateVariables = [];
+            }
+          }
+        }
+        
+        // Initialize mappings for variables that don't have values yet
+        const currentMappings = variableMappings || {};
+        const newMappings: Record<string, string> = { ...currentMappings };
+        let hasNewMappings = false;
+        
+        templateVariables.forEach((varName) => {
+          if (!(varName in newMappings)) {
+            newMappings[varName] = '';
+            hasNewMappings = true;
+          }
+        });
+        
+        // Remove mappings for variables that are no longer in the template
+        Object.keys(newMappings).forEach((key) => {
+          if (!templateVariables.includes(key)) {
+            delete newMappings[key];
+            hasNewMappings = true;
+          }
+        });
+        
+        if (hasNewMappings) {
+          console.log('[SmsConfig] Initializing variable mappings:', newMappings);
+          setVariableMappings(newMappings);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates, templateId]);
+
+  const handleSave = () => {
+    updateNodeData<SmsNodeData>(nodeId, {
+      templateId,
+      templateName,
+      recipientPhone: recipientPhone || undefined,
+      providerId,
+      variableMappings: Object.keys(variableMappings).length > 0 ? variableMappings : undefined,
+    });
+  };
+
+  useEffect(() => {
+    setSaveHandler(() => handleSave);
+  }, [templateId, templateName, recipientPhone, providerId, variableMappings, nodeId, updateNodeData, setSaveHandler]);
+
+  useEffect(() => {
+    const hasChanges =
+      templateId !== (nodeData?.templateId || undefined) ||
+      templateName !== (nodeData?.templateName || undefined) ||
+      recipientPhone !== (nodeData?.recipientPhone || '') ||
+      providerId !== (nodeData?.providerId || undefined) ||
+      JSON.stringify(variableMappings) !== JSON.stringify(nodeData?.variableMappings || {});
+    setHasUnsavedChanges(hasChanges);
+  }, [templateId, templateName, recipientPhone, providerId, variableMappings, nodeData, setHasUnsavedChanges]);
+
+  // Get schema from connected source node for variable suggestions
+  const { schema: schemaColumns, sourceLabel } = useNodeSchema({
+    nodeId,
+    autoDetectSource: true,
+    updateNodeData: false,
+  });
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs text-dark-500 dark:text-dark-400 mb-1 block">
+          SMS Provider <span className="text-red-500">*</span>
+        </label>
+        {loadingProviders ? (
+          <div className="text-xs text-dark-500 dark:text-dark-400">Loading providers...</div>
+        ) : (
+          <select
+            value={providerId || ''}
+            onChange={(e) => {
+              const selectedId = e.target.value ? parseInt(e.target.value) : undefined;
+              setProviderId(selectedId);
+            }}
+            className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
+          >
+            <option value="">Select provider...</option>
+            {providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {!loadingProviders && providers.length === 0 && (
+          <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+            ⚠ No active SMS providers found. Create one in Communications settings.
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label className="text-xs text-dark-500 dark:text-dark-400 mb-1 block">
+          SMS Template <span className="text-red-500">*</span>
+        </label>
+        {loadingTemplates ? (
+          <div className="text-xs text-dark-500 dark:text-dark-400">Loading templates...</div>
+        ) : (
+          <select
+            value={templateId || ''}
+            onChange={(e) => {
+              const selectedId = e.target.value ? parseInt(e.target.value) : undefined;
+              const selectedTemplate = templates.find((t) => t.id === selectedId);
+              setTemplateId(selectedId);
+              setTemplateName(selectedTemplate?.name);
+              
+              // Initialize variable mappings for new template
+              if (selectedTemplate) {
+                let templateVariables: string[] = [];
+                if (selectedTemplate.variables) {
+                  if (Array.isArray(selectedTemplate.variables)) {
+                    templateVariables = selectedTemplate.variables;
+                  } else if (typeof selectedTemplate.variables === 'string') {
+                    try {
+                      const parsed = JSON.parse(selectedTemplate.variables);
+                      templateVariables = Array.isArray(parsed) ? parsed : [];
+                    } catch (e) {
+                      templateVariables = [];
+                    }
+                  }
+                }
+                
+                // Initialize empty mappings for new variables, keep existing ones
+                const newMappings: Record<string, string> = { ...variableMappings };
+                templateVariables.forEach((varName) => {
+                  if (!(varName in newMappings)) {
+                    newMappings[varName] = '';
+                  }
+                });
+                // Remove mappings for variables that are no longer in the template
+                Object.keys(newMappings).forEach((key) => {
+                  if (!templateVariables.includes(key)) {
+                    delete newMappings[key];
+                  }
+                });
+                setVariableMappings(newMappings);
+              } else {
+                setVariableMappings({});
+              }
+            }}
+            className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1"
+          >
+            <option value="">Select template...</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {!loadingTemplates && templates.length === 0 && (
+          <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+            ⚠ No SMS templates found. Create one in Communications settings.
+          </div>
+        )}
+        {templateId && (() => {
+          const selectedTemplate = templates.find((t) => t.id === templateId);
+          
+          // Handle variables - could be array or JSON string
+          let templateVariables: string[] = [];
+          if (selectedTemplate?.variables) {
+            if (Array.isArray(selectedTemplate.variables)) {
+              templateVariables = selectedTemplate.variables;
+            } else if (typeof selectedTemplate.variables === 'string') {
+              try {
+                const parsed = JSON.parse(selectedTemplate.variables);
+                templateVariables = Array.isArray(parsed) ? parsed : [];
+              } catch (e) {
+                console.warn('[SmsConfig] Failed to parse variables as JSON:', e);
+                templateVariables = [];
+              }
+            }
+          }
+          
+          if (templateVariables.length > 0) {
+            return (
+              <div className="mt-2 space-y-2">
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-2">
+                  <div className="text-xs font-semibold text-amber-800 dark:text-amber-200 mb-1">
+                    Required Variables:
+                  </div>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {templateVariables.map((variable) => (
+                      <span
+                        key={variable}
+                        className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800"
+                      >
+                        {'{{'}{variable}{'}}'}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="text-xs text-amber-700 dark:text-amber-300">
+                    Map these variables to values or workflow variables below.
+                  </div>
+                </div>
+                
+                {/* Variable Input Fields */}
+                <div className="space-y-2">
+                  {templateVariables.map((variable) => (
+                    <div key={variable}>
+                      <label className="text-xs text-dark-500 dark:text-dark-400 mb-1 block">
+                        <span className="font-mono">{'{{'}{variable}{'}}'}</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={variableMappings[variable] || ''}
+                        onChange={(e) => {
+                          setVariableMappings({
+                            ...variableMappings,
+                            [variable]: e.target.value,
+                          });
+                        }}
+                        placeholder={`Value or {{nodeId.field}} for ${variable}`}
+                        className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 font-mono"
+                      />
+                      {schemaColumns.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {schemaColumns.slice(0, 3).map((col) => (
+                            <button
+                              key={col.column_name}
+                              type="button"
+                              onClick={() => {
+                                const variableValue = `{{${sourceLabel}.rows.0.${col.column_name}}}`;
+                                setVariableMappings({
+                                  ...variableMappings,
+                                  [variable]: variableValue,
+                                });
+                              }}
+                              className="text-xs px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors"
+                            >
+                              {col.column_name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
+      </div>
+
+      <div>
+        <label className="text-xs text-dark-500 dark:text-dark-400 mb-1 block">
+          Recipient Phone <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="text"
+          value={recipientPhone}
+          onChange={(e) => setRecipientPhone(e.target.value)}
+          placeholder="+1234567890 or {{nodeId.field}}"
+          className="w-full text-sm bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded px-2 py-1 font-mono"
+        />
+        <div className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+          Enter phone number or use variable like <code className="bg-dark-100 dark:bg-dark-800 px-1 rounded">{'{{nodeId.field}}'}</code>
+        </div>
+        {schemaColumns.length > 0 && (
+          <div className="mt-2">
+            <div className="text-xs text-dark-500 dark:text-dark-400 mb-1">
+              Available from {sourceLabel}:
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {schemaColumns.slice(0, 5).map((col) => (
+                <button
+                  key={col.column_name}
+                  onClick={() => {
+                    const variable = `{{${sourceLabel}.rows.0.${col.column_name}}}`;
+                    setRecipientPhone(variable);
                   }}
                   className="text-xs px-2 py-1 rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors"
                 >

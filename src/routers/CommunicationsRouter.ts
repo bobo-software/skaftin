@@ -48,6 +48,13 @@ export function createCommunicationsRouter(pool: Pool): Router {
   router.put('/:projectId/email/templates/:templateId', authMiddleware, controller.updateEmailTemplate);
   router.delete('/:projectId/email/templates/:templateId', authMiddleware, controller.deleteEmailTemplate);
 
+  // SMS Template Management Routes
+  router.get('/:projectId/sms/templates', authMiddleware, controller.listSmsTemplates);
+  router.get('/:projectId/sms/templates/:templateId', authMiddleware, controller.getSmsTemplate);
+  router.post('/:projectId/sms/templates', authMiddleware, controller.createSmsTemplate);
+  router.put('/:projectId/sms/templates/:templateId', authMiddleware, controller.updateSmsTemplate);
+  router.delete('/:projectId/sms/templates/:templateId', authMiddleware, controller.deleteSmsTemplate);
+
   // SMS Sending
   router.post('/:projectId/sms/send', authMiddleware, smsController.send);
   router.post('/:projectId/sms/send-basic', authMiddleware, smsController.sendBasic);

@@ -1,8 +1,8 @@
-import { Database, Globe2, PlaySquare, Eye, GitBranch, Repeat, Plus, Trash2, Edit, Mail } from 'lucide-react';
+import { Database, Globe2, PlaySquare, Eye, GitBranch, Repeat, Plus, Trash2, Edit, Mail, MessageSquare } from 'lucide-react';
 
 interface AddNodeModalProps {
 	onClose: () => void;
-	onAdd: (type: 'start' | 'http' | 'db' | 'display' | 'condition' | 'forLoop' | 'dbInsert' | 'dbDelete' | 'dbUpdate' | 'email') => void;
+	onAdd: (type: 'start' | 'http' | 'db' | 'display' | 'condition' | 'forLoop' | 'dbInsert' | 'dbDelete' | 'dbUpdate' | 'email' | 'sms') => void;
 }
 
 const AddNodeModal = ({ onClose, onAdd }: AddNodeModalProps) => {
@@ -118,6 +118,16 @@ const AddNodeModal = ({ onClose, onAdd }: AddNodeModalProps) => {
 					<div>
 						<div className="text-sm font-medium text-dark-900 dark:text-white">Send Email</div>
 						<div className="text-xs text-dark-500 dark:text-dark-400">Send email using template</div>
+					</div>
+				</button>
+				<button
+					onClick={() => onAdd('sms')}
+					className="flex items-center space-x-3 p-3 rounded border border-dark-200 dark:border-dark-700 hover:bg-dark-50 dark:hover:bg-dark-900 text-left"
+				>
+					<MessageSquare className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+					<div>
+						<div className="text-sm font-medium text-dark-900 dark:text-white">Send SMS</div>
+						<div className="text-xs text-dark-500 dark:text-dark-400">Send SMS using template</div>
 					</div>
 				</button>
 				</div>

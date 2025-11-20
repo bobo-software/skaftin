@@ -28,10 +28,10 @@ class WorkflowsController {
   private static workflowEngine: WorkflowEngine;
   private static workflowScheduler: WorkflowScheduler;
 
-  static initialize(pool: Pool, baseUrl: string = 'http://localhost:8001') {
+  static initialize(pool: Pool) {
     WorkflowsController.pool = pool;
     WorkflowsController.workflowEngine = new WorkflowEngine(pool);
-    WorkflowsController.workflowScheduler = new WorkflowScheduler(pool, baseUrl);
+    WorkflowsController.workflowScheduler = WorkflowScheduler.getInstance(pool);
   }
 
   /**

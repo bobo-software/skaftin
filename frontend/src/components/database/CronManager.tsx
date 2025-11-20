@@ -66,7 +66,10 @@ const CronManager = ({ projectId }: CronManagerProps) => {
       }
     } catch (err: any) {
       console.error('Error fetching cron jobs:', err);
-      setError(err.message || 'Failed to fetch cron jobs');
+      // Check if there's a hint in the error response
+      const errorMessage = err.message || 'Failed to fetch cron jobs';
+      const errorHint = err.hint || err.data?.hint;
+      setError(errorHint ? `${errorMessage}\n\n${errorHint}` : errorMessage);
     } finally {
       setLoading(false);
     }
@@ -97,22 +100,39 @@ const CronManager = ({ projectId }: CronManagerProps) => {
       return;
     }
 
+    // Validate cron schedule format
+    const scheduleParts = formData.schedule.trim().split(/\s+/);
+    if (scheduleParts.length !== 5) {
+      setError('Invalid cron schedule format. Expected 5 parts separated by spaces (e.g., "*/5 * * * *")');
+      return;
+    }
+
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const response = await RequestUtils.post(`/app-api/database/${projectId}/cron`, token, formData);
       if (response.success) {
         setShowCreateModal(false);
         setFormData({ jobName: '', schedule: '', command: '' });
+        setError('');
         fetchCronJobs();
       }
     } catch (err: any) {
       console.error('Error creating cron job:', err);
-      setError(err.message || 'Failed to create cron job');
+      const errorMessage = err.message || 'Failed to create cron job';
+      const errorHint = err.hint || err.data?.hint;
+      setError(errorHint ? `${errorMessage}\n\n${errorHint}` : errorMessage);
     }
   };
 
   const handleUpdateJob = async () => {
     if (!selectedJob) return;
+
+    // Validate cron schedule format
+    const scheduleParts = formData.schedule.trim().split(/\s+/);
+    if (scheduleParts.length !== 5) {
+      setError('Invalid cron schedule format. Expected 5 parts separated by spaces (e.g., "*/5 * * * *")');
+      return;
+    }
 
     try {
       const token = localStorage.getItem('skaftin-token') || '';
@@ -125,11 +145,14 @@ const CronManager = ({ projectId }: CronManagerProps) => {
         setShowEditModal(false);
         setSelectedJob(null);
         setFormData({ jobName: '', schedule: '', command: '' });
+        setError('');
         fetchCronJobs();
       }
     } catch (err: any) {
       console.error('Error updating cron job:', err);
-      setError(err.message || 'Failed to update cron job');
+      const errorMessage = err.message || 'Failed to update cron job';
+      const errorHint = err.hint || err.data?.hint;
+      setError(errorHint ? `${errorMessage}\n\n${errorHint}` : errorMessage);
     }
   };
 
@@ -230,7 +253,23 @@ const CronManager = ({ projectId }: CronManagerProps) => {
       {/* Error Message */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-          <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-red-800 dark:text-red-200 mb-1">{error}</p>
+              {error.includes('pg_cron') && (
+                <div className="mt-2 text-xs text-red-700 dark:text-red-300">
+                  <p className="mb-1">To enable pg_cron extension, run this SQL command in your database:</p>
+                  <code className="block bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded text-xs font-mono">
+                    CREATE EXTENSION IF NOT EXISTS pg_cron;
+                  </code>
+                  <p className="mt-2 text-red-600 dark:text-red-400">
+                    Note: This may require superuser privileges. If you're using Docker, you may need to install pg_cron in your PostgreSQL image.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -358,11 +397,15 @@ const CronManager = ({ projectId }: CronManagerProps) => {
                   type="text"
                   value={formData.schedule}
                   onChange={(e) => setFormData({ ...formData, schedule: e.target.value })}
-                  className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 font-mono"
                   placeholder="*/5 * * * *"
+                  pattern="[\d\*\/\-\s,]+"
                 />
                 <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                  Examples: "*/5 * * * *" (every 5 minutes), "0 2 * * *" (daily at 2 AM)
+                  Format: <code className="bg-dark-100 dark:bg-dark-900 px-1 rounded">minute hour day month weekday</code> (5 parts separated by spaces)
+                </p>
+                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                  Examples: <code className="bg-dark-100 dark:bg-dark-900 px-1 rounded">*/5 * * * *</code> (every 5 minutes), <code className="bg-dark-100 dark:bg-dark-900 px-1 rounded">0 2 * * *</code> (daily at 2 AM), <code className="bg-dark-100 dark:bg-dark-900 px-1 rounded">0 0 * * 0</code> (weekly on Sunday)
                 </p>
               </div>
               <div>

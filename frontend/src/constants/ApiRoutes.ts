@@ -144,6 +144,12 @@ const ApiRoutes = {
     CREATE_SMS_PROVIDER: (projectId: string) => `/api/communications/${projectId}/sms/providers`,
     UPDATE_SMS_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/sms/providers/${providerId}`,
     DELETE_SMS_PROVIDER: (projectId: string, providerId: string) => `/api/communications/${projectId}/sms/providers/${providerId}`,
+    // SMS template management
+    LIST_SMS_TEMPLATES: (projectId: string) => `/api/communications/${projectId}/sms/templates`,
+    GET_SMS_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/sms/templates/${templateId}`,
+    CREATE_SMS_TEMPLATE: (projectId: string) => `/api/communications/${projectId}/sms/templates`,
+    UPDATE_SMS_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/sms/templates/${templateId}`,
+    DELETE_SMS_TEMPLATE: (projectId: string, templateId: string) => `/api/communications/${projectId}/sms/templates/${templateId}`,
     // SMS sending
     SEND_SMS: (projectId: string) => `/api/communications/${projectId}/sms/send`,
     SEND_SMS_BASIC: (projectId: string) => `/api/communications/${projectId}/sms/send-basic`,

@@ -2,18 +2,48 @@ import { Pool } from 'pg';
 import { db } from '../db/drizzle.config';
 import { workflows, workflowSchedules } from '../db/schemas/WorkflowsSchema';
 import { eq } from 'drizzle-orm';
+import * as cron from 'node-cron';
+import { WorkflowEngine } from './WorkflowEngine';
 
 /**
  * WorkflowScheduler - Manages cron job scheduling for workflows
- * Uses pg_cron extension for scheduling
+ * Uses node-cron for scheduling (no PostgreSQL extensions required)
+ * Singleton pattern to ensure one instance across the application
  */
 export class WorkflowScheduler {
+  private static instance: WorkflowScheduler | null = null;
   private pool: Pool;
-  private baseUrl: string; // Base URL for workflow execution endpoint
+  private workflowEngine: WorkflowEngine;
+  private cronJobs: Map<number, cron.ScheduledTask> = new Map();
 
-  constructor(pool: Pool, baseUrl: string = 'http://localhost:8001') {
+  private constructor(pool: Pool) {
     this.pool = pool;
-    this.baseUrl = baseUrl;
+    this.workflowEngine = new WorkflowEngine(pool);
+  }
+
+  /**
+   * Get or create the singleton instance
+   */
+  static getInstance(pool?: Pool): WorkflowScheduler {
+    if (!WorkflowScheduler.instance) {
+      if (!pool) {
+        throw new Error('WorkflowScheduler must be initialized with pool first');
+      }
+      WorkflowScheduler.instance = new WorkflowScheduler(pool);
+    }
+    return WorkflowScheduler.instance;
+  }
+
+  /**
+   * Initialize the singleton instance (call this first)
+   */
+  static initialize(pool: Pool): WorkflowScheduler {
+    if (WorkflowScheduler.instance) {
+      console.warn('[WorkflowScheduler] Instance already exists, returning existing instance');
+      return WorkflowScheduler.instance;
+    }
+    WorkflowScheduler.instance = new WorkflowScheduler(pool);
+    return WorkflowScheduler.instance;
   }
 
   /**
@@ -22,22 +52,8 @@ export class WorkflowScheduler {
   async scheduleWorkflow(
     workflowId: number,
     schedule: string
-  ): Promise<{ success: boolean; cronJobId?: number; error?: string }> {
-    const client = await this.pool.connect();
-
+  ): Promise<{ success: boolean; error?: string }> {
     try {
-      // Check if pg_cron extension is installed
-      const extensionCheck = await client.query(
-        `SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'`
-      );
-
-      if (extensionCheck.rows.length === 0) {
-        return {
-          success: false,
-          error: 'pg_cron extension is not installed. Please install it first.',
-        };
-      }
-
       // Get workflow details
       const workflowResult = await db
         .select()
@@ -54,51 +70,86 @@ export class WorkflowScheduler {
 
       const workflow = workflowResult[0];
 
-      // Check if workflow already has a schedule
-      if (workflow.cron_job_id) {
-        // Update existing cron job
-        await client.query(
-          `UPDATE cron.job SET schedule = $1 WHERE jobid = $2`,
-          [schedule, workflow.cron_job_id]
-        );
-
-        // Update workflow schedule record
-        await db
-          .update(workflowSchedules)
-          .set({
-            schedule,
-            updated_at: new Date(),
-          })
-          .where(eq(workflowSchedules.workflow_id, workflowId));
-
+      // Validate cron expression
+      if (!cron.validate(schedule)) {
         return {
-          success: true,
-          cronJobId: workflow.cron_job_id,
+          success: false,
+          error: `Invalid cron expression: ${schedule}`,
         };
       }
 
-      // Create new cron job
-      // The cron job will call the workflow execution endpoint
-      const jobName = `workflow_${workflowId}`;
-      const command = `SELECT net.http_post(
-        url := '${this.baseUrl}/api/workflows/${workflowId}/execute',
-        headers := '{"Content-Type": "application/json"}'::jsonb,
-        body := '{"triggeredBy": "cron"}'::jsonb
-      )::text`;
+      // If workflow already has a schedule, unschedule it first
+      if (this.cronJobs.has(workflowId)) {
+        console.log(`[WorkflowScheduler] 🔄 Workflow ${workflowId} already has a schedule, unscheduling existing job first`);
+        this.unscheduleWorkflowInMemory(workflowId);
+      }
 
-      const cronResult = await client.query(
-        `SELECT cron.schedule($1, $2, $3) as jobid`,
-        [jobName, schedule, command]
-      );
+      // Create node-cron job
+      console.log(`[WorkflowScheduler] Creating cron job for workflow ${workflowId} with schedule: ${schedule}`);
+      const task = cron.schedule(schedule, async () => {
+        const executionStartTime = new Date().toISOString();
+        console.log(`[WorkflowScheduler] ⏰ Cron triggered for workflow ${workflowId} at ${executionStartTime}`);
+        
+        try {
+          // Check if workflow is still enabled
+          const currentWorkflow = await db
+            .select()
+            .from(workflows)
+            .where(eq(workflows.id, workflowId))
+            .limit(1);
 
-      const cronJobId = cronResult.rows[0].jobid;
+          if (currentWorkflow.length === 0) {
+            console.log(`[WorkflowScheduler] ⚠️  Workflow ${workflowId} not found, skipping execution`);
+            return;
+          }
 
-      // Update workflow with cron job ID
+          if (!currentWorkflow[0].enabled) {
+            console.log(`[WorkflowScheduler] ⚠️  Workflow ${workflowId} is disabled, skipping execution`);
+            return;
+          }
+
+          // Get project ID from workflow
+          const projectId = currentWorkflow[0].project_id;
+          if (!projectId) {
+            console.error(`[WorkflowScheduler] ❌ Workflow ${workflowId} has no project_id, cannot execute`);
+            return;
+          }
+
+          // Execute workflow directly using WorkflowEngine (no HTTP overhead, no auth needed)
+          console.log(`[WorkflowScheduler] 🚀 Starting execution of workflow ${workflowId} (${currentWorkflow[0].name || 'unnamed'}) in project ${projectId}`);
+          
+          const executionStartTime = Date.now();
+          const result = await this.workflowEngine.executeWorkflow(
+            workflowId,
+            {}, // No inputs for cron-triggered workflows
+            'cron'
+          );
+          const executionDuration = Date.now() - executionStartTime;
+
+          console.log(`[WorkflowScheduler] ✅ Successfully executed workflow ${workflowId} in ${executionDuration}ms`);
+          console.log(`[WorkflowScheduler]   Execution ID: ${result.executionId}, Status: ${result.status}`);
+        } catch (error: any) {
+          console.error(`[WorkflowScheduler] ❌ Error executing workflow ${workflowId}:`, error.message);
+          if (error.stack) {
+            console.error(`[WorkflowScheduler]   Stack: ${error.stack.split('\n').slice(0, 3).join('\n')}`);
+          }
+        }
+      }, {
+        timezone: 'UTC',
+      });
+      
+      console.log(`[WorkflowScheduler] ✅ Cron job created and started for workflow ${workflowId}`);
+
+      // Store the cron job
+      this.cronJobs.set(workflowId, task);
+      console.log(`[WorkflowScheduler] 📝 Stored cron job in memory (total active jobs: ${this.cronJobs.size})`);
+
+      // Update workflow in database
       await db
         .update(workflows)
         .set({
-          cron_job_id: cronJobId,
           schedule,
+          updated_at: new Date(),
         })
         .where(eq(workflows.id, workflowId));
 
@@ -107,32 +158,29 @@ export class WorkflowScheduler {
         .insert(workflowSchedules)
         .values({
           workflow_id: workflowId,
-          cron_job_id: cronJobId,
+          cron_job_id: workflowId, // Use workflow ID as identifier (not pg_cron job ID)
           schedule,
           enabled: true,
         })
         .onConflictDoUpdate({
           target: workflowSchedules.workflow_id,
           set: {
-            cron_job_id: cronJobId,
             schedule,
             enabled: true,
             updated_at: new Date(),
           },
         });
 
+      console.log(`[WorkflowScheduler] Scheduled workflow ${workflowId} with cron: ${schedule}`);
       return {
         success: true,
-        cronJobId,
       };
     } catch (error) {
-      console.error(`Error scheduling workflow ${workflowId}:`, error);
+      console.error(`[WorkflowScheduler] Error scheduling workflow ${workflowId}:`, error);
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),
       };
-    } finally {
-      client.release();
     }
   }
 
@@ -142,8 +190,6 @@ export class WorkflowScheduler {
   async unscheduleWorkflow(
     workflowId: number
   ): Promise<{ success: boolean; error?: string }> {
-    const client = await this.pool.connect();
-
     try {
       // Get workflow
       const workflowResult = await db
@@ -159,23 +205,16 @@ export class WorkflowScheduler {
         };
       }
 
-      const workflow = workflowResult[0];
+      // Stop the cron job if it exists
+      this.unscheduleWorkflowInMemory(workflowId);
 
-      if (!workflow.cron_job_id) {
-        return {
-          success: true, // Already unscheduled
-        };
-      }
-
-      // Remove cron job
-      await client.query(`SELECT cron.unschedule($1)`, [workflow.cron_job_id]);
-
-      // Update workflow
+      // Update workflow in database
       await db
         .update(workflows)
         .set({
-          cron_job_id: null,
           schedule: null,
+          cron_job_id: null,
+          updated_at: new Date(),
         })
         .where(eq(workflows.id, workflowId));
 
@@ -187,17 +226,16 @@ export class WorkflowScheduler {
         })
         .where(eq(workflowSchedules.workflow_id, workflowId));
 
+      console.log(`[WorkflowScheduler] Unscheduled workflow ${workflowId}`);
       return {
         success: true,
       };
     } catch (error) {
-      console.error(`Error unscheduling workflow ${workflowId}:`, error);
+      console.error(`[WorkflowScheduler] Error unscheduling workflow ${workflowId}:`, error);
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),
       };
-    } finally {
-      client.release();
     }
   }
 
@@ -208,8 +246,6 @@ export class WorkflowScheduler {
     workflowId: number,
     enabled: boolean
   ): Promise<{ success: boolean; error?: string }> {
-    const client = await this.pool.connect();
-
     try {
       // Get workflow
       const workflowResult = await db
@@ -227,18 +263,26 @@ export class WorkflowScheduler {
 
       const workflow = workflowResult[0];
 
-      if (!workflow.cron_job_id) {
+      if (!workflow.schedule) {
         return {
           success: false,
           error: 'Workflow is not scheduled',
         };
       }
 
-      // Toggle cron job
-      await client.query(
-        `UPDATE cron.job SET active = $1 WHERE jobid = $2`,
-        [enabled, workflow.cron_job_id]
-      );
+      // Toggle the cron job
+      const task = this.cronJobs.get(workflowId);
+      if (task) {
+        if (enabled) {
+          console.log(`[WorkflowScheduler] ▶️  Starting cron job for workflow ${workflowId}`);
+          task.start();
+        } else {
+          console.log(`[WorkflowScheduler] ⏸️  Stopping cron job for workflow ${workflowId}`);
+          task.stop();
+        }
+      } else {
+        console.warn(`[WorkflowScheduler] ⚠️  No cron job found for workflow ${workflowId} to toggle`);
+      }
 
       // Update schedule record
       await db
@@ -248,17 +292,16 @@ export class WorkflowScheduler {
         })
         .where(eq(workflowSchedules.workflow_id, workflowId));
 
+      console.log(`[WorkflowScheduler] ${enabled ? 'Enabled' : 'Disabled'} workflow ${workflowId}`);
       return {
         success: true,
       };
     } catch (error) {
-      console.error(`Error toggling workflow schedule ${workflowId}:`, error);
+      console.error(`[WorkflowScheduler] Error toggling workflow schedule ${workflowId}:`, error);
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),
       };
-    } finally {
-      client.release();
     }
   }
 
@@ -267,7 +310,6 @@ export class WorkflowScheduler {
    */
   async getWorkflowSchedule(workflowId: number): Promise<{
     schedule?: string;
-    cronJobId?: number;
     enabled: boolean;
   } | null> {
     try {
@@ -284,13 +326,126 @@ export class WorkflowScheduler {
       const schedule = scheduleResult[0];
       return {
         schedule: schedule.schedule,
-        cronJobId: schedule.cron_job_id,
         enabled: schedule.enabled,
       };
     } catch (error) {
-      console.error(`Error getting workflow schedule ${workflowId}:`, error);
+      console.error(`[WorkflowScheduler] Error getting workflow schedule ${workflowId}:`, error);
       return null;
     }
   }
-}
 
+  /**
+   * Load all scheduled workflows from database and start their cron jobs
+   * Call this on server startup
+   */
+  async loadScheduledWorkflows(): Promise<void> {
+    try {
+      console.log('[WorkflowScheduler] Loading scheduled workflows from database...');
+      
+      // Get all workflows with schedules
+      const allWorkflows = await db.select().from(workflows);
+      const workflowsWithSchedules = allWorkflows.filter(w => w.schedule && w.enabled);
+
+      console.log(`[WorkflowScheduler] Found ${workflowsWithSchedules.length} scheduled workflows`);
+
+      for (const workflow of workflowsWithSchedules) {
+        if (workflow.schedule && workflow.enabled) {
+          // Validate cron expression
+          if (cron.validate(workflow.schedule)) {
+            // Create the cron job without updating the database (already scheduled)
+            console.log(`[WorkflowScheduler] Creating cron job for workflow ${workflow.id} with schedule: ${workflow.schedule}`);
+            const task = cron.schedule(workflow.schedule, async () => {
+              const executionStartTime = new Date().toISOString();
+              console.log(`[WorkflowScheduler] ⏰ Cron triggered for workflow ${workflow.id} at ${executionStartTime}`);
+              
+              try {
+                // Check if workflow is still enabled
+                const currentWorkflow = await db
+                  .select()
+                  .from(workflows)
+                  .where(eq(workflows.id, workflow.id))
+                  .limit(1);
+
+                if (currentWorkflow.length === 0) {
+                  console.log(`[WorkflowScheduler] ⚠️  Workflow ${workflow.id} not found, skipping execution`);
+                  return;
+                }
+
+                if (!currentWorkflow[0].enabled) {
+                  console.log(`[WorkflowScheduler] ⚠️  Workflow ${workflow.id} is disabled, skipping execution`);
+                  return;
+                }
+
+                // Get project ID from workflow
+                const projectId = currentWorkflow[0].project_id;
+                if (!projectId) {
+                  console.error(`[WorkflowScheduler] ❌ Workflow ${workflow.id} has no project_id, cannot execute`);
+                  return;
+                }
+
+                // Execute workflow directly using WorkflowEngine (no HTTP overhead, no auth needed)
+                console.log(`[WorkflowScheduler] 🚀 Starting execution of workflow ${workflow.id} (${currentWorkflow[0].name || 'unnamed'}) in project ${projectId}`);
+                
+                const executionStartTime = Date.now();
+                const result = await this.workflowEngine.executeWorkflow(
+                  workflow.id,
+                  {}, // No inputs for cron-triggered workflows
+                  'cron'
+                );
+                const executionDuration = Date.now() - executionStartTime;
+
+                console.log(`[WorkflowScheduler] ✅ Successfully executed workflow ${workflow.id} in ${executionDuration}ms`);
+                console.log(`[WorkflowScheduler]   Execution ID: ${result.executionId}, Status: ${result.status}`);
+              } catch (error: any) {
+                console.error(`[WorkflowScheduler] ❌ Error executing workflow ${workflow.id}:`, error.message);
+                if (error.stack) {
+                  console.error(`[WorkflowScheduler]   Stack: ${error.stack.split('\n').slice(0, 3).join('\n')}`);
+                }
+              }
+            }, {
+              timezone: 'UTC',
+            });
+            
+            console.log(`[WorkflowScheduler] ✅ Cron job created and started for workflow ${workflow.id}`);
+
+            this.cronJobs.set(workflow.id, task);
+            console.log(`[WorkflowScheduler] Loaded scheduled workflow ${workflow.id} with cron: ${workflow.schedule}`);
+          } else {
+            console.warn(`[WorkflowScheduler] Invalid cron expression for workflow ${workflow.id}: ${workflow.schedule}`);
+          }
+        }
+      }
+
+      console.log(`[WorkflowScheduler] Loaded ${this.cronJobs.size} scheduled workflows`);
+    } catch (error) {
+      console.error('[WorkflowScheduler] Error loading scheduled workflows:', error);
+    }
+  }
+
+  /**
+   * Stop all cron jobs (call on server shutdown)
+   */
+  stopAll(): void {
+    console.log(`[WorkflowScheduler] Stopping ${this.cronJobs.size} scheduled workflows...`);
+    for (const [workflowId, task] of this.cronJobs.entries()) {
+      task.stop();
+      console.log(`[WorkflowScheduler] Stopped workflow ${workflowId}`);
+    }
+    this.cronJobs.clear();
+  }
+
+  /**
+   * Unschedule a workflow from memory (stop the cron job)
+   */
+  private unscheduleWorkflowInMemory(workflowId: number): void {
+    const task = this.cronJobs.get(workflowId);
+    if (task) {
+      console.log(`[WorkflowScheduler] 🛑 Stopping cron job for workflow ${workflowId}`);
+      task.stop();
+      this.cronJobs.delete(workflowId);
+      console.log(`[WorkflowScheduler] ✅ Removed cron job from memory (remaining active jobs: ${this.cronJobs.size})`);
+    } else {
+      console.log(`[WorkflowScheduler] ℹ️  No cron job found in memory for workflow ${workflowId}`);
+    }
+  }
+}

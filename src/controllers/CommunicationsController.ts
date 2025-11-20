@@ -929,6 +929,316 @@ class CommunicationsController {
       });
     }
   };
+
+  /**
+   * List all SMS templates for a project
+   */
+  listSmsTemplates = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId } = req.params;
+
+      console.log('[CommunicationsController] Listing SMS templates for project:', projectId);
+
+      const query = `
+        SELECT id, project_id, name, content, variables, 
+               created_at, updated_at
+        FROM sms_templates
+        WHERE project_id = $1
+        ORDER BY created_at DESC
+      `;
+
+      const result = await this.pool.query(query, [projectId]);
+
+      // Parse variables from JSONB if needed
+      const templates = result.rows.map((row) => {
+        let variables = row.variables;
+        if (typeof variables === 'string') {
+          try {
+            variables = JSON.parse(variables);
+          } catch (e) {
+            console.warn('[CommunicationsController] Failed to parse variables for SMS template:', row.id, e);
+            variables = [];
+          }
+        }
+        if (!Array.isArray(variables)) {
+          variables = [];
+        }
+        return {
+          ...row,
+          variables,
+        };
+      });
+
+      res.json({
+        success: true,
+        data: templates,
+        count: templates.length,
+      });
+    } catch (error: any) {
+      console.error('Error listing SMS templates:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to list SMS templates',
+        message: error.message,
+      });
+    }
+  };
+
+  /**
+   * Get a single SMS template by ID
+   */
+  getSmsTemplate = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId, templateId } = req.params;
+
+      const query = `
+        SELECT id, project_id, name, content, variables, 
+               created_at, updated_at
+        FROM sms_templates
+        WHERE id = $1 AND project_id = $2
+      `;
+
+      const result = await this.pool.query(query, [templateId, projectId]);
+
+      if (result.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          error: 'SMS template not found',
+        });
+        return;
+      }
+
+      // Parse variables from JSONB if needed
+      let variables = result.rows[0].variables;
+      if (typeof variables === 'string') {
+        try {
+          variables = JSON.parse(variables);
+        } catch (e) {
+          console.warn('[CommunicationsController] Failed to parse variables:', e);
+          variables = [];
+        }
+      }
+      if (!Array.isArray(variables)) {
+        variables = [];
+      }
+
+      res.json({
+        success: true,
+        data: {
+          ...result.rows[0],
+          variables,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error getting SMS template:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get SMS template',
+        message: error.message,
+      });
+    }
+  };
+
+  /**
+   * Create a new SMS template
+   */
+  createSmsTemplate = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId } = req.params;
+      const { name, content, variables } = req.body;
+
+      if (!name || !content) {
+        res.status(400).json({
+          success: false,
+          error: 'Name and content are required',
+        });
+        return;
+      }
+
+      const query = `
+        INSERT INTO sms_templates (project_id, name, content, variables)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, project_id, name, content, variables, 
+                  created_at, updated_at
+      `;
+
+      const variablesJson = JSON.stringify(variables || []);
+
+      const result = await this.pool.query(query, [
+        projectId,
+        name,
+        content,
+        variablesJson,
+      ]);
+
+      // Parse variables from JSONB response
+      const template = result.rows[0];
+      let parsedVariables = template.variables;
+      if (typeof parsedVariables === 'string') {
+        try {
+          parsedVariables = JSON.parse(parsedVariables);
+        } catch (e) {
+          console.warn('[CommunicationsController] Failed to parse variables:', e);
+          parsedVariables = [];
+        }
+      }
+      if (!Array.isArray(parsedVariables)) {
+        parsedVariables = [];
+      }
+
+      res.status(201).json({
+        success: true,
+        data: {
+          ...template,
+          variables: parsedVariables,
+        },
+      });
+    } catch (error: any) {
+      if (error.code === '23505') {
+        res.status(409).json({
+          success: false,
+          error: 'SMS template with this name already exists',
+        });
+        return;
+      }
+      console.error('Error creating SMS template:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to create SMS template',
+        message: error.message,
+      });
+    }
+  };
+
+  /**
+   * Update an existing SMS template
+   */
+  updateSmsTemplate = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId, templateId } = req.params;
+      const { name, content, variables } = req.body;
+
+      const updates: string[] = [];
+      const values: any[] = [];
+      let paramCount = 1;
+
+      if (name !== undefined) {
+        updates.push(`name = $${paramCount++}`);
+        values.push(name);
+      }
+      if (content !== undefined) {
+        updates.push(`content = $${paramCount++}`);
+        values.push(content);
+      }
+      if (variables !== undefined) {
+        updates.push(`variables = $${paramCount++}`);
+        values.push(JSON.stringify(variables));
+      }
+
+      if (updates.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'No fields to update',
+        });
+        return;
+      }
+
+      updates.push(`updated_at = CURRENT_TIMESTAMP`);
+      values.push(templateId, projectId);
+
+      const query = `
+        UPDATE sms_templates
+        SET ${updates.join(', ')}
+        WHERE id = $${paramCount++} AND project_id = $${paramCount++}
+        RETURNING id, project_id, name, content, variables, 
+                  created_at, updated_at
+      `;
+
+      const result = await this.pool.query(query, values);
+
+      if (result.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          error: 'SMS template not found',
+        });
+        return;
+      }
+
+      // Parse variables from JSONB response
+      const template = result.rows[0];
+      let parsedVariables = template.variables;
+      if (typeof parsedVariables === 'string') {
+        try {
+          parsedVariables = JSON.parse(parsedVariables);
+        } catch (e) {
+          console.warn('[CommunicationsController] Failed to parse variables:', e);
+          parsedVariables = [];
+        }
+      }
+      if (!Array.isArray(parsedVariables)) {
+        parsedVariables = [];
+      }
+
+      res.json({
+        success: true,
+        data: {
+          ...template,
+          variables: parsedVariables,
+        },
+      });
+    } catch (error: any) {
+      if (error.code === '23505') {
+        res.status(409).json({
+          success: false,
+          error: 'SMS template with this name already exists',
+        });
+        return;
+      }
+      console.error('Error updating SMS template:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to update SMS template',
+        message: error.message,
+      });
+    }
+  };
+
+  /**
+   * Delete an SMS template
+   */
+  deleteSmsTemplate = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { projectId, templateId } = req.params;
+
+      const query = `
+        DELETE FROM sms_templates
+        WHERE id = $1 AND project_id = $2
+        RETURNING id
+      `;
+
+      const result = await this.pool.query(query, [templateId, projectId]);
+
+      if (result.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          error: 'SMS template not found',
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: 'SMS template deleted successfully',
+      });
+    } catch (error: any) {
+      console.error('Error deleting SMS template:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to delete SMS template',
+        message: error.message,
+      });
+    }
+  };
 }
 
 export default CommunicationsController;

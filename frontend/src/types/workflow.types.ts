@@ -9,7 +9,8 @@ export type NodeType =
   | 'dbInsert' 
   | 'dbDelete' 
   | 'dbUpdate'
-  | 'email';
+  | 'email'
+  | 'sms';
 
 // Base workflow node interface
 export interface WorkflowNode {
@@ -116,6 +117,16 @@ export interface EmailNodeData {
   recipientEmail?: string; // Can contain variables like "{{nodeId.field}}"
   providerId?: number;
   variableMappings?: Record<string, string>; // Maps template variables to values/variables (e.g., { "name": "{{nodeId.field}}", "email": "user@example.com" })
+}
+
+export interface SmsNodeData {
+  label: string;
+  projectId: string;
+  templateId?: number;
+  templateName?: string;
+  recipientPhone?: string; // Can contain variables like "{{nodeId.field}}"
+  providerId?: number;
+  variableMappings?: Record<string, string>; // Maps template variables to values/variables (e.g., { "name": "{{nodeId.field}}", "code": "123456" })
 }
 
 // Workflow execution types

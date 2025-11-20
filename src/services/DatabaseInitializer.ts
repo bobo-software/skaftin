@@ -362,6 +362,43 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize sms_templates table using Drizzle
+   * Always creates in public schema
+   */
+  async initializeSmsTemplatesTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.sms_templates (
+          id SERIAL PRIMARY KEY,
+          project_id VARCHAR(255) NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          content TEXT NOT NULL,
+          variables JSONB DEFAULT '[]'::jsonb,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(project_id, name)
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ SMS templates table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_sms_templates_project_id ON public.sms_templates(project_id);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ SMS templates index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ SMS templates table initialized');
+  }
+
+  /**
    * Initialize project_members table using Drizzle
    * Links users to specific projects they have access to
    */
@@ -1038,6 +1075,7 @@ export class DatabaseInitializer {
     await this.initializeProjectBucketsTable();
     await this.initializeEmailProvidersTable();
     await this.initializeEmailTemplatesTable();
+    await this.initializeSmsTemplatesTable();
     await this.initializeProjectMembersTable();
     await this.initializeProjectInvitationsTable();
     await this.initializeApiCredentialsTable();

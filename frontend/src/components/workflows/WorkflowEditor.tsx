@@ -13,7 +13,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import '../../styles/WorkflowEditor.css';
-import { Play, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Map, ListPlus, Loader2, Save } from 'lucide-react';
+import { Play, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Map, ListPlus, Loader2, Save, Edit2, Check, X } from 'lucide-react';
 import {
 	AddNodeModal,
 	AppButton,
@@ -69,7 +69,11 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
   const [showSidebar, setShowSidebar] = useState(true);
   const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
   const updateWorkflow = useWorkflowStore((s) => s.updateWorkflow);
+  const workflowMetadata = useWorkflowStore((s) => s.workflowMetadata);
+  const setWorkflowMetadata = useWorkflowStore((s) => s.setWorkflowMetadata);
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
 
   
   useEffect(() => {
@@ -82,6 +86,18 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
       setWorkflowId(propWorkflowId);
     }
   }, [propWorkflowId]);
+
+  // Initialize edited name from metadata
+  useEffect(() => {
+    if (workflowMetadata.name) {
+      setEditedName(workflowMetadata.name);
+    } else if (workflowId) {
+      setEditedName(`Workflow ${workflowId}`);
+    } else {
+      setEditedName('New Workflow');
+    }
+  }, [workflowMetadata.name, workflowId]);
+
   const [showAddNode, setShowAddNode] = useState(false);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
   const rf = useReactFlow();
@@ -176,7 +192,7 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
   }, [nextNodeId, projectId, setNodes, addLog, toggleConsole]);
 
   const addNodeAtViewportCenter = useCallback(
-    (type: 'start' | 'http' | 'db' | 'display' | 'condition' | 'forLoop' | 'dbInsert' | 'dbDelete' | 'dbUpdate' | 'email') => {
+    (type: 'start' | 'http' | 'db' | 'display' | 'condition' | 'forLoop' | 'dbInsert' | 'dbDelete' | 'dbUpdate' | 'email' | 'sms') => {
       // For now, add at a random position; we can enhance with container center later
       if (type === 'start') {
         addStartNode();
@@ -212,6 +228,10 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
         const idNum = nextNodeId();
         const newNode = createNode('email', idNum, undefined, { projectId });
         setNodes((nds) => [...nds, newNode]);
+      } else if (type === 'sms') {
+        const idNum = nextNodeId();
+        const newNode = createNode('sms', idNum, undefined, { projectId });
+        setNodes((nds) => [...nds, newNode]);
       }
     },
     [addHttpRequestNode, addDbSelectNode, addStartNode, nextNodeId, projectId, setNodes]
@@ -243,7 +263,13 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
       // Save workflow first if it doesn't have an ID
       let currentWorkflowId = workflowId;
       if (!currentWorkflowId) {
-        const saveResult = await saveWorkflow(projectId, `Workflow ${Date.now()}`, 'Auto-saved for execution');
+        const workflowName = editedName.trim() || `Workflow ${Date.now()}`;
+        const saveResult = await saveWorkflow(
+          projectId,
+          workflowName,
+          workflowMetadata.description || undefined,
+          workflowMetadata.schedule || undefined
+        );
         if (!saveResult.success || !saveResult.workflowId) {
           addLog({
             nodeId: 'workflow',
@@ -255,6 +281,7 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
         }
         currentWorkflowId = saveResult.workflowId;
         setWorkflowId(currentWorkflowId);
+        setWorkflowMetadata({ id: currentWorkflowId, name: workflowName });
         onWorkflowCreated?.(currentWorkflowId);
       }
 
@@ -348,7 +375,7 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
       });
       setIsExecuting(false);
     }
-  }, [isExecuting, workflowId, projectId, saveWorkflow, clearRun, clearLogs, addLog, setNodeRunStatus, setNodeResult, onWorkflowCreated]);
+  }, [isExecuting, workflowId, projectId, editedName, workflowMetadata, saveWorkflow, setWorkflowMetadata, clearRun, clearLogs, addLog, setNodeRunStatus, setNodeResult, onWorkflowCreated]);
 
   const onInit = useCallback((instance: ReactFlowInstance) => {
     reactFlowInstance.current = instance;
@@ -371,16 +398,19 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
 
     setIsSaving(true);
     try {
+      const workflowName = editedName.trim() || (workflowId ? `Workflow ${workflowId}` : `Workflow ${Date.now()}`);
+      
       if (workflowId) {
         // Update existing workflow
         const result = await updateWorkflow(
           projectId,
           workflowId,
-          `Workflow ${workflowId}`, // TODO: Get actual name from workflow metadata
-          undefined,
-          undefined
+          workflowName,
+          workflowMetadata.description || undefined,
+          workflowMetadata.schedule || undefined
         );
         if (result.success) {
+          setWorkflowMetadata({ name: workflowName });
           addLog({
             nodeId: 'workflow',
             type: 'success',
@@ -397,11 +427,13 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
         // Create new workflow
         const result = await saveWorkflow(
           projectId,
-          `Workflow ${Date.now()}`,
-          'Auto-saved workflow'
+          workflowName,
+          workflowMetadata.description || undefined,
+          workflowMetadata.schedule || undefined
         );
         if (result.success && result.workflowId) {
           setWorkflowId(result.workflowId);
+          setWorkflowMetadata({ id: result.workflowId, name: workflowName });
           onWorkflowCreated?.(result.workflowId);
           addLog({
             nodeId: 'workflow',
@@ -425,20 +457,89 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
     } finally {
       setIsSaving(false);
     }
-  }, [isSaving, workflowId, projectId, updateWorkflow, saveWorkflow, addLog, onWorkflowCreated]);
+  }, [isSaving, workflowId, projectId, editedName, workflowMetadata, updateWorkflow, saveWorkflow, setWorkflowMetadata, addLog, onWorkflowCreated]);
+
+  const handleNameEdit = () => {
+    setIsEditingName(true);
+    setEditedName(workflowMetadata.name || (workflowId ? `Workflow ${workflowId}` : 'New Workflow'));
+  };
+
+  const handleNameSave = () => {
+    const trimmedName = editedName.trim();
+    if (trimmedName) {
+      setWorkflowMetadata({ name: trimmedName });
+      setIsEditingName(false);
+    }
+  };
+
+  const handleNameCancel = () => {
+    setEditedName(workflowMetadata.name || (workflowId ? `Workflow ${workflowId}` : 'New Workflow'));
+    setIsEditingName(false);
+  };
 
   return (
     <div className="h-full flex flex-col bg-dark-50 dark:bg-dark-900 ring">
       {/* Toolbar */}
       <div className="bg-white dark:bg-dark-800 border-b border-dark-200 dark:border-dark-700 px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => {}}
-            className="p-2 hover:bg-dark-100 dark:hover:bg-dark-700 rounded transition-colors"
-            title="Undo"
-          >
-            <Undo2 className="w-4 h-4 text-dark-600 dark:text-dark-400" />
-          </button>
+        <div className="flex items-center space-x-2 flex-1 min-w-0">
+          {/* Workflow Name Editor */}
+          {isEditingName ? (
+            <div className="flex items-center space-x-2 mr-4 flex-1 min-w-0">
+              <input
+                type="text"
+                value={editedName}
+                onChange={(e) => setEditedName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleNameSave();
+                  } else if (e.key === 'Escape') {
+                    handleNameCancel();
+                  }
+                }}
+                className="px-3 py-1 border border-primary-500 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:outline-none flex-1 min-w-0"
+                autoFocus
+                placeholder="Workflow name"
+              />
+              <button
+                onClick={handleNameSave}
+                className="p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors flex-shrink-0"
+                title="Save name"
+              >
+                <Check className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleNameCancel}
+                className="p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                title="Cancel"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-2 mr-4 flex-1 min-w-0">
+              <h2 className="text-lg font-semibold text-dark-900 dark:text-white truncate">
+                {workflowMetadata.name || (workflowId ? `Workflow ${workflowId}` : 'New Workflow')}
+              </h2>
+              <button
+                onClick={handleNameEdit}
+                className="p-1 text-dark-600 dark:text-dark-400 hover:bg-dark-100 dark:hover:bg-dark-700 rounded transition-colors flex-shrink-0"
+                title="Edit workflow name"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          
+          <div className="w-px h-6 bg-dark-200 dark:bg-dark-700 mx-2 flex-shrink-0" />
+          
+          <div className="flex items-center space-x-2 flex-shrink-0">
+            <button
+              onClick={() => {}}
+              className="p-2 hover:bg-dark-100 dark:hover:bg-dark-700 rounded transition-colors"
+              title="Undo"
+            >
+              <Undo2 className="w-4 h-4 text-dark-600 dark:text-dark-400" />
+            </button>
           <button
             onClick={() => {}}
             className="p-2 hover:bg-dark-100 dark:hover:bg-dark-700 rounded transition-colors"
@@ -495,6 +596,7 @@ const WorkflowEditorInner = ({ projectId, workflowId: propWorkflowId, onWorkflow
           >
             {isExecuting ? 'Running...' : 'Run Workflow'}
           </AppButton>
+          </div>
         </div>
 
         <div className="flex items-center space-x-2">

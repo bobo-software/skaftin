@@ -20,6 +20,7 @@ import ProjectBucketsController from './controllers/ProjectBucketsController';
 import StorageController from './controllers/StorageController';
 import GraphQLController from './controllers/GraphQLController';
 import CommunicationsController from './controllers/CommunicationsController';
+import { WorkflowScheduler } from './services/WorkflowScheduler';
 
 // Load environment variables
 dotenv.config();
@@ -276,7 +277,7 @@ app.use('/api/mcp', MCPRouter);
 app.use('/api/database', createAdminDatabaseRouter(pool));
 app.use('/api/storage', createAdminStorageRouter(pool, s3Client));
 app.use('/api/auth', createAdminAuthRouter(pool));
-app.use('/api/workflows', createWorkflowsRouter(pool, `http://localhost:${port}`));
+app.use('/api/workflows', createWorkflowsRouter(pool));
 
 // ============================================================================
 // CLIENT-FACING ROUTES (/app-api/*) - API Key / App User JWT authentication
@@ -323,6 +324,24 @@ const startServer = async () => {
 
   // Initialize WebSocket service
   initializeWebSocketService(httpServer);
+
+  // Initialize Workflow Scheduler (singleton)
+  console.log('⏰ Initializing workflow scheduler...');
+  const workflowScheduler = WorkflowScheduler.initialize(pool);
+  await workflowScheduler.loadScheduledWorkflows();
+
+  // Handle graceful shutdown
+  const gracefulShutdown = () => {
+    console.log('\n🛑 Shutting down gracefully...');
+    workflowScheduler.stopAll();
+    httpServer.close(() => {
+      console.log('✅ Server closed');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
 
   // Start server
   httpServer.listen(port, () => {

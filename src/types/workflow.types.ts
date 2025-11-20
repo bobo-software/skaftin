@@ -10,7 +10,8 @@ export type NodeType =
   | 'dbInsert' 
   | 'dbDelete' 
   | 'dbUpdate'
-  | 'email';
+  | 'email'
+  | 'sms';
 
 export type WorkflowExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type NodeExecutionStatus = 'success' | 'fail' | 'skipped';
