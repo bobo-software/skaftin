@@ -15,6 +15,34 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize all necessary database schemas
+   * This ensures all required schemas exist before creating tables
+   */
+  async initializeSchemas(): Promise<void> {
+    // Note: The 'public' schema always exists in PostgreSQL and cannot be created
+    // It's the default schema where all our platform tables are stored
+    
+    try {
+      // Create supertokens schema for SuperTokens authentication
+      // This schema is required for SuperTokens to store authentication data
+      await this.db.execute(sql`
+        CREATE SCHEMA IF NOT EXISTS supertokens;
+      `);
+      console.log('✅ SuperTokens schema initialized');
+    } catch (err: any) {
+      // Ignore if schema already exists (error code 42P06 = duplicate_schema)
+      if (err.code !== '42P06') {
+        console.error('❌ SuperTokens schema creation error:', err.message);
+        throw err;
+      }
+      console.log('✅ SuperTokens schema already exists');
+    }
+
+    // Note: Project schemas (project_*) are created dynamically when projects are created
+    // They don't need to be initialized here as they're created on-demand
+  }
+
+  /**
    * Initialize users table using Drizzle
    * Always creates in public schema
    */
@@ -1108,6 +1136,10 @@ export class DatabaseInitializer {
    * Order matters: organizations must be created before organization_members and projects
    */
   async initializeAllTables(): Promise<void> {
+    // First, ensure all necessary schemas exist
+    await this.initializeSchemas();
+    
+    // Then initialize all tables
     await this.initializeUsersTable();
     await this.initializeOrganizationsTable();
     await this.initializeOrganizationMembersTable();
