@@ -63,9 +63,8 @@ const LoginPage = () => {
           navigate(redirectTo);
         } else {
           // Default redirects
-          // If registering (not login), redirect to organization creation
-          // If login, redirect to projects
-          navigate(isLogin ? '/projects' : '/organizations/create');
+          // Both login and registration redirect to organizations page
+          navigate('/organizations/create');
         }
       } else {
         setError(response.error || 'An error occurred');
