@@ -19,9 +19,22 @@ export class DatabaseInitializer {
    * This ensures all required schemas exist before creating tables
    */
   async initializeSchemas(): Promise<void> {
-    // Note: The 'public' schema always exists in PostgreSQL and cannot be created
-    // It's the default schema where all our platform tables are stored
-    
+    try {
+      // Create public schema if it doesn't exist
+      // While public schema should exist by default, some PostgreSQL setups may not have it
+      await this.db.execute(sql`
+        CREATE SCHEMA IF NOT EXISTS public;
+      `);
+      console.log('✅ Public schema initialized');
+    } catch (err: any) {
+      // Ignore if schema already exists (error code 42P06 = duplicate_schema)
+      if (err.code !== '42P06') {
+        console.error('❌ Public schema creation error:', err.message);
+        throw err;
+      }
+      console.log('✅ Public schema already exists');
+    }
+
     try {
       // Create supertokens schema for SuperTokens authentication
       // This schema is required for SuperTokens to store authentication data
@@ -36,6 +49,15 @@ export class DatabaseInitializer {
         throw err;
       }
       console.log('✅ SuperTokens schema already exists');
+    }
+
+    // Set search path to include public schema
+    try {
+      await this.db.execute(sql`
+        SET search_path TO public, supertokens;
+      `);
+    } catch (err: any) {
+      console.warn('⚠️ Could not set search path:', err.message);
     }
 
     // Note: Project schemas (project_*) are created dynamically when projects are created
@@ -984,10 +1006,10 @@ export class DatabaseInitializer {
    */
   async initializeWorkflowTables(): Promise<void> {
     try {
-      // Create workflow_execution_status enum
+      // Create workflow_execution_status enum in public schema
       await this.db.execute(sql`
         DO $$ BEGIN
-          CREATE TYPE workflow_execution_status AS ENUM ('pending', 'running', 'completed', 'failed', 'cancelled');
+          CREATE TYPE public.workflow_execution_status AS ENUM ('pending', 'running', 'completed', 'failed', 'cancelled');
         EXCEPTION
           WHEN duplicate_object THEN null;
         END $$;
@@ -997,7 +1019,7 @@ export class DatabaseInitializer {
       await this.db.execute(sql`
         CREATE TABLE IF NOT EXISTS public.workflows (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
           name VARCHAR(255) NOT NULL,
           description TEXT,
           enabled BOOLEAN DEFAULT true NOT NULL,
@@ -1013,7 +1035,7 @@ export class DatabaseInitializer {
       await this.db.execute(sql`
         CREATE TABLE IF NOT EXISTS public.workflow_nodes (
           id SERIAL PRIMARY KEY,
-          workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+          workflow_id INTEGER NOT NULL REFERENCES public.workflows(id) ON DELETE CASCADE,
           node_id VARCHAR(100) NOT NULL,
           type VARCHAR(50) NOT NULL,
           position_x INTEGER NOT NULL,
@@ -1029,7 +1051,7 @@ export class DatabaseInitializer {
       await this.db.execute(sql`
         CREATE TABLE IF NOT EXISTS public.workflow_edges (
           id SERIAL PRIMARY KEY,
-          workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+          workflow_id INTEGER NOT NULL REFERENCES public.workflows(id) ON DELETE CASCADE,
           source_node_id VARCHAR(100) NOT NULL,
           target_node_id VARCHAR(100) NOT NULL,
           source_handle VARCHAR(100),
@@ -1042,8 +1064,8 @@ export class DatabaseInitializer {
       await this.db.execute(sql`
         CREATE TABLE IF NOT EXISTS public.workflow_executions (
           id SERIAL PRIMARY KEY,
-          workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
-          status workflow_execution_status DEFAULT 'pending' NOT NULL,
+          workflow_id INTEGER NOT NULL REFERENCES public.workflows(id) ON DELETE CASCADE,
+          status public.workflow_execution_status DEFAULT 'pending' NOT NULL,
           started_at TIMESTAMP DEFAULT NOW() NOT NULL,
           completed_at TIMESTAMP,
           triggered_by VARCHAR(50),
@@ -1059,7 +1081,7 @@ export class DatabaseInitializer {
       await this.db.execute(sql`
         CREATE TABLE IF NOT EXISTS public.workflow_node_executions (
           id SERIAL PRIMARY KEY,
-          execution_id INTEGER NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
+          execution_id INTEGER NOT NULL REFERENCES public.workflow_executions(id) ON DELETE CASCADE,
           node_id VARCHAR(100) NOT NULL,
           status VARCHAR(20) NOT NULL,
           started_at TIMESTAMP DEFAULT NOW() NOT NULL,
@@ -1075,7 +1097,7 @@ export class DatabaseInitializer {
       await this.db.execute(sql`
         CREATE TABLE IF NOT EXISTS public.workflow_schedules (
           id SERIAL PRIMARY KEY,
-          workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE UNIQUE,
+          workflow_id INTEGER NOT NULL REFERENCES public.workflows(id) ON DELETE CASCADE UNIQUE,
           cron_job_id INTEGER NOT NULL,
           schedule VARCHAR(100) NOT NULL,
           enabled BOOLEAN DEFAULT true NOT NULL,
@@ -1100,7 +1122,7 @@ export class DatabaseInitializer {
       await this.db.execute(sql`
         CREATE TABLE IF NOT EXISTS public.backup_schedules (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
           name VARCHAR(255) NOT NULL,
           description TEXT,
           schedule VARCHAR(100) NOT NULL,
