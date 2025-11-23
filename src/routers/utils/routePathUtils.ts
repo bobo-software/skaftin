@@ -29,10 +29,11 @@ export function getAdminPath(path: RoutePath, requiresProject: boolean = true): 
 
 /**
  * Transform route path for client routes
- * For routes that requireProject, add :projectId prefix (needed for SuperTokens users)
- * For routes that don't requireProject, remove :projectId prefix if present
- * For public routes (requiresAuth=false), don't add :projectId even if requiresProject=true
- *   because project will be extracted from API key header
+ * Client routes NEVER include :projectId in the path - project is always extracted from API key header
+ * This applies to both public and authenticated client routes
+ * The hybrid auth middleware handles project extraction from:
+ *   - X-API-Key or X-Access-Token header (for API key auth)
+ *   - SuperTokens session (for platform admin fallback)
  */
 export function getClientPath(path: RoutePath, requiresProject: boolean = false, requiresAuth: boolean = true): RoutePath {
   if (path instanceof RegExp) {
@@ -41,18 +42,8 @@ export function getClientPath(path: RoutePath, requiresProject: boolean = false,
   
   const pathString = path as string;
   
-  // For public routes (requiresAuth=false), don't add :projectId to path
-  // Project will be extracted from API key header instead
-  if (!requiresAuth) {
-    return pathString.replace(/^\/:projectId/, '');
-  }
-  
-  // If route requires project and is authenticated, ensure :projectId is in path (for SuperTokens URL param extraction)
-  if (requiresProject && !pathString.includes('/:projectId')) {
-    return `/:projectId${pathString}`;
-  }
-  
-  // Otherwise, remove projectId prefix if present (for routes that don't need it)
+  // For client routes, always remove :projectId prefix if present
+  // Project is extracted from API key header, not from URL path
   return pathString.replace(/^\/:projectId/, '');
 }
 
