@@ -11,7 +11,7 @@ export const workflowExecutionStatusEnum = pgEnum('workflow_execution_status', [
 ]);
 
 // Workflows table - stores workflow definitions
-export const workflows = pgTable('workflows', {
+export const workflows = pgTable('skaftin_system_workflows', {
   id: serial('id').primaryKey(),
   project_id: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   name: varchar('name', { length: 255 }).notNull(),
@@ -25,7 +25,7 @@ export const workflows = pgTable('workflows', {
 });
 
 // Workflow nodes table - stores node configurations
-export const workflowNodes = pgTable('workflow_nodes', {
+export const workflowNodes = pgTable('skaftin_system_workflow_nodes', {
   id: serial('id').primaryKey(),
   workflow_id: integer('workflow_id').notNull().references(() => workflows.id, { onDelete: 'cascade' }),
   node_id: varchar('node_id', { length: 100 }).notNull(), // Unique within workflow (e.g., "start-1", "dbSelect-2")
@@ -38,7 +38,7 @@ export const workflowNodes = pgTable('workflow_nodes', {
 });
 
 // Workflow edges table - stores connections between nodes
-export const workflowEdges = pgTable('workflow_edges', {
+export const workflowEdges = pgTable('skaftin_system_workflow_edges', {
   id: serial('id').primaryKey(),
   workflow_id: integer('workflow_id').notNull().references(() => workflows.id, { onDelete: 'cascade' }),
   source_node_id: varchar('source_node_id', { length: 100 }).notNull(),
@@ -49,7 +49,7 @@ export const workflowEdges = pgTable('workflow_edges', {
 });
 
 // Workflow executions table - tracks execution history
-export const workflowExecutions = pgTable('workflow_executions', {
+export const workflowExecutions = pgTable('skaftin_system_workflow_executions', {
   id: serial('id').primaryKey(),
   workflow_id: integer('workflow_id').notNull().references(() => workflows.id, { onDelete: 'cascade' }),
   status: workflowExecutionStatusEnum('status').default('pending').notNull(),
@@ -64,7 +64,7 @@ export const workflowExecutions = pgTable('workflow_executions', {
 });
 
 // Workflow node executions table - tracks individual node execution results
-export const workflowNodeExecutions = pgTable('workflow_node_executions', {
+export const workflowNodeExecutions = pgTable('skaftin_system_workflow_node_executions', {
   id: serial('id').primaryKey(),
   execution_id: integer('execution_id').notNull().references(() => workflowExecutions.id, { onDelete: 'cascade' }),
   node_id: varchar('node_id', { length: 100 }).notNull(),
@@ -78,7 +78,7 @@ export const workflowNodeExecutions = pgTable('workflow_node_executions', {
 });
 
 // Workflow schedules table - links workflows to cron jobs (optional, for tracking)
-export const workflowSchedules = pgTable('workflow_schedules', {
+export const workflowSchedules = pgTable('skaftin_system_workflow_schedules', {
   id: serial('id').primaryKey(),
   workflow_id: integer('workflow_id').notNull().references(() => workflows.id, { onDelete: 'cascade' }).unique(),
   cron_job_id: integer('cron_job_id').notNull(), // pg_cron job ID

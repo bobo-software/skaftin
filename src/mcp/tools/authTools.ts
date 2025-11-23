@@ -402,7 +402,7 @@ export function createAuthTools(config: AuthToolsConfig): Tool[] {
     // AUTH SETTINGS TOOLS
     // ============================================
     {
-      name: 'get_auth_settings',
+      name: 'get_skaftin_system_auth_settings',
       description: 'Get authentication settings for a project',
       inputSchema: {
         type: 'object',
@@ -416,7 +416,7 @@ export function createAuthTools(config: AuthToolsConfig): Tool[] {
       },
     },
     {
-      name: 'update_auth_settings',
+      name: 'update_skaftin_system_auth_settings',
       description: 'Update authentication settings for a project',
       inputSchema: {
         type: 'object',
@@ -488,7 +488,7 @@ export async function handleAuthTool(
   try {
     // Get project schema
     const getProjectSchema = async (projectId: string): Promise<string | null> => {
-      const result = await pool.query('SELECT schema_name FROM projects WHERE id = $1', [parseInt(projectId)]);
+      const result = await pool.query('SELECT schema_name FROM skaftin_system_projects WHERE id = $1', [parseInt(projectId)]);
       return result.rows.length > 0 ? result.rows[0].schema_name : null;
     };
 
@@ -1053,8 +1053,8 @@ export async function handleAuthTool(
     // AUTH SETTINGS HANDLERS
     // ============================================
 
-    if (name === 'get_auth_settings') {
-      const result = await pool.query('SELECT * FROM auth_settings WHERE project_id = $1', [parseInt(projectId)]);
+    if (name === 'get_skaftin_system_auth_settings') {
+      const result = await pool.query('SELECT * FROM skaftin_system_auth_settings WHERE project_id = $1', [parseInt(projectId)]);
 
       if (result.rows.length === 0) {
         return {
@@ -1067,7 +1067,7 @@ export async function handleAuthTool(
       };
     }
 
-    if (name === 'update_auth_settings') {
+    if (name === 'update_skaftin_system_auth_settings') {
       const {
         allow_duplicate_emails,
         require_email_verification,
@@ -1141,7 +1141,7 @@ export async function handleAuthTool(
       values.push(parseInt(projectId));
 
       const updateQuery = `
-        UPDATE auth_settings
+        UPDATE skaftin_system_auth_settings
         SET ${updateFields.join(', ')}
         WHERE project_id = $${paramIndex}
         RETURNING *
@@ -1209,8 +1209,8 @@ export const authToolModule: ToolModule = {
       'list_custom_fields',
       'create_custom_field',
       'apply_custom_field',
-      'get_auth_settings',
-      'update_auth_settings',
+      'get_skaftin_system_auth_settings',
+      'update_skaftin_system_auth_settings',
     ];
   },
   getClientSafeTools: (): string[] => {

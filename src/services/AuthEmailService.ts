@@ -109,7 +109,7 @@ export class AuthEmailService {
    */
   private async getProjectName(projectId: number): Promise<string> {
     try {
-      const result = await this.pool.query('SELECT name FROM projects WHERE id = $1', [projectId]);
+      const result = await this.pool.query('SELECT name FROM skaftin_system_projects WHERE id = $1', [projectId]);
       return result.rows.length > 0 ? result.rows[0].name : 'Application';
     } catch (error) {
       console.error('Error fetching project name:', error);

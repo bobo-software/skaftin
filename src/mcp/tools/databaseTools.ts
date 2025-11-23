@@ -23,7 +23,7 @@ async function getProjectClient(pool: Pool, projectId: string): Promise<PoolClie
     }
     
     const projectResult = await client.query(
-      'SELECT schema_name FROM projects WHERE id = $1',
+      'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
       [projectIdInt]
     );
     
@@ -681,7 +681,7 @@ export async function handleDatabaseTool(
         }
         
         const projectResult = await client.query(
-          'SELECT schema_name FROM projects WHERE id = $1',
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectIdInt]
         );
         
@@ -725,6 +725,7 @@ export async function handleDatabaseTool(
               AND t.table_schema = c.table_schema
             WHERE t.table_schema = ANY($1::text[])
               AND t.table_type = 'BASE TABLE'
+              AND t.table_name NOT LIKE 'skaftin_system_%'
             GROUP BY t.table_name, t.table_schema
             ORDER BY t.table_schema, t.table_name
           `, [schemasToSearch]);
@@ -736,6 +737,7 @@ export async function handleDatabaseTool(
             FROM information_schema.tables
             WHERE table_schema = ANY($1::text[])
               AND table_type = 'BASE TABLE'
+              AND table_name NOT LIKE 'skaftin_system_%'
             ORDER BY table_schema, table_name
           `, [schemasToSearch]);
           
@@ -871,7 +873,7 @@ export async function handleDatabaseTool(
         }
         
         const projectResult = await client.query(
-          'SELECT schema_name FROM projects WHERE id = $1',
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectIdInt]
         );
         
@@ -959,7 +961,7 @@ export async function handleDatabaseTool(
           
           if (!isNaN(projectIdInt)) {
             const projectResult = await client.query(
-              'SELECT schema_name FROM projects WHERE id = $1',
+              'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
               [projectIdInt]
             );
             
@@ -1020,7 +1022,7 @@ export async function handleDatabaseTool(
         }
         
         const projectResult = await client.query(
-          'SELECT schema_name FROM projects WHERE id = $1',
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectIdInt]
         );
         
@@ -1096,7 +1098,7 @@ export async function handleDatabaseTool(
         }
         
         const projectResult = await client.query(
-          'SELECT schema_name FROM projects WHERE id = $1',
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectIdInt]
         );
         
@@ -1244,7 +1246,7 @@ export async function handleDatabaseTool(
         // Get project schema name
         const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
         const projectResult = await client.query(
-          'SELECT schema_name FROM projects WHERE id = $1',
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectIdInt]
         );
         

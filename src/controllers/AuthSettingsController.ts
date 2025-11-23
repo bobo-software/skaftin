@@ -83,14 +83,14 @@ class AuthSettingsController {
       }
 
       const result = await AuthSettingsController.pool.query(
-        'SELECT * FROM auth_settings WHERE project_id = $1',
+        'SELECT * FROM skaftin_system_auth_settings WHERE project_id = $1',
         [projectId]
       );
 
       if (result.rows.length === 0) {
         // Create default settings if they don't exist
         const createResult = await AuthSettingsController.pool.query(
-          `INSERT INTO auth_settings (project_id, allow_duplicate_emails, registration_enabled, auth_enabled)
+          `INSERT INTO skaftin_system_auth_settings (project_id, allow_duplicate_emails, registration_enabled, auth_enabled)
            VALUES ($1, false, true, true)
            RETURNING *`,
           [projectId]
@@ -220,7 +220,7 @@ class AuthSettingsController {
           updates.send_welcome_sms !== undefined) {
         // Get current settings_json or initialize empty object
         const currentSettingsResult = await AuthSettingsController.pool.query(
-          'SELECT settings_json FROM auth_settings WHERE project_id = $1',
+          'SELECT settings_json FROM skaftin_system_auth_settings WHERE project_id = $1',
           [projectId]
         );
         const currentSettingsJson = currentSettingsResult.rows[0]?.settings_json || {};
@@ -256,7 +256,7 @@ class AuthSettingsController {
       values.push(projectId);
 
       const updateQuery = `
-        UPDATE auth_settings
+        UPDATE skaftin_system_auth_settings
         SET ${updateFields.join(', ')}
         WHERE project_id = $${paramIndex}
         RETURNING *
@@ -267,7 +267,7 @@ class AuthSettingsController {
       if (result.rows.length === 0) {
         // Settings don't exist, create them
         const createResult = await AuthSettingsController.pool.query(
-          `INSERT INTO auth_settings (project_id, allow_duplicate_emails, registration_enabled, auth_enabled)
+          `INSERT INTO skaftin_system_auth_settings (project_id, allow_duplicate_emails, registration_enabled, auth_enabled)
            VALUES ($1, false, true, true)
            RETURNING *`,
           [projectId]
@@ -317,7 +317,7 @@ class AuthSettingsController {
 
       // Get project schema
       const projectResult = await AuthSettingsController.pool.query(
-        'SELECT schema_name FROM projects WHERE id = $1',
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
 
@@ -373,7 +373,7 @@ class AuthSettingsController {
 
       // Check if verification email is enabled
       const settingsResult = await AuthSettingsController.pool.query(
-        'SELECT send_verification_email, email_provider_id FROM auth_settings WHERE project_id = $1',
+        'SELECT send_verification_email, email_provider_id FROM skaftin_system_auth_settings WHERE project_id = $1',
         [projectId]
       );
 
@@ -405,7 +405,7 @@ class AuthSettingsController {
 
       // Get project schema
       const schemaResult = await AuthSettingsController.pool.query(
-        'SELECT schema_name FROM projects WHERE id = $1',
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
 
@@ -504,7 +504,7 @@ class AuthSettingsController {
 
       // Check if password reset email is enabled
       const settingsResult = await AuthSettingsController.pool.query(
-        'SELECT send_password_reset_email, email_provider_id FROM auth_settings WHERE project_id = $1',
+        'SELECT send_password_reset_email, email_provider_id FROM skaftin_system_auth_settings WHERE project_id = $1',
         [projectId]
       );
 
@@ -536,7 +536,7 @@ class AuthSettingsController {
 
       // Get project schema
       const schemaResult = await AuthSettingsController.pool.query(
-        'SELECT schema_name FROM projects WHERE id = $1',
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
 
@@ -632,7 +632,7 @@ class AuthSettingsController {
 
       // Get project schema
       const schemaResult = await AuthSettingsController.pool.query(
-        'SELECT schema_name FROM projects WHERE id = $1',
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
 
@@ -711,7 +711,7 @@ class AuthSettingsController {
 
       // Check if welcome email should be sent
       const settingsResult = await AuthSettingsController.pool.query(
-        'SELECT send_welcome_email, email_provider_id FROM auth_settings WHERE project_id = $1',
+        'SELECT send_welcome_email, email_provider_id FROM skaftin_system_auth_settings WHERE project_id = $1',
         [projectId]
       );
 
@@ -768,7 +768,7 @@ class AuthSettingsController {
 
       // Get project schema
       const projectResult = await AuthSettingsController.pool.query(
-        'SELECT schema_name FROM projects WHERE id = $1',
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
 
@@ -829,7 +829,7 @@ class AuthSettingsController {
 
       // Get email provider configuration
       const settingsResult = await AuthSettingsController.pool.query(
-        'SELECT email_provider_id FROM auth_settings WHERE project_id = $1',
+        'SELECT email_provider_id FROM skaftin_system_auth_settings WHERE project_id = $1',
         [projectId]
       );
 
@@ -874,7 +874,7 @@ class AuthSettingsController {
 
       // Get project name
       const projectResult = await AuthSettingsController.pool.query(
-        'SELECT name FROM projects WHERE id = $1',
+        'SELECT name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
       const projectName = projectResult.rows[0]?.name || 'Skaftin Project';
@@ -1059,7 +1059,7 @@ Skaftin Platform - Email Testing Service
 
       // Get configured SMS provider id
       const settingsResult = await AuthSettingsController.pool.query(
-        'SELECT sms_provider_id FROM auth_settings WHERE project_id = $1',
+        'SELECT sms_provider_id FROM skaftin_system_auth_settings WHERE project_id = $1',
         [projectId]
       );
       if (settingsResult.rows.length === 0 || !settingsResult.rows[0].sms_provider_id) {

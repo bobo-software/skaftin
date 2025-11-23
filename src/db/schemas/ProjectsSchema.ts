@@ -3,7 +3,7 @@ import { organizations } from './OrganizationsSchema';
 
 // Note: Projects now belong to organizations instead of individual users
 // Note: Projects no longer have a single bucket_name - use project_buckets table instead
-export const projects = pgTable('projects', {
+export const projects = pgTable('skaftin_system_projects', {
   id: serial('id').primaryKey(),
   organization_id: serial('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
   user_id: varchar('user_id', { length: 255 }).notNull(), // SuperTokens user ID of creator (kept for legacy/audit)

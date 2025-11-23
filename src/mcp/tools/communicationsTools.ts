@@ -13,7 +13,7 @@ export function createCommunicationsTools(config: CommunicationsToolsConfig): To
   return [
     // Email (essential only)
     {
-      name: 'list_email_providers',
+      name: 'list_skaftin_system_email_providers',
       description: 'List all email providers configured for a project',
       inputSchema: {
         type: 'object',
@@ -141,13 +141,13 @@ export async function handleCommunicationsTool(
   const { pool } = config;
 
   switch (name) {
-    case 'list_email_providers': {
+    case 'list_skaftin_system_email_providers': {
       const { projectId } = args;
       const query = `
         SELECT id, project_id, name, provider_type, smtp_host, smtp_port, 
                smtp_secure, smtp_user, from_email, from_name, is_active, 
                created_at, updated_at
-        FROM email_providers
+        FROM skaftin_system_email_providers
         WHERE project_id = $1
         ORDER BY created_at DESC
       `;
@@ -172,7 +172,7 @@ export async function handleCommunicationsTool(
         SELECT id, project_id, name, provider_type, smtp_host, smtp_port, 
                smtp_secure, smtp_user, from_email, from_name, is_active, 
                created_at, updated_at
-        FROM email_providers
+        FROM skaftin_system_email_providers
         WHERE id = $1 AND project_id = $2
       `;
       const result = await pool.query(query, [providerId, projectId]);
@@ -220,7 +220,7 @@ export async function handleCommunicationsTool(
       } = args;
 
       const query = `
-        INSERT INTO email_providers 
+        INSERT INTO skaftin_system_email_providers 
         (project_id, name, provider_type, smtp_host, smtp_port, smtp_secure, 
          smtp_user, smtp_password, from_email, from_name, is_active)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -289,7 +289,7 @@ export async function handleCommunicationsTool(
       values.push(providerId, projectId);
 
       const query = `
-        UPDATE email_providers
+        UPDATE skaftin_system_email_providers
         SET ${fields.join(', ')}
         WHERE id = $${paramIndex++} AND project_id = $${paramIndex++}
         RETURNING id, project_id, name, provider_type, smtp_host, smtp_port, 
@@ -331,7 +331,7 @@ export async function handleCommunicationsTool(
       const { projectId, providerId } = args;
 
       const query = `
-        DELETE FROM email_providers
+        DELETE FROM skaftin_system_email_providers
         WHERE id = $1 AND project_id = $2
         RETURNING id
       `;
@@ -370,7 +370,7 @@ export async function handleCommunicationsTool(
 
       const query = `
         SELECT smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password
-        FROM email_providers
+        FROM skaftin_system_email_providers
         WHERE id = $1 AND project_id = $2
       `;
 
@@ -442,7 +442,7 @@ export async function handleCommunicationsTool(
       const providerQuery = `
         SELECT smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, 
                from_email, from_name, is_active
-        FROM email_providers
+        FROM skaftin_system_email_providers
         WHERE id = $1 AND project_id = $2
       `;
 
@@ -700,7 +700,7 @@ export const communicationsToolModule: ToolModule = {
   handleTool: handleCommunicationsToolInternal,
   getToolNames: (): string[] => {
     return [
-      'list_email_providers',
+      'list_skaftin_system_email_providers',
       'get_email_provider',
       'create_email_provider',
       'update_email_provider',

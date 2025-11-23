@@ -51,7 +51,7 @@ class AuthUsersController {
   private static async getProjectSchema(projectId: number): Promise<string | null> {
     try {
       const result = await AuthUsersController.pool.query(
-        'SELECT schema_name FROM projects WHERE id = $1',
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
       return result.rows.length > 0 ? result.rows[0].schema_name : null;
@@ -67,7 +67,7 @@ class AuthUsersController {
   private static async checkDuplicateEmailPolicy(projectId: number): Promise<boolean> {
     try {
       const result = await AuthUsersController.pool.query(
-        'SELECT allow_duplicate_emails FROM auth_settings WHERE project_id = $1',
+        'SELECT allow_duplicate_emails FROM skaftin_system_auth_settings WHERE project_id = $1',
         [projectId]
       );
       return result.rows.length > 0 ? result.rows[0].allow_duplicate_emails : false;
@@ -300,7 +300,7 @@ class AuthUsersController {
       let finalRoleIds = role_ids || [];
       if (!finalRoleIds || finalRoleIds.length === 0) {
         const defaultRoleResult = await AuthUsersController.pool.query(
-          `SELECT default_role_id FROM auth_settings WHERE project_id = $1`,
+          `SELECT default_role_id FROM skaftin_system_auth_settings WHERE project_id = $1`,
           [projectId]
         );
         if (defaultRoleResult.rows.length > 0 && defaultRoleResult.rows[0].default_role_id) {

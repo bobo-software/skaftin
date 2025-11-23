@@ -92,7 +92,7 @@ class StorageController {
       }
       
       const result = await StorageController.pool.query(
-        'SELECT id FROM project_buckets WHERE project_id = $1 AND bucket_name = $2',
+        'SELECT id FROM skaftin_system_project_buckets WHERE project_id = $1 AND bucket_name = $2',
         [projectIdInt, bucketName]
       );
 
@@ -125,7 +125,7 @@ class StorageController {
 
       // Get all buckets for the project from database
       const result = await StorageController.pool.query(
-        'SELECT id, bucket_name, description, created_at, updated_at FROM project_buckets WHERE project_id = $1 ORDER BY created_at',
+        'SELECT id, bucket_name, description, created_at, updated_at FROM skaftin_system_project_buckets WHERE project_id = $1 ORDER BY created_at',
         [projectIdInt]
       );
 

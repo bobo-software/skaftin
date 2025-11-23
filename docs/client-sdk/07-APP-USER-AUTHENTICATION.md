@@ -1655,17 +1655,17 @@ POST /app-api/auth/auth/login
 POST /app-api/auth/auth/verify
 ```
 
-3. **Store JWT tokens returned from login/register**:
+3. **Store SuperTokens access tokens returned from login/register**:
 ```typescript
-const { token } = response.data;
-localStorage.setItem('app_user_token', token);
+const { session } = response.data;
+localStorage.setItem('app_user_access_token', session.accessToken);
 ```
 
-4. **Include JWT token for protected user actions**:
+4. **Include SuperTokens access token for protected user actions**:
 ```typescript
 headers: {
   'x-api-key': 'sk_your_key',
-  'Authorization': 'Bearer ' + token
+  'Authorization': 'Bearer ' + session.accessToken
 }
 ```
 
@@ -1683,7 +1683,7 @@ PUT /app-api/auth/users/:userId
 ## Key Concepts
 
 ✅ **API Key** → Identifies your project (required for all requests)  
-✅ **JWT Token** → Authenticates individual users (from login/register)  
+✅ **SuperTokens Access Token** → Authenticates individual users (from login/register)  
 ✅ **No Project ID in Auth URLs** → Extracted from API key automatically  
 ✅ **Two Service Types** → `AppUserAuthService` (end-users) + `UserManagementService` (admins)
 

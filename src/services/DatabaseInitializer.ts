@@ -70,8 +70,24 @@ export class DatabaseInitializer {
    */
   async initializeUsersTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'users'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_users'
+          ) THEN
+            ALTER TABLE public.users RENAME TO skaftin_system_users;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.users (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_users (
           id SERIAL PRIMARY KEY,
           username VARCHAR(100) UNIQUE NOT NULL,
           email VARCHAR(255) UNIQUE NOT NULL,
@@ -94,8 +110,8 @@ export class DatabaseInitializer {
         DO $$ 
         BEGIN
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                        WHERE table_schema='public' AND table_name='users' AND column_name='password_hash') THEN
-            ALTER TABLE public.users ADD COLUMN password_hash VARCHAR(255);
+                        WHERE table_schema='public' AND table_name='skaftin_system_users' AND column_name='password_hash') THEN
+            ALTER TABLE public.skaftin_system_users ADD COLUMN password_hash VARCHAR(255);
           END IF;
         END $$;
       `);
@@ -108,7 +124,7 @@ export class DatabaseInitializer {
     try {
       // Create index on email
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_email ON public.skaftin_system_users(email);
       `);
     } catch (err: any) {
       // Ignore if index already exists
@@ -126,8 +142,24 @@ export class DatabaseInitializer {
    */
   async initializeOrganizationsTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'organizations'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_organizations'
+          ) THEN
+            ALTER TABLE public.organizations RENAME TO skaftin_system_organizations;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.organizations (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_organizations (
           id SERIAL PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           description TEXT,
@@ -144,7 +176,7 @@ export class DatabaseInitializer {
 
     try {
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_organizations_owner_id ON public.organizations(owner_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_organizations_owner_id ON public.skaftin_system_organizations(owner_id);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -161,10 +193,26 @@ export class DatabaseInitializer {
    */
   async initializeOrganizationMembersTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'organization_members'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_organization_members'
+          ) THEN
+            ALTER TABLE public.organization_members RENAME TO skaftin_system_organization_members;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.organization_members (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_organization_members (
           id SERIAL PRIMARY KEY,
-          organization_id INTEGER NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+          organization_id INTEGER NOT NULL REFERENCES public.skaftin_system_organizations(id) ON DELETE CASCADE,
           user_id VARCHAR(255) NOT NULL,
           role VARCHAR(50) NOT NULL DEFAULT 'member',
           joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -179,10 +227,10 @@ export class DatabaseInitializer {
 
     try {
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_organization_members_org_id ON public.organization_members(organization_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_organization_members_org_id ON public.skaftin_system_organization_members(organization_id);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_organization_members_user_id ON public.organization_members(user_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_organization_members_user_id ON public.skaftin_system_organization_members(user_id);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -200,8 +248,24 @@ export class DatabaseInitializer {
    */
   async initializeProjectsTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'projects'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_projects'
+          ) THEN
+            ALTER TABLE public.projects RENAME TO skaftin_system_projects;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.projects (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_projects (
           id SERIAL PRIMARY KEY,
           user_id VARCHAR(255) NOT NULL,
           name VARCHAR(255) NOT NULL,
@@ -222,7 +286,7 @@ export class DatabaseInitializer {
       // Check current column type
       const columnCheck = await this.db.execute(sql`
         SELECT data_type FROM information_schema.columns 
-        WHERE table_schema='public' AND table_name='projects' AND column_name='user_id'
+        WHERE table_schema='public' AND table_name='skaftin_system_projects' AND column_name='user_id'
       `);
       
       const currentType = (columnCheck.rows[0] as any)?.data_type;
@@ -233,9 +297,9 @@ export class DatabaseInitializer {
           DO $$ 
           BEGIN
             -- Drop foreign key constraint if it exists
-            ALTER TABLE public.projects DROP CONSTRAINT IF EXISTS projects_user_id_fkey;
+            ALTER TABLE public.skaftin_system_projects DROP CONSTRAINT IF EXISTS projects_user_id_fkey;
             -- Change column type to VARCHAR
-            ALTER TABLE public.projects ALTER COLUMN user_id TYPE VARCHAR(255);
+            ALTER TABLE public.skaftin_system_projects ALTER COLUMN user_id TYPE VARCHAR(255);
             RAISE NOTICE 'Successfully migrated user_id to VARCHAR(255)';
           END $$;
         `);
@@ -255,8 +319,8 @@ export class DatabaseInitializer {
         DO $$ 
         BEGIN
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                        WHERE table_schema='public' AND table_name='projects' AND column_name='organization_id') THEN
-            ALTER TABLE public.projects ADD COLUMN organization_id INTEGER;
+                        WHERE table_schema='public' AND table_name='skaftin_system_projects' AND column_name='organization_id') THEN
+            ALTER TABLE public.skaftin_system_projects ADD COLUMN organization_id INTEGER;
           END IF;
         END $$;
       `);
@@ -269,10 +333,10 @@ export class DatabaseInitializer {
     try {
       // Create indexes
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_projects_user_id ON public.projects(user_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_projects_user_id ON public.skaftin_system_projects(user_id);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_projects_organization_id ON public.projects(organization_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_projects_organization_id ON public.skaftin_system_projects(organization_id);
       `);
     } catch (err: any) {
       // Ignore if index already exists
@@ -290,10 +354,26 @@ export class DatabaseInitializer {
    */
   async initializeProjectBucketsTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'project_buckets'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_project_buckets'
+          ) THEN
+            ALTER TABLE public.project_buckets RENAME TO skaftin_system_project_buckets;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.project_buckets (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_project_buckets (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           bucket_name VARCHAR(255) NOT NULL UNIQUE,
           description TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -310,10 +390,10 @@ export class DatabaseInitializer {
     try {
       // Create indexes
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_project_buckets_project_id ON public.project_buckets(project_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_project_buckets_project_id ON public.skaftin_system_project_buckets(project_id);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_project_buckets_bucket_name ON public.project_buckets(bucket_name);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_project_buckets_bucket_name ON public.skaftin_system_project_buckets(bucket_name);
       `);
     } catch (err: any) {
       // Ignore if index already exists
@@ -331,8 +411,24 @@ export class DatabaseInitializer {
    */
   async initializeEmailProvidersTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'email_providers'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_email_providers'
+          ) THEN
+            ALTER TABLE public.email_providers RENAME TO skaftin_system_email_providers;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.email_providers (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_email_providers (
           id SERIAL PRIMARY KEY,
           project_id VARCHAR(255) NOT NULL,
           name VARCHAR(255) NOT NULL,
@@ -358,10 +454,10 @@ export class DatabaseInitializer {
 
     try {
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_email_providers_project_id ON public.email_providers(project_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_email_providers_project_id ON public.skaftin_system_email_providers(project_id);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_email_providers_is_active ON public.email_providers(is_active);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_email_providers_is_active ON public.skaftin_system_email_providers(is_active);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -378,8 +474,24 @@ export class DatabaseInitializer {
    */
   async initializeEmailTemplatesTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'email_templates'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_email_templates'
+          ) THEN
+            ALTER TABLE public.email_templates RENAME TO skaftin_system_email_templates;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.email_templates (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_email_templates (
           id SERIAL PRIMARY KEY,
           project_id VARCHAR(255) NOT NULL,
           name VARCHAR(255) NOT NULL,
@@ -400,7 +512,7 @@ export class DatabaseInitializer {
 
     try {
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_email_templates_project_id ON public.email_templates(project_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_email_templates_project_id ON public.skaftin_system_email_templates(project_id);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -417,8 +529,24 @@ export class DatabaseInitializer {
    */
   async initializeSmsTemplatesTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'sms_templates'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_sms_templates'
+          ) THEN
+            ALTER TABLE public.sms_templates RENAME TO skaftin_system_sms_templates;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.sms_templates (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_sms_templates (
           id SERIAL PRIMARY KEY,
           project_id VARCHAR(255) NOT NULL,
           name VARCHAR(255) NOT NULL,
@@ -437,7 +565,7 @@ export class DatabaseInitializer {
 
     try {
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_sms_templates_project_id ON public.sms_templates(project_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_sms_templates_project_id ON public.skaftin_system_sms_templates(project_id);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -454,10 +582,26 @@ export class DatabaseInitializer {
    */
   async initializeProjectMembersTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'project_members'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_project_members'
+          ) THEN
+            ALTER TABLE public.project_members RENAME TO skaftin_system_project_members;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.project_members (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_project_members (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           user_id VARCHAR(255) NOT NULL,
           role VARCHAR(50) NOT NULL DEFAULT 'member',
           invited_by VARCHAR(255),
@@ -473,10 +617,10 @@ export class DatabaseInitializer {
 
     try {
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_project_members_project_id ON public.project_members(project_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_project_members_project_id ON public.skaftin_system_project_members(project_id);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_project_members_user_id ON public.project_members(user_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_project_members_user_id ON public.skaftin_system_project_members(user_id);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -493,10 +637,26 @@ export class DatabaseInitializer {
    */
   async initializeProjectInvitationsTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'project_invitations'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_project_invitations'
+          ) THEN
+            ALTER TABLE public.project_invitations RENAME TO skaftin_system_project_invitations;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.project_invitations (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_project_invitations (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           email VARCHAR(255) NOT NULL,
           invite_code VARCHAR(255) NOT NULL UNIQUE,
           role VARCHAR(50) NOT NULL DEFAULT 'member',
@@ -516,16 +676,16 @@ export class DatabaseInitializer {
 
     try {
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_project_invitations_project_id ON public.project_invitations(project_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_project_invitations_project_id ON public.skaftin_system_project_invitations(project_id);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_project_invitations_email ON public.project_invitations(email);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_project_invitations_email ON public.skaftin_system_project_invitations(email);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_project_invitations_code ON public.project_invitations(invite_code);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_project_invitations_code ON public.skaftin_system_project_invitations(invite_code);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_project_invitations_status ON public.project_invitations(status);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_project_invitations_status ON public.skaftin_system_project_invitations(status);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -542,10 +702,26 @@ export class DatabaseInitializer {
    */
   async initializeApiCredentialsTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'api_credentials'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_api_credentials'
+          ) THEN
+            ALTER TABLE public.api_credentials RENAME TO skaftin_system_api_credentials;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.api_credentials (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_api_credentials (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           name VARCHAR(255) NOT NULL,
           credential_type VARCHAR(50) NOT NULL CHECK (credential_type IN ('api_key', 'access_token', 'mcp_key')),
           token VARCHAR(255) NOT NULL UNIQUE,
@@ -566,13 +742,13 @@ export class DatabaseInitializer {
 
     try {
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_api_credentials_project_id ON public.api_credentials(project_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_api_credentials_project_id ON public.skaftin_system_api_credentials(project_id);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_api_credentials_token ON public.api_credentials(token);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_api_credentials_token ON public.skaftin_system_api_credentials(token);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_api_credentials_is_active ON public.api_credentials(is_active);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_api_credentials_is_active ON public.skaftin_system_api_credentials(is_active);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -590,10 +766,26 @@ export class DatabaseInitializer {
    */
   async initializeAuthSettingsTable(): Promise<void> {
     try {
+      // Migrate existing table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'auth_settings'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_auth_settings'
+          ) THEN
+            ALTER TABLE public.auth_settings RENAME TO skaftin_system_auth_settings;
+          END IF;
+        END $$;
+      `));
+
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.auth_settings (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_auth_settings (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL UNIQUE REFERENCES public.projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL UNIQUE REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           allow_duplicate_emails BOOLEAN DEFAULT false,
           require_email_verification BOOLEAN DEFAULT false,
           require_phone_verification BOOLEAN DEFAULT false,
@@ -602,7 +794,7 @@ export class DatabaseInitializer {
           registration_enabled BOOLEAN DEFAULT true,
           auth_enabled BOOLEAN DEFAULT true,
           default_role_id INTEGER,
-          email_provider_id INTEGER REFERENCES public.email_providers(id) ON DELETE SET NULL,
+          email_provider_id INTEGER REFERENCES public.skaftin_system_email_providers(id) ON DELETE SET NULL,
           sms_provider_id INTEGER,
           send_registration_email BOOLEAN DEFAULT false,
           send_verification_email BOOLEAN DEFAULT false,
@@ -621,10 +813,10 @@ export class DatabaseInitializer {
 
     try {
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_auth_settings_project_id ON public.auth_settings(project_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_auth_settings_project_id ON public.skaftin_system_auth_settings(project_id);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_auth_settings_email_provider_id ON public.auth_settings(email_provider_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_auth_settings_email_provider_id ON public.skaftin_system_auth_settings(email_provider_id);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -819,7 +1011,7 @@ export class DatabaseInitializer {
       if (defaultRoleResult.rows.length > 0) {
         const defaultRoleId = (defaultRoleResult.rows[0] as any).id;
         await this.db.execute(sql`
-          UPDATE public.auth_settings 
+          UPDATE public.skaftin_system_auth_settings 
           SET default_role_id = ${defaultRoleId}
           WHERE project_id = ${projectId} AND default_role_id IS NULL;
         `);
@@ -839,17 +1031,33 @@ export class DatabaseInitializer {
    */
   async initializeAnalyticsTables(): Promise<void> {
     try {
+      // Migrate existing api_metrics table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'api_metrics'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_api_metrics'
+          ) THEN
+            ALTER TABLE public.api_metrics RENAME TO skaftin_system_api_metrics;
+          END IF;
+        END $$;
+      `));
+
       // API Metrics table - tracks all API requests
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.api_metrics (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_api_metrics (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           endpoint VARCHAR(500) NOT NULL,
           method VARCHAR(10) NOT NULL,
           status_code INTEGER,
           response_time_ms INTEGER NOT NULL,
           user_id VARCHAR(255),
-          api_key_id INTEGER REFERENCES public.api_credentials(id) ON DELETE SET NULL,
+          api_key_id INTEGER REFERENCES public.skaftin_system_api_credentials(id) ON DELETE SET NULL,
           ip_address VARCHAR(45),
           user_agent TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -862,17 +1070,33 @@ export class DatabaseInitializer {
     }
 
     try {
+      // Migrate existing database_metrics table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'database_metrics'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_database_metrics'
+          ) THEN
+            ALTER TABLE public.database_metrics RENAME TO skaftin_system_database_metrics;
+          END IF;
+        END $$;
+      `));
+
       // Database Metrics table - tracks database queries
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.database_metrics (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_database_metrics (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           query_type VARCHAR(20) NOT NULL,
           table_name VARCHAR(255),
           execution_time_ms INTEGER NOT NULL,
           rows_affected INTEGER,
           user_id VARCHAR(255),
-          api_key_id INTEGER REFERENCES public.api_credentials(id) ON DELETE SET NULL,
+          api_key_id INTEGER REFERENCES public.skaftin_system_api_credentials(id) ON DELETE SET NULL,
           query_hash VARCHAR(64),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -884,17 +1108,33 @@ export class DatabaseInitializer {
     }
 
     try {
+      // Migrate existing storage_metrics table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'storage_metrics'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_storage_metrics'
+          ) THEN
+            ALTER TABLE public.storage_metrics RENAME TO skaftin_system_storage_metrics;
+          END IF;
+        END $$;
+      `));
+
       // Storage Metrics table - tracks storage operations
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.storage_metrics (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_storage_metrics (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           operation_type VARCHAR(50) NOT NULL CHECK (operation_type IN ('upload', 'download', 'delete', 'list', 'search')),
           file_path VARCHAR(1000),
           file_size_bytes BIGINT,
           bucket_name VARCHAR(255),
           user_id VARCHAR(255),
-          api_key_id INTEGER REFERENCES public.api_credentials(id) ON DELETE SET NULL,
+          api_key_id INTEGER REFERENCES public.skaftin_system_api_credentials(id) ON DELETE SET NULL,
           success BOOLEAN DEFAULT true,
           error_message TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -907,11 +1147,27 @@ export class DatabaseInitializer {
     }
 
     try {
+      // Migrate existing analytics_aggregates table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'analytics_aggregates'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_analytics_aggregates'
+          ) THEN
+            ALTER TABLE public.analytics_aggregates RENAME TO skaftin_system_analytics_aggregates;
+          END IF;
+        END $$;
+      `));
+
       // Analytics Aggregates table - pre-aggregated metrics for faster queries
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.analytics_aggregates (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_analytics_aggregates (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           metric_type VARCHAR(50) NOT NULL CHECK (metric_type IN ('api', 'database', 'storage')),
           aggregation_period VARCHAR(20) NOT NULL CHECK (aggregation_period IN ('hour', 'day', 'week', 'month')),
           period_start TIMESTAMP NOT NULL,
@@ -926,8 +1182,7 @@ export class DatabaseInitializer {
           operation_type VARCHAR(50),
           metadata JSONB DEFAULT '{}',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(project_id, metric_type, aggregation_period, period_start, COALESCE(endpoint, ''), COALESCE(table_name, ''), COALESCE(operation_type, ''))
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
     } catch (err: any) {
@@ -937,18 +1192,38 @@ export class DatabaseInitializer {
     }
 
     try {
+      // Create unique index for analytics_aggregates (using COALESCE in index, not constraint)
+      await this.db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_skaftin_system_analytics_aggregates_unique 
+        ON public.skaftin_system_analytics_aggregates(
+          project_id, 
+          metric_type, 
+          aggregation_period, 
+          period_start, 
+          COALESCE(endpoint, ''), 
+          COALESCE(table_name, ''), 
+          COALESCE(operation_type, '')
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07' && err.code !== '23505') {
+        console.error('❌ Analytics aggregates unique index creation error:', err.message);
+      }
+    }
+
+    try {
       // Create indexes for api_metrics
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_api_metrics_project_time ON public.api_metrics(project_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_api_metrics_project_time ON public.skaftin_system_api_metrics(project_id, created_at);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_api_metrics_endpoint ON public.api_metrics(endpoint, created_at);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_api_metrics_endpoint ON public.skaftin_system_api_metrics(endpoint, created_at);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_api_metrics_status_code ON public.api_metrics(status_code);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_api_metrics_status_code ON public.skaftin_system_api_metrics(status_code);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_api_metrics_user_id ON public.api_metrics(user_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_api_metrics_user_id ON public.skaftin_system_api_metrics(user_id, created_at);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -959,13 +1234,13 @@ export class DatabaseInitializer {
     try {
       // Create indexes for database_metrics
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_database_metrics_project_time ON public.database_metrics(project_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_database_metrics_project_time ON public.skaftin_system_database_metrics(project_id, created_at);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_database_metrics_table_name ON public.database_metrics(table_name, created_at);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_database_metrics_table_name ON public.skaftin_system_database_metrics(table_name, created_at);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_database_metrics_query_type ON public.database_metrics(query_type, created_at);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_database_metrics_query_type ON public.skaftin_system_database_metrics(query_type, created_at);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -976,10 +1251,10 @@ export class DatabaseInitializer {
     try {
       // Create indexes for storage_metrics
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_storage_metrics_project_time ON public.storage_metrics(project_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_storage_metrics_project_time ON public.skaftin_system_storage_metrics(project_id, created_at);
       `);
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_storage_metrics_operation_type ON public.storage_metrics(operation_type, created_at);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_storage_metrics_operation_type ON public.skaftin_system_storage_metrics(operation_type, created_at);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -990,7 +1265,7 @@ export class DatabaseInitializer {
     try {
       // Create indexes for analytics_aggregates
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_analytics_aggregates_project_period ON public.analytics_aggregates(project_id, metric_type, aggregation_period, period_start);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_analytics_aggregates_project_period ON public.skaftin_system_analytics_aggregates(project_id, metric_type, aggregation_period, period_start);
       `);
     } catch (err: any) {
       if (err.code !== '42P07') {
@@ -1015,11 +1290,36 @@ export class DatabaseInitializer {
         END $$;
       `);
 
+      // Migrate existing workflow tables if they exist
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'workflows')
+            AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'skaftin_system_workflows')
+          THEN ALTER TABLE public.workflows RENAME TO skaftin_system_workflows; END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'workflow_nodes')
+            AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'skaftin_system_workflow_nodes')
+          THEN ALTER TABLE public.workflow_nodes RENAME TO skaftin_system_workflow_nodes; END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'workflow_edges')
+            AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'skaftin_system_workflow_edges')
+          THEN ALTER TABLE public.workflow_edges RENAME TO skaftin_system_workflow_edges; END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'workflow_executions')
+            AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'skaftin_system_workflow_executions')
+          THEN ALTER TABLE public.workflow_executions RENAME TO skaftin_system_workflow_executions; END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'workflow_node_executions')
+            AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'skaftin_system_workflow_node_executions')
+          THEN ALTER TABLE public.workflow_node_executions RENAME TO skaftin_system_workflow_node_executions; END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'workflow_schedules')
+            AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'skaftin_system_workflow_schedules')
+          THEN ALTER TABLE public.workflow_schedules RENAME TO skaftin_system_workflow_schedules; END IF;
+        END $$;
+      `));
+
       // Create workflows table
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.workflows (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_workflows (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           name VARCHAR(255) NOT NULL,
           description TEXT,
           enabled BOOLEAN DEFAULT true NOT NULL,
@@ -1033,9 +1333,9 @@ export class DatabaseInitializer {
 
       // Create workflow_nodes table
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.workflow_nodes (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_workflow_nodes (
           id SERIAL PRIMARY KEY,
-          workflow_id INTEGER NOT NULL REFERENCES public.workflows(id) ON DELETE CASCADE,
+          workflow_id INTEGER NOT NULL REFERENCES public.skaftin_system_workflows(id) ON DELETE CASCADE,
           node_id VARCHAR(100) NOT NULL,
           type VARCHAR(50) NOT NULL,
           position_x INTEGER NOT NULL,
@@ -1049,9 +1349,9 @@ export class DatabaseInitializer {
 
       // Create workflow_edges table
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.workflow_edges (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_workflow_edges (
           id SERIAL PRIMARY KEY,
-          workflow_id INTEGER NOT NULL REFERENCES public.workflows(id) ON DELETE CASCADE,
+          workflow_id INTEGER NOT NULL REFERENCES public.skaftin_system_workflows(id) ON DELETE CASCADE,
           source_node_id VARCHAR(100) NOT NULL,
           target_node_id VARCHAR(100) NOT NULL,
           source_handle VARCHAR(100),
@@ -1062,9 +1362,9 @@ export class DatabaseInitializer {
 
       // Create workflow_executions table
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.workflow_executions (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_workflow_executions (
           id SERIAL PRIMARY KEY,
-          workflow_id INTEGER NOT NULL REFERENCES public.workflows(id) ON DELETE CASCADE,
+          workflow_id INTEGER NOT NULL REFERENCES public.skaftin_system_workflows(id) ON DELETE CASCADE,
           status public.workflow_execution_status DEFAULT 'pending' NOT NULL,
           started_at TIMESTAMP DEFAULT NOW() NOT NULL,
           completed_at TIMESTAMP,
@@ -1079,9 +1379,9 @@ export class DatabaseInitializer {
 
       // Create workflow_node_executions table
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.workflow_node_executions (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_workflow_node_executions (
           id SERIAL PRIMARY KEY,
-          execution_id INTEGER NOT NULL REFERENCES public.workflow_executions(id) ON DELETE CASCADE,
+          execution_id INTEGER NOT NULL REFERENCES public.skaftin_system_workflow_executions(id) ON DELETE CASCADE,
           node_id VARCHAR(100) NOT NULL,
           status VARCHAR(20) NOT NULL,
           started_at TIMESTAMP DEFAULT NOW() NOT NULL,
@@ -1095,9 +1395,9 @@ export class DatabaseInitializer {
 
       // Create workflow_schedules table
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.workflow_schedules (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_workflow_schedules (
           id SERIAL PRIMARY KEY,
-          workflow_id INTEGER NOT NULL REFERENCES public.workflows(id) ON DELETE CASCADE UNIQUE,
+          workflow_id INTEGER NOT NULL REFERENCES public.skaftin_system_workflows(id) ON DELETE CASCADE UNIQUE,
           cron_job_id INTEGER NOT NULL,
           schedule VARCHAR(100) NOT NULL,
           enabled BOOLEAN DEFAULT true NOT NULL,
@@ -1118,11 +1418,27 @@ export class DatabaseInitializer {
    */
   async initializeBackupSchedulesTable(): Promise<void> {
     try {
+      // Migrate existing backup_schedules table if it exists
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'backup_schedules'
+          ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_backup_schedules'
+          ) THEN
+            ALTER TABLE public.backup_schedules RENAME TO skaftin_system_backup_schedules;
+          END IF;
+        END $$;
+      `));
+
       // Create backup_schedules table
       await this.db.execute(sql`
-        CREATE TABLE IF NOT EXISTS public.backup_schedules (
+        CREATE TABLE IF NOT EXISTS public.skaftin_system_backup_schedules (
           id SERIAL PRIMARY KEY,
-          project_id INTEGER NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+          project_id INTEGER NOT NULL REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           name VARCHAR(255) NOT NULL,
           description TEXT,
           schedule VARCHAR(100) NOT NULL,
@@ -1139,11 +1455,11 @@ export class DatabaseInitializer {
 
       // Create indexes
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_backup_schedules_project_id ON public.backup_schedules(project_id);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_backup_schedules_project_id ON public.skaftin_system_backup_schedules(project_id);
       `);
 
       await this.db.execute(sql`
-        CREATE INDEX IF NOT EXISTS idx_backup_schedules_enabled ON public.backup_schedules(enabled);
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_backup_schedules_enabled ON public.skaftin_system_backup_schedules(enabled);
       `);
 
       console.log('✅ Backup schedules table initialized');

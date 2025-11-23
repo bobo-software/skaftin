@@ -256,7 +256,7 @@ async function validateBucketForProject(pool: Pool, projectId: string, bucketNam
   try {
     const client = await pool.connect();
     const result = await client.query(
-      'SELECT id FROM project_buckets WHERE project_id = $1 AND bucket_name = $2',
+      'SELECT id FROM skaftin_system_project_buckets WHERE project_id = $1 AND bucket_name = $2',
       [projectId, bucketName]
     );
     client.release();
@@ -492,7 +492,7 @@ export async function handleStorageTool(
       const client = await pool.connect();
       try {
         const result = await client.query(
-          'SELECT id, bucket_name, description, created_at, updated_at FROM project_buckets WHERE project_id = $1 ORDER BY created_at',
+          'SELECT id, bucket_name, description, created_at, updated_at FROM skaftin_system_project_buckets WHERE project_id = $1 ORDER BY created_at',
           [projectId]
         );
         
@@ -568,7 +568,7 @@ export async function handleStorageTool(
       try {
         // Check if bucket name already exists
         const existingResult = await client.query(
-          'SELECT id FROM project_buckets WHERE bucket_name = $1',
+          'SELECT id FROM skaftin_system_project_buckets WHERE bucket_name = $1',
           [bucketName]
         );
         
@@ -618,7 +618,7 @@ export async function handleStorageTool(
         
         // Create bucket record in database
         const result = await client.query(
-          'INSERT INTO project_buckets (project_id, bucket_name, description) VALUES ($1, $2, $3) RETURNING id, bucket_name, description, created_at, updated_at',
+          'INSERT INTO skaftin_system_project_buckets (project_id, bucket_name, description) VALUES ($1, $2, $3) RETURNING id, bucket_name, description, created_at, updated_at',
           [projectId, bucketName, description || null]
         );
         
@@ -721,7 +721,7 @@ export async function handleStorageTool(
         const client = await pool.connect();
         try {
           await client.query(
-            'DELETE FROM project_buckets WHERE project_id = $1 AND bucket_name = $2',
+            'DELETE FROM skaftin_system_project_buckets WHERE project_id = $1 AND bucket_name = $2',
             [projectId, bucketName]
           );
         } finally {

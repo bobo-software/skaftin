@@ -14,7 +14,7 @@ Skaftin uses **two separate authentication layers**:
 
 2. **App User Authentication** (`07-APP-USER-AUTHENTICATION.md`)
    - Authenticates your application's end users
-   - Uses JWT tokens
+   - Uses SuperTokens sessions (access tokens)
    - Built on top of platform authentication
    - Manages user sessions and permissions
 
@@ -403,15 +403,15 @@ headers: {
 
 ### App User Authentication (See 07-APP-USER-AUTHENTICATION.md)
 ```typescript
-// After user login, include JWT token
+// After user login, include SuperTokens access token
 headers: {
   'x-api-key': 'sk_your_api_key',        // Platform auth (required)
-  'Authorization': 'Bearer eyJhbG...'    // User session (for user endpoints)
+  'Authorization': 'Bearer eyJhbG...'    // SuperTokens access token (for user endpoints)
 }
 ```
 
 **Remember:** 
 - Platform credentials authenticate YOUR APP
-- JWT tokens authenticate YOUR APP'S USERS
+- SuperTokens access tokens authenticate YOUR APP'S USERS
 - Both can work together in the same application
 

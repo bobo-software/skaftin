@@ -55,7 +55,7 @@ export class AuthUtils {
       if (projectId) {
         // Delete from specific project only
         const schemaResult = await pool.query(
-          'SELECT schema_name FROM projects WHERE id = $1',
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectId]
         );
         

@@ -30,7 +30,7 @@ class DatabaseController {
     try {
       const projectIdInt = parseInt(projectId, 10);
       const result = await client.query(
-        'SELECT schema_name FROM projects WHERE id = $1',
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectIdInt]
       );
       
@@ -87,6 +87,7 @@ class DatabaseController {
         FROM information_schema.tables
         WHERE table_schema = current_schema()
           AND table_type = 'BASE TABLE'
+          AND table_name NOT LIKE 'skaftin_system_%'
         ORDER BY table_name
       `);
 

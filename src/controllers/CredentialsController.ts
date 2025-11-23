@@ -64,7 +64,7 @@ class CredentialsController {
       const query = `
         SELECT id, project_id, name, credential_type, token, permissions, 
                is_active, last_used_at, created_by, created_at, expires_at
-        FROM api_credentials
+        FROM skaftin_system_api_credentials
         WHERE project_id = $1
         ORDER BY created_at DESC
       `;
@@ -172,7 +172,7 @@ class CredentialsController {
       }
 
       const query = `
-        INSERT INTO api_credentials 
+        INSERT INTO skaftin_system_api_credentials 
         (project_id, name, credential_type, token, permissions, created_by, expires_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id, project_id, name, credential_type, token, permissions, 
@@ -251,7 +251,7 @@ class CredentialsController {
       values.push(credentialId, projectId);
 
       const query = `
-        UPDATE api_credentials
+        UPDATE skaftin_system_api_credentials
         SET ${updates.join(', ')}
         WHERE id = $${paramIndex++} AND project_id = $${paramIndex++}
         RETURNING id, project_id, name, credential_type, token, permissions, 
@@ -291,7 +291,7 @@ class CredentialsController {
       const { projectId, credentialId } = req.params;
 
       const query = `
-        DELETE FROM api_credentials
+        DELETE FROM skaftin_system_api_credentials
         WHERE id = $1 AND project_id = $2
         RETURNING id
       `;
@@ -331,7 +331,7 @@ class CredentialsController {
       const query = `
         SELECT id, project_id, name, credential_type, token, permissions, 
                is_active, last_used_at, created_by, created_at, expires_at
-        FROM api_credentials
+        FROM skaftin_system_api_credentials
         WHERE project_id = $1 AND credential_type = 'mcp_key'
       `;
 
@@ -384,7 +384,7 @@ class CredentialsController {
       if (existing.rows.length > 0) {
         // Update existing key
         const updateQuery = `
-          UPDATE api_credentials
+          UPDATE skaftin_system_api_credentials
           SET token = $1, created_at = CURRENT_TIMESTAMP, last_used_at = NULL
           WHERE project_id = $2 AND credential_type = 'mcp_key'
           RETURNING id, project_id, name, credential_type, token, permissions, 
@@ -403,7 +403,7 @@ class CredentialsController {
       } else {
         // Create new MCP key
         const insertQuery = `
-          INSERT INTO api_credentials 
+          INSERT INTO skaftin_system_api_credentials 
           (project_id, name, credential_type, token, permissions, created_by)
           VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING id, project_id, name, credential_type, token, permissions, 
@@ -443,7 +443,7 @@ class CredentialsController {
   static async updateLastUsed(pool: Pool, token: string): Promise<void> {
     try {
       await pool.query(
-        'UPDATE api_credentials SET last_used_at = CURRENT_TIMESTAMP WHERE token = $1',
+        'UPDATE skaftin_system_api_credentials SET last_used_at = CURRENT_TIMESTAMP WHERE token = $1',
         [token]
       );
     } catch (error) {

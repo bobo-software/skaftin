@@ -28,7 +28,7 @@ class AppAuthController {
   private static async getProjectSchema(projectId: number): Promise<string | null> {
     try {
       const result = await AppAuthController.pool.query(
-        'SELECT schema_name FROM projects WHERE id = $1',
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
       return result.rows.length > 0 ? result.rows[0].schema_name : null;
@@ -64,7 +64,7 @@ class AppAuthController {
         `SELECT registration_enabled, auth_enabled, email_provider_id,
                 send_registration_email, send_verification_email, 
                 send_welcome_email, require_email_verification
-         FROM auth_settings WHERE project_id = $1`,
+         FROM skaftin_system_auth_settings WHERE project_id = $1`,
         [projectId]
       );
 
@@ -121,7 +121,7 @@ class AppAuthController {
 
       // Assign default role
       const defaultRoleResult = await AppAuthController.pool.query(
-        'SELECT default_role_id FROM auth_settings WHERE project_id = $1',
+        'SELECT default_role_id FROM skaftin_system_auth_settings WHERE project_id = $1',
         [projectId]
       );
 
@@ -268,7 +268,7 @@ class AppAuthController {
 
       // Check if auth is enabled
       const settingsResult = await AppAuthController.pool.query(
-        'SELECT auth_enabled FROM auth_settings WHERE project_id = $1',
+        'SELECT auth_enabled FROM skaftin_system_auth_settings WHERE project_id = $1',
         [projectId]
       );
 
@@ -573,7 +573,7 @@ class AppAuthController {
 
       // Check if welcome email should be sent
       const settingsResult = await AppAuthController.pool.query(
-        'SELECT send_welcome_email, email_provider_id FROM auth_settings WHERE project_id = $1',
+        'SELECT send_welcome_email, email_provider_id FROM skaftin_system_auth_settings WHERE project_id = $1',
         [projectId]
       );
 

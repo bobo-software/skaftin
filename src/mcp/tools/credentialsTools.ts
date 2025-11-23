@@ -14,7 +14,7 @@ export function createCredentialsTools(config: CredentialsToolsConfig): Tool[] {
     // API CREDENTIALS MANAGEMENT TOOLS
     // ============================================
     {
-      name: 'list_api_credentials',
+      name: 'list_skaftin_system_api_credentials',
       description: 'List all API credentials (API keys, access tokens, MCP keys) for a project',
       inputSchema: {
         type: 'object',
@@ -200,10 +200,10 @@ export async function handleCredentialsTool(
     // ============================================
     // LIST API CREDENTIALS
     // ============================================
-    if (name === 'list_api_credentials') {
+    if (name === 'list_skaftin_system_api_credentials') {
       const { type, include_inactive = false } = args;
 
-      let query = 'SELECT * FROM api_credentials WHERE project_id = $1';
+      let query = 'SELECT * FROM skaftin_system_api_credentials WHERE project_id = $1';
       const params: any[] = [parseInt(projectId)];
       let paramIndex = 2;
 
@@ -246,7 +246,7 @@ export async function handleCredentialsTool(
       const { credentialId } = args;
 
       const result = await pool.query(
-        'SELECT * FROM api_credentials WHERE id = $1 AND project_id = $2',
+        'SELECT * FROM skaftin_system_api_credentials WHERE id = $1 AND project_id = $2',
         [parseInt(credentialId), parseInt(projectId)]
       );
 
@@ -304,7 +304,7 @@ export async function handleCredentialsTool(
 
       // Insert credential
       const insertQuery = `
-        INSERT INTO api_credentials 
+        INSERT INTO skaftin_system_api_credentials 
         (project_id, name, credential_type, token, permissions, expires_at, is_active)
         VALUES ($1, $2, $3, $4, $5, $6, true)
         RETURNING *
@@ -373,7 +373,7 @@ export async function handleCredentialsTool(
       values.push(parseInt(credentialId), parseInt(projectId));
 
       const updateQuery = `
-        UPDATE api_credentials
+        UPDATE skaftin_system_api_credentials
         SET ${updateFields.join(', ')}
         WHERE id = $${paramIndex} AND project_id = $${paramIndex + 1}
         RETURNING *
@@ -412,7 +412,7 @@ export async function handleCredentialsTool(
       const { credentialId } = args;
 
       const result = await pool.query(
-        'DELETE FROM api_credentials WHERE id = $1 AND project_id = $2 RETURNING *',
+        'DELETE FROM skaftin_system_api_credentials WHERE id = $1 AND project_id = $2 RETURNING *',
         [parseInt(credentialId), parseInt(projectId)]
       );
 
@@ -444,7 +444,7 @@ export async function handleCredentialsTool(
     // ============================================
     if (name === 'get_mcp_key') {
       const result = await pool.query(
-        'SELECT * FROM api_credentials WHERE project_id = $1 AND credential_type = $2',
+        'SELECT * FROM skaftin_system_api_credentials WHERE project_id = $1 AND credential_type = $2',
         [parseInt(projectId), 'mcp_key']
       );
 
@@ -477,7 +477,7 @@ export async function handleCredentialsTool(
     if (name === 'regenerate_mcp_key') {
       // Check if MCP key exists
       const existingKey = await pool.query(
-        'SELECT id FROM api_credentials WHERE project_id = $1 AND credential_type = $2',
+        'SELECT id FROM skaftin_system_api_credentials WHERE project_id = $1 AND credential_type = $2',
         [parseInt(projectId), 'mcp_key']
       );
 
@@ -487,7 +487,7 @@ export async function handleCredentialsTool(
       if (existingKey.rows.length > 0) {
         // Update existing MCP key
         result = await pool.query(
-          `UPDATE api_credentials 
+          `UPDATE skaftin_system_api_credentials 
            SET token = $1, last_used_at = NULL, updated_at = CURRENT_TIMESTAMP
            WHERE id = $2 AND project_id = $3
            RETURNING *`,
@@ -496,7 +496,7 @@ export async function handleCredentialsTool(
       } else {
         // Create new MCP key
         result = await pool.query(
-          `INSERT INTO api_credentials 
+          `INSERT INTO skaftin_system_api_credentials 
            (project_id, name, credential_type, token, permissions, is_active)
            VALUES ($1, $2, $3, $4, $5, true)
            RETURNING *`,
@@ -620,7 +620,7 @@ export const credentialsToolModule: ToolModule = {
   handleTool: handleCredentialsToolInternal,
   getToolNames: (): string[] => {
     return [
-      'list_api_credentials',
+      'list_skaftin_system_api_credentials',
       'get_api_credential',
       'create_api_credential',
       'update_api_credential',

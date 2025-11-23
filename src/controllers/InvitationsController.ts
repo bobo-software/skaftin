@@ -42,7 +42,7 @@ class InvitationsController {
 
       let query = `
         SELECT i.*, p.name as project_name
-        FROM project_invitations i
+        FROM skaftin_system_project_invitations i
         JOIN projects p ON i.project_id = p.id
         WHERE i.project_id = $1
       `;
@@ -82,7 +82,7 @@ class InvitationsController {
 
       const query = `
         SELECT pm.*, p.name as project_name
-        FROM project_members pm
+        FROM skaftin_system_project_members pm
         JOIN projects p ON pm.project_id = p.id
         WHERE pm.project_id = $1
         ORDER BY pm.joined_at DESC
@@ -133,7 +133,7 @@ class InvitationsController {
 
       // Check if invitation already exists (pending only)
       const existingCheck = await this.pool.query(
-        'SELECT id, status FROM project_invitations WHERE project_id = $1 AND email = $2 AND status = $3',
+        'SELECT id, status FROM skaftin_system_project_invitations WHERE project_id = $1 AND email = $2 AND status = $3',
         [projectId, email, 'pending']
       );
 
@@ -149,13 +149,13 @@ class InvitationsController {
       // Delete any old non-pending invitations for this email (allow re-invitation)
       console.log('  └─ Cleaning up old invitations...');
       await this.pool.query(
-        'DELETE FROM project_invitations WHERE project_id = $1 AND email = $2 AND status != $3',
+        'DELETE FROM skaftin_system_project_invitations WHERE project_id = $1 AND email = $2 AND status != $3',
         [projectId, email, 'pending']
       );
 
       // Check if user is already a member
       const memberCheck = await this.pool.query(
-        'SELECT id FROM project_members WHERE project_id = $1 AND user_id IN (SELECT user_id FROM users WHERE email = $2)',
+        'SELECT id FROM skaftin_system_project_members WHERE project_id = $1 AND user_id IN (SELECT user_id FROM skaftin_system_users WHERE email = $2)',
         [projectId, email]
       );
 
@@ -174,7 +174,7 @@ class InvitationsController {
 
       // Get project details
       const projectResult = await this.pool.query(
-        'SELECT name FROM projects WHERE id = $1',
+        'SELECT name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
 
@@ -190,7 +190,7 @@ class InvitationsController {
 
       // Create invitation
       const insertQuery = `
-        INSERT INTO project_invitations 
+        INSERT INTO skaftin_system_project_invitations 
         (project_id, email, invite_code, role, invited_by, expires_at)
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
@@ -344,7 +344,7 @@ class InvitationsController {
 
       const query = `
         SELECT i.*, p.name as project_name, p.description as project_description
-        FROM project_invitations i
+        FROM skaftin_system_project_invitations i
         JOIN projects p ON i.project_id = p.id
         WHERE i.invite_code = $1
       `;
@@ -365,7 +365,7 @@ class InvitationsController {
       if (new Date(invitation.expires_at) < new Date()) {
         // Update status to expired
         await this.pool.query(
-          'UPDATE project_invitations SET status = $1 WHERE id = $2',
+          'UPDATE skaftin_system_project_invitations SET status = $1 WHERE id = $2',
           ['expired', invitation.id]
         );
 
@@ -424,7 +424,7 @@ class InvitationsController {
       // Get invitation
       console.log('  └─ Fetching invitation from database...');
       const inviteQuery = await this.pool.query(
-        'SELECT * FROM project_invitations WHERE invite_code = $1',
+        'SELECT * FROM skaftin_system_project_invitations WHERE invite_code = $1',
         [inviteCode]
       );
 
@@ -446,7 +446,7 @@ class InvitationsController {
       // Check if expired
       if (new Date(invitation.expires_at) < new Date()) {
         await this.pool.query(
-          'UPDATE project_invitations SET status = $1 WHERE id = $2',
+          'UPDATE skaftin_system_project_invitations SET status = $1 WHERE id = $2',
           ['expired', invitation.id]
         );
 
@@ -484,7 +484,7 @@ class InvitationsController {
       // Check if already a member
       console.log('  └─ Checking if user is already a member...');
       const memberCheck = await this.pool.query(
-        'SELECT id FROM project_members WHERE project_id = $1 AND user_id = $2',
+        'SELECT id FROM skaftin_system_project_members WHERE project_id = $1 AND user_id = $2',
         [invitation.project_id, userId]
       );
 
@@ -497,21 +497,21 @@ class InvitationsController {
         return;
       }
 
-      // Add user to project_members
-      console.log('  └─ Adding user to project_members...');
+      // Add user to skaftin_system_project_members
+      console.log('  └─ Adding user to skaftin_system_project_members...');
       const insertMember = await this.pool.query(
-        `INSERT INTO project_members (project_id, user_id, role, invited_by)
+        `INSERT INTO skaftin_system_project_members (project_id, user_id, role, invited_by)
          VALUES ($1, $2, $3, $4)
          RETURNING *`,
         [invitation.project_id, userId, invitation.role, invitation.invited_by]
       );
 
-      console.log('  └─ ✅ User added to project_members with ID:', insertMember.rows[0].id);
+      console.log('  └─ ✅ User added to skaftin_system_project_members with ID:', insertMember.rows[0].id);
 
       // Delete the invitation (no need to keep it after acceptance)
       console.log('  └─ Deleting invitation from database...');
       await this.pool.query(
-        'DELETE FROM project_invitations WHERE id = $1',
+        'DELETE FROM skaftin_system_project_invitations WHERE id = $1',
         [invitation.id]
       );
 
@@ -541,7 +541,7 @@ class InvitationsController {
       const { projectId, invitationId } = req.params;
 
       const query = `
-        UPDATE project_invitations
+        UPDATE skaftin_system_project_invitations
         SET status = 'rejected'
         WHERE id = $1 AND project_id = $2 AND status = 'pending'
         RETURNING *
@@ -579,7 +579,7 @@ class InvitationsController {
       const { projectId, memberId } = req.params;
 
       const query = `
-        DELETE FROM project_members
+        DELETE FROM skaftin_system_project_members
         WHERE id = $1 AND project_id = $2
         RETURNING *
       `;

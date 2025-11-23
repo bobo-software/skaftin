@@ -69,7 +69,7 @@ export const hybridAuth = async (
         // Set projectId and schemaName from credential
         req.projectId = verification.credential.project_id;
         const schemaResult = await pool.query(
-          'SELECT schema_name FROM projects WHERE id = $1',
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [req.projectId]
         );
         if (schemaResult.rows.length > 0) {
@@ -108,7 +108,7 @@ export const hybridAuth = async (
         // Set projectId and schemaName from credential
         req.projectId = verification.credential.project_id;
         const schemaResult = await pool.query(
-          'SELECT schema_name FROM projects WHERE id = $1',
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [req.projectId]
         );
         if (schemaResult.rows.length > 0) {
@@ -146,7 +146,7 @@ export const hybridAuth = async (
         // Set projectId and schemaName from credential
         req.projectId = verification.credential.project_id;
         const schemaResult = await pool.query(
-          'SELECT schema_name FROM projects WHERE id = $1',
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [req.projectId]
         );
         if (schemaResult.rows.length > 0) {
@@ -206,7 +206,7 @@ export const verifyProjectAccess = async (
       req.projectId = projectId;
       // Get schema name
       const schemaResult = await pool.query(
-        'SELECT schema_name FROM projects WHERE id = $1',
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
       if (schemaResult.rows.length > 0) {

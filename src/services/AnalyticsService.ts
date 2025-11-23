@@ -202,7 +202,7 @@ export class AnalyticsService {
     });
 
     await this.pool.query(
-      `INSERT INTO public.api_metrics 
+      `INSERT INTO public.skaftin_system_api_metrics 
         (project_id, endpoint, method, status_code, response_time_ms, user_id, api_key_id, ip_address, user_agent, created_at)
         VALUES ${values}`,
       params
@@ -296,7 +296,7 @@ export class AnalyticsService {
         AVG(response_time_ms) as avg_response_time,
         COUNT(CASE WHEN status_code >= 400 THEN 1 END) as error_count,
         COUNT(CASE WHEN status_code < 400 THEN 1 END) as success_count
-      FROM public.api_metrics
+      FROM public.skaftin_system_api_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3
         AND endpoint LIKE '/app-api/%'`,
       [projectId, start, end]
@@ -376,7 +376,7 @@ export class AnalyticsService {
         COUNT(*) as request_count,
         AVG(response_time_ms) as avg_response_time,
         COUNT(CASE WHEN status_code >= 400 THEN 1 END) as error_count
-      FROM public.api_metrics
+      FROM public.skaftin_system_api_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3
         AND endpoint LIKE '/app-api/%'
       GROUP BY time_period
@@ -392,7 +392,7 @@ export class AnalyticsService {
         COUNT(*) as request_count,
         AVG(response_time_ms) as avg_response_time,
         COUNT(CASE WHEN status_code >= 400 THEN 1 END) as error_count
-      FROM public.api_metrics
+      FROM public.skaftin_system_api_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3
         AND endpoint LIKE '/app-api/%'
       GROUP BY endpoint, method
@@ -577,7 +577,7 @@ export class AnalyticsService {
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
 
     await Promise.all([
-      this.pool.query('DELETE FROM public.api_metrics WHERE created_at < $1', [cutoffDate]),
+      this.pool.query('DELETE FROM public.skaftin_system_api_metrics WHERE created_at < $1', [cutoffDate]),
       this.pool.query('DELETE FROM public.database_metrics WHERE created_at < $1', [cutoffDate]),
       this.pool.query('DELETE FROM public.storage_metrics WHERE created_at < $1', [cutoffDate]),
     ]);

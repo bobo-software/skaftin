@@ -43,7 +43,7 @@ class RolesController {
   private static async getProjectSchema(projectId: number): Promise<string | null> {
     try {
       const result = await RolesController.pool.query(
-        'SELECT schema_name FROM projects WHERE id = $1',
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
       return result.rows.length > 0 ? result.rows[0].schema_name : null;

@@ -41,7 +41,7 @@ export function extractProjectFromCredentials(pool: Pool) {
         console.log(`🔍 Looking up project for credential: ${credential.substring(0, 20)}...`);
         try {
           const result = await pool.query(
-            'SELECT project_id, credential_type, is_active FROM api_credentials WHERE token = $1',
+            'SELECT project_id, credential_type, is_active FROM skaftin_system_api_credentials WHERE token = $1',
             [credential]
           );
 
@@ -62,7 +62,7 @@ export function extractProjectFromCredentials(pool: Pool) {
           } else {
             console.log(`⚠️ No credential found in database for: ${credential.substring(0, 20)}...`);
             // Debug: Check if any credentials exist
-            const debugResult = await pool.query('SELECT COUNT(*) as count FROM api_credentials');
+            const debugResult = await pool.query('SELECT COUNT(*) as count FROM skaftin_system_api_credentials');
             console.log(`🔍 Total credentials in database: ${debugResult.rows[0]?.count || 0}`);
           }
         } catch (dbError) {
@@ -103,7 +103,7 @@ export function extractProjectFromCredentials(pool: Pool) {
       // If we found a project, get its schema and attach to request
       if (projectId) {
         const schemaResult = await pool.query(
-          'SELECT schema_name FROM projects WHERE id = $1',
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectId]
         );
 
@@ -151,7 +151,7 @@ export function verifyAppUserToken(pool: Pool) {
         req.projectId = parseInt(decoded.projectId);
 
         const schemaResult = await pool.query(
-          'SELECT schema_name FROM projects WHERE id = $1',
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [req.projectId]
         );
 

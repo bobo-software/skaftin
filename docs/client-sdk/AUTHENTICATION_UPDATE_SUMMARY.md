@@ -346,9 +346,9 @@ Response: { users[], pagination }
 ## 💡 Best Practices
 
 1. **Always include API key** - Required for project identification
-2. **Store JWT tokens securely** - Use localStorage or httpOnly cookies
+2. **Store SuperTokens access tokens securely** - Use localStorage or httpOnly cookies
 3. **Verify tokens on app start** - Check if user is still logged in
-4. **Handle token expiration** - Redirect to login when expired
+4. **Handle token expiration** - Use SuperTokens refresh endpoint or redirect to login when expired
 5. **Separate services** - AppUserAuthService vs UserManagementService
 6. **Use TypeScript** - Full type safety from examples
 7. **Implement protected routes** - Verify tokens before rendering sensitive content
@@ -366,8 +366,8 @@ Response: { users[], pagination }
 - ✅ Regenerate key in Skaftin UI
 
 ### "Token expired"
-- ❌ JWT token has expired
-- ✅ User needs to log in again
+- ❌ SuperTokens access token has expired
+- ✅ Use refresh endpoint or redirect user to log in again
 
 ### "User not found"
 - ❌ User ID doesn't exist in the database

@@ -4,7 +4,7 @@ import { pgTable, serial, varchar, text, timestamp } from 'drizzle-orm/pg-core';
  * Organizations Table
  * Each organization can have multiple members and projects
  */
-export const organizations = pgTable('organizations', {
+export const organizations = pgTable('skaftin_system_organizations', {
   id: serial('id').primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description'),
@@ -17,7 +17,7 @@ export const organizations = pgTable('organizations', {
  * Organization Members Table
  * Manages team members and their roles within an organization
  */
-export const organization_members = pgTable('organization_members', {
+export const organization_members = pgTable('skaftin_system_organization_members', {
   id: serial('id').primaryKey(),
   organization_id: serial('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
   user_id: varchar('user_id', { length: 255 }).notNull(), // SuperTokens user ID

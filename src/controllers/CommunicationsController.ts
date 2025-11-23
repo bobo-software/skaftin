@@ -46,7 +46,7 @@ class CommunicationsController {
    */
   async initializeTable(): Promise<void> {
     const createTableQuery = `
-      CREATE TABLE IF NOT EXISTS email_providers (
+      CREATE TABLE IF NOT EXISTS skaftin_system_email_providers (
         id SERIAL PRIMARY KEY,
         project_id VARCHAR(255) NOT NULL,
         name VARCHAR(255) NOT NULL,
@@ -64,8 +64,8 @@ class CommunicationsController {
         UNIQUE(project_id, name)
       );
 
-      CREATE INDEX IF NOT EXISTS idx_email_providers_project_id ON email_providers(project_id);
-      CREATE INDEX IF NOT EXISTS idx_email_providers_is_active ON email_providers(is_active);
+      CREATE INDEX IF NOT EXISTS idx_skaftin_system_email_providers_project_id ON skaftin_system_email_providers(project_id);
+      CREATE INDEX IF NOT EXISTS idx_skaftin_system_email_providers_is_active ON skaftin_system_email_providers(is_active);
     `;
 
     try {
@@ -94,7 +94,7 @@ class CommunicationsController {
         SELECT id, project_id, name, provider_type, smtp_host, smtp_port, 
                smtp_secure, smtp_user, from_email, from_name, is_active, 
                created_at, updated_at
-        FROM email_providers
+        FROM skaftin_system_email_providers
         WHERE project_id = $1
         ORDER BY created_at DESC
       `;
@@ -127,7 +127,7 @@ class CommunicationsController {
         SELECT id, project_id, name, provider_type, smtp_host, smtp_port, 
                smtp_secure, smtp_user, from_email, from_name, is_active, 
                created_at, updated_at
-        FROM email_providers
+        FROM skaftin_system_email_providers
         WHERE id = $1 AND project_id = $2
       `;
 
@@ -184,7 +184,7 @@ class CommunicationsController {
       }
 
       const query = `
-        INSERT INTO email_providers 
+        INSERT INTO skaftin_system_email_providers 
         (project_id, name, provider_type, smtp_host, smtp_port, smtp_secure, 
          smtp_user, smtp_password, from_email, from_name, is_active)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -308,7 +308,7 @@ class CommunicationsController {
       values.push(providerId, projectId);
 
       const query = `
-        UPDATE email_providers
+        UPDATE skaftin_system_email_providers
         SET ${updates.join(', ')}
         WHERE id = $${paramIndex++} AND project_id = $${paramIndex++}
         RETURNING id, project_id, name, provider_type, smtp_host, smtp_port, 
@@ -349,7 +349,7 @@ class CommunicationsController {
       const { projectId, providerId } = req.params;
 
       const query = `
-        DELETE FROM email_providers
+        DELETE FROM skaftin_system_email_providers
         WHERE id = $1 AND project_id = $2
         RETURNING id
       `;
@@ -392,7 +392,7 @@ class CommunicationsController {
       // Get provider details
       const query = `
         SELECT smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password
-        FROM email_providers
+        FROM skaftin_system_email_providers
         WHERE id = $1 AND project_id = $2
       `;
 
@@ -501,7 +501,7 @@ class CommunicationsController {
       const query = `
         SELECT smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, 
                from_email, from_name, is_active
-        FROM email_providers
+        FROM skaftin_system_email_providers
         WHERE id = $1 AND project_id = $2
       `;
 
@@ -585,7 +585,7 @@ class CommunicationsController {
       const query = `
         SELECT id, project_id, name, subject, html_content, text_content, variables, 
                created_at, updated_at
-        FROM email_templates
+        FROM skaftin_system_email_templates
         WHERE project_id = $1
         ORDER BY created_at DESC
       `;
@@ -644,7 +644,7 @@ class CommunicationsController {
       const query = `
         SELECT id, project_id, name, subject, html_content, text_content, variables, 
                created_at, updated_at
-        FROM email_templates
+        FROM skaftin_system_email_templates
         WHERE id = $1 AND project_id = $2
       `;
 
@@ -707,7 +707,7 @@ class CommunicationsController {
       }
 
       const query = `
-        INSERT INTO email_templates (project_id, name, subject, html_content, text_content, variables)
+        INSERT INTO skaftin_system_email_templates (project_id, name, subject, html_content, text_content, variables)
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id, project_id, name, subject, html_content, text_content, variables, 
                   created_at, updated_at
@@ -825,7 +825,7 @@ class CommunicationsController {
       values.push(templateId, projectId);
 
       const query = `
-        UPDATE email_templates
+        UPDATE skaftin_system_email_templates
         SET ${updates.join(', ')}
         WHERE id = $${paramCount++} AND project_id = $${paramCount++}
         RETURNING id, project_id, name, subject, html_content, text_content, variables, 
@@ -901,7 +901,7 @@ class CommunicationsController {
       const { projectId, templateId } = req.params;
 
       const query = `
-        DELETE FROM email_templates
+        DELETE FROM skaftin_system_email_templates
         WHERE id = $1 AND project_id = $2
         RETURNING id
       `;
@@ -942,7 +942,7 @@ class CommunicationsController {
       const query = `
         SELECT id, project_id, name, content, variables, 
                created_at, updated_at
-        FROM sms_templates
+        FROM skaftin_system_sms_templates
         WHERE project_id = $1
         ORDER BY created_at DESC
       `;
@@ -994,7 +994,7 @@ class CommunicationsController {
       const query = `
         SELECT id, project_id, name, content, variables, 
                created_at, updated_at
-        FROM sms_templates
+        FROM skaftin_system_sms_templates
         WHERE id = $1 AND project_id = $2
       `;
 
@@ -1056,7 +1056,7 @@ class CommunicationsController {
       }
 
       const query = `
-        INSERT INTO sms_templates (project_id, name, content, variables)
+        INSERT INTO skaftin_system_sms_templates (project_id, name, content, variables)
         VALUES ($1, $2, $3, $4)
         RETURNING id, project_id, name, content, variables, 
                   created_at, updated_at
@@ -1147,7 +1147,7 @@ class CommunicationsController {
       values.push(templateId, projectId);
 
       const query = `
-        UPDATE sms_templates
+        UPDATE skaftin_system_sms_templates
         SET ${updates.join(', ')}
         WHERE id = $${paramCount++} AND project_id = $${paramCount++}
         RETURNING id, project_id, name, content, variables, 
@@ -1211,7 +1211,7 @@ class CommunicationsController {
       const { projectId, templateId } = req.params;
 
       const query = `
-        DELETE FROM sms_templates
+        DELETE FROM skaftin_system_sms_templates
         WHERE id = $1 AND project_id = $2
         RETURNING id
       `;

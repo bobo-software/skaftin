@@ -102,7 +102,7 @@ export async function handleProjectTool(
             bucket_name,
             created_at,
             updated_at
-          FROM projects 
+          FROM skaftin_system_projects 
           WHERE id = $1`,
           [projectIdInt]
         );
@@ -131,6 +131,7 @@ export async function handleProjectTool(
             FROM information_schema.tables
             WHERE table_schema = $1
               AND table_type = 'BASE TABLE'
+              AND table_name NOT LIKE 'skaftin_system_%'
           `, [project.schema_name]);
           schemaInfo = {
             tableCount: parseInt(schemaResult.rows[0].table_count),
@@ -169,7 +170,7 @@ export async function handleProjectTool(
         // Verify project exists and belongs to user if userId is provided
         if (userId) {
           const checkResult = await client.query(
-            'SELECT id FROM projects WHERE id = $1 AND user_id = $2',
+            'SELECT id FROM skaftin_system_projects WHERE id = $1 AND user_id = $2',
             [projectId, userId]
           );
           
@@ -213,7 +214,7 @@ export async function handleProjectTool(
         values.push(projectId);
         
         const query = `
-          UPDATE projects 
+          UPDATE skaftin_system_projects 
           SET ${updates.join(', ')}
           WHERE id = $${paramIndex}
           RETURNING id, name, description, schema_name, bucket_name, created_at, updated_at
@@ -263,7 +264,7 @@ export async function handleProjectTool(
             bucket_name,
             created_at,
             updated_at
-          FROM projects 
+          FROM skaftin_system_projects 
           WHERE user_id = $1
           ORDER BY created_at DESC`,
           [targetUserId]
@@ -340,7 +341,7 @@ async function handleProjectToolInternal(
             bucket_name,
             created_at,
             updated_at
-          FROM projects 
+          FROM skaftin_system_projects 
           WHERE id = $1`,
           [projectIdInt]
         );
@@ -369,6 +370,7 @@ async function handleProjectToolInternal(
             FROM information_schema.tables
             WHERE table_schema = $1
               AND table_type = 'BASE TABLE'
+              AND table_name NOT LIKE 'skaftin_system_%'
           `, [project.schema_name]);
           schemaInfo = {
             tableCount: parseInt(schemaResult.rows[0].table_count),
@@ -407,7 +409,7 @@ async function handleProjectToolInternal(
         // Verify project exists and belongs to user if userId is provided
         if (userId) {
           const checkResult = await client.query(
-            'SELECT id FROM projects WHERE id = $1 AND user_id = $2',
+            'SELECT id FROM skaftin_system_projects WHERE id = $1 AND user_id = $2',
             [projectId, userId]
           );
           
@@ -451,7 +453,7 @@ async function handleProjectToolInternal(
         values.push(projectId);
         
         const query = `
-          UPDATE projects 
+          UPDATE skaftin_system_projects 
           SET ${updates.join(', ')}
           WHERE id = $${paramIndex}
           RETURNING id, name, description, schema_name, bucket_name, created_at, updated_at
@@ -501,7 +503,7 @@ async function handleProjectToolInternal(
             bucket_name,
             created_at,
             updated_at
-          FROM projects 
+          FROM skaftin_system_projects 
           WHERE user_id = $1
           ORDER BY created_at DESC`,
           [targetUserId]

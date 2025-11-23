@@ -1,6 +1,6 @@
 import { pgTable, serial, varchar, timestamp } from 'drizzle-orm/pg-core';
 
-export const users = pgTable('users', {
+export const users = pgTable('skaftin_system_users', {
   id: serial('id').primaryKey(),
   username: varchar('username', { length: 100 }).notNull().unique(),
   email: varchar('email', { length: 255 }).notNull().unique(),

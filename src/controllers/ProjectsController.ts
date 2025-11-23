@@ -185,6 +185,7 @@ class ProjectsController {
               FROM information_schema.tables
               WHERE table_schema = $1
                 AND table_type = 'BASE TABLE'
+                AND table_name NOT LIKE 'skaftin_system_%'
             `, [project.schema_name]);
             totalTables += parseInt(tableResult.rows[0]?.count || '0', 10);
           } finally {
@@ -202,7 +203,7 @@ class ProjectsController {
           try {
             // Get all buckets for the project
             const bucketsResult = await client.query(
-              'SELECT bucket_name FROM project_buckets WHERE project_id = $1',
+              'SELECT bucket_name FROM skaftin_system_project_buckets WHERE project_id = $1',
               [project.id]
             );
             buckets = bucketsResult.rows;
@@ -244,7 +245,7 @@ class ProjectsController {
           // Get API call count (only app-api routes)
           const apiResult = await ProjectsController.pool.query(`
             SELECT COUNT(*) as count
-            FROM public.api_metrics
+            FROM public.skaftin_system_api_metrics
             WHERE project_id = $1
               AND endpoint LIKE '/app-api/%'
           `, [project.id]);
@@ -362,7 +363,7 @@ class ProjectsController {
         try {
           // Get all buckets for the project
           const bucketsResult = await client.query(
-            'SELECT bucket_name FROM project_buckets WHERE project_id = $1',
+            'SELECT bucket_name FROM skaftin_system_project_buckets WHERE project_id = $1',
             [projectId]
           );
           buckets = bucketsResult.rows;
@@ -411,7 +412,7 @@ class ProjectsController {
       try {
         const apiResult = await ProjectsController.pool.query(`
           SELECT COUNT(*) as count
-          FROM public.api_metrics
+          FROM public.skaftin_system_api_metrics
           WHERE project_id = $1
             AND endpoint LIKE '/app-api/%'
         `, [projectId]);
@@ -519,7 +520,7 @@ class ProjectsController {
       // Create default auth settings for the project
       try {
         await db.execute(sql`
-          INSERT INTO public.auth_settings (project_id, allow_duplicate_emails, registration_enabled, auth_enabled)
+          INSERT INTO public.skaftin_system_auth_settings (project_id, allow_duplicate_emails, registration_enabled, auth_enabled)
           VALUES (${newProject.id}, false, true, true)
           ON CONFLICT (project_id) DO NOTHING
         `);
@@ -745,7 +746,7 @@ class ProjectsController {
         try {
           // Get all buckets for the project
           const bucketsResult = await client.query(
-            'SELECT bucket_name FROM project_buckets WHERE project_id = $1',
+            'SELECT bucket_name FROM skaftin_system_project_buckets WHERE project_id = $1',
             [projectId]
           );
           buckets = bucketsResult.rows;

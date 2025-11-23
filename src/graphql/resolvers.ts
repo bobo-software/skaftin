@@ -63,7 +63,7 @@ async function getProjectClient(pool: Pool, projectId: number) {
   
   try {
     const result = await client.query(
-      'SELECT schema_name FROM projects WHERE id = $1',
+      'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
       [projectId]
     );
     
@@ -108,6 +108,7 @@ export const createResolvers = (pool: Pool) => ({
           FROM information_schema.tables
           WHERE table_schema = current_schema()
             AND table_type = 'BASE TABLE'
+            AND table_name NOT LIKE 'skaftin_system_%'
           ORDER BY table_name
         `);
 

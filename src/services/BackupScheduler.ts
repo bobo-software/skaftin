@@ -211,7 +211,7 @@ export class BackupScheduler {
     try {
       // Get project schema
       const result = await this.pool.query(
-        'SELECT schema_name FROM projects WHERE id = $1',
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectId]
       );
 

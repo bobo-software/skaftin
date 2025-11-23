@@ -113,7 +113,7 @@ export class WorkflowEngine {
 
     // Get project schema name
     const projectResult = await this.pool.query(
-      'SELECT schema_name FROM projects WHERE id = $1',
+      'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
       [workflow.projectId]
     );
 

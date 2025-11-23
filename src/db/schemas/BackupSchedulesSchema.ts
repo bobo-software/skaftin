@@ -2,7 +2,7 @@ import { pgTable, serial, varchar, text, timestamp, integer, boolean } from 'dri
 import { projects } from './ProjectsSchema';
 
 // Backup schedules table - stores automatic backup configurations
-export const backupSchedules = pgTable('backup_schedules', {
+export const backupSchedules = pgTable('skaftin_system_backup_schedules', {
   id: serial('id').primaryKey(),
   project_id: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   name: varchar('name', { length: 255 }).notNull(),
