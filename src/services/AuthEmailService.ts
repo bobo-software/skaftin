@@ -34,7 +34,7 @@ export class AuthEmailService {
     try {
       // First, get the email provider ID from auth settings
       const settingsResult = await this.pool.query(
-        'SELECT email_provider_id FROM auth_settings WHERE project_id = $1',
+        'SELECT email_provider_id FROM skaftin_system_auth_settings WHERE project_id = $1',
         [projectId]
       );
 
@@ -49,7 +49,7 @@ export class AuthEmailService {
       const providerResult = await this.pool.query(
         `SELECT id, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, 
                 from_email, from_name, is_active
-         FROM email_providers
+         FROM skaftin_system_email_providers
          WHERE id = $1 AND is_active = true`,
         [emailProviderId]
       );

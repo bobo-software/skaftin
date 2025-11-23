@@ -102,8 +102,8 @@ class ProjectsController {
       // Get projects where user is a direct member (via invitations)
       const memberProjects = await db.execute(sql`
         SELECT DISTINCT p.* 
-        FROM projects p
-        INNER JOIN project_members pm ON p.id = pm.project_id
+        FROM skaftin_system_projects p
+        INNER JOIN skaftin_system_project_members pm ON p.id = pm.project_id
         WHERE pm.user_id = ${userId}
         ORDER BY p.created_at
       `);
@@ -143,17 +143,17 @@ class ProjectsController {
 
       const orgProjects = await db.execute(sql`
         SELECT DISTINCT p.* 
-        FROM projects p
-        INNER JOIN organizations o ON p.organization_id = o.id
-        INNER JOIN organization_members om ON o.id = om.organization_id
+        FROM skaftin_system_projects p
+        INNER JOIN skaftin_system_organizations o ON p.organization_id = o.id
+        INNER JOIN skaftin_system_organization_members om ON o.id = om.organization_id
         WHERE om.user_id = ${userId}
         ORDER BY p.created_at
       `);
 
       const memberProjects = await db.execute(sql`
         SELECT DISTINCT p.* 
-        FROM projects p
-        INNER JOIN project_members pm ON p.id = pm.project_id
+        FROM skaftin_system_projects p
+        INNER JOIN skaftin_system_project_members pm ON p.id = pm.project_id
         WHERE pm.user_id = ${userId}
         ORDER BY p.created_at
       `);

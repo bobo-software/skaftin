@@ -44,6 +44,7 @@ export function applyAdminRoutes(
 /**
  * Apply route definitions with client paths
  * Routes that requireProject will have :projectId in path (for SuperTokens URL param extraction)
+ * Public routes (requiresAuth=false) won't have :projectId in path (project extracted from API key)
  */
 export function applyClientRoutes(
   router: Router,
@@ -51,7 +52,7 @@ export function applyClientRoutes(
   defaultMiddleware: Middleware[] = []
 ): void {
   applyRoutes(router, routes, defaultMiddleware, (route) => {
-    return getClientPath(route.path, route.requiresProject);
+    return getClientPath(route.path, route.requiresProject ?? false, route.requiresAuth ?? true);
   });
 }
 

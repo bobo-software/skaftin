@@ -238,7 +238,7 @@ export class AnalyticsService {
     });
 
     await this.pool.query(
-      `INSERT INTO public.database_metrics 
+      `INSERT INTO public.skaftin_system_database_metrics 
         (project_id, query_type, table_name, execution_time_ms, rows_affected, user_id, api_key_id, query_hash, created_at)
         VALUES ${values}`,
       params
@@ -275,7 +275,7 @@ export class AnalyticsService {
     });
 
     await this.pool.query(
-      `INSERT INTO public.storage_metrics 
+      `INSERT INTO public.skaftin_system_storage_metrics 
         (project_id, operation_type, file_path, file_size_bytes, bucket_name, user_id, api_key_id, success, error_message, created_at)
         VALUES ${values}`,
       params
@@ -308,7 +308,7 @@ export class AnalyticsService {
         COUNT(*) as total_queries,
         AVG(execution_time_ms) as avg_execution_time,
         SUM(rows_affected) as total_rows_affected
-      FROM public.database_metrics
+      FROM public.skaftin_system_database_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3`,
       [projectId, start, end]
     );
@@ -321,7 +321,7 @@ export class AnalyticsService {
         COUNT(CASE WHEN operation_type = 'download' THEN 1 END) as download_count,
         SUM(file_size_bytes) as total_storage_bytes,
         COUNT(DISTINCT file_path) as unique_files
-      FROM public.storage_metrics
+      FROM public.skaftin_system_storage_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3 AND success = true`,
       [projectId, start, end]
     );
@@ -443,7 +443,7 @@ export class AnalyticsService {
         COUNT(*) as query_count,
         AVG(execution_time_ms) as avg_execution_time,
         SUM(rows_affected) as total_rows_affected
-      FROM public.database_metrics
+      FROM public.skaftin_system_database_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3
       GROUP BY time_period
       ORDER BY time_period ASC`,
@@ -458,7 +458,7 @@ export class AnalyticsService {
         COUNT(*) as query_count,
         AVG(execution_time_ms) as avg_execution_time,
         SUM(rows_affected) as total_rows_affected
-      FROM public.database_metrics
+      FROM public.skaftin_system_database_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3 AND table_name IS NOT NULL
       GROUP BY table_name, query_type
       ORDER BY query_count DESC
@@ -474,7 +474,7 @@ export class AnalyticsService {
         execution_time_ms,
         rows_affected,
         created_at
-      FROM public.database_metrics
+      FROM public.skaftin_system_database_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3 AND execution_time_ms > 1000
       ORDER BY execution_time_ms DESC
       LIMIT 20`,
@@ -531,7 +531,7 @@ export class AnalyticsService {
         COUNT(CASE WHEN operation_type = 'upload' THEN 1 END) as upload_count,
         COUNT(CASE WHEN operation_type = 'download' THEN 1 END) as download_count,
         SUM(file_size_bytes) as total_bytes
-      FROM public.storage_metrics
+      FROM public.skaftin_system_storage_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3 AND success = true
       GROUP BY time_period
       ORDER BY time_period ASC`,
@@ -545,7 +545,7 @@ export class AnalyticsService {
         COUNT(*) as operation_count,
         SUM(file_size_bytes) as total_bytes,
         AVG(file_size_bytes) as avg_file_size
-      FROM public.storage_metrics
+      FROM public.skaftin_system_storage_metrics
       WHERE project_id = $1 AND created_at >= $2 AND created_at <= $3 AND success = true
       GROUP BY operation_type
       ORDER BY operation_count DESC`,
@@ -578,8 +578,8 @@ export class AnalyticsService {
 
     await Promise.all([
       this.pool.query('DELETE FROM public.skaftin_system_api_metrics WHERE created_at < $1', [cutoffDate]),
-      this.pool.query('DELETE FROM public.database_metrics WHERE created_at < $1', [cutoffDate]),
-      this.pool.query('DELETE FROM public.storage_metrics WHERE created_at < $1', [cutoffDate]),
+      this.pool.query('DELETE FROM public.skaftin_system_database_metrics WHERE created_at < $1', [cutoffDate]),
+      this.pool.query('DELETE FROM public.skaftin_system_storage_metrics WHERE created_at < $1', [cutoffDate]),
     ]);
 
     console.log(`✅ Cleaned up metrics older than ${retentionDays} days`);

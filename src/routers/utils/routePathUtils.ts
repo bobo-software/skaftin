@@ -31,15 +31,23 @@ export function getAdminPath(path: RoutePath, requiresProject: boolean = true): 
  * Transform route path for client routes
  * For routes that requireProject, add :projectId prefix (needed for SuperTokens users)
  * For routes that don't requireProject, remove :projectId prefix if present
+ * For public routes (requiresAuth=false), don't add :projectId even if requiresProject=true
+ *   because project will be extracted from API key header
  */
-export function getClientPath(path: RoutePath, requiresProject: boolean = false): RoutePath {
+export function getClientPath(path: RoutePath, requiresProject: boolean = false, requiresAuth: boolean = true): RoutePath {
   if (path instanceof RegExp) {
     return path; // Regex paths are already handled correctly
   }
   
   const pathString = path as string;
   
-  // If route requires project, ensure :projectId is in path (for SuperTokens URL param extraction)
+  // For public routes (requiresAuth=false), don't add :projectId to path
+  // Project will be extracted from API key header instead
+  if (!requiresAuth) {
+    return pathString.replace(/^\/:projectId/, '');
+  }
+  
+  // If route requires project and is authenticated, ensure :projectId is in path (for SuperTokens URL param extraction)
   if (requiresProject && !pathString.includes('/:projectId')) {
     return `/:projectId${pathString}`;
   }
@@ -53,9 +61,9 @@ export function getClientPath(path: RoutePath, requiresProject: boolean = false)
  */
 export function getRoutePath(route: RouteDefinition, isAdmin: boolean): RoutePath {
   if (isAdmin) {
-    return getAdminPath(route.path, route.requiresProject);
+    return getAdminPath(route.path, route.requiresProject ?? false);
   } else {
-    return getClientPath(route.path, route.requiresProject);
+    return getClientPath(route.path, route.requiresProject ?? false, route.requiresAuth ?? true);
   }
 }
 

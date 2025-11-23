@@ -6,7 +6,7 @@ import { projects } from './ProjectsSchema';
  * Each project can have multiple storage buckets
  * Buckets are manually created by users
  */
-export const project_buckets = pgTable('project_buckets', {
+export const project_buckets = pgTable('skaftin_system_project_buckets', {
   id: serial('id').primaryKey(),
   project_id: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   bucket_name: varchar('bucket_name', { length: 255 }).notNull().unique(),

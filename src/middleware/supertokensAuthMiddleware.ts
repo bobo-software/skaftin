@@ -45,7 +45,7 @@ export const attachUserInfo = async (req: SuperTokensAuthenticatedRequest, res: 
     // Fetch projects user is a member of
     const memberProjectsQuery = await db.execute(sql`
       SELECT DISTINCT project_id as id 
-      FROM project_members 
+      FROM skaftin_system_project_members 
       WHERE user_id = ${userId}
     `);
     

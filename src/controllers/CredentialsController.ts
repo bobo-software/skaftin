@@ -141,7 +141,7 @@ class CredentialsController {
       // For MCP keys, check if one already exists
       if (credential_type === 'mcp_key') {
         const existingMcpKey = await this.pool.query(
-          'SELECT id FROM api_credentials WHERE project_id = $1 AND credential_type = $2',
+          'SELECT id FROM skaftin_system_api_credentials WHERE project_id = $1 AND credential_type = $2',
           [projectId, 'mcp_key']
         );
         
@@ -373,7 +373,7 @@ class CredentialsController {
 
       // Check if MCP key exists
       const existingQuery = `
-        SELECT id FROM api_credentials
+        SELECT id FROM skaftin_system_api_credentials
         WHERE project_id = $1 AND credential_type = 'mcp_key'
       `;
 
@@ -463,7 +463,7 @@ class CredentialsController {
       const query = `
         SELECT id, project_id, name, credential_type, token, permissions, 
                is_active, expires_at, created_at
-        FROM api_credentials
+        FROM skaftin_system_api_credentials
         WHERE token = $1
       `;
 
