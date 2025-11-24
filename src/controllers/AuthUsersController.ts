@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { Pool } from 'pg';
 import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
+import { HybridAuthRequest } from '../middleware/hybridAuthMiddleware';
 import ResponseUtils from '../utils/ResponseUtils';
 import EmailPassword from 'supertokens-node/recipe/emailpassword';
 import { deleteUser } from 'supertokens-node';
@@ -79,10 +80,15 @@ class AuthUsersController {
 
   /**
    * List all users for a project with filtering and pagination
-   * GET /api/auth/:projectId/users
+   * GET /api/auth/:projectId/users (SuperTokens)
+   * GET /app-api/auth/users (API key)
    */
-  static async listUsers(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
-    if (!req.user || !req.user.userId) {
+  static async listUsers(req: (SuperTokensAuthenticatedRequest | HybridAuthRequest) & { projectId?: number; schemaName?: string }, res: Response) {
+    // Support both SuperTokens (req.user) and API key (req.credential) authentication
+    const isSuperTokensAuth = 'user' in req && req.user && req.user.userId;
+    const isApiKeyAuth = 'credential' in req && req.credential && req.projectId;
+    
+    if (!isSuperTokensAuth && !isApiKeyAuth) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
@@ -122,7 +128,7 @@ class AuthUsersController {
 
       if (role_id) {
         whereConditions.push(`EXISTS (
-          SELECT 1 FROM ${schemaName}.app_user_roles ur 
+          SELECT 1 FROM ${schemaName}.skaftin_system_user_roles ur 
           WHERE ur.app_user_id = u.id AND ur.role_id = $${paramIndex}
         )`);
         queryParams.push(parseInt(role_id as string));
@@ -222,9 +228,9 @@ class AuthUsersController {
             ) FILTER (WHERE r.id IS NOT NULL), 
             '[]'
           ) as roles
-        FROM ${schemaName}.app_users u
-        LEFT JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
-        LEFT JOIN ${schemaName}.app_roles r ON ur.role_id = r.id
+        FROM ${schemaName}.skaftin_system_users u
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         WHERE u.id = $1
         GROUP BY u.id
       `;
@@ -340,9 +346,9 @@ class AuthUsersController {
             ) FILTER (WHERE r.id IS NOT NULL), 
             '[]'
           ) as roles
-        FROM ${schemaName}.app_users u
-        LEFT JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
-        LEFT JOIN ${schemaName}.app_roles r ON ur.role_id = r.id
+        FROM ${schemaName}.skaftin_system_users u
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         WHERE u.id = $1
         GROUP BY u.id
         `,
@@ -396,7 +402,7 @@ class AuthUsersController {
         
         if (!allowDuplicates) {
           const existingUser = await AuthUsersController.pool.query(
-            `SELECT id FROM ${schemaName}.app_users WHERE email = $1 AND id != $2`,
+            `SELECT id FROM ${schemaName}.skaftin_system_users WHERE email = $1 AND id != $2`,
             [updates.email, parseInt(userId)]
           );
 
@@ -432,7 +438,7 @@ class AuthUsersController {
       values.push(parseInt(userId));
 
       const updateQuery = `
-        UPDATE ${schemaName}.app_users
+        UPDATE ${schemaName}.skaftin_system_users
         SET ${updateFields.join(', ')}
         WHERE id = $${paramIndex}
         RETURNING *
@@ -455,9 +461,9 @@ class AuthUsersController {
             ) FILTER (WHERE r.id IS NOT NULL), 
             '[]'
           ) as roles
-        FROM ${schemaName}.app_users u
-        LEFT JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
-        LEFT JOIN ${schemaName}.app_roles r ON ur.role_id = r.id
+        FROM ${schemaName}.skaftin_system_users u
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         WHERE u.id = $1
         GROUP BY u.id
         `,
@@ -548,7 +554,7 @@ class AuthUsersController {
 
       // Check if role exists
       const roleCheck = await AuthUsersController.pool.query(
-        `SELECT id FROM ${schemaName}.app_roles WHERE id = $1`,
+        `SELECT id FROM ${schemaName}.skaftin_system_roles WHERE id = $1`,
         [role_id]
       );
 
@@ -558,7 +564,7 @@ class AuthUsersController {
 
       // Assign role
       await AuthUsersController.pool.query(
-        `INSERT INTO ${schemaName}.app_user_roles (app_user_id, role_id, assigned_by)
+        `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id, assigned_by)
          VALUES ($1, $2, $3)
          ON CONFLICT (app_user_id, role_id) DO NOTHING`,
         [parseInt(userId), role_id, req.user.userId]
@@ -594,7 +600,7 @@ class AuthUsersController {
 
       // Remove role
       const result = await AuthUsersController.pool.query(
-        `DELETE FROM ${schemaName}.app_user_roles 
+        `DELETE FROM ${schemaName}.skaftin_system_user_roles 
          WHERE app_user_id = $1 AND role_id = $2`,
         [parseInt(userId), parseInt(roleId)]
       );
@@ -633,8 +639,8 @@ class AuthUsersController {
 
       const usersQuery = `
         SELECT u.*
-        FROM ${schemaName}.app_users u
-        INNER JOIN ${schemaName}.app_user_roles ur ON u.id = ur.app_user_id
+        FROM ${schemaName}.skaftin_system_users u
+        INNER JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
         WHERE ur.role_id = $1
         ORDER BY u.created_at DESC
       `;

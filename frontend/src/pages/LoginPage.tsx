@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Database, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { useAppStore } from '../stores/StoresIndex';
 import AuthService from '../services/AuthService';
+import OrganizationService from '../services/OrganizationService';
 
 const LoginPage = () => {
   const { setUser, setLoading, isLoading } = useAppStore();
@@ -62,9 +63,16 @@ const LoginPage = () => {
           sessionStorage.removeItem('redirectAfterLogin');
           navigate(redirectTo);
         } else {
-          // Default redirects
-          // Both login and registration redirect to organizations page
-          navigate('/organizations/create');
+          // Check if user has organizations
+          const orgResult = await OrganizationService.getUserOrganizations();
+          
+          if (orgResult.success && orgResult.organizations && orgResult.organizations.length > 0) {
+            // User has organizations, redirect to projects
+            navigate('/projects');
+          } else {
+            // User doesn't have organizations, redirect to create organization
+            navigate('/organizations/create');
+          }
         }
       } else {
         setError(response.error || 'An error occurred');

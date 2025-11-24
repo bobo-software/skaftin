@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { Middleware } from '../registry/types';
 import { authenticateAndVerifyProject, authenticateAndAttachUser } from '../../middleware/supertokensAuthMiddleware';
-import { hybridAuthAndVerifyProject } from '../../middleware/hybridAuthMiddleware';
+import { hybridAuthAndVerifyProject, verifyProjectAccess as verifyHybridProjectAccess } from '../../middleware/hybridAuthMiddleware';
 import { extractProjectFromCredentials } from '../../middleware/appUserAuthMiddleware';
 import { verifyProjectAccess } from '../../middleware/authMiddleware';
 
@@ -82,9 +82,8 @@ export class MiddlewareBuilder {
     if (this.isAdmin) {
       return this.buildAuthMiddleware();
     } else {
-      const projectExtractor = this.buildProjectExtractor();
-      const optionalAuth = this.buildOptionalAuth();
-      return [projectExtractor, optionalAuth, verifyProjectAccess];
+      // For client routes, use hybrid auth which handles both API keys and SuperTokens
+      return [...hybridAuthAndVerifyProject];
     }
   }
 

@@ -375,6 +375,7 @@ const AuthUsersTab = () => {
         <EditUserModal
           projectId={projectId!}
           user={selectedUser}
+          roles={roles}
           customFields={customFields}
           onClose={() => {
             setShowEditModal(false);
@@ -762,7 +763,7 @@ const renderCustomFieldInput = (field: CustomField, metadata: any, onChange: (va
 };
 
 // Edit User Modal Component
-const EditUserModal = ({ projectId, user, customFields, onClose, onSuccess }: { projectId: string; user: AppUser; customFields: CustomField[]; onClose: () => void; onSuccess: () => void }) => {
+const EditUserModal = ({ projectId, user, roles, customFields, onClose, onSuccess }: { projectId: string; user: AppUser; roles: Role[]; customFields: CustomField[]; onClose: () => void; onSuccess: () => void }) => {
   const [formData, setFormData] = useState({
     name: user.name,
     email: user.email,
@@ -772,9 +773,11 @@ const EditUserModal = ({ projectId, user, customFields, onClose, onSuccess }: { 
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  // Get user's current roles for display
-  const userRoles = user.roles || [];
+  
+  // Track selected role IDs (initialize with user's current roles)
+  const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>(
+    (user.roles || []).map(role => role.id)
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -782,13 +785,40 @@ const EditUserModal = ({ projectId, user, customFields, onClose, onSuccess }: { 
     setError('');
 
     try {
+      // Update user basic info
       await AuthUsersService.updateUser(projectId, String(user.id), formData);
+      
+      // Update roles: assign new roles and remove unselected roles
+      const currentRoleIds = (user.roles || []).map(role => role.id);
+      const rolesToAdd = selectedRoleIds.filter(id => !currentRoleIds.includes(id));
+      const rolesToRemove = currentRoleIds.filter(id => !selectedRoleIds.includes(id));
+      
+      // Assign new roles
+      for (const roleId of rolesToAdd) {
+        await AuthUsersService.assignRole(projectId, String(user.id), roleId);
+      }
+      
+      // Remove unselected roles
+      for (const roleId of rolesToRemove) {
+        await AuthUsersService.removeRole(projectId, String(user.id), String(roleId));
+      }
+      
       onSuccess();
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRoleToggle = (roleId: number) => {
+    setSelectedRoleIds(prev => {
+      if (prev.includes(roleId)) {
+        return prev.filter(id => id !== roleId);
+      } else {
+        return [...prev, roleId];
+      }
+    });
   };
 
   return (
@@ -841,28 +871,43 @@ const EditUserModal = ({ projectId, user, customFields, onClose, onSuccess }: { 
             />
           </div>
 
+          {/* Role Assignment */}
           <div>
             <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-              Current Roles
+              Roles
             </label>
-            {userRoles.length > 0 ? (
-              <div className="flex flex-wrap gap-2 mb-3">
-                {userRoles.map((role) => (
-                  <span
+            {roles.length > 0 ? (
+              <div className="space-y-2 border border-dark-200 dark:border-dark-700 rounded-lg p-3 max-h-48 overflow-y-auto">
+                {roles.map((role) => (
+                  <label
                     key={role.id}
-                    className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
+                    className="flex items-center space-x-2 cursor-pointer hover:bg-dark-50 dark:hover:bg-dark-700/50 p-2 rounded"
                   >
-                    <Shield className="w-3 h-3 mr-1" />
-                    {role.role_name}
-                  </span>
+                    <input
+                      type="checkbox"
+                      checked={selectedRoleIds.includes(role.id)}
+                      onChange={() => handleRoleToggle(role.id)}
+                      className="w-4 h-4 text-primary-600 border-dark-300 rounded focus:ring-primary-500"
+                    />
+                    <div className="flex items-center space-x-2 flex-1">
+                      <Shield className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+                      <span className="text-sm text-dark-700 dark:text-dark-300">
+                        {role.role_name}
+                      </span>
+                      {role.description && (
+                        <span className="text-xs text-dark-500 dark:text-dark-400">
+                          - {role.description}
+                        </span>
+                      )}
+                    </div>
+                  </label>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-dark-500 dark:text-dark-400 mb-3">No roles assigned</p>
+              <p className="text-sm text-dark-500 dark:text-dark-400">
+                No roles available. Create roles in the Roles tab first.
+              </p>
             )}
-            <p className="text-xs text-dark-500 dark:text-dark-400">
-              To manage roles, use the role assignment buttons in the users list.
-            </p>
           </div>
 
           <div>

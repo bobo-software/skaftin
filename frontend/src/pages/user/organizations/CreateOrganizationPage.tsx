@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Building2, ArrowRight, Loader2 } from 'lucide-react';
 import { useOrganizationStore } from '../../../stores/StoresIndex';
+import OrganizationService from '../../../services/OrganizationService';
 
 const CreateOrganizationPage = () => {
   const navigate = useNavigate();
@@ -12,6 +13,35 @@ const CreateOrganizationPage = () => {
     description: '',
   });
   const [error, setError] = useState('');
+  const [hasOrganizations, setHasOrganizations] = useState<boolean | null>(null);
+  const [checkingOrgs, setCheckingOrgs] = useState(true);
+
+  // Check if user has organizations on mount
+  useEffect(() => {
+    const checkOrganizations = async () => {
+      try {
+        const result = await OrganizationService.getUserOrganizations();
+        if (result.success && result.organizations) {
+          const hasOrgs = result.organizations.length > 0;
+          setHasOrganizations(hasOrgs);
+          
+          // If they have organizations, redirect to projects
+          if (hasOrgs) {
+            navigate('/projects');
+          }
+        } else {
+          setHasOrganizations(false);
+        }
+      } catch (error) {
+        console.error('Error checking organizations:', error);
+        setHasOrganizations(false);
+      } finally {
+        setCheckingOrgs(false);
+      }
+    };
+
+    checkOrganizations();
+  }, [navigate]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({
@@ -42,6 +72,18 @@ const CreateOrganizationPage = () => {
       setError('Failed to create organization. Please try again.');
     }
   };
+
+  // Show loading while checking organizations
+  if (checkingOrgs) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800 flex items-center justify-center p-4">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-600" />
+          <p className="text-dark-600 dark:text-dark-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800 flex items-center justify-center p-4">
@@ -151,16 +193,18 @@ const CreateOrganizationPage = () => {
               )}
             </button>
 
-            {/* Skip Link (if needed) */}
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => navigate('/projects')}
-                className="text-sm text-dark-600 dark:text-dark-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-              >
-                Skip for now (you can create one later)
-              </button>
-            </div>
+            {/* Skip Link (only show if user already has organizations) */}
+            {hasOrganizations && (
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => navigate('/projects')}
+                  className="text-sm text-dark-600 dark:text-dark-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                >
+                  Skip for now (you can create one later)
+                </button>
+              </div>
+            )}
           </form>
         </div>
 

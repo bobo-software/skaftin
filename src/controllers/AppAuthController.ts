@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { Pool } from 'pg';
 import ResponseUtils from '../utils/ResponseUtils';
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 import { AppUserAuthenticatedRequest } from '../middleware/appUserAuthMiddleware';
 import { AuthEmailService } from '../services/AuthEmailService';
 import EmailPassword from "supertokens-node/recipe/emailpassword";
@@ -324,7 +325,65 @@ class AppAuthController {
       const supertokensEmail = createProjectScopedEmail(email, projectId);
 
       // Verify credentials with SuperTokens
-      const signInResponse = await EmailPassword.signIn("public", supertokensEmail, password);
+      let signInResponse = await EmailPassword.signIn("public", supertokensEmail, password);
+
+      // If SuperTokens user doesn't exist but database user exists, create SuperTokens user
+      if (signInResponse.status === "WRONG_CREDENTIALS_ERROR") {
+        // Check if user has a password stored in database (for users created via admin panel)
+        if (user.password) {
+          // User was created via admin panel with password in database
+          // Verify password against database, then create SuperTokens user
+          const isValidPassword = await bcrypt.compare(password, user.password);
+          
+          if (!isValidPassword) {
+            return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
+          }
+          
+          // Password is correct, create SuperTokens user
+          try {
+            const signUpResponse = await EmailPassword.signUp("public", supertokensEmail, password);
+            
+            if (signUpResponse.status === "OK") {
+              // SuperTokens user created successfully, now try to sign in again
+              signInResponse = await EmailPassword.signIn("public", supertokensEmail, password);
+              
+              // Clear the database password since we're now using SuperTokens
+              await AppAuthController.pool.query(
+                `UPDATE ${schemaName}.skaftin_system_users SET password = NULL WHERE id = $1`,
+                [user.id]
+              );
+            } else if (signUpResponse.status === "EMAIL_ALREADY_EXISTS_ERROR") {
+              // Email exists but password is wrong - try sign in again
+              signInResponse = await EmailPassword.signIn("public", supertokensEmail, password);
+            } else {
+              console.error('Failed to create SuperTokens user:', signUpResponse);
+              return ResponseUtils.error(res, 'Failed to create authentication account', null, null, 500);
+            }
+          } catch (error) {
+            console.error('Error creating SuperTokens user:', error);
+            return ResponseUtils.error(res, 'Failed to create authentication account', null, null, 500);
+          }
+        } else {
+          // No password in database, try to create SuperTokens user with provided password
+          try {
+            const signUpResponse = await EmailPassword.signUp("public", supertokensEmail, password);
+            
+            if (signUpResponse.status === "OK") {
+              // SuperTokens user created successfully, now try to sign in again
+              signInResponse = await EmailPassword.signIn("public", supertokensEmail, password);
+            } else if (signUpResponse.status === "EMAIL_ALREADY_EXISTS_ERROR") {
+              // Email exists but password is wrong
+              return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
+            } else {
+              console.error('Failed to create SuperTokens user:', signUpResponse);
+              return ResponseUtils.error(res, 'Failed to create authentication account', null, null, 500);
+            }
+          } catch (error) {
+            console.error('Error creating SuperTokens user:', error);
+            return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
+          }
+        }
+      }
 
       if (signInResponse.status !== "OK") {
         return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
@@ -332,10 +391,23 @@ class AppAuthController {
 
       const supertokensUserId = signInResponse.user.id;
 
-      // Verify SuperTokens user ID matches our app user
-      if (user.supertokens_user_id !== supertokensUserId) {
-        console.error(`SuperTokens user ID mismatch: ${user.supertokens_user_id} vs ${supertokensUserId}`);
-        return ResponseUtils.error(res, 'User authentication mismatch', null, null, 500);
+      // Sync SuperTokens user ID if it's missing or doesn't match
+      if (!user.supertokens_user_id || user.supertokens_user_id !== supertokensUserId) {
+        if (user.supertokens_user_id && user.supertokens_user_id !== supertokensUserId) {
+          // If it exists but doesn't match, this is a real error (user might have been created differently)
+          console.error(`SuperTokens user ID mismatch: ${user.supertokens_user_id} vs ${supertokensUserId}`);
+          return ResponseUtils.error(res, 'User authentication mismatch', null, null, 500);
+        }
+        
+        // If it's null, sync it (first time login or user was created before SuperTokens integration)
+        console.log(`Syncing SuperTokens user ID for user ${user.id}: ${supertokensUserId}`);
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_users 
+           SET supertokens_user_id = $1 
+           WHERE id = $2`,
+          [supertokensUserId, user.id]
+        );
+        user.supertokens_user_id = supertokensUserId;
       }
 
       // Convert to RecipeUserId for session creation
