@@ -12,6 +12,9 @@ export interface AppUserSuperTokensRequest extends SessionRequest {
     email: string;
     projectId: number;
     roles: any[];
+    organisation_name?: string | null; // Field name to filter by (e.g., "organisation_id", "user_id", "company_id")
+    organisation_id?: number | null; // Value to filter with
+    is_admin?: boolean; // True if user has admin role (bypasses organization filtering)
   };
   projectId?: number;
   schemaName?: string;
@@ -87,6 +90,11 @@ export function attachAppUserInfo(pool: Pool) {
         return ResponseUtils.error(res, 'Account is inactive', null, null, 403);
       }
 
+      // Extract organization context from session payload
+      const organisation_name = sessionData.organisation_name || null;
+      const organisation_id = sessionData.organisation_id || null;
+      const is_admin = sessionData.is_admin || false;
+
       // Attach app user info to request
       req.appUser = {
         userId: user.id,
@@ -94,6 +102,9 @@ export function attachAppUserInfo(pool: Pool) {
         email: user.email,
         projectId: projectId,
         roles: user.roles || [],
+        organisation_name,
+        organisation_id,
+        is_admin,
       };
 
       req.projectId = projectId;

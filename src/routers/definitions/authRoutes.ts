@@ -207,6 +207,14 @@ export function createAuthRouteDefinitions(isAdmin: boolean): RouteDefinition[] 
       requiresProject: true,
       requiresAuth: true,
     },
+    {
+      method: 'get',
+      path: createPath('/roles/:roleId/verify-org-context', isAdmin),
+      handler: RolesController.verifyOrgContext,
+      description: 'Verify organization context configuration for a role',
+      requiresProject: true,
+      requiresAuth: true,
+    },
 
     // ============================================================================
     // CUSTOM FIELDS ROUTES

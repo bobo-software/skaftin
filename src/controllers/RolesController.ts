@@ -519,6 +519,160 @@ class RolesController {
       ResponseUtils.error(res, 'Failed to update session duration', error);
     }
   }
+
+  /**
+   * Verify organization context configuration for a role
+   * GET /api/auth/:projectId/roles/:roleId/verify-org-context
+   */
+  static async verifyOrgContext(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    try {
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { roleId } = req.params;
+
+      const schemaName = await RolesController.getProjectSchema(projectId);
+      if (!schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Get role with organization fields
+      const roleQuery = `
+        SELECT 
+          id,
+          role_name,
+          role_key,
+          organisation_field_name,
+          organisation_lookup_table,
+          organisation_lookup_field
+        FROM ${schemaName}.skaftin_system_roles
+        WHERE id = $1
+      `;
+
+      const roleResult = await RolesController.pool.query(roleQuery, [parseInt(roleId)]);
+
+      if (roleResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'Role not found', null, null, 404);
+      }
+
+      const role = roleResult.rows[0];
+      
+      // Verify configuration
+      const verification: any = {
+        role: {
+          id: role.id,
+          role_name: role.role_name,
+          role_key: role.role_key,
+        },
+        configuration: {
+          organisation_field_name: role.organisation_field_name,
+          organisation_lookup_table: role.organisation_lookup_table,
+          organisation_lookup_field: role.organisation_lookup_field,
+        },
+        status: 'valid',
+        issues: [],
+        scenarios: [],
+      };
+
+      // Check if organisation_field_name is set
+      if (!role.organisation_field_name) {
+        verification.status = 'incomplete';
+        verification.issues.push('organisation_field_name is not set');
+      } else {
+        // Scenario 1: User-scoped
+        if (role.organisation_field_name === 'user_id') {
+          verification.scenarios.push({
+            type: 'user-scoped',
+            description: 'Users will be filtered by their own user_id',
+            example: `SELECT * FROM table_name WHERE user_id = <user_id>`,
+          });
+        }
+        // Scenario 2: Junction table lookup
+        else if (role.organisation_lookup_table) {
+          // Verify lookup table exists
+          const tableCheck = await RolesController.pool.query(`
+            SELECT EXISTS (
+              SELECT 1 FROM information_schema.tables 
+              WHERE table_schema = $1 AND table_name = $2
+            ) as exists
+          `, [schemaName, role.organisation_lookup_table]);
+          
+          if (!tableCheck.rows[0].exists) {
+            verification.status = 'error';
+            verification.issues.push(`Lookup table "${role.organisation_lookup_table}" does not exist`);
+          } else {
+            // Verify organisation_id column exists (required in standard junction table structure)
+            const orgIdCheck = await RolesController.pool.query(`
+              SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_schema = $1 AND table_name = $2 AND column_name = 'organisation_id'
+              ) as exists
+            `, [schemaName, role.organisation_lookup_table]);
+            
+            if (!orgIdCheck.rows[0].exists) {
+              verification.status = 'error';
+              verification.issues.push(
+                `Junction table "${role.organisation_lookup_table}" must have an "organisation_id" column. ` +
+                `Required structure: id (PK), user_id, organisation_id, created_at, updated_at`
+              );
+            } else {
+              // Verify standard junction table structure: id, user_id, organisation_id, created_at, updated_at
+              const requiredColumns = ['id', 'user_id', 'organisation_id', 'created_at', 'updated_at'];
+              const missingColumns: string[] = [];
+              
+              for (const col of requiredColumns) {
+                const colCheck = await RolesController.pool.query(`
+                  SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
+                  ) as exists
+                `, [schemaName, role.organisation_lookup_table, col]);
+                
+                if (!colCheck.rows[0].exists) {
+                  missingColumns.push(col);
+                }
+              }
+              
+              if (missingColumns.length > 0) {
+                verification.status = 'error';
+                verification.issues.push(
+                  `Junction table "${role.organisation_lookup_table}" is missing required columns: ${missingColumns.join(', ')}. ` +
+                  `Required structure: id (PK), user_id, organisation_id, created_at, updated_at`
+                );
+              } else {
+                verification.scenarios.push({
+                  type: 'junction-table-lookup',
+                  description: `Organization ID will be looked up from ${role.organisation_lookup_table} table`,
+                  lookup_query: `SELECT organisation_id FROM ${schemaName}.${role.organisation_lookup_table} WHERE user_id = <user_id>`,
+                  filter_query: `SELECT * FROM table_name WHERE ${role.organisation_field_name} = <looked_up_id>`,
+                  table_structure: 'Standard: id (PK), user_id, organisation_id, created_at, updated_at',
+                });
+              }
+            }
+          }
+        }
+        // Scenario 3: Direct assignment
+        else {
+          verification.scenarios.push({
+            type: 'direct-assignment',
+            description: 'Users must have organisation_id set in skaftin_system_users table',
+            filter_query: `SELECT * FROM table_name WHERE ${role.organisation_field_name} = <user.organisation_id>`,
+            note: 'Users without organisation_id will have no organization context',
+          });
+        }
+      }
+
+      ResponseUtils.success(res, 'Organization context verification complete', verification);
+    } catch (error) {
+      console.error('Error verifying organization context:', error);
+      ResponseUtils.error(res, 'Failed to verify organization context', error);
+    }
+  }
 }
 
 export default RolesController;

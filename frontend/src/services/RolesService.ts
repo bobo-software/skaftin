@@ -8,6 +8,9 @@ export interface Role {
   permissions: any[];
   session_duration_minutes: number;
   is_system_role: boolean;
+  organisation_field_name?: string | null;
+  organisation_lookup_table?: string | null;
+  organisation_lookup_field?: string | null;
   created_at: string;
   updated_at: string;
   user_count?: number;
@@ -19,6 +22,9 @@ export interface CreateRoleRequest {
   description?: string;
   permissions?: any[];
   session_duration_minutes?: number;
+  organisation_field_name?: string;
+  organisation_lookup_table?: string;
+  organisation_lookup_field?: string;
 }
 
 export interface UpdateRoleRequest {
@@ -26,6 +32,9 @@ export interface UpdateRoleRequest {
   description?: string;
   permissions?: any[];
   session_duration_minutes?: number;
+  organisation_field_name?: string;
+  organisation_lookup_table?: string;
+  organisation_lookup_field?: string;
 }
 
 class RolesService {

@@ -126,24 +126,52 @@ class AppAuthController {
         [projectId]
       );
 
+      let userRoles: any[] = [];
       if (defaultRoleResult.rows.length > 0 && defaultRoleResult.rows[0].default_role_id) {
         await AppAuthController.pool.query(
           `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
            VALUES ($1, $2)`,
           [user.id, defaultRoleResult.rows[0].default_role_id]
         );
+
+        // Fetch the assigned role with organization fields
+        const roleResult = await AppAuthController.pool.query(
+          `SELECT id, role_name, role_key, organisation_field_name, organisation_lookup_table, organisation_lookup_field
+           FROM ${schemaName}.skaftin_system_roles
+           WHERE id = $1`,
+          [defaultRoleResult.rows[0].default_role_id]
+        );
+        if (roleResult.rows.length > 0) {
+          userRoles = [roleResult.rows[0]];
+        }
       }
 
       console.log(`✅ App user registered: ${email} (Project: ${projectId})`);
       
+      // Resolve organization context based on user's roles
+      const { OrganizationContextResolver } = await import('../utils/OrganizationContextResolver');
+      const orgContext = await OrganizationContextResolver.resolveOrganisationContext(
+        {
+          id: user.id,
+          organisation_id: null, // New user, no organisation_id yet
+        },
+        userRoles,
+        AppAuthController.pool,
+        schemaName
+      );
+      
       // Convert to RecipeUserId for session creation
       const recipeUserId = convertToRecipeUserId(supertokensUserId);
       
-      // Create SuperTokens session with project context
+      // Create SuperTokens session with project context and organization info
       const session = await Session.createNewSession(req, res, "public", recipeUserId, {
         projectId: projectId,
         appUserId: user.id.toString(),
         email: user.email,
+        roles: userRoles,
+        organisation_name: orgContext.organisation_name,
+        organisation_id: orgContext.organisation_id,
+        is_admin: orgContext.is_admin,
       }, {});
 
       // Get session token (for header-based auth)
@@ -277,12 +305,19 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Authentication is not enabled for this project', null, null, 403);
       }
 
-      // Find user
+      // Find user with full role details including organization fields
       const userResult = await AppAuthController.pool.query(
         `SELECT u.*, 
          COALESCE(
            json_agg(
-             json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key)
+             json_build_object(
+               'id', r.id, 
+               'role_name', r.role_name, 
+               'role_key', r.role_key,
+               'organisation_field_name', r.organisation_field_name,
+               'organisation_lookup_table', r.organisation_lookup_table,
+               'organisation_lookup_field', r.organisation_lookup_field
+             )
            ) FILTER (WHERE r.id IS NOT NULL), 
            '[]'
          ) as roles
@@ -410,15 +445,35 @@ class AppAuthController {
         user.supertokens_user_id = supertokensUserId;
       }
 
+      // Resolve organization context based on user's roles
+      const { OrganizationContextResolver } = await import('../utils/OrganizationContextResolver');
+      console.log(`[AppAuthController] Resolving organization context for user ${user.id}`);
+      console.log(`[AppAuthController] User roles:`, JSON.stringify(user.roles, null, 2));
+      
+      const orgContext = await OrganizationContextResolver.resolveOrganisationContext(
+        {
+          id: user.id,
+          organisation_id: user.organisation_id,
+        },
+        user.roles || [],
+        AppAuthController.pool,
+        schemaName
+      );
+      
+      console.log(`[AppAuthController] Resolved organization context:`, JSON.stringify(orgContext, null, 2));
+
       // Convert to RecipeUserId for session creation
       const recipeUserId = convertToRecipeUserId(supertokensUserId);
 
-      // Create SuperTokens session with project context
+      // Create SuperTokens session with project context and organization info
       const session = await Session.createNewSession(req, res, "public", recipeUserId, {
         projectId: projectId,
         appUserId: user.id.toString(),
         email: user.email,
         roles: user.roles || [],
+        organisation_name: orgContext.organisation_name,
+        organisation_id: orgContext.organisation_id,
+        is_admin: orgContext.is_admin,
       }, {});
 
       // Get session token (for header-based auth)
