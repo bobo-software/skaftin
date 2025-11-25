@@ -86,6 +86,10 @@ export function initSuperTokens() {
       Session.init({
         ...cookieSettings,
         sessionExpiredStatusCode: 401,
+        // Note: Token lifetimes are configured via SuperTokens Core environment variables:
+        // - ACCESS_TOKEN_VALIDITY_SECONDS (default: 3600 = 1 hour)
+        // - REFRESH_TOKEN_VALIDITY_SECONDS (default: 8640000 = 100 days)
+        // Set these in your SuperTokens Core container/service environment
         // Support both cookie and header-based token transfer
         // App users can use header tokens, platform users use cookies
         getTokenTransferMethod: (input) => {

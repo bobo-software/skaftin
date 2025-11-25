@@ -35,7 +35,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     clearError 
   } = useDatabaseStore();
   
-  const { joinProject, leaveProject } = useRealtimeStore();
+  const { joinProject, leaveProject, recentEvents, initialize: initializeRealtime } = useRealtimeStore();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
@@ -60,6 +60,11 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     loading: false
   });
 
+  // Initialize realtime store on mount
+  useEffect(() => {
+    initializeRealtime();
+  }, [initializeRealtime]);
+
   useEffect(() => {
     if (projectId) {
       fetchTables(projectId);
@@ -73,9 +78,71 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     };
   }, [projectId, fetchTables, joinProject, leaveProject]);
 
-  // Listen for real-time database changes
-  // This will be handled by the realtime store
-  // The store will automatically call this when events are received
+  const fetchTableData = async (tableName: string) => {
+    if (!tableName || !projectId) return;
+    
+    setDataLoading(true);
+    try {
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.post(
+        ApiRoutes.DATABASE.SELECT_DATA(projectId, tableName),
+        token,
+        { limit: 100 }
+      );
+      console.log('fetchTableData result:', result);
+      
+      if (result.success && result.data) {
+        const data = Array.isArray(result.data) ? result.data : [];
+        setTableData(data);
+        console.log('Table data set:', data);
+      } else {
+        console.error('Failed to fetch table data:', result.message);
+        setTableData([]);
+      }
+    } catch (error) {
+      console.error('Error fetching table data:', error);
+      setTableData([]);
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // Listen for real-time database changes and refresh UI automatically
+  useEffect(() => {
+    // Get the most recent event
+    if (recentEvents.length === 0) return;
+    
+    const latestEvent = recentEvents[0];
+    
+    // Only process database events for this project
+    if ('tableName' in latestEvent && latestEvent.projectId === projectId) {
+      const dbEvent = latestEvent as any; // DatabaseEvent
+      
+      // If this event affects the currently selected table, refresh the data
+      if (selectedTable && dbEvent.tableName === selectedTable) {
+        console.log('🔄 Real-time update detected, refreshing table data...', dbEvent);
+        
+        // Refresh table data based on event type
+        if (dbEvent.type === 'insert' || dbEvent.type === 'update' || dbEvent.type === 'delete') {
+          // Refetch the table data to get latest changes
+          fetchTableData(selectedTable);
+        }
+      }
+      
+      // If a table was created, renamed, or dropped, refresh the table list
+      if (dbEvent.type === 'create_table' || dbEvent.type === 'drop_table' || dbEvent.type === 'rename_table') {
+        console.log('🔄 Table structure changed, refreshing table list...', dbEvent);
+        fetchTables(projectId);
+        
+        // If the current table was dropped, clear the selection
+        if (dbEvent.type === 'drop_table' && selectedTable === dbEvent.tableName) {
+          setSelectedTable(null);
+          setTableData([]);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentEvents, projectId, selectedTable, fetchTables]);
 
   const fetchTableData = async (tableName: string) => {
     if (!tableName || !projectId) return;
