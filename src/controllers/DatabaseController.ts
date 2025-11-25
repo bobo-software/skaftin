@@ -488,12 +488,22 @@ class DatabaseController {
 
       // Apply organization filter for app users (client-side requests)
       // Automatically add organisation_id to INSERT for non-admin users
-      if (req.organisationFilter && 'appUser' in req && !req.appUser?.is_admin) {
+      console.log('🔍 [InsertData] Checking organization filter...');
+      console.log('  └─ Has organisationFilter:', !!req.organisationFilter);
+      console.log('  └─ Has appUser:', !!(req as any).appUser);
+      console.log('  └─ Organisation filter:', req.organisationFilter);
+      
+      if (req.organisationFilter) {
         const orgFilter = req.organisationFilter;
         // Only add if the field doesn't already exist in the data
         if (!data[orgFilter.field]) {
+          console.log(`  └─ ✅ Adding ${orgFilter.field} = ${orgFilter.value} to INSERT data`);
           data[orgFilter.field] = orgFilter.value;
+        } else {
+          console.log(`  └─ ⚠️  Field ${orgFilter.field} already exists in data:`, data[orgFilter.field]);
         }
+      } else {
+        console.log('  └─ ⚠️  No organization filter found, skipping automatic addition');
       }
 
       const columns = Object.keys(data);

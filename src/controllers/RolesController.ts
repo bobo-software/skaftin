@@ -606,23 +606,24 @@ class RolesController {
             verification.status = 'error';
             verification.issues.push(`Lookup table "${role.organisation_lookup_table}" does not exist`);
           } else {
-            // Verify organisation_id column exists (required in standard junction table structure)
-            const orgIdCheck = await RolesController.pool.query(`
+            // Verify the organisation_field_name column exists in the junction table
+            // The junction table should use the SAME field name as the data tables
+            const orgFieldCheck = await RolesController.pool.query(`
               SELECT EXISTS (
                 SELECT 1 FROM information_schema.columns 
-                WHERE table_schema = $1 AND table_name = $2 AND column_name = 'organisation_id'
+                WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
               ) as exists
-            `, [schemaName, role.organisation_lookup_table]);
+            `, [schemaName, role.organisation_lookup_table, role.organisation_field_name]);
             
-            if (!orgIdCheck.rows[0].exists) {
+            if (!orgFieldCheck.rows[0].exists) {
               verification.status = 'error';
               verification.issues.push(
-                `Junction table "${role.organisation_lookup_table}" must have an "organisation_id" column. ` +
-                `Required structure: id (PK), user_id, organisation_id, created_at, updated_at`
+                `Junction table "${role.organisation_lookup_table}" must have a "${role.organisation_field_name}" column. ` +
+                `Required structure: id (PK), user_id, ${role.organisation_field_name}, created_at, updated_at`
               );
             } else {
-              // Verify standard junction table structure: id, user_id, organisation_id, created_at, updated_at
-              const requiredColumns = ['id', 'user_id', 'organisation_id', 'created_at', 'updated_at'];
+              // Verify standard junction table structure: id, user_id, <organisation_field_name>, created_at, updated_at
+              const requiredColumns = ['id', 'user_id', role.organisation_field_name, 'created_at', 'updated_at'];
               const missingColumns: string[] = [];
               
               for (const col of requiredColumns) {
@@ -642,15 +643,16 @@ class RolesController {
                 verification.status = 'error';
                 verification.issues.push(
                   `Junction table "${role.organisation_lookup_table}" is missing required columns: ${missingColumns.join(', ')}. ` +
-                  `Required structure: id (PK), user_id, organisation_id, created_at, updated_at`
+                  `Required structure: id (PK), user_id, ${role.organisation_field_name}, created_at, updated_at`
                 );
               } else {
                 verification.scenarios.push({
                   type: 'junction-table-lookup',
                   description: `Organization ID will be looked up from ${role.organisation_lookup_table} table`,
-                  lookup_query: `SELECT organisation_id FROM ${schemaName}.${role.organisation_lookup_table} WHERE user_id = <user_id>`,
+                  lookup_query: `SELECT ${role.organisation_field_name} FROM ${schemaName}.${role.organisation_lookup_table} WHERE user_id = <user_id>`,
                   filter_query: `SELECT * FROM table_name WHERE ${role.organisation_field_name} = <looked_up_id>`,
-                  table_structure: 'Standard: id (PK), user_id, organisation_id, created_at, updated_at',
+                  table_structure: `Standard: id (PK), user_id, ${role.organisation_field_name}, created_at, updated_at`,
+                  note: `The junction table uses the same field name (${role.organisation_field_name}) as your data tables for consistency`,
                 });
               }
             }

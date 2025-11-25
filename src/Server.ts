@@ -287,6 +287,23 @@ app.use('/api/backups', BackupRouter);
 // ============================================================================
 // CLIENT-FACING ROUTES (/app-api/*) - API Key / App User JWT authentication
 // ============================================================================
+// SuperTokens middleware for app users at /app-api/auth (for session/refresh endpoints)
+// This allows SuperTokens SDK to call /app-api/auth/session/refresh
+app.use('/app-api/auth', (req, res, next) => {
+  // Only handle SuperTokens routes (session, signin, signup, etc.)
+  if (req.path.startsWith('/session/') || 
+      req.path === '/signin' || 
+      req.path === '/signup' ||
+      req.path === '/signout' ||
+      req.path.startsWith('/user/') ||
+      req.path === '/emailpassword/signin' ||
+      req.path === '/emailpassword/signup') {
+    // Proxy to SuperTokens middleware
+    return supertokensMiddleware()(req, res, next);
+  }
+  // Otherwise, pass to our auth router
+  next();
+});
 // Auth management routes for application users (project-specific)
 app.use('/app-api/auth', AuthManagementRouter);
 // Storage operations (supports both API key and SuperTokens via hybrid auth)

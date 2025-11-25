@@ -94,29 +94,34 @@ export class OrganizationContextResolver {
     }
 
     // Scenario 2: Junction table lookup
-    // Standard junction table structure: id (pk), user_id, organisation_id, created_at, updated_at
+    // Standard junction table structure: id (pk), user_id, <organisation_field_name>, created_at, updated_at
+    // The junction table uses the SAME field name as the data tables (e.g., church_id, association_id)
+    // This ensures consistency: if data tables use "church_id", junction table also uses "church_id"
     if (primaryRole.organisation_lookup_table) {
       try {
-        // Check which column exists: organisation_id (standard) or use organisation_field_name (legacy)
-        // First try the standard organisation_id column
+        // The junction table should have a column matching organisation_field_name
+        // e.g., if organisation_field_name is "church_id", junction table should have "church_id"
+        const orgFieldName = primaryRole.organisation_field_name;
+        
+        // Verify the column exists in the junction table
         const checkColumnQuery = `
-          SELECT column_name 
-          FROM information_schema.columns 
-          WHERE table_schema = $1 
-            AND table_name = $2 
-            AND column_name IN ('organisation_id', $3)
-          ORDER BY CASE WHEN column_name = 'organisation_id' THEN 1 ELSE 2 END
-          LIMIT 1
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = $1 
+              AND table_name = $2 
+              AND column_name = $3
+          ) as exists
         `;
         
         const columnCheck = await pool.query(checkColumnQuery, [
           schemaName,
           primaryRole.organisation_lookup_table,
-          primaryRole.organisation_field_name
+          orgFieldName
         ]);
         
-        if (columnCheck.rows.length === 0) {
-          console.error(`[OrganizationContextResolver] Junction table "${primaryRole.organisation_lookup_table}" has neither "organisation_id" nor "${primaryRole.organisation_field_name}" column`);
+        if (!columnCheck.rows[0].exists) {
+          console.error(`[OrganizationContextResolver] Junction table "${primaryRole.organisation_lookup_table}" is missing required column "${orgFieldName}"`);
+          console.error(`[OrganizationContextResolver] Junction table must have: id, user_id, ${orgFieldName}, created_at, updated_at`);
           return {
             organisation_name: null,
             organisation_id: null,
@@ -124,17 +129,14 @@ export class OrganizationContextResolver {
           };
         }
         
-        // Use organisation_id if it exists, otherwise fall back to organisation_field_name (for legacy tables)
-        const orgIdColumn = columnCheck.rows[0].column_name;
-        
         console.log(`[OrganizationContextResolver] Junction table lookup:`);
         console.log(`  - Table: ${primaryRole.organisation_lookup_table}`);
         console.log(`  - User ID: ${user.id}`);
-        console.log(`  - Organisation field name: ${primaryRole.organisation_field_name} (will be used for filtering)`);
-        console.log(`  - Using column: ${orgIdColumn} (${orgIdColumn === 'organisation_id' ? 'standard' : 'legacy'})`);
+        console.log(`  - Organisation field name: ${orgFieldName} (used in both junction table and data tables)`);
+        console.log(`  - Query: SELECT ${orgFieldName} FROM ${primaryRole.organisation_lookup_table} WHERE user_id = $1`);
         
         const lookupQuery = `
-          SELECT ${orgIdColumn} as organisation_id
+          SELECT ${orgFieldName} as organisation_id
           FROM ${schemaName}.${primaryRole.organisation_lookup_table}
           WHERE user_id = $1
           LIMIT 1

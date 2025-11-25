@@ -1,6 +1,9 @@
 -- Migration: Migrate junction tables to standard structure
--- This migration renames organisation-specific columns (e.g., church_id, company_id) 
--- to the standard "organisation_id" column in junction tables
+-- NOTE: This migration is DEPRECATED - junction tables should use the same field name
+-- as the data tables (e.g., church_id, association_id), not a generic "organisation_id"
+-- 
+-- This migration was created before we realized the junction table should match
+-- the field name used in the actual data tables for consistency.
 
 -- Function to migrate a junction table
 DO $$

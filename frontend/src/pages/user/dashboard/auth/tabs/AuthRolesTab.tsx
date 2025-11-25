@@ -874,11 +874,18 @@ const EditRoleModal = ({ projectId, role, onClose, onSuccess }: { projectId: str
                 <ul className="list-disc list-inside text-xs mt-1 space-y-1">
                   <li><code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">id</code> (PRIMARY KEY)</li>
                   <li><code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">user_id</code> (INTEGER, references app user)</li>
-                  <li><code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">organisation_id</code> (INTEGER, the organization ID)</li>
+                  <li><code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">{formData.organisation_field_name || '&lt;organisation_field_name&gt;'}</code> (INTEGER, matches the field name used in your data tables)</li>
                   <li><code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">created_at</code> (TIMESTAMP)</li>
                   <li><code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">updated_at</code> (TIMESTAMP)</li>
                 </ul>
-                <p className="text-xs mt-2">Example: <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">user_churches</code> table</p>
+                <p className="text-xs mt-2">
+                  <strong>Important:</strong> The junction table must use the <strong>same field name</strong> as your data tables. 
+                  For example, if your events/drivers tables use <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">church_id</code>, 
+                  the junction table should also use <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">church_id</code>.
+                </p>
+                <p className="text-xs mt-1">
+                  Example: <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">user_churches</code> table with <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">church_id</code>
+                </p>
               </div>
 
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">

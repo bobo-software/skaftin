@@ -5,6 +5,9 @@ import { authenticateAndVerifyProject, authenticateAndAttachUser } from '../../m
 import { hybridAuthAndVerifyProject, verifyProjectAccess as verifyHybridProjectAccess } from '../../middleware/hybridAuthMiddleware';
 import { extractProjectFromCredentials } from '../../middleware/appUserAuthMiddleware';
 import { verifyProjectAccess } from '../../middleware/authMiddleware';
+import { attachAppUserInfo, AppUserSuperTokensRequest } from '../../middleware/appUserSuperTokensMiddleware';
+import { organisationFilterMiddleware } from '../../middleware/organisationFilterMiddleware';
+import Session from "supertokens-node/recipe/session";
 
 /**
  * Middleware builder for creating standardized middleware chains
@@ -83,8 +86,76 @@ export class MiddlewareBuilder {
       return this.buildAuthMiddleware();
     } else {
       // For client routes, use hybrid auth which handles both API keys and SuperTokens
-      return [...hybridAuthAndVerifyProject];
+      // Also extract app user info from Bearer token if present, and apply organization filter
+      return [
+        ...hybridAuthAndVerifyProject,
+        this.extractAppUserFromBearerToken(),
+        organisationFilterMiddleware,
+      ];
     }
+  }
+
+  /**
+   * Extract app user info from Bearer token even when API key is used
+   * This allows organization filtering to work when client sends both API key and Bearer token
+   */
+  private extractAppUserFromBearerToken(): Middleware {
+    return async (req: Request, res: Response, next: NextFunction) => {
+      // Only try to extract app user if Bearer token is present
+      const authHeader = req.headers['authorization'];
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+      const hasBearerToken = bearerToken && !bearerToken.startsWith('mcp_');
+      
+      console.log('🔍 [ExtractAppUser] Checking Bearer token...');
+      console.log('  └─ Has Bearer token:', hasBearerToken);
+      console.log('  └─ Already has appUser:', !!(req as any).appUser);
+      
+      if (!hasBearerToken) {
+        return next();
+      }
+
+      try {
+        // Try to get SuperTokens session (non-blocking, won't fail if no session)
+        const session = await Session.getSession(req, res, {
+          sessionRequired: false,
+          antiCsrfCheck: false,
+        });
+
+        if (!session) {
+          console.log('  └─ ❌ No SuperTokens session found');
+          return next();
+        }
+
+        console.log('  └─ ✅ SuperTokens session found, extracting app user info...');
+
+        // Attach session to request so attachAppUserInfo can access it
+        (req as any).session = session;
+
+        // Extract app user info using the same logic as attachAppUserInfo
+        const attachMiddleware = attachAppUserInfo(this.pool);
+        
+        // Call the middleware manually
+        await new Promise<void>((resolve, reject) => {
+          attachMiddleware(req as AppUserSuperTokensRequest, res, (err?: any) => {
+            if (err) {
+              console.log('  └─ ⚠️  Could not extract app user from Bearer token:', err.message || err);
+              // Don't reject, just continue without app user
+              resolve();
+            } else {
+              console.log('  └─ ✅ App user extracted:', (req as any).appUser?.email);
+              console.log('  └─   Organisation:', (req as any).appUser?.organisation_name, '=', (req as any).appUser?.organisation_id);
+              resolve();
+            }
+          });
+        });
+
+        return next();
+      } catch (error: any) {
+        // If extraction fails, continue without app user (API key auth still works)
+        console.log('  └─ ⚠️  Could not extract app user from Bearer token:', error.message || error);
+        return next();
+      }
+    };
   }
 
   /**

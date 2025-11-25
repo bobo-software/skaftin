@@ -19,18 +19,28 @@ export function organisationFilterMiddleware(
   res: Response,
   next: NextFunction
 ) {
+  console.log('🔍 [OrgFilter] Checking organization filter...');
+  console.log('  └─ Has appUser:', !!req.appUser);
+  
   // Only apply to authenticated app users
   if (!req.appUser) {
+    console.log('  └─ ⚠️  No appUser found, skipping organization filter');
     return next();
   }
 
+  console.log('  └─ App user:', req.appUser.email);
+  console.log('  └─ Is admin:', req.appUser.is_admin);
+  console.log('  └─ Organisation:', req.appUser.organisation_name, '=', req.appUser.organisation_id);
+
   // Admin users bypass organization filtering
   if (req.appUser.is_admin) {
+    console.log('  └─ ✅ Admin user, bypassing organization filter');
     return next();
   }
 
   // If no organization context, allow request (might be intentional for some endpoints)
   if (!req.appUser.organisation_name || req.appUser.organisation_id === null || req.appUser.organisation_id === undefined) {
+    console.log('  └─ ⚠️  No organization context, skipping filter');
     return next();
   }
 
@@ -39,6 +49,8 @@ export function organisationFilterMiddleware(
     field: req.appUser.organisation_name,
     value: req.appUser.organisation_id,
   };
+
+  console.log('  └─ ✅ Organization filter attached:', req.organisationFilter);
 
   next();
 }
