@@ -54,7 +54,7 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
 
-      const { name, email, password, phone, metadata } = req.body;
+      const { name, email, password, phone, metadata, custom_field_1, custom_field_2 } = req.body;
 
       if (!name || !email || !password) {
         return ResponseUtils.error(res, 'Name, email, and password are required', null, null, 400);
@@ -112,10 +112,10 @@ class AppAuthController {
       // Create app user in database
       const insertResult = await AppAuthController.pool.query(
         `INSERT INTO ${schemaName}.skaftin_system_users 
-         (supertokens_user_id, name, email, phone, metadata, is_active, email_verified)
-         VALUES ($1, $2, $3, $4, $5, $6, false)
-         RETURNING id, name, email, phone, is_active, created_at`,
-        [supertokensUserId, name, email, phone || null, JSON.stringify(metadata || {}), isActive]
+         (supertokens_user_id, name, email, phone, metadata, custom_field_1, custom_field_2, is_active, email_verified)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false)
+         RETURNING id, name, email, phone, custom_field_1, custom_field_2, is_active, created_at`,
+        [supertokensUserId, name, email, phone || null, JSON.stringify(metadata || {}), custom_field_1 || null, custom_field_2 || null, isActive]
       );
 
       const user = insertResult.rows[0];
@@ -257,6 +257,8 @@ class AppAuthController {
           name: user.name,
           email: user.email,
           phone: user.phone,
+          custom_field_1: user.custom_field_1,
+          custom_field_2: user.custom_field_2,
           is_active: user.is_active,
         },
         session: {
@@ -277,7 +279,9 @@ class AppAuthController {
   /**
    * Login an app user
    * POST /api/app-auth/auth/login (with x-api-key or x-access-token)
-   * POST /api/app-auth/:projectId/auth/login (backward compatibility)
+   * POST /api/app-auth/:projectId/auth/login
+   * 
+   * Request body: { username: string, password: string, method: 'email' | 'phone' | 'custom_field_1' | 'custom_field_2' }
    */
   static async login(req: AppUserAuthenticatedRequest, res: Response) {
     try {
@@ -289,10 +293,21 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
 
-      const { email, password } = req.body;
+      const { username, password, method } = req.body;
 
-      if (!email || !password) {
-        return ResponseUtils.error(res, 'Email and password are required', null, null, 400);
+      // Validate required fields
+      if (!username || !password) {
+        return ResponseUtils.error(res, 'Username and password are required', null, null, 400);
+      }
+
+      if (!method) {
+        return ResponseUtils.error(res, 'Method is required. Use: "email", "phone", "custom_field_1", or "custom_field_2"', null, null, 400);
+      }
+
+      // Validate method
+      const validMethods = ['email', 'phone', 'custom_field_1', 'custom_field_2'];
+      if (!validMethods.includes(method)) {
+        return ResponseUtils.error(res, `Invalid method. Must be one of: ${validMethods.join(', ')}`, null, null, 400);
       }
 
       // Check if auth is enabled
@@ -303,6 +318,25 @@ class AppAuthController {
 
       if (settingsResult.rows.length === 0 || !settingsResult.rows[0].auth_enabled) {
         return ResponseUtils.error(res, 'Authentication is not enabled for this project', null, null, 403);
+      }
+
+      // Build WHERE clause based on method
+      let whereClause: string;
+      switch (method) {
+        case 'email':
+          whereClause = 'u.email = $1';
+          break;
+        case 'phone':
+          whereClause = 'u.phone = $1';
+          break;
+        case 'custom_field_1':
+          whereClause = 'u.custom_field_1 = $1';
+          break;
+        case 'custom_field_2':
+          whereClause = 'u.custom_field_2 = $1';
+          break;
+        default:
+          return ResponseUtils.error(res, 'Invalid method', null, null, 400);
       }
 
       // Find user with full role details including organization fields
@@ -324,16 +358,21 @@ class AppAuthController {
         FROM ${schemaName}.skaftin_system_users u
         LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
         LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
-         WHERE u.email = $1
+         WHERE ${whereClause}
          GROUP BY u.id`,
-        [email]
+        [username]
       );
 
       if (userResult.rows.length === 0) {
-        return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
+        return ResponseUtils.error(res, 'Invalid username or password', null, null, 401);
       }
 
       const user = userResult.rows[0];
+
+      // Ensure user has an email (required for SuperTokens)
+      if (!user.email) {
+        return ResponseUtils.error(res, 'User account is missing email address', null, null, 500);
+      }
 
       // Check if user is active
       if (!user.is_active) {
@@ -357,7 +396,8 @@ class AppAuthController {
       }
 
       // Get SuperTokens email (project-scoped)
-      const supertokensEmail = createProjectScopedEmail(email, projectId);
+      // Note: SuperTokens always uses email, even if user logged in with phone/custom field
+      const supertokensEmail = createProjectScopedEmail(user.email, projectId);
 
       // Verify credentials with SuperTokens
       let signInResponse = await EmailPassword.signIn("public", supertokensEmail, password);
@@ -371,7 +411,7 @@ class AppAuthController {
           const isValidPassword = await bcrypt.compare(password, user.password);
           
           if (!isValidPassword) {
-            return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
+            return ResponseUtils.error(res, 'Invalid username or password', null, null, 401);
           }
           
           // Password is correct, create SuperTokens user
@@ -408,20 +448,20 @@ class AppAuthController {
               signInResponse = await EmailPassword.signIn("public", supertokensEmail, password);
             } else if (signUpResponse.status === "EMAIL_ALREADY_EXISTS_ERROR") {
               // Email exists but password is wrong
-              return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
+              return ResponseUtils.error(res, 'Invalid username or password', null, null, 401);
             } else {
               console.error('Failed to create SuperTokens user:', signUpResponse);
               return ResponseUtils.error(res, 'Failed to create authentication account', null, null, 500);
             }
           } catch (error) {
             console.error('Error creating SuperTokens user:', error);
-            return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
+            return ResponseUtils.error(res, 'Invalid username or password', null, null, 401);
           }
         }
       }
 
       if (signInResponse.status !== "OK") {
-        return ResponseUtils.error(res, 'Invalid email or password', null, null, 401);
+        return ResponseUtils.error(res, 'Invalid username or password', null, null, 401);
       }
 
       const supertokensUserId = signInResponse.user.id;
@@ -480,7 +520,7 @@ class AppAuthController {
       // SuperTokens handles refresh tokens automatically via the refresh endpoint
       const accessToken = session.getAccessToken();
 
-      console.log(`✅ App user logged in: ${email} (Project: ${projectId})`);
+      console.log(`✅ App user logged in: ${user.email} (Method: ${method}, Project: ${projectId})`);
 
       // Remove password from response (not used anymore, but keep for compatibility)
       delete user.password;

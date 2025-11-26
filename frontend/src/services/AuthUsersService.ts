@@ -6,6 +6,8 @@ export interface AppUser {
   name: string;
   email: string;
   phone?: string;
+  custom_field_1?: string;
+  custom_field_2?: string;
   metadata?: any;
   is_active: boolean;
   email_verified: boolean;
@@ -26,6 +28,8 @@ export interface CreateUserRequest {
   email: string;
   password: string;
   phone?: string;
+  custom_field_1?: string;
+  custom_field_2?: string;
   metadata?: any;
   role_ids?: number[];
 }
@@ -34,6 +38,8 @@ export interface UpdateUserRequest {
   name?: string;
   email?: string;
   phone?: string;
+  custom_field_1?: string;
+  custom_field_2?: string;
   metadata?: any;
   is_active?: boolean;
 }

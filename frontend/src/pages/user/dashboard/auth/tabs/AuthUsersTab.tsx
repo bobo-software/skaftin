@@ -215,6 +215,12 @@ const AuthUsersTab = () => {
                       Contact
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
+                      Custom Field 1
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
+                      Custom Field 2
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
                       Roles
                     </th>
                     {customFields.map((field) => (
@@ -265,6 +271,12 @@ const AuthUsersTab = () => {
                             </div>
                           )}
                         </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-dark-600 dark:text-dark-400">
+                        {user.custom_field_1 || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-dark-600 dark:text-dark-400">
+                        {user.custom_field_2 || '-'}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
@@ -441,6 +453,8 @@ const CreateUserModal = ({ projectId, roles, customFields, onClose, onSuccess }:
     email: '',
     password: generatePassword(),
     phone: '',
+    custom_field_1: '',
+    custom_field_2: '',
     role_ids: defaultUserRole ? [defaultUserRole.id] : [],
     metadata: {},
   });
@@ -587,6 +601,32 @@ const CreateUserModal = ({ projectId, roles, customFields, onClose, onSuccess }:
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+              Custom Field 1
+            </label>
+            <input
+              type="text"
+              value={formData.custom_field_1 || ''}
+              onChange={(e) => setFormData({ ...formData, custom_field_1: e.target.value })}
+              className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+              placeholder="e.g., ID Number"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+              Custom Field 2
+            </label>
+            <input
+              type="text"
+              value={formData.custom_field_2 || ''}
+              onChange={(e) => setFormData({ ...formData, custom_field_2: e.target.value })}
+              className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+              placeholder="e.g., Employee ID"
             />
           </div>
 
@@ -768,6 +808,8 @@ const EditUserModal = ({ projectId, user, roles, customFields, onClose, onSucces
     name: user.name,
     email: user.email,
     phone: user.phone || '',
+    custom_field_1: user.custom_field_1 || '',
+    custom_field_2: user.custom_field_2 || '',
     is_active: user.is_active,
     metadata: user.metadata || {},
   });
@@ -868,6 +910,32 @@ const EditUserModal = ({ projectId, user, roles, customFields, onClose, onSucces
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+              Custom Field 1
+            </label>
+            <input
+              type="text"
+              value={formData.custom_field_1 || ''}
+              onChange={(e) => setFormData({ ...formData, custom_field_1: e.target.value })}
+              className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+              placeholder="e.g., ID Number"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+              Custom Field 2
+            </label>
+            <input
+              type="text"
+              value={formData.custom_field_2 || ''}
+              onChange={(e) => setFormData({ ...formData, custom_field_2: e.target.value })}
+              className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+              placeholder="e.g., Employee ID"
             />
           </div>
 

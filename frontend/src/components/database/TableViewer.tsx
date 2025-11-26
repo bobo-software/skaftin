@@ -3,17 +3,7 @@ import { useDatabaseStore, useRealtimeStore } from '../../stores/StoresIndex';
 import RequestUtils from '../../utils/RequestUtils';
 import ApiRoutes from '../../constants/ApiRoutes';
 import ToastUtils from '../../utils/ToastUtils';
-import { 
-  Database, 
-  Plus,
-  Search,
-  Filter,
-  Download,
-  Table,
-  List,
-  Settings,
-  Upload
-} from 'lucide-react';
+import { Database, Plus, Search, Table, List, Settings, Upload } from 'lucide-react';
 import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem, TableSettingsTab, DatabaseImportModal, AppText } from '../ComponentsIndex';
 
 interface TableViewerProps {
@@ -143,35 +133,6 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentEvents, projectId, selectedTable, fetchTables]);
-
-  const fetchTableData = async (tableName: string) => {
-    if (!tableName || !projectId) return;
-    
-    setDataLoading(true);
-    try {
-      const token = localStorage.getItem('skaftin-token') || '';
-      const result = await RequestUtils.post(
-        ApiRoutes.DATABASE.SELECT_DATA(projectId, tableName),
-        token,
-        { limit: 100 }
-      );
-      console.log('fetchTableData result:', result);
-      
-      if (result.success && result.data) {
-        const data = Array.isArray(result.data) ? result.data : [];
-        setTableData(data);
-        console.log('Table data set:', data);
-      } else {
-        console.error('Failed to fetch table data:', result.message);
-        setTableData([]);
-      }
-    } catch (error) {
-      console.error('Error fetching table data:', error);
-      setTableData([]);
-    } finally {
-      setDataLoading(false);
-    }
-  };
 
   const handleTableSelect = async (tableName: string) => {
     setSelectedTable(tableName);

@@ -919,6 +919,32 @@ export class DatabaseInitializer {
         END $$;
       `));
 
+      // Add custom_field_1 and custom_field_2 columns if they don't exist
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = '${schemaName}' 
+            AND table_name = 'skaftin_system_users' 
+            AND column_name = 'custom_field_1'
+          ) THEN
+            ALTER TABLE ${schemaName}.skaftin_system_users 
+            ADD COLUMN custom_field_1 VARCHAR(255);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = '${schemaName}' 
+            AND table_name = 'skaftin_system_users' 
+            AND column_name = 'custom_field_2'
+          ) THEN
+            ALTER TABLE ${schemaName}.skaftin_system_users 
+            ADD COLUMN custom_field_2 VARCHAR(255);
+          END IF;
+        END $$;
+      `));
+
       // Create indexes for skaftin_system_users
       await this.db.execute(sql.raw(`
         CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_email ON ${schemaName}.skaftin_system_users(email);
@@ -931,6 +957,15 @@ export class DatabaseInitializer {
       `));
       await this.db.execute(sql.raw(`
         CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_organisation_id ON ${schemaName}.skaftin_system_users(organisation_id);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_phone ON ${schemaName}.skaftin_system_users(phone);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_custom_field_1 ON ${schemaName}.skaftin_system_users(custom_field_1);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_custom_field_2 ON ${schemaName}.skaftin_system_users(custom_field_2);
       `));
 
       console.log(`✅ skaftin_system_users table created in schema: ${schemaName}`);

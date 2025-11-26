@@ -29,6 +29,8 @@ interface CreateUserRequest {
   phone?: string;
   metadata?: any;
   role_ids?: number[];
+  custom_field_1?: string;
+  custom_field_2?: string;
 }
 
 interface UpdateUserRequest {
@@ -37,6 +39,8 @@ interface UpdateUserRequest {
   phone?: string;
   metadata?: any;
   is_active?: boolean;
+  custom_field_1?: string;
+  custom_field_2?: string;
 }
 
 class AuthUsersController {
@@ -262,7 +266,7 @@ class AuthUsersController {
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
-      const { name, email, password, phone, metadata, role_ids }: CreateUserRequest = req.body;
+      const { name, email, password, phone, metadata, role_ids, custom_field_1, custom_field_2 }: CreateUserRequest = req.body;
 
       // Enhanced validation
       if (!name || !email || !password) {
@@ -327,6 +331,8 @@ class AuthUsersController {
           phone,
           metadata: sanitizedMetadata,
           role_ids: finalRoleIds,
+          custom_field_1,
+          custom_field_2,
         },
         false // Do NOT create in SuperTokens - app users use JWT auth
       );
@@ -423,6 +429,16 @@ class AuthUsersController {
       if (updates.metadata !== undefined) {
         updateFields.push(`metadata = $${paramIndex++}`);
         values.push(JSON.stringify(updates.metadata));
+      }
+
+      if (updates.custom_field_1 !== undefined) {
+        updateFields.push(`custom_field_1 = $${paramIndex++}`);
+        values.push(updates.custom_field_1);
+      }
+
+      if (updates.custom_field_2 !== undefined) {
+        updateFields.push(`custom_field_2 = $${paramIndex++}`);
+        values.push(updates.custom_field_2);
       }
 
       if (updates.is_active !== undefined) {
