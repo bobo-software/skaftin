@@ -28,6 +28,9 @@ interface UpdateRoleRequest {
   description?: string;
   permissions?: any[];
   session_duration_minutes?: number;
+  organisation_field_name?: string;
+  organisation_lookup_table?: string;
+  organisation_lookup_field?: string;
 }
 
 class RolesController {
@@ -257,39 +260,67 @@ class RolesController {
 
       const role = roleCheck.rows[0];
 
-      if (role.is_system_role) {
-        return ResponseUtils.error(
-          res,
-          'System roles cannot be modified. Only permissions and session duration can be updated.',
-          null,
-          null,
-          403
-        );
-      }
-
       // Build update query dynamically
       const updateFields: string[] = [];
       const values: any[] = [];
       let paramIndex = 1;
 
-      if (updates.role_name !== undefined) {
-        updateFields.push(`role_name = $${paramIndex++}`);
-        values.push(updates.role_name);
+      // For system roles, only allow updating specific fields
+      if (role.is_system_role) {
+        // Check if trying to update restricted fields
+        const restrictedFields = ['role_name', 'description'];
+        const attemptedRestrictedFields = restrictedFields.filter(field => updates[field as keyof UpdateRoleRequest] !== undefined);
+        
+        if (attemptedRestrictedFields.length > 0) {
+          return ResponseUtils.error(
+            res,
+            `System roles cannot have ${attemptedRestrictedFields.join(', ')} modified. Only permissions, session duration, and organization lookup fields can be updated.`,
+            null,
+            null,
+            403
+          );
+        }
       }
 
-      if (updates.description !== undefined) {
-        updateFields.push(`description = $${paramIndex++}`);
-        values.push(updates.description);
+      // Allow role_name and description updates for non-system roles
+      if (!role.is_system_role) {
+        if (updates.role_name !== undefined) {
+          updateFields.push(`role_name = $${paramIndex++}`);
+          values.push(updates.role_name);
+        }
+
+        if (updates.description !== undefined) {
+          updateFields.push(`description = $${paramIndex++}`);
+          values.push(updates.description);
+        }
       }
 
+      // Allow permissions updates for all roles
       if (updates.permissions !== undefined) {
         updateFields.push(`permissions = $${paramIndex++}`);
         values.push(JSON.stringify(updates.permissions));
       }
 
+      // Allow session duration updates for all roles
       if (updates.session_duration_minutes !== undefined) {
         updateFields.push(`session_duration_minutes = $${paramIndex++}`);
         values.push(updates.session_duration_minutes);
+      }
+
+      // Allow organization lookup fields updates for all roles
+      if (updates.organisation_field_name !== undefined) {
+        updateFields.push(`organisation_field_name = $${paramIndex++}`);
+        values.push(updates.organisation_field_name || null);
+      }
+
+      if (updates.organisation_lookup_table !== undefined) {
+        updateFields.push(`organisation_lookup_table = $${paramIndex++}`);
+        values.push(updates.organisation_lookup_table || null);
+      }
+
+      if (updates.organisation_lookup_field !== undefined) {
+        updateFields.push(`organisation_lookup_field = $${paramIndex++}`);
+        values.push(updates.organisation_lookup_field || null);
       }
 
       if (updateFields.length === 0) {
