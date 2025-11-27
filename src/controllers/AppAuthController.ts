@@ -54,7 +54,7 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
 
-      const { name, email, password, phone, metadata, custom_field_1, custom_field_2 } = req.body;
+      const { name, email, password, phone, metadata, custom_field_1, custom_field_2, role_id, role_key } = req.body;
 
       if (!name || !email || !password) {
         return ResponseUtils.error(res, 'Name, email, and password are required', null, null, 400);
@@ -120,18 +120,53 @@ class AppAuthController {
 
       const user = insertResult.rows[0];
 
-      // Assign default role
-      const defaultRoleResult = await AppAuthController.pool.query(
-        'SELECT default_role_id FROM skaftin_system_auth_settings WHERE project_id = $1',
-        [projectId]
-      );
+      // Determine which role to assign
+      let roleToAssign: number | null = null;
 
+      // Priority 1: role_id from request body
+      if (role_id) {
+        roleToAssign = parseInt(role_id);
+      }
+      // Priority 2: role_key from request body
+      else if (role_key) {
+        const roleByKeyResult = await AppAuthController.pool.query(
+          `SELECT id FROM ${schemaName}.skaftin_system_roles WHERE role_key = $1`,
+          [role_key]
+        );
+        if (roleByKeyResult.rows.length > 0) {
+          roleToAssign = roleByKeyResult.rows[0].id;
+        } else {
+          return ResponseUtils.error(res, `Role with key "${role_key}" not found`, null, null, 404);
+        }
+      }
+      // Priority 3: default role from settings
+      else {
+        const defaultRoleResult = await AppAuthController.pool.query(
+          'SELECT default_role_id FROM skaftin_system_auth_settings WHERE project_id = $1',
+          [projectId]
+        );
+        if (defaultRoleResult.rows.length > 0 && defaultRoleResult.rows[0].default_role_id) {
+          roleToAssign = defaultRoleResult.rows[0].default_role_id;
+        }
+      }
+
+      // Assign role if found
       let userRoles: any[] = [];
-      if (defaultRoleResult.rows.length > 0 && defaultRoleResult.rows[0].default_role_id) {
+      if (roleToAssign) {
+        // Verify role exists
+        const roleExistsResult = await AppAuthController.pool.query(
+          `SELECT id FROM ${schemaName}.skaftin_system_roles WHERE id = $1`,
+          [roleToAssign]
+        );
+        
+        if (roleExistsResult.rows.length === 0) {
+          return ResponseUtils.error(res, `Role with ID ${roleToAssign} not found`, null, null, 404);
+        }
+
         await AppAuthController.pool.query(
           `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
            VALUES ($1, $2)`,
-          [user.id, defaultRoleResult.rows[0].default_role_id]
+          [user.id, roleToAssign]
         );
 
         // Fetch the assigned role with organization fields
@@ -139,7 +174,7 @@ class AppAuthController {
           `SELECT id, role_name, role_key, organisation_field_name, organisation_lookup_table, organisation_lookup_field
            FROM ${schemaName}.skaftin_system_roles
            WHERE id = $1`,
-          [defaultRoleResult.rows[0].default_role_id]
+          [roleToAssign]
         );
         if (roleResult.rows.length > 0) {
           userRoles = [roleResult.rows[0]];
