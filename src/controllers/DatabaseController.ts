@@ -70,6 +70,25 @@ class DatabaseController {
   }
 
   /**
+   * Check if a column exists in a table
+   */
+  private static async columnExists(client: any, tableName: string, columnName: string): Promise<boolean> {
+    try {
+      const result = await client.query(`
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = $1
+          AND column_name = $2
+      `, [tableName, columnName]);
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error(`Error checking if column ${columnName} exists in table ${tableName}:`, error);
+      return false;
+    }
+  }
+
+  /**
    * List all tables in a project
    */
   static async listTables(req: DatabaseRequest, res: Response) {
@@ -430,15 +449,22 @@ class DatabaseController {
       }
 
       // Apply organization filter for app users (client-side requests)
+      // Only if the column exists in the table (for app-wide tables that don't have organization columns)
       if (req.organisationFilter && 'appUser' in req) {
         const orgFilter = req.organisationFilter;
-        if (hasWhereClause) {
-          query += ` AND "${orgFilter.field}" = $${values.length + 1}`;
+        const columnExists = await DatabaseController.columnExists(client, tableName, orgFilter.field);
+        
+        if (columnExists) {
+          if (hasWhereClause) {
+            query += ` AND "${orgFilter.field}" = $${values.length + 1}`;
+          } else {
+            query += ` WHERE "${orgFilter.field}" = $${values.length + 1}`;
+            hasWhereClause = true;
+          }
+          values.push(orgFilter.value);
         } else {
-          query += ` WHERE "${orgFilter.field}" = $${values.length + 1}`;
-          hasWhereClause = true;
+          console.log(`  └─ ⚠️  Column ${orgFilter.field} does not exist in table ${tableName}, skipping organization filter (app-wide table)`);
         }
-        values.push(orgFilter.value);
       }
 
       // Add limit and offset
@@ -488,6 +514,7 @@ class DatabaseController {
 
       // Apply organization filter for app users (client-side requests)
       // Automatically add organisation_id to INSERT for non-admin users
+      // Only if the column exists in the table (for app-wide tables that don't have organization columns)
       console.log('🔍 [InsertData] Checking organization filter...');
       console.log('  └─ Has organisationFilter:', !!req.organisationFilter);
       console.log('  └─ Has appUser:', !!(req as any).appUser);
@@ -495,12 +522,19 @@ class DatabaseController {
       
       if (req.organisationFilter) {
         const orgFilter = req.organisationFilter;
-        // Only add if the field doesn't already exist in the data
-        if (!data[orgFilter.field]) {
-          console.log(`  └─ ✅ Adding ${orgFilter.field} = ${orgFilter.value} to INSERT data`);
-          data[orgFilter.field] = orgFilter.value;
+        // Check if the column exists in the table before adding it
+        const columnExists = await DatabaseController.columnExists(client, tableName, orgFilter.field);
+        
+        if (columnExists) {
+          // Only add if the field doesn't already exist in the data
+          if (!data[orgFilter.field]) {
+            console.log(`  └─ ✅ Adding ${orgFilter.field} = ${orgFilter.value} to INSERT data`);
+            data[orgFilter.field] = orgFilter.value;
+          } else {
+            console.log(`  └─ ⚠️  Field ${orgFilter.field} already exists in data:`, data[orgFilter.field]);
+          }
         } else {
-          console.log(`  └─ ⚠️  Field ${orgFilter.field} already exists in data:`, data[orgFilter.field]);
+          console.log(`  └─ ⚠️  Column ${orgFilter.field} does not exist in table ${tableName}, skipping organization filter (app-wide table)`);
         }
       } else {
         console.log('  └─ ⚠️  No organization filter found, skipping automatic addition');
@@ -549,9 +583,27 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
+      // Check if organization filter column exists (only check once for all rows)
+      let orgFilterColumnExists = false;
+      if (req.organisationFilter) {
+        orgFilterColumnExists = await DatabaseController.columnExists(client, tableName, req.organisationFilter.field);
+        if (!orgFilterColumnExists) {
+          console.log(`  └─ ⚠️  Column ${req.organisationFilter.field} does not exist in table ${tableName}, skipping organization filter (app-wide table)`);
+        }
+      }
+
       const insertedRows = [];
 
       for (const data of dataArray) {
+        // Apply organization filter if column exists
+        if (req.organisationFilter && orgFilterColumnExists) {
+          const orgFilter = req.organisationFilter;
+          // Only add if the field doesn't already exist in the data
+          if (!data[orgFilter.field]) {
+            data[orgFilter.field] = orgFilter.value;
+          }
+        }
+
         const columns = Object.keys(data);
         const values = Object.values(data);
         const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
@@ -606,10 +658,17 @@ class DatabaseController {
       let whereClause = whereColumns.map((col, i) => `"${col}" = $${setValues.length + i + 1}`).join(' AND ');
 
       // Apply organization filter for app users (client-side requests)
+      // Only if the column exists in the table (for app-wide tables that don't have organization columns)
       if (req.organisationFilter && 'appUser' in req && !req.appUser?.is_admin) {
         const orgFilter = req.organisationFilter;
-        whereClause += ` AND "${orgFilter.field}" = $${setValues.length + whereValues.length + 1}`;
-        whereValues.push(orgFilter.value);
+        const columnExists = await DatabaseController.columnExists(client, tableName, orgFilter.field);
+        
+        if (columnExists) {
+          whereClause += ` AND "${orgFilter.field}" = $${setValues.length + whereValues.length + 1}`;
+          whereValues.push(orgFilter.value);
+        } else {
+          console.log(`  └─ ⚠️  Column ${orgFilter.field} does not exist in table ${tableName}, skipping organization filter (app-wide table)`);
+        }
       }
 
       const query = `UPDATE "${tableName}" SET ${setClause} WHERE ${whereClause} RETURNING *`;
@@ -656,10 +715,17 @@ class DatabaseController {
       let whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
 
       // Apply organization filter for app users (client-side requests)
+      // Only if the column exists in the table (for app-wide tables that don't have organization columns)
       if (req.organisationFilter && 'appUser' in req && !req.appUser?.is_admin) {
         const orgFilter = req.organisationFilter;
-        whereClause += ` AND "${orgFilter.field}" = $${whereValues.length + 1}`;
-        whereValues.push(orgFilter.value);
+        const columnExists = await DatabaseController.columnExists(client, tableName, orgFilter.field);
+        
+        if (columnExists) {
+          whereClause += ` AND "${orgFilter.field}" = $${whereValues.length + 1}`;
+          whereValues.push(orgFilter.value);
+        } else {
+          console.log(`  └─ ⚠️  Column ${orgFilter.field} does not exist in table ${tableName}, skipping organization filter (app-wide table)`);
+        }
       }
 
       const query = `DELETE FROM "${tableName}" WHERE ${whereClause} RETURNING *`;
