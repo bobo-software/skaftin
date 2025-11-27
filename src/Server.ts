@@ -1,5 +1,4 @@
 import express, { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
-import bodyParser from 'body-parser';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
 import { createServer } from 'http';
@@ -140,8 +139,29 @@ app.use(supertokensMiddleware());
 
 // Body parser with increased size limit for file uploads
 // Base64 encoding increases file size by ~33%, so 10MB limit allows ~7.5MB original files
-app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+// Skip JSON parsing for multipart/form-data requests (handled by multer)
+const jsonParser = express.json({ limit: '10mb' });
+const urlencodedParser = express.urlencoded({ limit: '10mb', extended: true });
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const contentType = req.headers['content-type'] || '';
+  // Skip body parsing for multipart/form-data (handled by multer)
+  if (contentType.includes('multipart/form-data')) {
+    return next();
+  }
+  // Apply JSON parser for other content types
+  jsonParser(req, res, next);
+});
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const contentType = req.headers['content-type'] || '';
+  // Skip body parsing for multipart/form-data (handled by multer)
+  if (contentType.includes('multipart/form-data')) {
+    return next();
+  }
+  // Apply urlencoded parser for other content types
+  urlencodedParser(req, res, next);
+});
 
 // ============================================================================
 // ROUTERS

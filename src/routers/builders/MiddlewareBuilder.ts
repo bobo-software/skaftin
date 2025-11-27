@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { Pool } from 'pg';
 import { Middleware } from '../registry/types';
 import { authenticateAndVerifyProject, authenticateAndAttachUser } from '../../middleware/supertokensAuthMiddleware';
-import { hybridAuthAndVerifyProject, verifyProjectAccess as verifyHybridProjectAccess } from '../../middleware/hybridAuthMiddleware';
+import { hybridAuthAndVerifyProject, hybridAuthWithOptionalProject, verifyProjectAccess as verifyHybridProjectAccess } from '../../middleware/hybridAuthMiddleware';
 import { extractProjectFromCredentials } from '../../middleware/appUserAuthMiddleware';
 import { verifyProjectAccess } from '../../middleware/authMiddleware';
 import { attachAppUserInfo, AppUserSuperTokensRequest } from '../../middleware/appUserSuperTokensMiddleware';
@@ -89,6 +89,22 @@ export class MiddlewareBuilder {
       // Also extract app user info from Bearer token if present, and apply organization filter
       return [
         ...hybridAuthAndVerifyProject,
+        this.extractAppUserFromBearerToken(),
+        organisationFilterMiddleware,
+      ];
+    }
+  }
+
+  /**
+   * Build middleware chain for routes that don't require project ID
+   */
+  buildOptionalProjectAuthChain(): Middleware[] {
+    if (this.isAdmin) {
+      return this.buildAuthMiddleware();
+    } else {
+      // For client routes without project requirement, use optional project access
+      return [
+        ...hybridAuthWithOptionalProject,
         this.extractAppUserFromBearerToken(),
         organisationFilterMiddleware,
       ];

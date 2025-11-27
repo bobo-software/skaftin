@@ -12,7 +12,9 @@ import {
   Home,
   Edit2,
   FolderMinus,
-  ChevronDown
+  ChevronDown,
+  Plus,
+  X
 } from 'lucide-react';
 import { AppButton, AppInput, DeleteConfirmModal } from '../ComponentsIndex';
 import StorageService from '../../services/StorageService';
@@ -55,6 +57,10 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
   const [folderToRename, setFolderToRename] = useState<string | null>(null);
   const [newFolderNameForRename, setNewFolderNameForRename] = useState('');
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
+  const [showCreateBucketModal, setShowCreateBucketModal] = useState(false);
+  const [newBucketName, setNewBucketName] = useState('');
+  const [newBucketDescription, setNewBucketDescription] = useState('');
+  const [isCreatingBucket, setIsCreatingBucket] = useState(false);
 
   // Load buckets
   const loadBuckets = useCallback(async () => {
@@ -416,6 +422,49 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
     event.target.value = '';
   };
 
+  const handleCreateBucket = async () => {
+    if (!newBucketName.trim()) {
+      ToastUtils.error('Bucket name is required');
+      return;
+    }
+
+    // Validate bucket name format (S3 bucket naming rules)
+    const bucketNameRegex = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+    if (!bucketNameRegex.test(newBucketName.trim()) || newBucketName.trim().length < 3 || newBucketName.trim().length > 63) {
+      ToastUtils.error('Bucket name must be 3-63 characters, lowercase alphanumeric with hyphens');
+      return;
+    }
+
+    setIsCreatingBucket(true);
+    try {
+      const result = await BucketService.createBucket(
+        projectId,
+        newBucketName.trim(),
+        newBucketDescription.trim() || undefined
+      );
+      
+      if (result.success) {
+        ToastUtils.success('Bucket created successfully');
+        setNewBucketName('');
+        setNewBucketDescription('');
+        setShowCreateBucketModal(false);
+        await loadBuckets();
+        // Auto-select the newly created bucket
+        if (result.data?.bucket_name) {
+          setSelectedBucket(result.data.bucket_name);
+        }
+        onStorageChange?.();
+      } else {
+        ToastUtils.error(result.message || 'Failed to create bucket');
+      }
+    } catch (error) {
+      console.error('Error creating bucket:', error);
+      ToastUtils.error('Error creating bucket');
+    } finally {
+      setIsCreatingBucket(false);
+    }
+  };
+
   const formatFileSize = (bytes?: number) => {
     if (!bytes) return '-';
     const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -434,14 +483,25 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         {/* Bucket Selector */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Select Bucket *
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Select Bucket *
+            </label>
+            <AppButton
+              onClick={() => setShowCreateBucketModal(true)}
+              variant="primary"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Create Bucket
+            </AppButton>
+          </div>
           {loadingBuckets ? (
             <div className="text-sm text-gray-500 dark:text-gray-400">Loading buckets...</div>
           ) : buckets.length === 0 ? (
-            <div className="text-sm text-amber-600 dark:text-amber-400">
-              No buckets found. Please create a bucket first.
+            <div className="text-sm text-amber-600 dark:text-amber-400 mb-2">
+              No buckets found. Create your first bucket to get started.
             </div>
           ) : (
             <div className="relative">
@@ -862,6 +922,75 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
               : `Are you sure you want to delete ${selectedFiles.size} selected file(s)?`
           }
         />
+      )}
+
+      {/* Create Bucket Modal */}
+      {showCreateBucketModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create Bucket</h3>
+              <button
+                onClick={() => {
+                  setShowCreateBucketModal(false);
+                  setNewBucketName('');
+                  setNewBucketDescription('');
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Bucket Name *
+                </label>
+                <AppInput
+                  type="text"
+                  value={newBucketName}
+                  onChange={(value) => setNewBucketName(String(value).toLowerCase())}
+                  placeholder="my-bucket-name"
+                  required
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  3-63 characters, lowercase alphanumeric with hyphens
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Description (optional)
+                </label>
+                <AppInput
+                  type="text"
+                  value={newBucketDescription}
+                  onChange={(value) => setNewBucketDescription(String(value))}
+                  placeholder="Bucket description"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
+              <AppButton
+                onClick={() => {
+                  setShowCreateBucketModal(false);
+                  setNewBucketName('');
+                  setNewBucketDescription('');
+                }}
+                variant="ghost"
+                disabled={isCreatingBucket}
+              >
+                Cancel
+              </AppButton>
+              <AppButton
+                onClick={handleCreateBucket}
+                variant="primary"
+                disabled={isCreatingBucket || !newBucketName.trim()}
+              >
+                {isCreatingBucket ? 'Creating...' : 'Create'}
+              </AppButton>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

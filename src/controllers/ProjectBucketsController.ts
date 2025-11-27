@@ -13,6 +13,8 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
+  CreateBucketCommand,
+  HeadBucketCommand,
 } from '@aws-sdk/client-s3';
 
 // Initialize S3 client for MinIO
@@ -191,26 +193,29 @@ class ProjectBucketsController {
 
       // Create bucket in MinIO
       try {
-        // MinIO doesn't have a native "create bucket" API like S3
-        // We'll use PutObjectCommand to "create" the bucket by uploading a dummy file
-        const createCommand = new PutObjectCommand({
-          Bucket: bucketName.trim(),
-          Key: '.bucket-init',
-          Body: Buffer.from(''),
-        });
-        
-        await s3Client.send(createCommand);
-        
-        // Delete the init file
-        const deleteCommand = new DeleteObjectCommand({
-          Bucket: bucketName.trim(),
-          Key: '.bucket-init',
-        });
-        
-        await s3Client.send(deleteCommand);
+        // Check if bucket already exists
+        try {
+          await s3Client.send(new HeadBucketCommand({ Bucket: bucketName.trim() }));
+          // Bucket already exists, that's okay
+          console.log(`Bucket ${bucketName.trim()} already exists in MinIO`);
+        } catch (headError: any) {
+          // If bucket doesn't exist (404), create it
+          if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
+            const createCommand = new CreateBucketCommand({
+              Bucket: bucketName.trim(),
+            });
+            await s3Client.send(createCommand);
+            console.log(`Created MinIO bucket: ${bucketName.trim()}`);
+          } else {
+            // Some other error occurred
+            throw headError;
+          }
+        }
       } catch (minioError: any) {
         // If bucket already exists in MinIO, that's okay
-        if (minioError.name !== 'BucketAlreadyOwnedByYou' && minioError.name !== 'BucketAlreadyExists') {
+        if (minioError.name === 'BucketAlreadyOwnedByYou' || minioError.name === 'BucketAlreadyExists') {
+          console.log(`Bucket ${bucketName.trim()} already exists in MinIO`);
+        } else {
           console.error('Error creating MinIO bucket:', minioError);
           return ResponseUtils.error(res, `Failed to create bucket in storage: ${minioError.message}`, minioError);
         }

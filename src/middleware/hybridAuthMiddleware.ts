@@ -233,10 +233,58 @@ export const verifyProjectAccess = async (
 };
 
 /**
+ * Optional project access verification - doesn't require project ID
+ * Used for routes that work with or without project context
+ */
+export const optionalProjectAccess = async (
+  req: HybridAuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  // For API key auth, projectId is already set from credential
+  if (req.authType === 'api_key' && req.projectId) {
+    console.log('  └─ ✅ Project context available (API key):', req.projectId);
+    return next();
+  }
+
+  // For SuperTokens, check URL param or use project from session
+  if (req.authType === 'supertokens' && req.session) {
+    const projectId = req.params.projectId ? parseInt(req.params.projectId) : null;
+    
+    if (projectId) {
+      req.projectId = projectId;
+      // Get schema name
+      const schemaResult = await pool.query(
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
+        [projectId]
+      );
+      if (schemaResult.rows.length > 0) {
+        req.schemaName = schemaResult.rows[0].schema_name;
+      }
+      console.log('  └─ ✅ Project context available (SuperTokens):', projectId);
+    } else {
+      console.log('  └─ ℹ️  No project context (optional)');
+    }
+    
+    return next();
+  }
+
+  // No project context is fine for optional routes
+  console.log('  └─ ℹ️  No project context (optional)');
+  return next();
+};
+
+/**
  * Combined middleware: Hybrid auth + project access
  * For API keys: Project is extracted automatically
  * For SuperTokens: Project ID can be in URL params
  */
 export const hybridAuthAndVerifyProject = [hybridAuth, verifyProjectAccess];
+
+/**
+ * Combined middleware: Hybrid auth + optional project access
+ * For routes that work with or without project context
+ */
+export const hybridAuthWithOptionalProject = [hybridAuth, optionalProjectAccess];
 
 
