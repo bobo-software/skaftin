@@ -41,7 +41,7 @@ POST /app-api/auth/auth/register
 
 Headers:
 {
-  "x-api-key": "sk_your_api_key",     // Your platform credential
+  "X-API-Key": "sk_your_api_key",     // Your platform credential (capital X)
   "Content-Type": "application/json"
 }
 
@@ -84,7 +84,7 @@ POST /app-api/auth/auth/login
 
 Headers:
 {
-  "x-api-key": "sk_your_api_key",
+  "X-API-Key": "sk_your_api_key",
   "Content-Type": "application/json"
 }
 
@@ -127,7 +127,7 @@ POST /app-api/auth/auth/verify
 
 Headers:
 {
-  "x-api-key": "sk_your_api_key",
+  "X-API-Key": "sk_your_api_key",
   "Authorization": "Bearer <accessToken>"  // SuperTokens access token
 }
 
@@ -154,7 +154,7 @@ POST /app-api/auth/auth/logout
 
 Headers:
 {
-  "x-api-key": "sk_your_api_key",
+  "X-API-Key": "sk_your_api_key",
   "Authorization": "Bearer <accessToken>"  // SuperTokens access token
 }
 
@@ -497,9 +497,345 @@ Body:
 
 ---
 
+## SuperTokens Integration (Recommended)
+
+The current implementation uses **SuperTokens React SDK** for session management, which provides automatic token refresh, secure cookie handling, and built-in session management. Here's how to set it up:
+
+### Step 1: Install SuperTokens
+
+```bash
+npm install supertokens-auth-react
+```
+
+### Step 2: Configure SuperTokens
+
+Create `src/config/supertokens.ts`:
+
+```typescript
+/**
+ * SuperTokens Configuration
+ * 
+ * Configures SuperTokens React SDK for session management with Skaftin backend
+ */
+import SuperTokens from 'supertokens-auth-react';
+import EmailPassword from 'supertokens-auth-react/recipe/emailpassword';
+import Session from 'supertokens-auth-react/recipe/session';
+
+const apiUrl = import.meta.env.VITE_SKAFTIN_API_URL || 'http://localhost:4006';
+const websiteDomain = window.location.origin;
+
+// Initialize SuperTokens with Skaftin configuration
+SuperTokens.init({
+  appInfo: {
+    appName: 'Your App Name',
+    apiDomain: apiUrl,
+    websiteDomain: websiteDomain,
+    apiBasePath: '/app-api/auth', // Important: Use /app-api/auth
+    websiteBasePath: '/auth',
+  },
+  recipeList: [
+    EmailPassword.init({
+      // Override API endpoints to match Skaftin's custom structure
+      override: {
+        apis: (originalImplementation) => {
+          return {
+            ...originalImplementation,
+            signInPOST: async (input) => {
+              // Use Skaftin's custom login endpoint
+              const response = await fetch(`${apiUrl}/app-api/auth/auth/login`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-API-Key': import.meta.env.VITE_SKAFTIN_API_KEY || import.meta.env.VITE_SKAFTIN_API || '',
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                  email: input.formFields.find((f) => f.id === 'email')?.value,
+                  password: input.formFields.find((f) => f.id === 'password')?.value,
+                }),
+              });
+
+              const data = await response.json();
+
+              if (!response.ok) {
+                return {
+                  status: 'GENERAL_ERROR',
+                  message: data.message || data.error || 'Login failed',
+                };
+              }
+
+              if (data.success && data.data?.session?.accessToken) {
+                // Store accessToken in AuthStore for use in API requests
+                const useAuthStore = (await import('@/stores/data/AuthStore')).default;
+                const user = data.data.user;
+                const accessToken = data.data.session.accessToken;
+                
+                const primaryRole = user.roles?.[0]?.role_key || 'user';
+                await useAuthStore.getState().login({
+                  id: user.id.toString(),
+                  name: user.name || '',
+                  email: user.email || '',
+                  role: primaryRole,
+                  accessToken: accessToken,
+                  surname: '',
+                  roles: user.roles || [],
+                });
+
+                return {
+                  status: 'OK',
+                  user: {
+                    id: user.id.toString(),
+                    email: user.email,
+                  },
+                };
+              }
+
+              return {
+                status: 'GENERAL_ERROR',
+                message: data.message || 'Login failed',
+              };
+            },
+          };
+        },
+      },
+    }),
+    Session.init({
+      // Session will automatically handle token refresh
+      // It will call /app-api/auth/session/refresh automatically
+    }),
+  ],
+});
+
+export default SuperTokens;
+export { Session, EmailPassword };
+```
+
+### Step 3: Initialize SuperTokens in main.tsx
+
+```typescript
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.tsx'
+import './config/supertokens' // Initialize SuperTokens
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+```
+
+### Step 4: Create Zustand AuthStore
+
+Create `src/stores/data/AuthStore.ts`:
+
+```typescript
+import { create } from 'zustand';
+import { persist, PersistStorage, StorageValue } from 'zustand/middleware';
+import toast from 'react-hot-toast';
+import { SessionUser, UserChurchType } from '@/types/Types';
+import { skaftinClient } from '@/backend';
+import ApiRoutes from '@/constants/ApiRoutes';
+import Session from 'supertokens-auth-react/recipe/session';
+
+interface AuthState {
+  sessionUser: SessionUser | null;
+  login: (userData: SessionUser) => void;
+  logout: () => void;
+  isAdmin: () => boolean;
+  fetchUserChurchId: (userId: number) => Promise<number | null>;
+  getUserChurchId: () => number | null;
+}
+
+// Custom storage object to handle localStorage operations
+const storage: PersistStorage<AuthState> = {
+  getItem: (key: string) => {
+    const value = localStorage.getItem(key);
+    return value ? (JSON.parse(value) as StorageValue<AuthState>) : null;
+  },
+  setItem: (key: string, value: StorageValue<AuthState>) => {
+    localStorage.setItem(key, JSON.stringify(value));
+  },
+  removeItem: (key: string) => {
+    localStorage.removeItem(key);
+  },
+};
+
+const useAuthStore = create<AuthState>()(
+  persist(
+    (set, get) => ({
+      sessionUser: null,
+      login: async (userData: SessionUser) => {
+        set({ sessionUser: userData });
+        // Fetch church_id for non-admin users
+        if (!userData.roles?.some(role => role.role_key === 'admin')) {
+          const userId = parseInt(userData.id);
+          if (!isNaN(userId)) {
+            const churchId = await get().fetchUserChurchId(userId);
+            if (churchId) {
+              set({ sessionUser: { ...userData, churchId } });
+            }
+          }
+        }
+        toast.success('Login successful');
+      },
+      logout: async () => {
+        try {
+          // Sign out from SuperTokens session (handles server-side logout)
+          await Session.signOut();
+        } catch (error) {
+          console.error('Error during logout:', error);
+        } finally {
+          set({ sessionUser: null });
+          toast.success('Logout successful');
+        }
+      },
+      isAdmin: () => {
+        const { sessionUser } = get();
+        if (!sessionUser || !sessionUser.roles) return false;
+        return sessionUser.roles.some(role => role.role_key === 'admin');
+      },
+      fetchUserChurchId: async (userId: number): Promise<number | null> => {
+        try {
+          const response = await skaftinClient.post<UserChurchType[]>(
+            ApiRoutes.userChurches.getAll,
+            {
+              where: { user_id: userId }
+            }
+          );
+          if (response.success && response.data.length > 0) {
+            return response.data[0].church_id;
+          }
+          return null;
+        } catch (error) {
+          console.error('Failed to fetch user church_id:', error);
+          return null;
+        }
+      },
+      getUserChurchId: (): number | null => {
+        const { sessionUser } = get();
+        return sessionUser?.churchId || null;
+      },
+    }),
+    {
+      name: 'auth',
+      storage,
+    }
+  )
+);
+
+export default useAuthStore;
+```
+
+### Step 5: Login Component Example
+
+```typescript
+import React, { useState } from 'react';
+import { toast } from 'react-hot-toast';
+import useAuthStore from '@/stores/data/AuthStore';
+import { useNavigate } from 'react-router-dom';
+import ApiRoutes from '@/constants/ApiRoutes';
+import RequestUtils from '@/utils/RequestUtils';
+import { LoginResponse } from '@/types/Types';
+
+const LoginPage = () => {
+  const { login } = useAuthStore();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({
+    username: '',
+    password: '',
+    method: 'email',
+  });
+
+  const handleLogin = async () => {
+    setLoading(true);
+
+    try {
+      const response: LoginResponse = await RequestUtils.fetch(
+        ApiRoutes.login, 
+        'POST', 
+        form
+      );
+
+      if (response && response.success) {
+        const user = response.data?.user;
+        const accessToken = response.data?.session?.accessToken;
+        
+        if (!user || !accessToken) {
+          toast.error('Invalid response from server');
+          return;
+        }
+        
+        const primaryRole = user.roles?.[0]?.role_key || 'user';
+        
+        // Store user data and accessToken in auth store
+        await login({
+          id: user.id?.toString() || '',
+          name: user.name || '',
+          username: user.email || '',
+          role: primaryRole,
+          method: 'email',
+          accessToken: accessToken,
+          surname: '',
+          roles: user.roles || []
+        });
+
+        toast.success('Login successful!');
+        const isAdmin = user.roles?.some(role => role.role_key === 'admin');
+        navigate(isAdmin ? '/admin/dashboard' : '/admin/home');
+      } else {
+        toast.error(response?.message || 'Login failed');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error('Login failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }}>
+      <input
+        type="email"
+        name="username"
+        value={form.username}
+        onChange={(e) => setForm({ ...form, username: e.target.value })}
+        placeholder="Email"
+        required
+      />
+      <input
+        type="password"
+        name="password"
+        value={form.password}
+        onChange={(e) => setForm({ ...form, password: e.target.value })}
+        placeholder="Password"
+        required
+      />
+      <button type="submit" disabled={loading}>
+        {loading ? 'Logging in...' : 'Sign in'}
+      </button>
+    </form>
+  );
+};
+
+export default LoginPage;
+```
+
+**Key Benefits of SuperTokens Integration:**
+- ✅ Automatic token refresh handling
+- ✅ Secure HTTP-only cookies (optional)
+- ✅ Built-in session management
+- ✅ CSRF protection
+- ✅ Seamless integration with Skaftin backend
+
+---
+
 ## Usage Examples
 
-### Example 1: Create App User Auth Service
+### Example 1: Create App User Auth Service (Alternative - Direct API)
 
 ```typescript
 // src/backend/services/AppUserAuthService.ts
@@ -1645,7 +1981,7 @@ const tenant5Users = users.data.users.filter(u => u.metadata?.tenant_id === 5);
 
 1. **Include API key in all requests** (identifies your project):
 ```typescript
-headers: { 'x-api-key': 'sk_your_key' }
+headers: { 'X-API-Key': 'sk_your_key' }  // Note: Capital X
 ```
 
 2. **Use auth endpoints WITHOUT project ID** (simpler URLs):
@@ -1655,17 +1991,17 @@ POST /app-api/auth/auth/login
 POST /app-api/auth/auth/verify
 ```
 
-3. **Store SuperTokens access tokens returned from login/register**:
+3. **Store JWT tokens returned from login/register**:
 ```typescript
-const { session } = response.data;
-localStorage.setItem('app_user_access_token', session.accessToken);
+const { token } = response.data;
+localStorage.setItem('app_user_token', token);
 ```
 
-4. **Include SuperTokens access token for protected user actions**:
+4. **Include JWT token for protected user actions**:
 ```typescript
 headers: {
-  'x-api-key': 'sk_your_key',
-  'Authorization': 'Bearer ' + session.accessToken
+  'X-API-Key': 'sk_your_key',  // Note: Capital X
+  'Authorization': 'Bearer ' + token
 }
 ```
 
@@ -1683,9 +2019,10 @@ PUT /app-api/auth/users/:userId
 ## Key Concepts
 
 ✅ **API Key** → Identifies your project (required for all requests)  
-✅ **SuperTokens Access Token** → Authenticates individual users (from login/register)  
+✅ **JWT Token** → Authenticates individual users (from login/register)  
 ✅ **No Project ID in Auth URLs** → Extracted from API key automatically  
-✅ **Two Service Types** → `AppUserAuthService` (end-users) + `UserManagementService` (admins)
+✅ **Two Service Types** → `AppUserAuthService` (end-users) + `UserManagementService` (admins)  
+✅ **SuperTokens Integration** → Recommended for automatic session management and token refresh
 
 ---
 

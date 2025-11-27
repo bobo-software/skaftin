@@ -14,7 +14,7 @@ Skaftin uses **two separate authentication layers**:
 
 2. **App User Authentication** (`07-APP-USER-AUTHENTICATION.md`)
    - Authenticates your application's end users
-   - Uses SuperTokens sessions (access tokens)
+   - Uses JWT tokens
    - Built on top of platform authentication
    - Manages user sessions and permissions
 
@@ -111,215 +111,401 @@ REACT_APP_SKAFTIN_API_KEY=sk_production_key_here
 
 ---
 
-## Step 3: Create Config File
+## Step 3: Create Unified Client ⭐ NEW SIMPLIFIED APPROACH
 
-Create `src/backend/config/skaftin.config.ts`:
-
-```typescript
-export const SKAFTIN_CONFIG = {
-  apiUrl: process.env.REACT_APP_SKAFTIN_API_URL || 'http://localhost:4006',
-  apiKey: process.env.REACT_APP_SKAFTIN_API_KEY || '',
-  accessToken: process.env.REACT_APP_SKAFTIN_ACCESS_TOKEN || '',
-  // projectId is no longer needed - automatically extracted from API key/token
-};
-
-// Validation
-if (!SKAFTIN_CONFIG.apiKey && !SKAFTIN_CONFIG.accessToken) {
-  console.error('❌ No Skaftin credentials configured.');
-  console.error('   Set REACT_APP_SKAFTIN_API_KEY or REACT_APP_SKAFTIN_ACCESS_TOKEN in .env');
-  throw new Error('Skaftin credentials required');
-}
-
-export default SKAFTIN_CONFIG;
-```
-
-**Key Changes:**
-- ✅ Credentials now automatically include project context
-- ✅ No manual project ID required (unless multi-project)
-- ✅ Simplified configuration
-
----
-
-## Step 4: Create Auth Utils
-
-Create `src/backend/utils/auth.ts`:
+Create `src/backend/client/SkaftinClient.ts`:
 
 ```typescript
-import SKAFTIN_CONFIG from '../config/skaftin.config';
-
 /**
- * Get authentication headers for Skaftin API requests
+ * Skaftin SDK Client
  * 
- * The API key/token automatically identifies your project,
- * so no need to include project ID separately.
+ * Unified client for all Skaftin API interactions.
+ * Handles configuration, authentication, and requests in one place.
  */
-export function getAuthHeaders(): HeadersInit {
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
 
-  // Use API key (preferred method)
-  if (SKAFTIN_CONFIG.apiKey) {
-    headers['x-api-key'] = SKAFTIN_CONFIG.apiKey;
-    return headers;
-  }
-  
-  // Use access token (alternative method)
-  if (SKAFTIN_CONFIG.accessToken) {
-    headers['x-access-token'] = SKAFTIN_CONFIG.accessToken;
-    return headers;
-  }
+import useAuthStore from '../../stores/data/AuthStore'; // For JWT token injection
 
-  throw new Error('No Skaftin credentials configured');
+export interface SkaftinConfig {
+  apiUrl?: string;
+  apiKey?: string;
+  accessToken?: string;
+  projectId?: string | null;
 }
-
-/**
- * Check if credentials are configured
- */
-export function isAuthenticated(): boolean {
-  return !!(SKAFTIN_CONFIG.apiKey || SKAFTIN_CONFIG.accessToken);
-}
-
-/**
- * Get project ID (deprecated - no longer needed)
- * Project is automatically extracted from API key/token in headers
- * This function is kept for backward compatibility only
- */
-export function getProjectId(): string | null {
-  // Project ID is now extracted from credentials automatically
-  // This function is deprecated and returns null
-  return null;
-}
-```
-
-**Important Changes:**
-- ✅ Headers use `x-api-key` and `x-access-token` (lowercase)
-- ✅ Project automatically identified from credentials
-- ✅ Simplified authentication flow
-
-## Step 5: Create Request Wrapper
-
-Create `src/backend/utils/request.ts`:
-
-```typescript
-import SKAFTIN_CONFIG from '../config/skaftin.config';
-import { getAuthHeaders } from './auth';
 
 export interface ApiResponse<T> {
   success: boolean;
-  message: string;
+  message?: string;
+  error?: string;
   data: T;
 }
 
-/**
- * Make authenticated request to Skaftin API
- */
-export async function apiRequest<T>(
-  endpoint: string,
-  options?: RequestInit
-): Promise<ApiResponse<T>> {
-  const url = `${SKAFTIN_CONFIG.apiUrl}${endpoint}`;
-  
-  const headers = {
-    ...getAuthHeaders(),
-    ...options?.headers,
-  };
+class SkaftinClient {
+  private config: Required<Omit<SkaftinConfig, 'projectId'>> & { projectId: string | null };
+  private initialized = false;
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+  constructor() {
+    // Load configuration from environment
+    const apiUrl = import.meta.env.VITE_SKAFTIN_API_URL || 'http://localhost:4006';
+    const apiKey = import.meta.env.VITE_SKAFTIN_API_KEY || import.meta.env.VITE_SKAFTIN_API || '';
+    const accessToken = import.meta.env.VITE_SKAFTIN_ACCESS_TOKEN || '';
+    const projectId = import.meta.env.VITE_SKAFTIN_PROJECT_ID || null;
 
-    const data = await response.json();
+    this.config = {
+      apiUrl,
+      apiKey,
+      accessToken,
+      projectId,
+    };
 
-    if (!response.ok) {
-      throw new Error(data.message || data.error || 'Request failed');
+    // Validate configuration
+    if (!this.config.apiKey && !this.config.accessToken) {
+      console.error(
+        '❌ No Skaftin credentials configured!\n' +
+        '   Set VITE_SKAFTIN_API_KEY or VITE_SKAFTIN_ACCESS_TOKEN in .env'
+      );
+      throw new Error('Skaftin credentials required');
     }
 
-    return data;
-  } catch (error: any) {
-    console.error(`API Request failed: ${endpoint}`, error);
-    throw error;
+    // Log in development
+    if (import.meta.env.DEV) {
+      console.log('🔧 Skaftin Client initialized:', {
+        apiUrl: this.config.apiUrl,
+        hasApiKey: !!this.config.apiKey,
+        hasAccessToken: !!this.config.accessToken,
+        projectId: this.config.projectId || 'auto-detected',
+      });
+    }
+
+    this.initialized = true;
+  }
+
+  getApiUrl(): string {
+    return this.config.apiUrl;
+  }
+
+  getProjectId(): string | null {
+    return this.config.projectId;
+  }
+
+  isAuthenticated(): boolean {
+    return !!(this.config.apiKey || this.config.accessToken);
+  }
+
+  private getAuthHeaders(): HeadersInit {
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    
+    // Always include X-API-Key header (platform authentication)
+    if (this.config.apiKey) {
+      headers['X-API-Key'] = this.config.apiKey;
+    } else if (this.config.accessToken) {
+      headers['x-access-token'] = this.config.accessToken;
+    }
+    
+    return headers;
+  }
+
+  private buildHeaders(customHeaders: Record<string, string> = {}, isFormData = false): HeadersInit {
+    const headers: Record<string, string> = {
+      ...(this.getAuthHeaders() as Record<string, string>),
+      ...customHeaders,
+    };
+
+    // Always add Authorization Bearer token if user is authenticated
+    // Get token from AuthStore (stored after login)
+    const authState = useAuthStore.getState();
+    const jwtToken = authState.sessionUser?.accessToken || authState.sessionUser?.access;
+    if (jwtToken && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${jwtToken}`;
+    }
+
+    // Don't set Content-Type for FormData (browser will set it with boundary)
+    if (!isFormData && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    return headers;
+  }
+
+  async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    if (!this.initialized) {
+      throw new Error('Skaftin client not initialized');
+    }
+
+    const url = `${this.config.apiUrl}${endpoint}`;
+    const method = options.method || 'GET';
+    const isFormData = options.body instanceof FormData;
+
+    const headers = this.buildHeaders(
+      (options.headers as Record<string, string>) || {},
+      isFormData
+    );
+
+    // Prepare body
+    let requestBody: any = options.body;
+    let finalBody: BodyInit | undefined;
+
+    if (isFormData) {
+      finalBody = options.body as FormData;
+    } else if (requestBody) {
+      if (typeof requestBody === 'string') {
+        finalBody = requestBody;
+      } else {
+        finalBody = JSON.stringify(requestBody);
+      }
+    }
+
+    // Log in development
+    if (import.meta.env.DEV) {
+      console.log(`[${method}] ${endpoint}`, requestBody || '');
+    }
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        method,
+        headers,
+        credentials: 'include', // Send cookies for SuperTokens
+        body: finalBody,
+      });
+
+      const data = await response.json();
+
+      // Handle 401 Unauthorized - SuperTokens SDK handles refresh automatically
+      // But we can retry the request after a short delay to allow refresh
+      if (response.status === 401 && this.isUserAuthenticated()) {
+        try {
+          // Check if SuperTokens session exists (it will auto-refresh)
+          const { Session } = await import('supertokens-auth-react/recipe/session');
+          const sessionExists = await Session.doesSessionExist();
+          
+          if (sessionExists) {
+            // Wait a bit for SuperTokens to refresh the token
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Retry the original request (SuperTokens will have refreshed the token)
+            const retryResponse = await fetch(url, {
+              ...options,
+              method,
+              headers: this.buildHeaders(
+                (options.headers as Record<string, string>) || {},
+                isFormData
+              ),
+              credentials: 'include',
+              body: finalBody,
+            });
+
+            const retryData = await retryResponse.json();
+            if (retryResponse.ok) {
+              return retryData;
+            }
+          }
+        } catch (refreshError) {
+          console.error('Failed to refresh session:', refreshError);
+        }
+      }
+
+      if (import.meta.env.DEV) {
+        console.log(`[${method}] ${endpoint} →`, response.status, data);
+      }
+
+      if (!response.ok) {
+        const errorMsg = data.message || data.error || `Request failed with status ${response.status}`;
+        const error = new Error(errorMsg);
+        (error as any).status = response.status;
+        (error as any).data = data;
+        throw error;
+      }
+
+      return data;
+    } catch (error: any) {
+      if (import.meta.env.DEV) {
+        console.error(`[${method}] ${endpoint} ❌`, error);
+      }
+      throw error;
+    }
+  }
+
+  async get<T>(endpoint: string, params?: Record<string, any>): Promise<ApiResponse<T>> {
+    let url = endpoint;
+    if (params && Object.keys(params).length > 0) {
+      const queryString = new URLSearchParams(
+        Object.entries(params).reduce((acc, [key, value]) => {
+          if (value !== undefined && value !== null) {
+            acc[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+          }
+          return acc;
+        }, {} as Record<string, string>)
+      ).toString();
+      url += `?${queryString}`;
+    }
+    return this.request<T>(url, { method: 'GET' });
+  }
+
+  async post<T>(endpoint: string, body?: any): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, { method: 'POST', body });
+  }
+
+  async postFormData<T>(endpoint: string, body: FormData): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, { method: 'POST', body });
+  }
+
+  async put<T>(endpoint: string, body?: any): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, { method: 'PUT', body });
+  }
+
+  async patch<T>(endpoint: string, body?: any): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, { method: 'PATCH', body });
+  }
+
+  async delete<T>(endpoint: string, body?: any): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, { method: 'DELETE', body });
+  }
+
+  private isUserAuthenticated(): boolean {
+    const authState = useAuthStore.getState();
+    return !!authState.sessionUser?.accessToken;
   }
 }
 
-/**
- * GET request
- */
-export async function get<T>(endpoint: string): Promise<ApiResponse<T>> {
-  return apiRequest<T>(endpoint, { method: 'GET' });
-}
-
-/**
- * POST request
- */
-export async function post<T>(
-  endpoint: string,
-  body: any
-): Promise<ApiResponse<T>> {
-  return apiRequest<T>(endpoint, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-}
-
-/**
- * PUT request
- */
-export async function put<T>(
-  endpoint: string,
-  body: any
-): Promise<ApiResponse<T>> {
-  return apiRequest<T>(endpoint, {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  });
-}
-
-/**
- * DELETE request
- */
-export async function del<T>(
-  endpoint: string,
-  body?: any
-): Promise<ApiResponse<T>> {
-  return apiRequest<T>(endpoint, {
-    method: 'DELETE',
-    body: body ? JSON.stringify(body) : undefined,
-  });
-}
+// Export singleton instance
+export const skaftinClient = new SkaftinClient();
+export default skaftinClient;
 ```
 
-## Testing Authentication
+**Key Benefits:**
+- ✅ **Single file** - All configuration, auth, and requests in one place
+- ✅ **Auto-initialization** - No manual setup needed
+- ✅ **Automatic JWT injection** - Adds user tokens when available
+- ✅ **Type-safe** - Full TypeScript support
+- ✅ **Development logging** - Helpful console logs in dev mode
 
-Create a test file to verify setup:
+---
+
+## Step 4: Create Folder Structure
+
+Your `src/backend/` folder should look like this:
+
+```
+src/
+└── backend/
+    ├── client/
+    │   └── SkaftinClient.ts    ← Main unified client (REQUIRED)
+    └── index.ts                 ← Main export file (REQUIRED)
+```
+
+**Complete Structure (with optional backward compatibility files):**
+
+```
+src/
+└── backend/
+    ├── client/
+    │   └── SkaftinClient.ts    ← Unified client (REQUIRED)
+    ├── config/
+    │   └── skaftin.config.ts   ← Optional (for backward compatibility)
+    ├── utils/
+    │   ├── auth.ts             ← Optional (delegates to client)
+    │   └── request.ts          ← Optional (delegates to client)
+    ├── services/               ← Optional (create as needed)
+    │   ├── TableService.ts
+    │   └── ...
+    ├── types/                  ← Optional (create as needed)
+    │   └── api.types.ts
+    └── index.ts                ← Main export (REQUIRED)
+```
+
+**File Purposes:**
+- `client/SkaftinClient.ts` - **REQUIRED** - Unified client for all API interactions
+- `index.ts` - **REQUIRED** - Main export point
+- `config/skaftin.config.ts` - Optional - Backward compatibility wrapper
+- `utils/auth.ts` - Optional - Backward compatibility utilities
+- `utils/request.ts` - Optional - Backward compatibility request wrappers
+- `services/` - Optional - Create service classes as needed (see `04-SERVICE-GENERATION.md`)
+- `types/` - Optional - TypeScript type definitions
+
+## Step 5: Create Main Export
+
+Create `src/backend/index.ts` to export the client:
 
 ```typescript
-// src/backend/test-auth.ts
-import { isAuthenticated, getAuthHeaders } from './utils/auth';
-import { get } from './utils/request';
+/**
+ * Skaftin Backend SDK - Main Export
+ */
 
+// Main Client (Recommended)
+export { skaftinClient, SkaftinClient } from './client/SkaftinClient';
+export type { SkaftinConfig, ApiResponse } from './client/SkaftinClient';
+
+// Configuration (backward compatibility)
+export { default as SKAFTIN_CONFIG } from './config/skaftin.config';
+
+// Utilities (backward compatibility - optional)
+export * from './utils/auth';
+export { 
+  apiRequest, 
+  get, 
+  post, 
+  put, 
+  patch, 
+  del, 
+  ApiError, 
+  handleApiError 
+} from './utils/request';
+
+// Services (when you create them)
+export * from './services';
+```
+
+**Note:** The unified client handles everything. The utilities above are optional and kept for backward compatibility with existing code.
+
+## Step 5: Use the Client! 🎉
+
+That's it! The client is ready to use. No additional setup needed.
+
+```typescript
+// In any component or service
+import { skaftinClient } from './backend';
+
+// Test connection
 async function testConnection() {
-  console.log('🔐 Authentication configured:', isAuthenticated());
-  console.log('📋 Headers:', getAuthHeaders());
-  
   try {
-    // Test API connection
-    const response = await get('/api/health');
+    const response = await skaftinClient.get('/api/health');
     console.log('✅ Connection successful:', response);
   } catch (error) {
     console.error('❌ Connection failed:', error);
   }
 }
 
-testConnection();
+// Make API calls
+const shops = await skaftinClient.get('/app-api/database/tables/shops/select');
+const newShop = await skaftinClient.post('/app-api/database/tables/shops/insert', {
+  data: { name: 'My Shop', address: '123 Main St' }
+});
 ```
 
-Run with:
-```bash
-npx ts-node src/backend/test-auth.ts
+**That's all you need!** The client automatically:
+- ✅ Loads configuration from `.env`
+- ✅ Adds authentication headers
+- ✅ Handles errors
+- ✅ Logs requests in development
+- ✅ Injects JWT tokens for app user requests
+
+## Backward Compatibility
+
+If you have existing code using the old utilities, they still work! The utilities now delegate to the unified client:
+
+```typescript
+// Old way (still works)
+import { get } from './backend/utils/request';
+import { isAuthenticated } from './backend/utils/auth';
+
+// New way (recommended)
+import { skaftinClient } from './backend';
 ```
+
+Both approaches work - use what fits your project!
 
 ## Security Best Practices
 
@@ -395,7 +581,7 @@ Once platform authentication is working:
 ```typescript
 // Headers for ALL API requests
 headers: {
-  'x-api-key': 'sk_your_api_key',        // API Key method
+  'X-API-Key': 'sk_your_api_key',        // API Key method (capital X)
   // OR
   'x-access-token': 'sat_your_token'     // Access Token method
 }
@@ -403,15 +589,15 @@ headers: {
 
 ### App User Authentication (See 07-APP-USER-AUTHENTICATION.md)
 ```typescript
-// After user login, include SuperTokens access token
+// After user login, include JWT token
 headers: {
-  'x-api-key': 'sk_your_api_key',        // Platform auth (required)
-  'Authorization': 'Bearer eyJhbG...'    // SuperTokens access token (for user endpoints)
+  'X-API-Key': 'sk_your_api_key',        // Platform auth (required, capital X)
+  'Authorization': 'Bearer eyJhbG...'    // User session (for user endpoints)
 }
 ```
 
 **Remember:** 
 - Platform credentials authenticate YOUR APP
-- SuperTokens access tokens authenticate YOUR APP'S USERS
+- JWT tokens authenticate YOUR APP'S USERS
 - Both can work together in the same application
 

@@ -1,4 +1,4 @@
-import { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand, CreateBucketCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { Pool } from 'pg';
@@ -586,24 +586,29 @@ export async function handleStorageTool(
         
         // Create bucket in MinIO
         try {
-          const createCommand = new PutObjectCommand({
-            Bucket: bucketName,
-            Key: '.bucket-init',
-            Body: Buffer.from(''),
-          });
-          
-          await s3Client.send(createCommand);
-          
-          // Delete the init file
-          const deleteCommand = new DeleteObjectCommand({
-            Bucket: bucketName,
-            Key: '.bucket-init',
-          });
-          
-          await s3Client.send(deleteCommand);
+          // Check if bucket already exists
+          try {
+            await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
+            // Bucket already exists, that's okay
+            console.log(`Bucket ${bucketName} already exists in MinIO`);
+          } catch (headError: any) {
+            // If bucket doesn't exist (404), create it
+            if (headError.name === 'NotFound' || headError.$metadata?.httpStatusCode === 404) {
+              const createCommand = new CreateBucketCommand({
+                Bucket: bucketName,
+              });
+              await s3Client.send(createCommand);
+              console.log(`Created MinIO bucket: ${bucketName}`);
+            } else {
+              // Some other error occurred
+              throw headError;
+            }
+          }
         } catch (minioError: any) {
           // If bucket already exists in MinIO, that's okay
-          if (minioError.name !== 'BucketAlreadyOwnedByYou' && minioError.name !== 'BucketAlreadyExists') {
+          if (minioError.name === 'BucketAlreadyOwnedByYou' || minioError.name === 'BucketAlreadyExists') {
+            console.log(`Bucket ${bucketName} already exists in MinIO`);
+          } else {
             return {
               content: [{ 
                 type: 'text', 

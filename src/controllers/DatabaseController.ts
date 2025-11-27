@@ -6,12 +6,17 @@ import { emitDatabaseChange } from '../utils/websocketEmitter';
 import { Pool } from 'pg';
 import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
 import { HybridAuthRequest } from '../middleware/hybridAuthMiddleware';
+import { OrganisationFilterRequest } from '../middleware/organisationFilterMiddleware';
 import { AnalyticsService } from '../services/AnalyticsService';
 
 // Extended request type that can have projectId from middleware or params
-type DatabaseRequest = (SuperTokensAuthenticatedRequest | HybridAuthRequest) & {
+type DatabaseRequest = (SuperTokensAuthenticatedRequest | HybridAuthRequest | OrganisationFilterRequest) & {
   projectId?: number;
   schemaName?: string;
+  organisationFilter?: {
+    field: string;
+    value: number;
+  };
 };
 
 class DatabaseController {
@@ -405,6 +410,7 @@ class DatabaseController {
 
       let query = `SELECT ${selectClause} FROM "${tableName}"`;
       const values: any[] = [];
+      let hasWhereClause = false;
 
       // Parse where clause (JSON string)
       if (whereParam && typeof whereParam === 'string') {
@@ -416,10 +422,23 @@ class DatabaseController {
             const whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
             query += ` WHERE ${whereClause}`;
             values.push(...whereValues);
+            hasWhereClause = true;
           }
         } catch (parseError) {
           return ResponseUtils.error(res, 'Invalid where parameter: must be valid JSON', null, null, 400);
         }
+      }
+
+      // Apply organization filter for app users (client-side requests)
+      if (req.organisationFilter && 'appUser' in req) {
+        const orgFilter = req.organisationFilter;
+        if (hasWhereClause) {
+          query += ` AND "${orgFilter.field}" = $${values.length + 1}`;
+        } else {
+          query += ` WHERE "${orgFilter.field}" = $${values.length + 1}`;
+          hasWhereClause = true;
+        }
+        values.push(orgFilter.value);
       }
 
       // Add limit and offset
@@ -465,6 +484,26 @@ class DatabaseController {
       
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Apply organization filter for app users (client-side requests)
+      // Automatically add organisation_id to INSERT for non-admin users
+      console.log('🔍 [InsertData] Checking organization filter...');
+      console.log('  └─ Has organisationFilter:', !!req.organisationFilter);
+      console.log('  └─ Has appUser:', !!(req as any).appUser);
+      console.log('  └─ Organisation filter:', req.organisationFilter);
+      
+      if (req.organisationFilter) {
+        const orgFilter = req.organisationFilter;
+        // Only add if the field doesn't already exist in the data
+        if (!data[orgFilter.field]) {
+          console.log(`  └─ ✅ Adding ${orgFilter.field} = ${orgFilter.value} to INSERT data`);
+          data[orgFilter.field] = orgFilter.value;
+        } else {
+          console.log(`  └─ ⚠️  Field ${orgFilter.field} already exists in data:`, data[orgFilter.field]);
+        }
+      } else {
+        console.log('  └─ ⚠️  No organization filter found, skipping automatic addition');
       }
 
       const columns = Object.keys(data);
@@ -564,7 +603,14 @@ class DatabaseController {
 
       const whereColumns = Object.keys(where);
       const whereValues = Object.values(where);
-      const whereClause = whereColumns.map((col, i) => `"${col}" = $${setValues.length + i + 1}`).join(' AND ');
+      let whereClause = whereColumns.map((col, i) => `"${col}" = $${setValues.length + i + 1}`).join(' AND ');
+
+      // Apply organization filter for app users (client-side requests)
+      if (req.organisationFilter && 'appUser' in req && !req.appUser?.is_admin) {
+        const orgFilter = req.organisationFilter;
+        whereClause += ` AND "${orgFilter.field}" = $${setValues.length + whereValues.length + 1}`;
+        whereValues.push(orgFilter.value);
+      }
 
       const query = `UPDATE "${tableName}" SET ${setClause} WHERE ${whereClause} RETURNING *`;
       const result = await client.query(query, [...setValues, ...whereValues]);
@@ -607,7 +653,14 @@ class DatabaseController {
 
       const whereColumns = Object.keys(where);
       const whereValues = Object.values(where);
-      const whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
+      let whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
+
+      // Apply organization filter for app users (client-side requests)
+      if (req.organisationFilter && 'appUser' in req && !req.appUser?.is_admin) {
+        const orgFilter = req.organisationFilter;
+        whereClause += ` AND "${orgFilter.field}" = $${whereValues.length + 1}`;
+        whereValues.push(orgFilter.value);
+      }
 
       const query = `DELETE FROM "${tableName}" WHERE ${whereClause} RETURNING *`;
       const result = await client.query(query, whereValues);

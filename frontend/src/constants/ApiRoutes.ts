@@ -75,6 +75,9 @@ const ApiRoutes = {
     SEARCH_FILES: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/search`,
     UPLOAD_FILE: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/upload`,
     UPLOAD_FILE_MULTIPART: (projectId: string, bucketName: string) => `/api/storage/${projectId}/${bucketName}/upload-multipart`,
+    UPLOAD_FILE_FORM: () => `/app-api/storage/files`, // Upload with bucket and path in form data
+    DELETE_FILE_FORM: () => `/app-api/storage/files`, // Delete with bucket and path in request body
+    DOWNLOAD_FILE_FORM: () => `/app-api/storage/files/download`, // Download with bucket and path as query params
     DOWNLOAD_FILE: (projectId: string, bucketName: string, filePath: string) => `/api/storage/${projectId}/${bucketName}/download/${filePath}`,
     DELETE_FILE: (projectId: string, bucketName: string, filePath: string) => `/api/storage/${projectId}/${bucketName}/files/${filePath}`,
     GET_FILE_METADATA: (projectId: string, bucketName: string, filePath: string) => `/api/storage/${projectId}/${bucketName}/files/${filePath}/metadata`,
@@ -99,6 +102,10 @@ const ApiRoutes = {
     DROP_TABLE: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}`,
     EXECUTE_QUERY: (projectId: string) => `/api/database/${projectId}/query`,
     IMPORT_DUMP: (projectId: string) => `/api/database/${projectId}/import`,
+    // Column routes
+    ADD_COLUMN: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/columns`,
+    ALTER_COLUMN: (projectId: string, tableName: string, columnName: string) => `/api/database/${projectId}/tables/${tableName}/columns/${columnName}`,
+    DROP_COLUMN: (projectId: string, tableName: string, columnName: string) => `/api/database/${projectId}/tables/${tableName}/columns/${columnName}`,
     // Constraint routes
     LIST_CONSTRAINTS: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/constraints`,
     LIST_FOREIGN_KEYS: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/foreign-keys`,

@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import { Plus, Search, RefreshCw, Edit, Trash2, Shield, Users, Clock, AlertCircle } from 'lucide-react';
 import RolesService, { Role, CreateRoleRequest } from '../../../../../services/RolesService';
 import { AppButton } from '../../../../../components/ComponentsIndex';
+import RequestUtils from '../../../../../utils/RequestUtils';
+import ApiRoutes from '../../../../../constants/ApiRoutes';
 
 const AuthRolesTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -231,14 +233,119 @@ const CreateRoleModal = ({ projectId, onClose, onSuccess }: { projectId: string;
     description: '',
     permissions: [],
     session_duration_minutes: 10080, // 7 days default
+    organisation_field_name: '',
+    organisation_lookup_table: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [tables, setTables] = useState<Array<{ table_name: string }>>([]);
+  const [allColumns, setAllColumns] = useState<Array<{ table_name: string; column_name: string; data_type: string }>>([]);
+  const [lookupTableColumns, setLookupTableColumns] = useState<Array<{ column_name: string; data_type: string }>>([]);
+  const [loadingTables, setLoadingTables] = useState(false);
+
+  // Fetch tables and columns on mount
+  useEffect(() => {
+    const fetchTablesAndColumns = async () => {
+      if (!projectId) return;
+      setLoadingTables(true);
+      try {
+        const token = localStorage.getItem('skaftin-token') || '';
+        
+        // Fetch all tables
+        const tablesResponse = await RequestUtils.get(
+          ApiRoutes.DATABASE.LIST_TABLES(projectId),
+          token
+        );
+        
+        if (tablesResponse.success && Array.isArray(tablesResponse.data)) {
+          setTables(tablesResponse.data);
+          
+          // Fetch columns for all tables
+          const columnsPromises = tablesResponse.data.map(async (table: { table_name: string }) => {
+            try {
+              const schemaResponse = await RequestUtils.get(
+                ApiRoutes.DATABASE.GET_TABLE_SCHEMA(projectId, table.table_name),
+                token
+              );
+              if (schemaResponse.success && Array.isArray(schemaResponse.data)) {
+                return schemaResponse.data.map((col: any) => ({
+                  table_name: table.table_name,
+                  column_name: col.column_name,
+                  data_type: col.data_type,
+                }));
+              }
+              return [];
+            } catch (err) {
+              console.error(`Error fetching schema for ${table.table_name}:`, err);
+              return [];
+            }
+          });
+          
+          const allColumnsData = (await Promise.all(columnsPromises)).flat();
+          setAllColumns(allColumnsData);
+        }
+      } catch (err) {
+        console.error('Error fetching tables:', err);
+      } finally {
+        setLoadingTables(false);
+      }
+    };
+    
+    fetchTablesAndColumns();
+  }, [projectId]);
+
+  // Verify junction table structure when lookup table is selected
+  useEffect(() => {
+    const verifyJunctionTable = async () => {
+      if (!projectId || !formData.organisation_lookup_table) {
+        setLookupTableColumns([]);
+        return;
+      }
+      
+      try {
+        const token = localStorage.getItem('skaftin-token') || '';
+        const schemaResponse = await RequestUtils.get(
+          ApiRoutes.DATABASE.GET_TABLE_SCHEMA(projectId, formData.organisation_lookup_table),
+          token
+        );
+        
+        if (schemaResponse.success && Array.isArray(schemaResponse.data)) {
+          // Check for standard structure: id, user_id, organisation_id, created_at, updated_at
+          const requiredColumns = ['id', 'user_id', 'organisation_id', 'created_at', 'updated_at'];
+          const tableColumns = schemaResponse.data.map((col: any) => col.column_name);
+          const hasAllRequired = requiredColumns.every(col => tableColumns.includes(col));
+          
+          if (hasAllRequired) {
+            // Table follows standard structure - show organisation_id
+            setLookupTableColumns([{ column_name: 'organisation_id', data_type: 'integer' }]);
+          } else {
+            // Table doesn't follow standard structure
+            const missing = requiredColumns.filter(col => !tableColumns.includes(col));
+            console.warn(`Junction table "${formData.organisation_lookup_table}" is missing required columns:`, missing);
+            setLookupTableColumns([]);
+          }
+        }
+      } catch (err) {
+        console.error('Error verifying junction table structure:', err);
+        setLookupTableColumns([]);
+      }
+    };
+    
+    verifyJunctionTable();
+  }, [projectId, formData.organisation_lookup_table]);
 
   const handleRoleKeyChange = (value: string) => {
     // Auto-generate role_key from role_name
     const key = value.toLowerCase().replace(/[^a-z0-9_]/g, '_');
     setFormData({ ...formData, role_key: key });
+  };
+
+  // Get ID-like columns from all tables for organization field name
+  const getIdColumns = () => {
+    return allColumns.filter(col => 
+      (col.data_type === 'integer' || col.data_type === 'bigint' || col.data_type === 'smallint') &&
+      col.column_name.endsWith('_id')
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -379,6 +486,59 @@ const CreateRoleModal = ({ projectId, onClose, onSuccess }: { projectId: string;
             </div>
           </div>
 
+          {/* Organization Context Configuration */}
+          <div className="border-t border-dark-200 dark:border-dark-700 pt-4">
+            <h3 className="text-sm font-semibold text-dark-900 dark:text-white mb-3">
+              Organization Context (Optional)
+            </h3>
+            <p className="text-xs text-dark-500 dark:text-dark-400 mb-4">
+              Configure how this role determines organization context for automatic data filtering.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                  Organization Field Name
+                </label>
+                <input
+                  type="text"
+                  value={formData.organisation_field_name || ''}
+                  onChange={(e) => setFormData({ ...formData, organisation_field_name: e.target.value })}
+                  placeholder="e.g., organisation_id, user_id, company_id"
+                  className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+                />
+                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                  The database field name to filter by. Use "user_id" for user-scoped filtering.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                  Lookup Table (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={formData.organisation_lookup_table || ''}
+                  onChange={(e) => setFormData({ ...formData, organisation_lookup_table: e.target.value })}
+                  placeholder="e.g., user_companies, user_organizations"
+                  className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+                />
+                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                  Junction table to lookup organization ID (e.g., for multi-company users).
+                </p>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
+                <p className="font-medium mb-1">Examples:</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li><strong>Direct:</strong> Field: "organisation_id" (user has organisation_id set)</li>
+                  <li><strong>User-scoped:</strong> Field: "user_id" (filters by user's own ID)</li>
+                  <li><strong>Junction:</strong> Field: "company_id", Table: "user_companies" (looks up from junction table)</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
           <div className="flex gap-3 pt-4">
             <button
               type="button"
@@ -407,9 +567,106 @@ const EditRoleModal = ({ projectId, role, onClose, onSuccess }: { projectId: str
     role_name: role.role_name,
     description: role.description || '',
     session_duration_minutes: role.session_duration_minutes,
+    organisation_field_name: role.organisation_field_name || '',
+    organisation_lookup_table: role.organisation_lookup_table || '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [tables, setTables] = useState<Array<{ table_name: string }>>([]);
+  const [allColumns, setAllColumns] = useState<Array<{ table_name: string; column_name: string; data_type: string }>>([]);
+  const [lookupTableColumns, setLookupTableColumns] = useState<Array<{ column_name: string; data_type: string }>>([]);
+  const [loadingTables, setLoadingTables] = useState(false);
+
+  // Fetch tables and columns on mount
+  useEffect(() => {
+    const fetchTablesAndColumns = async () => {
+      if (!projectId) return;
+      setLoadingTables(true);
+      try {
+        const token = localStorage.getItem('skaftin-token') || '';
+        
+        // Fetch all tables
+        const tablesResponse = await RequestUtils.get(
+          ApiRoutes.DATABASE.LIST_TABLES(projectId),
+          token
+        );
+        
+        if (tablesResponse.success && Array.isArray(tablesResponse.data)) {
+          setTables(tablesResponse.data);
+          
+          // Fetch columns for all tables
+          const columnsPromises = tablesResponse.data.map(async (table: { table_name: string }) => {
+            try {
+              const schemaResponse = await RequestUtils.get(
+                ApiRoutes.DATABASE.GET_TABLE_SCHEMA(projectId, table.table_name),
+                token
+              );
+              if (schemaResponse.success && Array.isArray(schemaResponse.data)) {
+                return schemaResponse.data.map((col: any) => ({
+                  table_name: table.table_name,
+                  column_name: col.column_name,
+                  data_type: col.data_type,
+                }));
+              }
+              return [];
+            } catch (err) {
+              console.error(`Error fetching schema for ${table.table_name}:`, err);
+              return [];
+            }
+          });
+          
+          const allColumnsData = (await Promise.all(columnsPromises)).flat();
+          setAllColumns(allColumnsData);
+        }
+      } catch (err) {
+        console.error('Error fetching tables:', err);
+      } finally {
+        setLoadingTables(false);
+      }
+    };
+    
+    fetchTablesAndColumns();
+  }, [projectId]);
+
+  // Fetch columns for selected lookup table
+  useEffect(() => {
+    const fetchLookupTableColumns = async () => {
+      if (!projectId || !formData.organisation_lookup_table) {
+        setLookupTableColumns([]);
+        return;
+      }
+      
+      try {
+        const token = localStorage.getItem('skaftin-token') || '';
+        const schemaResponse = await RequestUtils.get(
+          ApiRoutes.DATABASE.GET_TABLE_SCHEMA(projectId, formData.organisation_lookup_table),
+          token
+        );
+        
+        if (schemaResponse.success && Array.isArray(schemaResponse.data)) {
+          // Filter for ID-like columns (integer types ending in _id)
+          const idColumns = schemaResponse.data.filter((col: any) => 
+            (col.data_type === 'integer' || col.data_type === 'bigint' || col.data_type === 'smallint') &&
+            col.column_name.endsWith('_id')
+          );
+          setLookupTableColumns(idColumns);
+        }
+      } catch (err) {
+        console.error('Error fetching lookup table columns:', err);
+        setLookupTableColumns([]);
+      }
+    };
+    
+    fetchLookupTableColumns();
+  }, [projectId, formData.organisation_lookup_table]);
+
+  // Get ID-like columns from all tables for organization field name
+  const getIdColumns = () => {
+    return allColumns.filter(col => 
+      (col.data_type === 'integer' || col.data_type === 'bigint' || col.data_type === 'smallint') &&
+      col.column_name.endsWith('_id')
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -417,7 +674,16 @@ const EditRoleModal = ({ projectId, role, onClose, onSuccess }: { projectId: str
     setError('');
 
     try {
-      await RolesService.updateRole(projectId, String(role.id), formData);
+      // For system roles, only send allowed fields (permissions, session_duration, organization context)
+      const updateData = role.is_system_role
+        ? {
+            session_duration_minutes: formData.session_duration_minutes,
+            organisation_field_name: formData.organisation_field_name,
+            organisation_lookup_table: formData.organisation_lookup_table,
+          }
+        : formData;
+      
+      await RolesService.updateRole(projectId, String(role.id), updateData);
       onSuccess();
     } catch (err: any) {
       setError(err.message);
@@ -535,6 +801,101 @@ const EditRoleModal = ({ projectId, role, onClose, onSuccess }: { projectId: str
                 className="flex-1 px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
               />
               <span className="text-sm text-dark-600 dark:text-dark-400">minutes</span>
+            </div>
+          </div>
+
+          {/* Organization Context Configuration */}
+          <div className="border-t border-dark-200 dark:border-dark-700 pt-4">
+            <h3 className="text-sm font-semibold text-dark-900 dark:text-white mb-3">
+              Organization Context (Optional)
+            </h3>
+            <p className="text-xs text-dark-500 dark:text-dark-400 mb-4">
+              Configure how this role determines organization context for automatic data filtering.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                  Organization Field Name
+                </label>
+                {loadingTables ? (
+                  <div className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-dark-50 dark:bg-dark-900 text-dark-500 dark:text-dark-400">
+                    Loading columns...
+                  </div>
+                ) : (
+                  <select
+                    value={formData.organisation_field_name || ''}
+                    onChange={(e) => setFormData({ ...formData, organisation_field_name: e.target.value })}
+                    className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+                  >
+                    <option value="">Select a field...</option>
+                    {getIdColumns().map((col) => (
+                      <option key={`${col.table_name}.${col.column_name}`} value={col.column_name}>
+                        {col.column_name} ({col.table_name})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                  The database field name to filter by. Use "user_id" for user-scoped filtering.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                  Lookup Table (Optional)
+                </label>
+                {loadingTables ? (
+                  <div className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-dark-50 dark:bg-dark-900 text-dark-500 dark:text-dark-400">
+                    Loading tables...
+                  </div>
+                ) : (
+                  <select
+                    value={formData.organisation_lookup_table || ''}
+                    onChange={(e) => setFormData({ ...formData, organisation_lookup_table: e.target.value })}
+                    className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+                  >
+                    <option value="">None (direct assignment)</option>
+                    {tables.map((table) => (
+                      <option key={table.table_name} value={table.table_name}>
+                        {table.table_name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                  Junction table to lookup organization ID (e.g., for multi-company users).
+                </p>
+              </div>
+
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 text-sm text-yellow-700 dark:text-yellow-300">
+                <p className="font-medium mb-1">Junction Table Requirements:</p>
+                <p className="text-xs">The lookup table must follow this standard structure:</p>
+                <ul className="list-disc list-inside text-xs mt-1 space-y-1">
+                  <li><code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">id</code> (PRIMARY KEY)</li>
+                  <li><code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">user_id</code> (INTEGER, references app user)</li>
+                  <li><code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">{formData.organisation_field_name || '&lt;organisation_field_name&gt;'}</code> (INTEGER, matches the field name used in your data tables)</li>
+                  <li><code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">created_at</code> (TIMESTAMP)</li>
+                  <li><code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">updated_at</code> (TIMESTAMP)</li>
+                </ul>
+                <p className="text-xs mt-2">
+                  <strong>Important:</strong> The junction table must use the <strong>same field name</strong> as your data tables. 
+                  For example, if your events/drivers tables use <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">church_id</code>, 
+                  the junction table should also use <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">church_id</code>.
+                </p>
+                <p className="text-xs mt-1">
+                  Example: <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">user_churches</code> table with <code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 rounded">church_id</code>
+                </p>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
+                <p className="font-medium mb-1">Examples:</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li><strong>Direct:</strong> Field: "organisation_id" (user has organisation_id set)</li>
+                  <li><strong>User-scoped:</strong> Field: "user_id" (filters by user's own ID)</li>
+                  <li><strong>Junction:</strong> Field: "company_id", Table: "user_companies" (looks up from junction table)</li>
+                </ul>
+              </div>
             </div>
           </div>
 

@@ -894,12 +894,55 @@ export class DatabaseInitializer {
           password VARCHAR(255),
           phone VARCHAR(50),
           metadata JSONB DEFAULT '{}',
+          organisation_id INTEGER,
           is_active BOOLEAN DEFAULT true,
           email_verified BOOLEAN DEFAULT false,
           phone_verified BOOLEAN DEFAULT false,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+      `));
+
+      // Add organisation_id column to existing users table if it doesn't exist
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = '${schemaName}' 
+            AND table_name = 'skaftin_system_users' 
+            AND column_name = 'organisation_id'
+          ) THEN
+            ALTER TABLE ${schemaName}.skaftin_system_users 
+            ADD COLUMN organisation_id INTEGER;
+          END IF;
+        END $$;
+      `));
+
+      // Add custom_field_1 and custom_field_2 columns if they don't exist
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = '${schemaName}' 
+            AND table_name = 'skaftin_system_users' 
+            AND column_name = 'custom_field_1'
+          ) THEN
+            ALTER TABLE ${schemaName}.skaftin_system_users 
+            ADD COLUMN custom_field_1 VARCHAR(255);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = '${schemaName}' 
+            AND table_name = 'skaftin_system_users' 
+            AND column_name = 'custom_field_2'
+          ) THEN
+            ALTER TABLE ${schemaName}.skaftin_system_users 
+            ADD COLUMN custom_field_2 VARCHAR(255);
+          END IF;
+        END $$;
       `));
 
       // Create indexes for skaftin_system_users
@@ -911,6 +954,18 @@ export class DatabaseInitializer {
       `));
       await this.db.execute(sql.raw(`
         CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_is_active ON ${schemaName}.skaftin_system_users(is_active);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_organisation_id ON ${schemaName}.skaftin_system_users(organisation_id);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_phone ON ${schemaName}.skaftin_system_users(phone);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_custom_field_1 ON ${schemaName}.skaftin_system_users(custom_field_1);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_custom_field_2 ON ${schemaName}.skaftin_system_users(custom_field_2);
       `));
 
       console.log(`✅ skaftin_system_users table created in schema: ${schemaName}`);
@@ -925,6 +980,9 @@ export class DatabaseInitializer {
           permissions JSONB DEFAULT '[]',
           session_duration_minutes INTEGER DEFAULT 10080,
           is_system_role BOOLEAN DEFAULT false,
+          organisation_field_name VARCHAR(255),
+          organisation_lookup_table VARCHAR(255),
+          organisation_lookup_field VARCHAR(255),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -939,6 +997,42 @@ export class DatabaseInitializer {
       `));
 
       console.log(`✅ skaftin_system_roles table created in schema: ${schemaName}`);
+
+      // Add organization fields to existing roles table if they don't exist
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = '${schemaName}' 
+            AND table_name = 'skaftin_system_roles' 
+            AND column_name = 'organisation_field_name'
+          ) THEN
+            ALTER TABLE ${schemaName}.skaftin_system_roles 
+            ADD COLUMN organisation_field_name VARCHAR(255);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = '${schemaName}' 
+            AND table_name = 'skaftin_system_roles' 
+            AND column_name = 'organisation_lookup_table'
+          ) THEN
+            ALTER TABLE ${schemaName}.skaftin_system_roles 
+            ADD COLUMN organisation_lookup_table VARCHAR(255);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = '${schemaName}' 
+            AND table_name = 'skaftin_system_roles' 
+            AND column_name = 'organisation_lookup_field'
+          ) THEN
+            ALTER TABLE ${schemaName}.skaftin_system_roles 
+            ADD COLUMN organisation_lookup_field VARCHAR(255);
+          END IF;
+        END $$;
+      `));
 
       // Insert default roles (Admin and User)
       await this.db.execute(sql.raw(`
@@ -1470,6 +1564,60 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Migrate organization context fields to existing project role tables
+   */
+  async migrateOrganizationContextToRoles(): Promise<void> {
+    try {
+      // Get all project schemas
+      const projectsResult = await this.pool.query(
+        'SELECT schema_name FROM skaftin_system_projects WHERE schema_name IS NOT NULL'
+      );
+
+      for (const project of projectsResult.rows) {
+        const schemaName = project.schema_name;
+        
+        // Add organisation_field_name if it doesn't exist
+        await this.db.execute(sql.raw(`
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns 
+              WHERE table_schema = '${schemaName}' 
+              AND table_name = 'skaftin_system_roles' 
+              AND column_name = 'organisation_field_name'
+            ) THEN
+              ALTER TABLE ${schemaName}.skaftin_system_roles ADD COLUMN organisation_field_name VARCHAR(255);
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns 
+              WHERE table_schema = '${schemaName}' 
+              AND table_name = 'skaftin_system_roles' 
+              AND column_name = 'organisation_lookup_table'
+            ) THEN
+              ALTER TABLE ${schemaName}.skaftin_system_roles ADD COLUMN organisation_lookup_table VARCHAR(255);
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns 
+              WHERE table_schema = '${schemaName}' 
+              AND table_name = 'skaftin_system_roles' 
+              AND column_name = 'organisation_lookup_field'
+            ) THEN
+              ALTER TABLE ${schemaName}.skaftin_system_roles ADD COLUMN organisation_lookup_field VARCHAR(255);
+            END IF;
+          END $$;
+        `));
+      }
+
+      console.log('✅ Organization context fields migrated to existing project role tables');
+    } catch (error) {
+      console.error('Error migrating organization context fields:', error);
+      // Don't throw - allow server to continue
+    }
+  }
+
+  /**
    * Initialize all database tables
    * Order matters: organizations must be created before organization_members and projects
    */
@@ -1493,6 +1641,9 @@ export class DatabaseInitializer {
     await this.initializeAnalyticsTables();
     await this.initializeWorkflowTables();
     await this.initializeBackupSchedulesTable();
+    
+    // Migrate organization context fields to existing projects
+    await this.migrateOrganizationContextToRoles();
   }
 
   /**

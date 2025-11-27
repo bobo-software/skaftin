@@ -1,4 +1,5 @@
 import RequestUtils from '../utils/RequestUtils';
+import ApiRoutes from '../constants/ApiRoutes';
 
 class DatabaseService {
   private getToken(): string | null {
@@ -16,7 +17,7 @@ class DatabaseService {
     try {
       const token = this.getToken() || 'session-managed-by-supertokens';
       const result = await RequestUtils.post(
-        `/app-api/database/${projectId}/tables/${tableName}/columns`,
+        ApiRoutes.DATABASE.ADD_COLUMN(projectId, tableName),
         token,
         { columnName, columnType, nullable, defaultValue }
       );
@@ -41,7 +42,7 @@ class DatabaseService {
     try {
       const token = this.getToken() || 'session-managed-by-supertokens';
       const result = await RequestUtils.put(
-        `/app-api/database/${projectId}/tables/${tableName}/columns/${columnName}`,
+        ApiRoutes.DATABASE.ALTER_COLUMN(projectId, tableName, columnName),
         token,
         changes
       );
@@ -60,7 +61,7 @@ class DatabaseService {
     try {
       const token = this.getToken() || 'session-managed-by-supertokens';
       const result = await RequestUtils.delete(
-        `/app-api/database/${projectId}/tables/${tableName}/columns/${columnName}`,
+        ApiRoutes.DATABASE.DROP_COLUMN(projectId, tableName, columnName),
         token,
         {}
       );
@@ -78,7 +79,7 @@ class DatabaseService {
     try {
       const token = this.getToken() || 'session-managed-by-supertokens';
       const result = await RequestUtils.delete(
-        `/app-api/database/${projectId}/tables/${tableName}`,
+        ApiRoutes.DATABASE.DROP_TABLE(projectId, tableName),
         token,
         {}
       );

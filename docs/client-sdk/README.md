@@ -6,9 +6,27 @@ Welcome to the Skaftin Client SDK guides! These documents will help you integrat
 
 ## 📚 Read in Order
 
+0. **[00-QUICK-START.md](./00-QUICK-START.md)** ⭐ NEW
+   - Get started in 5 minutes
+   - Copy-paste ready code
+   - Minimal setup required
+   - Complete folder structure shown
+
+0.5. **[FOLDER_STRUCTURE.md](./FOLDER_STRUCTURE.md)** ⭐ NEW
+   - Complete folder structure reference
+   - File descriptions and purposes
+   - Implementation checklist
+   - Minimal vs complete structure
+
+0.6. **[HOOKS_AND_SERVICES.md](./HOOKS_AND_SERVICES.md)** ⭐ NEW
+   - Complete service implementations
+   - React hooks implementations
+   - Copy-paste ready code
+   - Usage examples
+
 1. **[01-OVERVIEW.md](./01-OVERVIEW.md)**
    - What is the Client SDK
-   - Architecture overview
+   - Architecture overview (now with unified client!)
    - Benefits and features
    - Authentication models
 
@@ -45,10 +63,12 @@ Welcome to the Skaftin Client SDK guides! These documents will help you integrat
 
 7. **[07-APP-USER-AUTHENTICATION.md](./07-APP-USER-AUTHENTICATION.md)** ⭐ UPDATED
    - Application user registration & login (JWT)
+   - **SuperTokens integration** for automatic session management
+   - **Zustand AuthStore** for state management
    - Simplified auth endpoints (no project ID in URL)
    - Role-based access control
    - Custom user fields
-   - Session management with JWT tokens
+   - Session management with automatic token refresh
    - Protected routes & token verification
 
 8. **[08-WEBSOCKET-INTEGRATION.md](./08-WEBSOCKET-INTEGRATION.md)** ⭐ NEW
@@ -64,23 +84,39 @@ By following these guides, you'll have a complete `src/backend/` folder in your 
 
 ```
 src/backend/
-├── config/          → API configuration
+├── client/          → Unified SkaftinClient (NEW!)
+│   └── SkaftinClient.ts → Single client for all API interactions
+├── config/          → API configuration (simplified)
 ├── schemas/         → TypeScript types (from database)
 ├── services/        → API service methods
 │   ├── DataService.ts         → Your custom tables
-│   ├── AppAuthService.ts      → User management (NEW)
-│   └── WebSocketService.ts    → Real-time updates (NEW)
+│   ├── AppAuthService.ts      → User management
+│   └── WebSocketService.ts    → Real-time updates
 ├── hooks/           → React hooks
-│   └── useWebSocket.ts        → WebSocket hooks (NEW)
+│   └── useWebSocket.ts        → WebSocket hooks
 ├── types/           → API response types
-└── utils/           → Auth & request helpers
+└── utils/           → Auth & request helpers (backward compatible)
 ```
 
 ## ⚡ Quick Examples
 
 After setup, using Skaftin in your app is simple:
 
-**Data Access:**
+**Option 1: Unified Client (Recommended - New!)** ⭐
+```typescript
+import { skaftinClient } from './backend';
+
+// Direct API calls - fully typed!
+const response = await skaftinClient.get('/app-api/database/tables/associations/select');
+const associations = response.data;
+
+// Create record
+await skaftinClient.post('/app-api/database/tables/associations/insert', {
+  data: { name: 'New Association' }
+});
+```
+
+**Option 2: Service Classes (Traditional)**
 ```typescript
 import AssociationService from './backend/services/AssociationService';
 
@@ -88,7 +124,7 @@ import AssociationService from './backend/services/AssociationService';
 const associations = await AssociationService.findAll();
 ```
 
-**User Management:** ⭐ NEW
+**User Management:** ⭐
 ```typescript
 import AppAuthService from './backend/services/AppAuthService';
 
@@ -107,7 +143,7 @@ const { users } = await AppAuthService.listUsers({
 });
 ```
 
-**Real-Time Updates:** ⭐ NEW
+**Real-Time Updates:** ⭐
 ```typescript
 import { useAutoRefresh } from './backend/hooks/useWebSocket';
 
@@ -131,7 +167,32 @@ useAutoRefresh(projectId, 'vehicles', () => {
 - **Testing:** 15 minutes
 - **Total:** ~1-2 hours for complete integration
 
-## ⚡ What's New (Updated Nov 2025)
+## ⚡ What's New (Updated Dec 2024)
+
+### ⭐ Unified Client Architecture (NEW!)
+
+✅ **Single Client for Everything**
+- New: `SkaftinClient` - One class handles all API interactions
+- Auto-loads configuration from environment variables
+- No manual initialization needed
+- Automatic authentication header management
+- Built-in JWT token injection for app user requests
+
+✅ **Simplified Setup**
+- Old: Multiple files (config, auth utils, request utils)
+- New: Single `SkaftinClient.ts` file
+- Backward compatible - existing code still works
+
+✅ **Cleaner API**
+```typescript
+// New way (recommended)
+import { skaftinClient } from './backend';
+const data = await skaftinClient.get('/app-api/...');
+
+// Old way (still works)
+import { get } from './backend/utils/request';
+const data = await get('/app-api/...');
+```
 
 ### Simplified Authentication
 
@@ -141,9 +202,10 @@ useAutoRefresh(projectId, 'vehicles', () => {
 - Applies to: Database, Storage, and Auth management routes
 
 ✅ **Cleaner Headers**
-- Use `x-api-key` or `x-access-token` (lowercase)
+- Use `X-API-Key` (capital X) or `x-access-token` for platform authentication
 - Project automatically identified from credentials
 - No need to pass project ID in URLs or headers
+- JWT tokens automatically injected from Zustand AuthStore
 
 ✅ **Two-Layer Authentication Clarified**
 - **Platform Auth** (02-AUTHENTICATION.md) - Your app authenticates with Skaftin
@@ -151,10 +213,12 @@ useAutoRefresh(projectId, 'vehicles', () => {
 
 ### Updated Service Examples
 
+✅ **SuperTokens Integration** - Automatic session management and token refresh  
+✅ **Zustand AuthStore** - State management for user sessions  
 ✅ **AppUserAuthService** - Handle user registration/login/logout  
 ✅ **UserManagementService** - Admin management of users  
 ✅ **Protected Routes** - Token verification patterns  
-✅ **JWT Storage** - Best practices for token storage
+✅ **JWT Storage** - Stored in Zustand with persistence
 
 ---
 

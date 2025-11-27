@@ -99,7 +99,6 @@ export async function handleProjectTool(
             name,
             description,
             schema_name,
-            bucket_name,
             created_at,
             updated_at
           FROM skaftin_system_projects 
@@ -141,6 +140,28 @@ export async function handleProjectTool(
           schemaInfo = { tableCount: 0 };
         }
         
+        // Get buckets for this project
+        let buckets: any[] = [];
+        try {
+          const bucketsResult = await client.query(
+            `SELECT id, bucket_name, description, created_at, updated_at
+             FROM skaftin_system_project_buckets
+             WHERE project_id = $1
+             ORDER BY created_at`,
+            [projectIdInt]
+          );
+          buckets = bucketsResult.rows.map((row: any) => ({
+            id: row.id,
+            name: row.bucket_name,
+            description: row.description,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          }));
+        } catch (error) {
+          // Buckets might not exist yet
+          buckets = [];
+        }
+        
         return {
           content: [{
             type: 'text',
@@ -150,7 +171,7 @@ export async function handleProjectTool(
               name: project.name,
               description: project.description,
               schemaName: project.schema_name,
-              bucketName: project.bucket_name,
+              buckets: buckets,
               createdAt: project.created_at,
               updatedAt: project.updated_at,
               schema: schemaInfo,
@@ -261,7 +282,6 @@ export async function handleProjectTool(
             name,
             description,
             schema_name,
-            bucket_name,
             created_at,
             updated_at
           FROM skaftin_system_projects 
@@ -276,7 +296,6 @@ export async function handleProjectTool(
           name: row.name,
           description: row.description,
           schemaName: row.schema_name,
-          bucketName: row.bucket_name,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         }));
@@ -338,7 +357,6 @@ async function handleProjectToolInternal(
             name,
             description,
             schema_name,
-            bucket_name,
             created_at,
             updated_at
           FROM skaftin_system_projects 
@@ -380,6 +398,28 @@ async function handleProjectToolInternal(
           schemaInfo = { tableCount: 0 };
         }
         
+        // Get buckets for this project
+        let buckets: any[] = [];
+        try {
+          const bucketsResult = await client.query(
+            `SELECT id, bucket_name, description, created_at, updated_at
+             FROM skaftin_system_project_buckets
+             WHERE project_id = $1
+             ORDER BY created_at`,
+            [projectIdInt]
+          );
+          buckets = bucketsResult.rows.map((row: any) => ({
+            id: row.id,
+            name: row.bucket_name,
+            description: row.description,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          }));
+        } catch (error) {
+          // Buckets might not exist yet
+          buckets = [];
+        }
+        
         return {
           content: [{
             type: 'text',
@@ -389,7 +429,7 @@ async function handleProjectToolInternal(
               name: project.name,
               description: project.description,
               schemaName: project.schema_name,
-              bucketName: project.bucket_name,
+              buckets: buckets,
               createdAt: project.created_at,
               updatedAt: project.updated_at,
               schema: schemaInfo,
@@ -500,7 +540,6 @@ async function handleProjectToolInternal(
             name,
             description,
             schema_name,
-            bucket_name,
             created_at,
             updated_at
           FROM skaftin_system_projects 
@@ -515,7 +554,6 @@ async function handleProjectToolInternal(
           name: row.name,
           description: row.description,
           schemaName: row.schema_name,
-          bucketName: row.bucket_name,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         }));

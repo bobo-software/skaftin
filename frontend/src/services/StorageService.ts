@@ -113,6 +113,43 @@ class StorageService {
   }
 
   /**
+   * Upload file with bucket and path in form data
+   * POST /app-api/storage/files
+   * Accepts FormData with: file, bucket, path
+   */
+  static async uploadFileWithFormData(file: File, bucketName: string, filePath: string): Promise<any> {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+      const token = localStorage.getItem('skaftin-token') || '';
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('bucket', bucketName);
+      formData.append('path', filePath);
+
+      // IMPORTANT: Do NOT set Content-Type header when using FormData
+      // The browser will automatically set it to multipart/form-data with boundary
+      const headers: HeadersInit = {};
+      if (token && token !== 'session-managed-by-supertokens') {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${API_BASE_URL}${ApiRoutes.STORAGE.UPLOAD_FILE_FORM()}`, {
+        method: 'POST',
+        headers, // Only Authorization header, no Content-Type!
+        credentials: 'include',
+        body: formData,
+      });
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      return { success: false, error: 'Failed to upload file' };
+    }
+  }
+
+  /**
    * Upload file with custom path (base64)
    */
   static async uploadFileWithPath(
@@ -155,6 +192,44 @@ class StorageService {
   }
 
   /**
+   * Download file with bucket and path as query parameters
+   * GET /app-api/storage/files/download?bucket=xxx&path=yyy&returnUrl=true
+   */
+  static async downloadFileWithQuery(bucketName: string, filePath: string, returnUrl: boolean = true): Promise<any> {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+      const token = localStorage.getItem('skaftin-token') || '';
+      
+      // Encode the path for URL
+      const encodedPath = encodeURIComponent(filePath);
+      const params = new URLSearchParams({
+        bucket: bucketName,
+        path: encodedPath,
+      });
+      if (returnUrl) {
+        params.append('returnUrl', 'true');
+      }
+
+      const headers: HeadersInit = {};
+      if (token && token !== 'session-managed-by-supertokens') {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${API_BASE_URL}${ApiRoutes.STORAGE.DOWNLOAD_FILE_FORM()}?${params.toString()}`, {
+        method: 'GET',
+        headers,
+        credentials: 'include',
+      });
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      return { success: false, error: 'Failed to download file' };
+    }
+  }
+
+  /**
    * Delete file
    */
   static async deleteFile(projectId: string, bucketName: string, filePath: string): Promise<any> {
@@ -166,6 +241,38 @@ class StorageService {
         {}
       );
       
+      return result;
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      return { success: false, error: 'Failed to delete file' };
+    }
+  }
+
+  /**
+   * Delete file with bucket and path in request body
+   * DELETE /app-api/storage/files
+   * Accepts JSON body with: bucket, path
+   */
+  static async deleteFileWithBody(bucketName: string, filePath: string): Promise<any> {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+      const token = localStorage.getItem('skaftin-token') || '';
+      
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      if (token && token !== 'session-managed-by-supertokens') {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${API_BASE_URL}${ApiRoutes.STORAGE.DELETE_FILE_FORM()}`, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ bucket: bucketName, path: filePath }),
+      });
+
+      const result = await response.json();
       return result;
     } catch (error) {
       console.error('Error deleting file:', error);

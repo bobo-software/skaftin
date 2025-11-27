@@ -1,5 +1,23 @@
 # Client SDK - Usage Examples
 
+## ⭐ NEW: Unified Client Approach
+
+**Recommended:** Use the unified `SkaftinClient` for direct API calls:
+
+```typescript
+import { skaftinClient } from './backend';
+
+// Simple and direct
+const response = await skaftinClient.get('/app-api/database/tables/associations/select');
+const associations = response.data;
+```
+
+**Alternative:** Use service classes for more structured code (examples below).
+
+Both approaches work - choose what fits your project!
+
+---
+
 ## ⭐ NEW: App User Authentication Examples
 
 See detailed examples in `07-APP-USER-AUTHENTICATION.md` including:
@@ -19,13 +37,13 @@ See `08-WEBSOCKET-INTEGRATION.md` for complete WebSocket setup, or check example
 
 ## Complete React Component Examples
 
-### Example 1: List View with CRUD
+### Example 1: List View with CRUD (Using Unified Client)
 
 ```typescript
 // components/AssociationsList.tsx
 import { useState, useEffect } from 'react';
-import AssociationService from '../backend/services/AssociationService';
-import { Association, CreateAssociationDto } from '../backend/schemas/Association.schema';
+import { skaftinClient } from '../backend';
+// Or use service: import AssociationService from '../backend/services/AssociationService';
 
 export function AssociationsList() {
   const [associations, setAssociations] = useState<Association[]>([]);

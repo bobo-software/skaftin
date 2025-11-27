@@ -170,6 +170,8 @@ export class AuthUtils {
       phone?: string;
       metadata?: any;
       role_ids?: number[];
+      custom_field_1?: string;
+      custom_field_2?: string;
     },
     createInSuperTokens: boolean = true
   ): Promise<{
@@ -216,8 +218,8 @@ export class AuthUtils {
       // 3. Create in skaftin_system_users table
       const insertQuery = `
         INSERT INTO ${schemaName}.skaftin_system_users 
-        (supertokens_user_id, name, email, password, phone, metadata, is_active, email_verified, phone_verified)
-        VALUES ($1, $2, $3, $4, $5, $6, true, false, false)
+        (supertokens_user_id, name, email, password, phone, metadata, custom_field_1, custom_field_2, is_active, email_verified, phone_verified)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, false, false)
         RETURNING *
       `;
 
@@ -228,6 +230,8 @@ export class AuthUtils {
         hashedPassword,
         userData.phone || null,
         JSON.stringify(userData.metadata || {}),
+        userData.custom_field_1 || null,
+        userData.custom_field_2 || null,
       ]);
 
       const newUser = userResult.rows[0];
