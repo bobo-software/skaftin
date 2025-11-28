@@ -182,6 +182,7 @@ import { createAdminDatabaseRouter } from './routers/AdminDatabaseRouter';
 import { createAdminStorageRouter } from './routers/AdminStorageRouter';
 import { createAdminAuthRouter } from './routers/AdminAuthRouter';
 import { createCommunicationsRouter } from './routers/CommunicationsRouter';
+import { createClientCommunicationsRouter } from './routers/ClientCommunicationsRouter';
 import { createInvitationsRouter } from './routers/InvitationsRouter';
 import { createCredentialsRouter } from './routers/CredentialsRouter';
 import { createAuthRouter } from './routers/AuthRouter';
@@ -232,6 +233,7 @@ app.get('/', (req: Request, res: Response) => {
         app_user_auth: '/app-api/auth',
         storage: '/app-api/storage',
         database: '/app-api/database',
+        communications: '/app-api/communications',
         mcp: '/app-api/mcp',
       },
     },
@@ -266,6 +268,9 @@ const CredentialsRouter = createCredentialsRouter(pool);
 
 // Initialize Auth Management Router (for app user management)
 const AuthManagementRouter = createAuthRouter(pool);
+
+// Initialize Client Communications Router (for app-api routes)
+const ClientCommunicationsRouter = createClientCommunicationsRouter(pool);
 
 // Initialize Admin Router (for managing SuperTokens users)
 const AdminRouter = createAdminRouter(pool);
@@ -330,6 +335,8 @@ app.use('/app-api/auth', AuthManagementRouter);
 app.use('/app-api/storage', createStorageRouter(pool));
 // Database operations (supports both API key and SuperTokens via hybrid auth)
 app.use('/app-api/database', createDatabaseRouter(pool));
+// Communications operations (supports both API key and SuperTokens via hybrid auth)
+app.use('/app-api/communications', ClientCommunicationsRouter);
 // Client MCP operations (restricted tool set, MCP keys/API keys only)
 app.use('/app-api/mcp', ClientMCPRouter);
 

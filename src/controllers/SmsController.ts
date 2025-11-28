@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import CommonUtils from '../utils/CommonUtils';
 import { SmsService } from '../services/sms/SmsService';
+import { HybridAuthRequest } from '../middleware/hybridAuthMiddleware';
 
 export default class SmsController {
   private pool: Pool;
@@ -13,8 +14,14 @@ export default class SmsController {
   // ---------- SMS Providers CRUD ----------
 
   // GET /api/communications/:projectId/sms/providers
-  listProviders = async (req: Request, res: Response): Promise<void> => {
-    const { projectId } = req.params;
+  // GET /app-api/communications/sms/providers
+  listProviders = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
+    // Get projectId from middleware (extracted from API key) or params
+    const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+    if (!projectId) {
+      res.status(400).json({ success: false, error: 'Project ID is required' });
+      return;
+    }
     try {
       const query = `
         SELECT id, project_id, name, provider_type, post_url, is_active, created_at, updated_at
@@ -30,8 +37,15 @@ export default class SmsController {
   };
 
   // GET /api/communications/:projectId/sms/providers/:providerId
-  getProvider = async (req: Request, res: Response): Promise<void> => {
-    const { projectId, providerId } = req.params;
+  // GET /app-api/communications/sms/providers/:providerId
+  getProvider = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
+    // Get projectId from middleware (extracted from API key) or params
+    const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+    if (!projectId) {
+      res.status(400).json({ success: false, error: 'Project ID is required' });
+      return;
+    }
+    const { providerId } = req.params;
     try {
       const query = `
         SELECT id, project_id, name, provider_type, post_url, is_active, created_at, updated_at
@@ -50,8 +64,14 @@ export default class SmsController {
   };
 
   // POST /api/communications/:projectId/sms/providers
-  createProvider = async (req: Request, res: Response): Promise<void> => {
-    const { projectId } = req.params;
+  // POST /app-api/communications/sms/providers
+  createProvider = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
+    // Get projectId from middleware (extracted from API key) or params
+    const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+    if (!projectId) {
+      res.status(400).json({ success: false, error: 'Project ID is required' });
+      return;
+    }
     const { name, provider_type, api_key, api_secret, post_url, is_active } = req.body || {};
     if (!name || !provider_type || !api_key || !api_secret || !post_url) {
       res.status(400).json({ success: false, error: 'Missing required fields' });
@@ -71,8 +91,15 @@ export default class SmsController {
   };
 
   // PUT /api/communications/:projectId/sms/providers/:providerId
-  updateProvider = async (req: Request, res: Response): Promise<void> => {
-    const { projectId, providerId } = req.params;
+  // PUT /app-api/communications/sms/providers/:providerId
+  updateProvider = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
+    // Get projectId from middleware (extracted from API key) or params
+    const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+    if (!projectId) {
+      res.status(400).json({ success: false, error: 'Project ID is required' });
+      return;
+    }
+    const { providerId } = req.params;
     const allowed = ['name', 'provider_type', 'api_key', 'api_secret', 'post_url', 'is_active'];
     const updates = req.body || {};
     const fields: string[] = [];
@@ -109,8 +136,15 @@ export default class SmsController {
   };
 
   // DELETE /api/communications/:projectId/sms/providers/:providerId
-  deleteProvider = async (req: Request, res: Response): Promise<void> => {
-    const { projectId, providerId } = req.params;
+  // DELETE /app-api/communications/sms/providers/:providerId
+  deleteProvider = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
+    // Get projectId from middleware (extracted from API key) or params
+    const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+    if (!projectId) {
+      res.status(400).json({ success: false, error: 'Project ID is required' });
+      return;
+    }
+    const { providerId } = req.params;
     try {
       const query = `DELETE FROM public.sms_providers WHERE id = $1 AND project_id = $2 RETURNING id`;
       const result = await this.pool.query(query, [providerId, projectId]);
@@ -125,14 +159,28 @@ export default class SmsController {
   };
 
   // POST /api/communications/:projectId/sms/send
-  send = async (req: Request, res: Response): Promise<void> => {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (decodedToken instanceof Response) {
-      res.status(401).json({ error: 'Unauthorized' });
+  // POST /app-api/communications/sms/send
+  send = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
+    // Support both SuperTokens and API key auth
+    const isSuperTokensAuth = 'user' in req && req.user && req.user.userId;
+    const isApiKeyAuth = 'credential' in req && req.credential && req.projectId;
+    
+    // Fallback to old auth method for backward compatibility
+    if (!isSuperTokensAuth && !isApiKeyAuth) {
+      const decodedToken = CommonUtils.handleAuthHeader(req);
+      if (decodedToken instanceof Response) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+    }
+
+    // Get projectId from middleware (extracted from API key) or params
+    const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+    if (!projectId) {
+      res.status(400).json({ success: false, error: 'Project ID is required' });
       return;
     }
 
-    const { projectId } = req.params;
     const { messages } = req.body as { messages: { content: string; destination: string }[] };
 
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -142,7 +190,7 @@ export default class SmsController {
 
     try {
       const service = new SmsService(this.pool);
-      const result = await service.send(projectId, messages);
+      const result = await service.send(projectId.toString(), messages);
       if (result.success) {
         res.status(200).json({ success: true, data: result.providerResponse });
         return;
@@ -154,14 +202,28 @@ export default class SmsController {
   };
 
   // POST /api/communications/:projectId/sms/send-basic
-  sendBasic = async (req: Request, res: Response): Promise<void> => {
-    const decodedToken = CommonUtils.handleAuthHeader(req);
-    if (decodedToken instanceof Response) {
-      res.status(401).json({ error: 'Unauthorized' });
+  // POST /app-api/communications/sms/send-basic
+  sendBasic = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
+    // Support both SuperTokens and API key auth
+    const isSuperTokensAuth = 'user' in req && req.user && req.user.userId;
+    const isApiKeyAuth = 'credential' in req && req.credential && req.projectId;
+    
+    // Fallback to old auth method for backward compatibility
+    if (!isSuperTokensAuth && !isApiKeyAuth) {
+      const decodedToken = CommonUtils.handleAuthHeader(req);
+      if (decodedToken instanceof Response) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+    }
+
+    // Get projectId from middleware (extracted from API key) or params
+    const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+    if (!projectId) {
+      res.status(400).json({ success: false, error: 'Project ID is required' });
       return;
     }
 
-    const { projectId } = req.params;
     const { message, destination } = req.body as { message: string; destination: string };
 
     if (!message || !destination) {
@@ -171,7 +233,7 @@ export default class SmsController {
 
     try {
       const service = new SmsService(this.pool);
-      const result = await service.send(projectId, [{ content: message, destination }]);
+      const result = await service.send(projectId.toString(), [{ content: message, destination }]);
       if (result.success) {
         res.status(200).json({ success: true, data: result.providerResponse });
         return;

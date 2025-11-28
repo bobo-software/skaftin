@@ -201,8 +201,12 @@ class AuthUsersController {
    * Get a single user by ID
    * GET /api/auth/:projectId/users/:userId
    */
-  static async getUser(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
-    if (!req.user || !req.user.userId) {
+  static async getUser(req: (SuperTokensAuthenticatedRequest | HybridAuthRequest) & { projectId?: number; schemaName?: string }, res: Response) {
+    // Support both SuperTokens (req.user) and API key (req.credential) authentication
+    const isSuperTokensAuth = 'user' in req && req.user && req.user.userId;
+    const isApiKeyAuth = 'credential' in req && req.credential && req.projectId;
+    
+    if (!isSuperTokensAuth && !isApiKeyAuth) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
@@ -245,7 +249,12 @@ class AuthUsersController {
         return ResponseUtils.error(res, 'User not found', null, null, 404);
       }
 
-      ResponseUtils.success(res, 'User fetched successfully', result.rows[0]);
+      // Remove sensitive fields from response
+      const user = result.rows[0];
+      delete user.supertokens_user_id;
+      delete user.password;
+
+      ResponseUtils.success(res, 'User fetched successfully', user);
     } catch (error) {
       console.error('Error fetching user:', error);
       ResponseUtils.error(res, 'Failed to fetch user', error);
@@ -373,9 +382,14 @@ class AuthUsersController {
   /**
    * Update a user
    * PUT /api/auth/:projectId/users/:userId
+   * PUT /app-api/auth/users/:userId
    */
-  static async updateUser(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
-    if (!req.user || !req.user.userId) {
+  static async updateUser(req: (SuperTokensAuthenticatedRequest | HybridAuthRequest) & { projectId?: number; schemaName?: string }, res: Response) {
+    // Support both SuperTokens (req.user) and API key (req.credential) authentication
+    const isSuperTokensAuth = 'user' in req && req.user && req.user.userId;
+    const isApiKeyAuth = 'credential' in req && req.credential && req.projectId;
+    
+    if (!isSuperTokensAuth && !isApiKeyAuth) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
@@ -486,7 +500,12 @@ class AuthUsersController {
         [parseInt(userId)]
       );
 
-      ResponseUtils.success(res, 'User updated successfully', userWithRoles.rows[0]);
+      // Remove sensitive fields from response
+      const user = userWithRoles.rows[0];
+      delete user.supertokens_user_id;
+      delete user.password;
+
+      ResponseUtils.success(res, 'User updated successfully', user);
     } catch (error) {
       console.error('Error updating user:', error);
       ResponseUtils.error(res, 'Failed to update user', error);

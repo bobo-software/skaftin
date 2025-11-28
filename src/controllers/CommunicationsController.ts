@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import nodemailer from 'nodemailer';
+import { HybridAuthRequest } from '../middleware/hybridAuthMiddleware';
 
 interface EmailProvider {
   id?: number;
@@ -933,9 +934,14 @@ class CommunicationsController {
   /**
    * List all SMS templates for a project
    */
-  listSmsTemplates = async (req: Request, res: Response): Promise<void> => {
+  listSmsTemplates = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
     try {
-      const { projectId } = req.params;
+      // Get projectId from middleware (extracted from API key) or params
+      const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        res.status(400).json({ success: false, error: 'Project ID is required' });
+        return;
+      }
 
       console.log('[CommunicationsController] Listing SMS templates for project:', projectId);
 
@@ -987,9 +993,15 @@ class CommunicationsController {
   /**
    * Get a single SMS template by ID
    */
-  getSmsTemplate = async (req: Request, res: Response): Promise<void> => {
+  getSmsTemplate = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
     try {
-      const { projectId, templateId } = req.params;
+      // Get projectId from middleware (extracted from API key) or params
+      const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        res.status(400).json({ success: false, error: 'Project ID is required' });
+        return;
+      }
+      const { templateId } = req.params;
 
       const query = `
         SELECT id, project_id, name, content, variables, 
@@ -1042,9 +1054,14 @@ class CommunicationsController {
   /**
    * Create a new SMS template
    */
-  createSmsTemplate = async (req: Request, res: Response): Promise<void> => {
+  createSmsTemplate = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
     try {
-      const { projectId } = req.params;
+      // Get projectId from middleware (extracted from API key) or params
+      const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        res.status(400).json({ success: false, error: 'Project ID is required' });
+        return;
+      }
       const { name, content, variables } = req.body;
 
       if (!name || !content) {
@@ -1113,9 +1130,15 @@ class CommunicationsController {
   /**
    * Update an existing SMS template
    */
-  updateSmsTemplate = async (req: Request, res: Response): Promise<void> => {
+  updateSmsTemplate = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
     try {
-      const { projectId, templateId } = req.params;
+      // Get projectId from middleware (extracted from API key) or params
+      const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        res.status(400).json({ success: false, error: 'Project ID is required' });
+        return;
+      }
+      const { templateId } = req.params;
       const { name, content, variables } = req.body;
 
       const updates: string[] = [];
@@ -1206,9 +1229,15 @@ class CommunicationsController {
   /**
    * Delete an SMS template
    */
-  deleteSmsTemplate = async (req: Request, res: Response): Promise<void> => {
+  deleteSmsTemplate = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
     try {
-      const { projectId, templateId } = req.params;
+      // Get projectId from middleware (extracted from API key) or params
+      const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        res.status(400).json({ success: false, error: 'Project ID is required' });
+        return;
+      }
+      const { templateId } = req.params;
 
       const query = `
         DELETE FROM skaftin_system_sms_templates

@@ -353,6 +353,7 @@ class DatabaseController {
 
       let query = `SELECT ${selectClause} FROM "${tableName}"`;
       const values: any[] = [];
+      let hasWhereClause = false;
 
       if (where && Object.keys(where).length > 0) {
         const whereColumns = Object.keys(where);
@@ -360,6 +361,26 @@ class DatabaseController {
         const whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
         query += ` WHERE ${whereClause}`;
         values.push(...whereValues);
+        hasWhereClause = true;
+      }
+
+      // Apply organization filter for app users (client-side requests)
+      // Only if the column exists in the table (for app-wide tables that don't have organization columns)
+      if (req.organisationFilter && 'appUser' in req) {
+        const orgFilter = req.organisationFilter;
+        const columnExists = await DatabaseController.columnExists(client, tableName, orgFilter.field);
+        
+        if (columnExists) {
+          if (hasWhereClause) {
+            query += ` AND "${orgFilter.field}" = $${values.length + 1}`;
+          } else {
+            query += ` WHERE "${orgFilter.field}" = $${values.length + 1}`;
+            hasWhereClause = true;
+          }
+          values.push(orgFilter.value);
+        } else {
+          console.log(`  └─ ⚠️  Column ${orgFilter.field} does not exist in table ${tableName}, skipping organization filter (app-wide table)`);
+        }
       }
 
       if (limit) {
