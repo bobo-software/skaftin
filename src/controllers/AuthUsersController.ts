@@ -263,10 +263,28 @@ class AuthUsersController {
 
   /**
    * Create a new user
-   * POST /api/auth/:projectId/users
+   * POST /api/auth/:projectId/users (SuperTokens)
+   * POST /app-api/auth/users (API key)
    */
-  static async createUser(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
-    if (!req.user || !req.user.userId) {
+  static async createUser(req: (SuperTokensAuthenticatedRequest | HybridAuthRequest) & { projectId?: number; schemaName?: string }, res: Response) {
+    // Support both SuperTokens (req.user or req.session) and API key (req.credential) authentication
+    const hybridReq = req as HybridAuthRequest;
+    const superTokensReq = req as SuperTokensAuthenticatedRequest;
+    
+    const isSuperTokensAuth = (superTokensReq.user && superTokensReq.user.userId) || 
+                              (hybridReq.session && hybridReq.authType === 'supertokens');
+    const isApiKeyAuth = hybridReq.credential && hybridReq.credential.projectId && hybridReq.projectId;
+    
+    console.log('🔐 [CreateUser] Authentication check:');
+    console.log('  └─ Has req.user:', !!superTokensReq.user);
+    console.log('  └─ Has req.credential:', !!hybridReq.credential);
+    console.log('  └─ Has req.session:', !!hybridReq.session);
+    console.log('  └─ authType:', hybridReq.authType);
+    console.log('  └─ projectId:', hybridReq.projectId);
+    console.log('  └─ isSuperTokensAuth:', isSuperTokensAuth);
+    console.log('  └─ isApiKeyAuth:', isApiKeyAuth);
+    
+    if (!isSuperTokensAuth && !isApiKeyAuth) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
