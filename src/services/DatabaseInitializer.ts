@@ -469,6 +469,49 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize sms_providers table using Drizzle
+   * Always creates in public schema
+   */
+  async initializeSmsProvidersTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.sms_providers (
+          id SERIAL PRIMARY KEY,
+          project_id VARCHAR(255) NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('mymobileapi', 'sa_mobile_sms')),
+          api_key TEXT NOT NULL,
+          api_secret TEXT NOT NULL,
+          post_url VARCHAR(500) NOT NULL,
+          is_active BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(project_id, name)
+        );
+      `);
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ SMS providers table creation error:', err.message);
+      }
+    }
+
+    try {
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_sms_providers_project_id ON public.sms_providers(project_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_sms_providers_is_active ON public.sms_providers(is_active);
+      `);
+    } catch (err: any) {
+      if (err.code !== '42P07') {
+        console.error('❌ SMS providers index creation error:', err.message);
+      }
+    }
+
+    console.log('✅ SMS providers table initialized');
+  }
+
+  /**
    * Initialize email_templates table using Drizzle
    * Always creates in public schema
    */
@@ -1632,6 +1675,7 @@ export class DatabaseInitializer {
     await this.initializeProjectsTable();
     await this.initializeProjectBucketsTable();
     await this.initializeEmailProvidersTable();
+    await this.initializeSmsProvidersTable();
     await this.initializeEmailTemplatesTable();
     await this.initializeSmsTemplatesTable();
     await this.initializeProjectMembersTable();

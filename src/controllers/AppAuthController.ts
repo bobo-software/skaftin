@@ -296,6 +296,11 @@ class AppAuthController {
           custom_field_2: user.custom_field_2,
           is_active: user.is_active,
         },
+        organisation: {
+          name: orgContext.organisation_name,
+          id: orgContext.organisation_id,
+          is_admin: orgContext.is_admin,
+        },
         session: {
           accessToken,
           // Refresh token is handled automatically by SuperTokens via /auth/session/refresh endpoint
@@ -563,6 +568,11 @@ class AppAuthController {
 
       ResponseUtils.success(res, 'Login successful', {
         user,
+        organisation: {
+          name: orgContext.organisation_name,
+          id: orgContext.organisation_id,
+          is_admin: orgContext.is_admin,
+        },
         session: {
           accessToken,
           // Refresh token is handled automatically by SuperTokens via /auth/session/refresh endpoint

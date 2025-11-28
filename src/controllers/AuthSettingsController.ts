@@ -1025,7 +1025,7 @@ Skaftin Platform - Email Testing Service
 
       const providersResult = await AuthSettingsController.pool.query(
         `SELECT id, name, provider_type, post_url, is_active
-         FROM sms_providers
+         FROM public.sms_providers
          WHERE project_id = $1 AND is_active = true
          ORDER BY created_at ASC`,
         [projectId]
@@ -1076,7 +1076,7 @@ Skaftin Platform - Email Testing Service
       // Fetch provider credentials
       const providerQuery = `
         SELECT provider_type, api_key, api_secret, post_url, is_active
-        FROM sms_providers
+        FROM public.sms_providers
         WHERE id = $1 AND project_id = $2 AND is_active = true
       `;
       const providerResult = await AuthSettingsController.pool.query(providerQuery, [smsProviderId, projectId]);

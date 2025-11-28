@@ -541,7 +541,7 @@ export async function handleCommunicationsTool(
       const query = `
         SELECT id, project_id, name, provider_type, api_key, api_secret, post_url,
                is_active, created_at, updated_at
-        FROM sms_providers
+        FROM public.sms_providers
         WHERE project_id = $1
         ORDER BY created_at DESC
       `;
@@ -558,7 +558,7 @@ export async function handleCommunicationsTool(
       const query = `
         SELECT id, project_id, name, provider_type, api_key, api_secret, post_url,
                is_active, created_at, updated_at
-        FROM sms_providers
+        FROM public.sms_providers
         WHERE id = $1 AND project_id = $2
       `;
       const result = await pool.query(query, [providerId, projectId]);
@@ -574,7 +574,7 @@ export async function handleCommunicationsTool(
     case 'create_sms_provider': {
       const { projectId, name, provider_type, api_key, api_secret, post_url, is_active } = args;
       const query = `
-        INSERT INTO sms_providers
+        INSERT INTO public.sms_providers
         (project_id, name, provider_type, api_key, api_secret, post_url, is_active)
         VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, true))
         RETURNING id, project_id, name, provider_type, post_url, is_active, created_at, updated_at
@@ -603,7 +603,7 @@ export async function handleCommunicationsTool(
       fields.push('updated_at = CURRENT_TIMESTAMP');
       values.push(providerId, projectId);
       const query = `
-        UPDATE sms_providers
+        UPDATE public.sms_providers
         SET ${fields.join(', ')}
         WHERE id = $${idx++} AND project_id = $${idx++}
         RETURNING id, project_id, name, provider_type, post_url, is_active, created_at, updated_at
@@ -617,7 +617,7 @@ export async function handleCommunicationsTool(
 
     case 'delete_sms_provider': {
       const { projectId, providerId } = args;
-      const query = `DELETE FROM sms_providers WHERE id = $1 AND project_id = $2 RETURNING id`;
+      const query = `DELETE FROM public.sms_providers WHERE id = $1 AND project_id = $2 RETURNING id`;
       const result = await pool.query(query, [providerId, projectId]);
       if (result.rows.length === 0) {
         return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'SMS provider not found' }, null, 2) }] };
@@ -634,7 +634,7 @@ export async function handleCommunicationsTool(
       // Get active provider
       const providerQuery = `
         SELECT provider_type, api_key, api_secret, post_url, is_active
-        FROM sms_providers
+        FROM public.sms_providers
         WHERE project_id = $1 AND is_active = true
         ORDER BY updated_at DESC, id DESC
         LIMIT 1
