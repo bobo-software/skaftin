@@ -566,11 +566,18 @@ export const createResolvers = (pool: Pool) => ({
           });
         }
 
+        // Check if where clause is empty (no keys)
+        const whereColumns = Object.keys(where);
+        if (whereColumns.length === 0) {
+          throw new GraphQLError('Where clause cannot be empty. At least one condition is required for safety.', {
+            extensions: { code: 'BAD_USER_INPUT' }
+          });
+        }
+
         const setColumns = Object.keys(data);
         const setValues = Object.values(data);
         const setClause = setColumns.map((col, i) => `"${col}" = $${i + 1}`).join(', ');
 
-        const whereColumns = Object.keys(where);
         const whereValues = Object.values(where);
         const whereClause = whereColumns.map((col, i) => `"${col}" = $${setValues.length + i + 1}`).join(' AND ');
 
@@ -613,7 +620,14 @@ export const createResolvers = (pool: Pool) => ({
           });
         }
 
+        // Check if where clause is empty (no keys)
         const whereColumns = Object.keys(where);
+        if (whereColumns.length === 0) {
+          throw new GraphQLError('Where clause cannot be empty. At least one condition is required for safety.', {
+            extensions: { code: 'BAD_USER_INPUT' }
+          });
+        }
+
         const whereValues = Object.values(where);
         const whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
 

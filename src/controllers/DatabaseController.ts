@@ -664,6 +664,12 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Data and where clause are required', null, null, 400);
       }
 
+      // Check if where clause is empty (no keys)
+      const whereColumns = Object.keys(where);
+      if (whereColumns.length === 0) {
+        return ResponseUtils.error(res, 'Where clause cannot be empty. At least one condition is required for safety.', null, null, 400);
+      }
+
       const client = await DatabaseController.getProjectClient(projectId);
       
       if (!client) {
@@ -674,7 +680,6 @@ class DatabaseController {
       const setValues = Object.values(data);
       const setClause = setColumns.map((col, i) => `"${col}" = $${i + 1}`).join(', ');
 
-      const whereColumns = Object.keys(where);
       const whereValues = Object.values(where);
       let whereClause = whereColumns.map((col, i) => `"${col}" = $${setValues.length + i + 1}`).join(' AND ');
 
@@ -725,13 +730,18 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Where clause is required', null, null, 400);
       }
 
+      // Check if where clause is empty (no keys)
+      const whereColumns = Object.keys(where);
+      if (whereColumns.length === 0) {
+        return ResponseUtils.error(res, 'Where clause cannot be empty. At least one condition is required for safety.', null, null, 400);
+      }
+
       const client = await DatabaseController.getProjectClient(projectId);
       
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      const whereColumns = Object.keys(where);
       const whereValues = Object.values(where);
       let whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
 
