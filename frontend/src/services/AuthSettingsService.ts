@@ -21,6 +21,7 @@ export interface AuthSettings {
   send_password_reset_sms?: boolean;
   send_welcome_email: boolean;
   send_welcome_sms?: boolean;
+  require_otp_for_password_change?: boolean;
   settings_json: any;
   created_at: string;
   updated_at: string;
@@ -45,6 +46,7 @@ export interface UpdateAuthSettingsRequest {
   send_password_reset_sms?: boolean;
   send_welcome_email?: boolean;
   send_welcome_sms?: boolean;
+  require_otp_for_password_change?: boolean;
   settings_json?: any;
 }
 

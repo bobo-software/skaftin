@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { AppUserAuthenticatedRequest } from '../middleware/appUserAuthMiddleware';
 import { AuthEmailService } from '../services/AuthEmailService';
+import { SmsOtpService } from '../services/SmsOtpService';
 import EmailPassword from "supertokens-node/recipe/emailpassword";
 import Session from "supertokens-node/recipe/session";
 import { convertToRecipeUserId } from "supertokens-node";
@@ -17,10 +18,12 @@ import { createProjectScopedEmail, extractOriginalEmail } from '../middleware/ap
 class AppAuthController {
   private static pool: Pool;
   private static emailService: AuthEmailService;
+  private static smsOtpService: SmsOtpService;
 
   static initialize(pool: Pool) {
     AppAuthController.pool = pool;
     AppAuthController.emailService = new AuthEmailService(pool);
+    AppAuthController.smsOtpService = new SmsOtpService(pool);
   }
 
   /**
@@ -54,10 +57,20 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
 
-      const { name, email, password, phone, metadata, custom_field_1, custom_field_2, role_id, role_key } = req.body;
+      const { name, email, password, phone, metadata, custom_field_1, custom_field_2, role_id, role_key, otp_method } = req.body;
 
       if (!name || !email || !password) {
         return ResponseUtils.error(res, 'Name, email, and password are required', null, null, 400);
+      }
+
+      // Validate otp_method if provided
+      if (otp_method && !['email', 'sms'].includes(otp_method)) {
+        return ResponseUtils.error(res, 'Invalid otp_method. Must be "email", "sms", or null', null, null, 400);
+      }
+
+      // If SMS OTP requested, phone number is required
+      if (otp_method === 'sms' && !phone) {
+        return ResponseUtils.error(res, 'Phone number is required for SMS OTP verification', null, null, 400);
       }
 
       // Check if registration is enabled and get email settings
@@ -90,8 +103,8 @@ class AppAuthController {
       }
 
       // Determine if user should be active immediately or wait for OTP verification
-      const requiresOTP = emailSettings.send_registration_email && emailSettings.email_provider_id;
-      const isActive = !requiresOTP; // Active immediately if OTP not required
+      // User is inactive if otp_method is provided (email or sms)
+      const isActive = !otp_method; // Active immediately if no OTP method specified
 
       // Create project-scoped email for SuperTokens (allows same email across projects)
       const supertokensEmail = createProjectScopedEmail(email, projectId);
@@ -214,17 +227,22 @@ class AppAuthController {
       const accessToken = session.getAccessToken();
 
       // ============================================
-      // SEND EMAILS BASED ON SETTINGS
+      // SEND OTP BASED ON METHOD
       // ============================================
 
       let otpSent = false;
+      let otpMethod: string | null = null;
 
-      // Send registration email (with OTP if configured)
-      if (emailSettings.send_registration_email && emailSettings.email_provider_id) {
+      if (otp_method === 'email') {
+        // Send OTP via email
+        if (!emailSettings.email_provider_id) {
+          return ResponseUtils.error(res, 'Email provider not configured for this project', null, null, 500);
+        }
+
         const otp = crypto.randomInt(100000, 999999).toString();
         const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
         
-        console.log(`📧 Sending registration email with OTP to ${email}...`);
+        console.log(`📧 Sending OTP via email to ${email}...`);
         
         const registrationResult = await AppAuthController.emailService.sendRegistrationEmail(
           projectId,
@@ -234,36 +252,67 @@ class AppAuthController {
         );
         
         if (registrationResult.success) {
-          console.log('   └─ ✅ Registration email sent with OTP');
+          console.log('   └─ ✅ OTP email sent');
           
-          // Store OTP in user metadata
+          // Store OTP in database table
           await AppAuthController.pool.query(
-            `UPDATE ${schemaName}.skaftin_system_users 
-             SET metadata = jsonb_set(
-               jsonb_set(COALESCE(metadata, '{}'), '{otp}', $1::jsonb),
-               '{otp_expires_at}', $2::jsonb
-             )
-             WHERE id = $3`,
-            [JSON.stringify(otp), JSON.stringify(otpExpiresAt.toISOString()), user.id]
+            `INSERT INTO ${schemaName}.skaftin_system_otp_verifications 
+             (user_id, otp_code, otp_method, destination, expires_at)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [user.id, otp, 'email', email, otpExpiresAt]
           );
           
           otpSent = true;
+          otpMethod = 'email';
         } else {
-          console.warn('   └─ ⚠️ Failed to send registration email:', registrationResult.error);
+          console.warn('   └─ ⚠️ Failed to send OTP email:', registrationResult.error);
           // If OTP email fails, activate user immediately (don't block registration)
-          if (!user.is_active) {
-            await AppAuthController.pool.query(
-              `UPDATE ${schemaName}.skaftin_system_users SET is_active = true WHERE id = $1`,
-              [user.id]
-            );
-            user.is_active = true;
-          }
+          await AppAuthController.pool.query(
+            `UPDATE ${schemaName}.skaftin_system_users SET is_active = true WHERE id = $1`,
+            [user.id]
+          );
+          user.is_active = true;
+        }
+      } else if (otp_method === 'sms') {
+        // Send OTP via SMS
+        const otp = crypto.randomInt(100000, 999999).toString();
+        const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        
+        console.log(`📱 Sending OTP via SMS to ${phone}...`);
+        
+        const smsResult = await AppAuthController.smsOtpService.sendOTP(
+          projectId.toString(),
+          phone,
+          otp,
+          name
+        );
+        
+        if (smsResult.success) {
+          console.log('   └─ ✅ OTP SMS sent');
+          
+          // Store OTP in database table
+          await AppAuthController.pool.query(
+            `INSERT INTO ${schemaName}.skaftin_system_otp_verifications 
+             (user_id, otp_code, otp_method, destination, expires_at)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [user.id, otp, 'sms', phone, otpExpiresAt]
+          );
+          
+          otpSent = true;
+          otpMethod = 'sms';
+        } else {
+          console.warn('   └─ ⚠️ Failed to send OTP SMS:', smsResult.error);
+          // If OTP SMS fails, activate user immediately (don't block registration)
+          await AppAuthController.pool.query(
+            `UPDATE ${schemaName}.skaftin_system_users SET is_active = true WHERE id = $1`,
+            [user.id]
+          );
+          user.is_active = true;
         }
       }
 
-      // Send welcome email ONLY if OTP is not required
-      // (If OTP required, welcome email is sent after OTP verification)
-      if (!requiresOTP && emailSettings.send_welcome_email && emailSettings.email_provider_id) {
+      // Send welcome email if no OTP required and welcome email is enabled
+      if (!otp_method && emailSettings.send_welcome_email && emailSettings.email_provider_id) {
         console.log(`📧 Sending welcome email to ${email}...`);
         
         const welcomeResult = await AppAuthController.emailService.sendWelcomeEmail(
@@ -279,12 +328,15 @@ class AppAuthController {
         }
       }
 
-      // Note: Email sending failures are logged but don't prevent registration
+      // Note: Email/SMS sending failures are logged but don't prevent registration
       // User can still log in and use the app
 
-      const responseMessage = otpSent 
-        ? 'User registered successfully. Please check your email for the OTP code to activate your account.'
-        : 'User registered successfully';
+      let responseMessage = 'User registered successfully';
+      if (otpSent && otpMethod === 'email') {
+        responseMessage = 'User registered successfully. Please check your email for the OTP code to activate your account.';
+      } else if (otpSent && otpMethod === 'sms') {
+        responseMessage = 'User registered successfully. Please check your phone for the OTP code to activate your account.';
+      }
 
       ResponseUtils.success(res, responseMessage, {
         user: {
@@ -306,8 +358,9 @@ class AppAuthController {
           // Refresh token is handled automatically by SuperTokens via /auth/session/refresh endpoint
         },
         requires_otp_verification: otpSent,
+        otp_method: otpMethod,
         message: otpSent 
-          ? 'Check your email for OTP code. Your account will be activated after verification.'
+          ? `Check your ${otpMethod} for OTP code. Your account will be activated after verification.`
           : 'Account is active and ready to use.'
       }, 201);
     } catch (error) {
@@ -708,15 +761,15 @@ class AppAuthController {
 
       console.log('🔐 [verifyOTP] Verifying OTP for user registration...');
 
-      // Get user with OTP data
+      // Get user
       let userQuery = '';
       let queryParams: any[] = [];
 
       if (user_id) {
-        userQuery = `SELECT id, name, email, metadata, is_active FROM ${schemaName}.skaftin_system_users WHERE id = $1`;
+        userQuery = `SELECT id, name, email, phone, is_active FROM ${schemaName}.skaftin_system_users WHERE id = $1`;
         queryParams = [parseInt(user_id)];
       } else {
-        userQuery = `SELECT id, name, email, metadata, is_active FROM ${schemaName}.skaftin_system_users WHERE email = $1`;
+        userQuery = `SELECT id, name, email, phone, is_active FROM ${schemaName}.skaftin_system_users WHERE email = $1`;
         queryParams = [email];
       }
 
@@ -727,41 +780,85 @@ class AppAuthController {
       }
 
       const user = userResult.rows[0];
-      const metadata = user.metadata || {};
 
       console.log('   └─ User found:', user.email);
       console.log('   └─ User active status:', user.is_active);
 
-      // Check if OTP exists
-      if (!metadata.otp) {
+      // Get pending OTP record
+      const otpResult = await AppAuthController.pool.query(
+        `SELECT id, otp_code, otp_method, expires_at, attempts 
+         FROM ${schemaName}.skaftin_system_otp_verifications 
+         WHERE user_id = $1 AND status = 'pending'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [user.id]
+      );
+
+      if (otpResult.rows.length === 0) {
         return ResponseUtils.error(
           res,
-          'No OTP found for this user. OTP may have already been verified or expired.',
+          'No pending OTP found for this user. OTP may have already been verified or expired.',
           null,
           null,
           400
         );
       }
 
+      const otpRecord = otpResult.rows[0];
+
       // Check if OTP is expired
-      if (metadata.otp_expires_at) {
-        const expiresAt = new Date(metadata.otp_expires_at);
-        if (expiresAt < new Date()) {
-          return ResponseUtils.error(
-            res,
-            'OTP code has expired. Please request a new registration or contact support.',
-            null,
-            null,
-            400
-          );
-        }
+      const expiresAt = new Date(otpRecord.expires_at);
+      if (expiresAt < new Date()) {
+        // Mark as expired
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+        
+        return ResponseUtils.error(
+          res,
+          'OTP code has expired. Please request a new OTP code.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Check if max attempts reached
+      if (otpRecord.attempts >= 3) {
+        // Mark as failed
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+        
+        return ResponseUtils.error(
+          res,
+          'Maximum verification attempts exceeded. Please request a new OTP code.',
+          null,
+          null,
+          400
+        );
       }
 
       // Verify OTP code
-      if (metadata.otp !== code) {
+      if (otpRecord.otp_code !== code) {
+        // Increment attempts
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+        
+        const remainingAttempts = 3 - (otpRecord.attempts + 1);
         return ResponseUtils.error(
           res,
-          'Invalid OTP code. Please check the code and try again.',
+          `Invalid OTP code. ${remainingAttempts} attempt(s) remaining.`,
           null,
           null,
           400
@@ -770,12 +867,20 @@ class AppAuthController {
 
       console.log('   └─ ✅ OTP verified successfully');
 
-      // Activate user and mark email as verified
+      // Mark OTP as verified
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+         SET status = 'verified', verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [otpRecord.id]
+      );
+
+      // Activate user and mark as verified based on OTP method
+      const verificationField = otpRecord.otp_method === 'email' ? 'email_verified' : 'phone_verified';
       await AppAuthController.pool.query(
         `UPDATE ${schemaName}.skaftin_system_users 
          SET is_active = true,
-             email_verified = true,
-             metadata = metadata - 'otp' - 'otp_expires_at',
+             ${verificationField} = true,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = $1`,
         [user.id]
@@ -821,6 +926,1015 @@ class AppAuthController {
       });
     } catch (error) {
       console.error('Error verifying OTP:', error);
+      ResponseUtils.error(res, 'Failed to verify OTP', error);
+    }
+  }
+
+  /**
+   * Send forgot password OTP
+   * 
+   * Sends a one-time password to the user's email or phone for password reset.
+   * This endpoint is for APP USERS only (not platform admins).
+   * 
+   * Security Features:
+   * - No user enumeration (same response for non-existent emails)
+   * - OTP expires in 10 minutes
+   * - Invalidates previous password reset OTPs
+   * - Masked email/phone in response
+   * 
+   * POST /api/app-auth/auth/forgot-password (with x-api-key or x-access-token)
+   * POST /api/app-auth/:projectId/auth/forgot-password (backward compatibility)
+   * 
+   * Request body: { email: string, method?: 'email' | 'sms' }
+   */
+  static async sendForgotPasswordOTP(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware (extracted from API key/token) or URL param
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
+      }
+
+      const { email, method } = req.body;
+
+      if (!email) {
+        return ResponseUtils.error(res, 'Email is required', null, null, 400);
+      }
+
+      // Validate method if provided (defaults to 'email')
+      const otpMethod = method || 'email';
+      if (!['email', 'sms'].includes(otpMethod)) {
+        return ResponseUtils.error(res, 'Invalid method. Must be "email" or "sms"', null, null, 400);
+      }
+
+      console.log(`🔐 [sendForgotPasswordOTP] Processing forgot password request for: ${email}`);
+
+      // Check if password reset is enabled
+      const settingsResult = await AppAuthController.pool.query(
+        `SELECT auth_enabled, enable_password_reset, email_provider_id
+         FROM skaftin_system_auth_settings WHERE project_id = $1`,
+        [projectId]
+      );
+
+      if (settingsResult.rows.length === 0 || !settingsResult.rows[0].auth_enabled) {
+        return ResponseUtils.error(res, 'Authentication is not enabled for this project', null, null, 403);
+      }
+
+      if (!settingsResult.rows[0].enable_password_reset) {
+        return ResponseUtils.error(res, 'Password reset is disabled for this project', null, null, 403);
+      }
+
+      const emailSettings = settingsResult.rows[0];
+
+      // Check if user exists
+      const userResult = await AppAuthController.pool.query(
+        `SELECT id, name, email, phone FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
+        [email]
+      );
+
+      if (userResult.rows.length === 0) {
+        // For security, don't reveal if email exists or not
+        return ResponseUtils.success(res, 'If the email exists, an OTP code has been sent', {
+          message: 'If the email exists in our system, you will receive an OTP code shortly.',
+        });
+      }
+
+      const user = userResult.rows[0];
+
+      console.log(`   └─ User found: ${user.email}`);
+
+      // If SMS method is requested, validate phone number
+      if (otpMethod === 'sms' && !user.phone) {
+        return ResponseUtils.error(res, 'Phone number not available for this account. Please use email method.', null, null, 400);
+      }
+
+      // Generate OTP code
+      const otp = crypto.randomInt(100000, 999999).toString();
+      const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      // Invalidate any existing pending password reset OTPs for this user
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+         SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1 AND purpose = 'password_reset' AND status = 'pending'`,
+        [user.id]
+      );
+
+      // Store OTP in database
+      await AppAuthController.pool.query(
+        `INSERT INTO ${schemaName}.skaftin_system_otp_verifications 
+         (user_id, otp_code, otp_method, destination, expires_at, purpose)
+         VALUES ($1, $2, $3, $4, $5, 'password_reset')`,
+        [user.id, otp, otpMethod, otpMethod === 'email' ? user.email : user.phone, otpExpiresAt]
+      );
+
+      console.log(`   └─ OTP generated and stored`);
+
+      // Send OTP based on method
+      let otpSent = false;
+      let errorMessage: string | undefined;
+
+      if (otpMethod === 'email') {
+        if (!emailSettings.email_provider_id) {
+          return ResponseUtils.error(res, 'Email provider not configured for this project', null, null, 500);
+        }
+
+        console.log(`📧 Sending password reset OTP via email to ${user.email}...`);
+
+        // Send via email using custom message
+        const emailResult = await AppAuthController.emailService.sendPasswordResetOTP(
+          projectId,
+          user.email,
+          user.name,
+          otp
+        );
+
+        if (emailResult.success) {
+          console.log('   └─ ✅ OTP email sent');
+          otpSent = true;
+        } else {
+          console.warn('   └─ ⚠️ Failed to send OTP email:', emailResult.error);
+          errorMessage = emailResult.error;
+        }
+      } else if (otpMethod === 'sms') {
+        console.log(`📱 Sending password reset OTP via SMS to ${user.phone}...`);
+
+        const smsResult = await AppAuthController.smsOtpService.sendPasswordResetOTP(
+          projectId.toString(),
+          user.phone,
+          otp,
+          user.name
+        );
+
+        if (smsResult.success) {
+          console.log('   └─ ✅ OTP SMS sent');
+          otpSent = true;
+        } else {
+          console.warn('   └─ ⚠️ Failed to send OTP SMS:', smsResult.error);
+          errorMessage = smsResult.error;
+        }
+      }
+
+      if (!otpSent) {
+        return ResponseUtils.error(
+          res,
+          `Failed to send OTP via ${otpMethod}`,
+          null,
+          errorMessage,
+          500
+        );
+      }
+
+      ResponseUtils.success(res, `OTP sent successfully via ${otpMethod}`, {
+        message: `A verification code has been sent to your ${otpMethod}. Please check and enter the code.`,
+        method: otpMethod,
+        destination: otpMethod === 'email' 
+          ? user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') // Mask email
+          : user.phone.replace(/(\d{3})(\d*)(\d{2})/, '$1***$3'), // Mask phone
+      });
+    } catch (error) {
+      console.error('Error sending forgot password OTP:', error);
+      ResponseUtils.error(res, 'Failed to send OTP', error);
+    }
+  }
+
+  /**
+   * Verify forgot password OTP
+   * 
+   * Verifies the OTP code sent to the user and returns a short-lived reset token.
+   * 
+   * Security Features:
+   * - Max 3 verification attempts
+   * - OTP expires in 10 minutes
+   * - Reset token expires in 15 minutes
+   * - One-time use OTP (marked as verified after success)
+   * 
+   * POST /api/app-auth/auth/verify-forgot-password-otp (with x-api-key or x-access-token)
+   * POST /api/app-auth/:projectId/auth/verify-forgot-password-otp (backward compatibility)
+   * 
+   * Request body: { email: string, code: string }
+   * Response: { reset_token: string, expires_in_minutes: 15 }
+   */
+  static async verifyForgotPasswordOTP(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware (extracted from API key/token) or URL param
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
+      }
+
+      const { email, code } = req.body;
+
+      if (!email || !code) {
+        return ResponseUtils.error(res, 'Email and OTP code are required', null, null, 400);
+      }
+
+      console.log('🔐 [verifyForgotPasswordOTP] Verifying password reset OTP...');
+
+      // Get user
+      const userResult = await AppAuthController.pool.query(
+        `SELECT id, name, email FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
+        [email]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+
+      console.log('   └─ User found:', user.email);
+
+      // Get pending password reset OTP record
+      const otpResult = await AppAuthController.pool.query(
+        `SELECT id, otp_code, otp_method, expires_at, attempts 
+         FROM ${schemaName}.skaftin_system_otp_verifications 
+         WHERE user_id = $1 AND purpose = 'password_reset' AND status = 'pending'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [user.id]
+      );
+
+      if (otpResult.rows.length === 0) {
+        return ResponseUtils.error(
+          res,
+          'No pending OTP found. Please request a new password reset code.',
+          null,
+          null,
+          400
+        );
+      }
+
+      const otpRecord = otpResult.rows[0];
+
+      // Check if OTP is expired
+      const expiresAt = new Date(otpRecord.expires_at);
+      if (expiresAt < new Date()) {
+        // Mark as expired
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+
+        return ResponseUtils.error(
+          res,
+          'OTP code has expired. Please request a new password reset code.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Check if max attempts reached
+      if (otpRecord.attempts >= 3) {
+        // Mark as failed
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+
+        return ResponseUtils.error(
+          res,
+          'Maximum verification attempts exceeded. Please request a new password reset code.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Verify OTP code
+      if (otpRecord.otp_code !== code) {
+        // Increment attempts
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+
+        const remainingAttempts = 3 - (otpRecord.attempts + 1);
+        return ResponseUtils.error(
+          res,
+          `Invalid OTP code. ${remainingAttempts} attempt(s) remaining.`,
+          null,
+          null,
+          400
+        );
+      }
+
+      console.log('   └─ ✅ OTP verified successfully');
+
+      // Mark OTP as verified
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+         SET status = 'verified', verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [otpRecord.id]
+      );
+
+      // Generate a short-lived reset token for the password reset step
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const resetTokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+      // Store reset token in user metadata
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_users 
+         SET metadata = jsonb_set(
+               jsonb_set(COALESCE(metadata, '{}'), '{password_reset_token}', $1::jsonb),
+               '{password_reset_expires_at}', $2::jsonb
+             ),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3`,
+        [JSON.stringify(resetToken), JSON.stringify(resetTokenExpiresAt.toISOString()), user.id]
+      );
+
+      console.log('   └─ ✅ Reset token generated');
+
+      ResponseUtils.success(res, 'OTP verified successfully', {
+        message: 'OTP verified. You can now reset your password.',
+        reset_token: resetToken,
+        expires_in_minutes: 15,
+      });
+    } catch (error) {
+      console.error('Error verifying forgot password OTP:', error);
+      ResponseUtils.error(res, 'Failed to verify OTP', error);
+    }
+  }
+
+  /**
+   * Reset password after OTP verification
+   * 
+   * Updates the user's password in SuperTokens after verifying the reset token.
+   * Handles SuperTokens user sync automatically to prevent ID mismatches.
+   * 
+   * Process:
+   * 1. Validates reset token (15-minute expiry)
+   * 2. Deletes old SuperTokens user (cleanup)
+   * 3. Creates fresh SuperTokens user with new password
+   * 4. Syncs database with new SuperTokens user ID
+   * 5. Clears reset token and invalidates OTPs
+   * 
+   * Security Features:
+   * - Minimum 8-character password
+   * - Reset token expires in 15 minutes
+   * - One-time use token
+   * - Automatic SuperTokens user cleanup
+   * - Project-scoped (app users isolated from platform admins)
+   * 
+   * POST /api/app-auth/auth/reset-password (with x-api-key or x-access-token)
+   * POST /api/app-auth/:projectId/auth/reset-password (backward compatibility)
+   * 
+   * Request body: { email: string, reset_token: string, new_password: string }
+   */
+  static async resetPassword(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware (extracted from API key/token) or URL param
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
+      }
+
+      const { email, reset_token, new_password } = req.body;
+
+      if (!email || !reset_token || !new_password) {
+        return ResponseUtils.error(res, 'Email, reset token, and new password are required', null, null, 400);
+      }
+
+      // Validate password strength (minimum 8 characters)
+      if (new_password.length < 8) {
+        return ResponseUtils.error(res, 'Password must be at least 8 characters long', null, null, 400);
+      }
+
+      console.log('🔐 [resetPassword] Processing password reset...');
+
+      // Get user with metadata
+      const userResult = await AppAuthController.pool.query(
+        `SELECT id, name, email, metadata, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
+        [email]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+      const metadata = user.metadata || {};
+
+      console.log('   └─ User found:', user.email);
+
+      // Verify reset token
+      if (!metadata.password_reset_token || metadata.password_reset_token !== reset_token) {
+        return ResponseUtils.error(res, 'Invalid or expired reset token', null, null, 400);
+      }
+
+      // Check if token is expired
+      const expiresAt = new Date(metadata.password_reset_expires_at);
+      if (!metadata.password_reset_expires_at || expiresAt < new Date()) {
+        return ResponseUtils.error(res, 'Reset token has expired. Please request a new password reset.', null, null, 400);
+      }
+
+      console.log('   └─ Reset token verified');
+
+      // Update password in SuperTokens
+      const supertokensEmail = createProjectScopedEmail(user.email, projectId);
+      let supertokensUserId = user.supertokens_user_id;
+      
+      try {
+        // Check if user has a SuperTokens account
+        if (!supertokensUserId) {
+          console.log('   └─ No SuperTokens user ID found, creating SuperTokens user...');
+          
+          // Create SuperTokens user with the new password
+          const signUpResponse = await EmailPassword.signUp("public", supertokensEmail, new_password);
+          
+          if (signUpResponse.status === "OK") {
+            supertokensUserId = signUpResponse.user.id;
+            console.log('   └─ ✅ SuperTokens user created:', supertokensUserId);
+            
+            // Update database with SuperTokens user ID
+            await AppAuthController.pool.query(
+              `UPDATE ${schemaName}.skaftin_system_users 
+               SET supertokens_user_id = $1 
+               WHERE id = $2`,
+              [supertokensUserId, user.id]
+            );
+          } else if (signUpResponse.status === "EMAIL_ALREADY_EXISTS_ERROR") {
+            console.log('   └─ SuperTokens user already exists, updating password...');
+            // User exists in SuperTokens but ID not in our database - fetch and update
+            const signInResponse = await EmailPassword.signIn("public", supertokensEmail, new_password);
+            if (signInResponse.status === "OK") {
+              supertokensUserId = signInResponse.user.id;
+              
+              // Update password
+              const updateResponse = await EmailPassword.updateEmailOrPassword({
+                recipeUserId: convertToRecipeUserId(supertokensUserId),
+                password: new_password,
+              });
+              
+              if (updateResponse.status !== 'OK') {
+                console.error('Failed to update password in SuperTokens:', updateResponse);
+                return ResponseUtils.error(res, 'Failed to update password', null, null, 500);
+              }
+              
+              // Update database with SuperTokens user ID
+              await AppAuthController.pool.query(
+                `UPDATE ${schemaName}.skaftin_system_users 
+                 SET supertokens_user_id = $1 
+                 WHERE id = $2`,
+                [supertokensUserId, user.id]
+              );
+            } else {
+              console.error('Failed to sign in to SuperTokens:', signInResponse);
+              return ResponseUtils.error(res, 'Failed to update password', null, null, 500);
+            }
+          } else {
+            console.error('Failed to create SuperTokens user:', signUpResponse);
+            return ResponseUtils.error(res, 'Failed to update password', null, null, 500);
+          }
+        } else {
+          console.log('   └─ Found existing SuperTokens user ID in database:', supertokensUserId);
+          console.log('   └─ Cleaning up and recreating SuperTokens user to ensure consistency...');
+          
+          try {
+            // Clean up approach: Delete old SuperTokens user and create fresh one
+            // This ensures no duplicate users exist and fixes any ID mismatches
+            
+            // Step 1: Try to delete the old SuperTokens user
+            try {
+              const { deleteUser } = await import('supertokens-node');
+              await deleteUser(supertokensUserId);
+              console.log('   └─ ✅ Old SuperTokens user deleted:', supertokensUserId);
+            } catch (deleteError) {
+              console.log('   └─ Could not delete old user (may not exist):', deleteError);
+            }
+            
+            
+            // Step 3: Create fresh SuperTokens user with new password
+            console.log('   └─ Creating fresh SuperTokens user...');
+            const signUpResponse = await EmailPassword.signUp("public", supertokensEmail, new_password);
+            
+            if (signUpResponse.status === "OK") {
+              const newSupertokensUserId = signUpResponse.user.id;
+              console.log('   └─ ✅ Fresh SuperTokens user created:', newSupertokensUserId);
+              
+              // Update database with new SuperTokens user ID
+              await AppAuthController.pool.query(
+                `UPDATE ${schemaName}.skaftin_system_users 
+                 SET supertokens_user_id = $1 
+                 WHERE id = $2`,
+                [newSupertokensUserId, user.id]
+              );
+              
+              console.log('   └─ ✅ Database updated with new SuperTokens user ID');
+            } else if (signUpResponse.status === "EMAIL_ALREADY_EXISTS_ERROR") {
+              // Email still exists - try to get the user and update password
+              console.log('   └─ Email already exists, attempting to update password...');
+              
+              // Try to sign in with new password (maybe it was already set?)
+              let actualUserId: string | null = null;
+              const signInResponse = await EmailPassword.signIn("public", supertokensEmail, new_password);
+              
+              if (signInResponse.status === "OK") {
+                actualUserId = signInResponse.user.id;
+                console.log('   └─ Password already correct, user ID:', actualUserId);
+              } else {
+                // Password not set yet - we need to find and update the user
+                // This is a tricky situation - we'll need to use a different approach
+                console.error('   └─ Unable to authenticate or create user. Manual intervention may be required.');
+                return ResponseUtils.error(
+                  res,
+                  'Failed to reset password. Please contact support.',
+                  null,
+                  null,
+                  500
+                );
+              }
+              
+              // Update database with correct user ID
+              if (actualUserId) {
+                await AppAuthController.pool.query(
+                  `UPDATE ${schemaName}.skaftin_system_users 
+                   SET supertokens_user_id = $1 
+                   WHERE id = $2`,
+                  [actualUserId, user.id]
+                );
+                console.log('   └─ ✅ Database updated with correct user ID');
+              }
+            } else {
+              console.error('Failed to create SuperTokens user:', signUpResponse);
+              return ResponseUtils.error(res, 'Failed to update password', null, null, 500);
+            }
+          } catch (updateError: any) {
+            console.error('   └─ Error during password reset:', updateError);
+            return ResponseUtils.error(res, 'Failed to update password', updateError, null, 500);
+          }
+        }
+
+        console.log('   └─ ✅ Password updated in SuperTokens');
+      } catch (error) {
+        console.error('Error updating password in SuperTokens:', error);
+        return ResponseUtils.error(res, 'Failed to update password', error, null, 500);
+      }
+
+      // Clear reset token from metadata
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_users 
+         SET metadata = metadata - 'password_reset_token' - 'password_reset_expires_at',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [user.id]
+      );
+
+      console.log('   └─ ✅ Reset token cleared');
+
+      // Invalidate all password reset OTPs for this user
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+         SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1 AND purpose = 'password_reset' AND status IN ('pending', 'verified')`,
+        [user.id]
+      );
+
+      console.log('✅ Password reset successfully for:', user.email);
+
+      ResponseUtils.success(res, 'Password reset successfully', {
+        message: 'Your password has been reset successfully. You can now log in with your new password.',
+      });
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      ResponseUtils.error(res, 'Failed to reset password', error);
+    }
+  }
+
+  /**
+   * Request password change for logged-in user
+   * 
+   * Allows authenticated users to change their password with optional OTP verification.
+   * If OTP is required (based on project settings), sends OTP via email/SMS and stores
+   * the new password temporarily. If not required, changes password immediately.
+   * 
+   * Security Features:
+   * - Requires old password verification (prevents unauthorized changes)
+   * - Optional OTP verification (configurable per project)
+   * - Minimum 8-character new password
+   * - Session remains valid after password change
+   * 
+   * POST /api/app-auth/auth/change-password-request
+   * 
+   * Request body: { old_password: string, new_password: string, otp_method?: 'email' | 'sms' }
+   */
+  static async changePasswordRequest(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // This endpoint requires authentication - user must be logged in
+      // The appUserAuthMiddleware should have already populated req.appUser
+      if (!req.appUser || !req.appUser.userId) {
+        return ResponseUtils.error(res, 'Authentication required', null, null, 401);
+      }
+
+      const { old_password, new_password, otp_method } = req.body;
+
+      if (!old_password || !new_password) {
+        return ResponseUtils.error(res, 'Old password and new password are required', null, null, 400);
+      }
+
+      // Validate new password strength
+      if (new_password.length < 8) {
+        return ResponseUtils.error(res, 'New password must be at least 8 characters long', null, null, 400);
+      }
+
+      // Prevent using the same password
+      if (old_password === new_password) {
+        return ResponseUtils.error(res, 'New password must be different from old password', null, null, 400);
+      }
+
+      // Validate otp_method if provided
+      if (otp_method && !['email', 'sms'].includes(otp_method)) {
+        return ResponseUtils.error(res, 'Invalid otp_method. Must be "email" or "sms"', null, null, 400);
+      }
+
+      console.log('🔐 [changePasswordRequest] Processing password change request...');
+
+      // Get user details
+      const userResult = await AppAuthController.pool.query(
+        `SELECT id, name, email, phone, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        [req.appUser.userId]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+      console.log('   └─ User found:', user.email);
+
+      // Get auth settings to check if OTP is required
+      const settingsResult = await AppAuthController.pool.query(
+        `SELECT require_otp_for_password_change, email_provider_id, sms_provider_id
+         FROM skaftin_system_auth_settings WHERE project_id = $1`,
+        [projectId]
+      );
+
+      if (settingsResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'Auth settings not found', null, null, 404);
+      }
+
+      const settings = settingsResult.rows[0];
+      const requireOTP = settings.require_otp_for_password_change || false;
+
+      console.log('   └─ OTP required:', requireOTP);
+
+      // Verify old password with SuperTokens
+      const supertokensEmail = createProjectScopedEmail(user.email, projectId);
+      const signInResponse = await EmailPassword.signIn("public", supertokensEmail, old_password);
+
+      if (signInResponse.status !== "OK") {
+        return ResponseUtils.error(res, 'Invalid old password', null, null, 401);
+      }
+
+      console.log('   └─ Old password verified');
+
+      // If OTP is not required, change password immediately
+      if (!requireOTP) {
+        console.log('   └─ OTP not required, changing password immediately...');
+
+        // Update password in SuperTokens
+        const supertokensUserId = user.supertokens_user_id;
+        if (!supertokensUserId) {
+          return ResponseUtils.error(res, 'User authentication setup incomplete', null, null, 500);
+        }
+
+        const recipeUserId = convertToRecipeUserId(supertokensUserId);
+        const updateResponse = await EmailPassword.updateEmailOrPassword({
+          recipeUserId: recipeUserId,
+          password: new_password,
+        });
+
+        if (updateResponse.status !== 'OK') {
+          console.error('Failed to update password in SuperTokens:', updateResponse);
+          return ResponseUtils.error(res, 'Failed to update password', null, null, 500);
+        }
+
+        console.log('   └─ ✅ Password changed successfully');
+
+        return ResponseUtils.success(res, 'Password changed successfully', {
+          message: 'Your password has been changed successfully.',
+        });
+      }
+
+      // OTP is required - send OTP and store password change request
+      const selectedOtpMethod = otp_method || 'email'; // Default to email
+
+      // Validate that user has the required contact method
+      if (selectedOtpMethod === 'sms' && !user.phone) {
+        return ResponseUtils.error(res, 'Phone number not available. Please use email method.', null, null, 400);
+      }
+
+      if (selectedOtpMethod === 'email' && !settings.email_provider_id) {
+        return ResponseUtils.error(res, 'Email provider not configured for this project', null, null, 500);
+      }
+
+      if (selectedOtpMethod === 'sms' && !settings.sms_provider_id) {
+        return ResponseUtils.error(res, 'SMS provider not configured for this project', null, null, 500);
+      }
+
+      // Generate OTP
+      const otp = crypto.randomInt(100000, 999999).toString();
+      const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      console.log(`   └─ Sending OTP via ${selectedOtpMethod}...`);
+
+      // Invalidate any existing pending password change OTPs for this user
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+         SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1 AND purpose = 'password_change' AND status = 'pending'`,
+        [user.id]
+      );
+
+      // Store new password temporarily in OTP record metadata
+      await AppAuthController.pool.query(
+        `INSERT INTO ${schemaName}.skaftin_system_otp_verifications 
+         (user_id, otp_code, otp_method, destination, expires_at, purpose, metadata)
+         VALUES ($1, $2, $3, $4, $5, 'password_change', $6)`,
+        [
+          user.id,
+          otp,
+          selectedOtpMethod,
+          selectedOtpMethod === 'email' ? user.email : user.phone,
+          otpExpiresAt,
+          JSON.stringify({ new_password })
+        ]
+      );
+
+      // Send OTP based on method
+      let otpSent = false;
+      let errorMessage: string | undefined;
+
+      if (selectedOtpMethod === 'email') {
+        console.log(`📧 Sending password change OTP via email to ${user.email}...`);
+
+        const emailResult = await AppAuthController.emailService.sendPasswordChangeOTP(
+          projectId,
+          user.email,
+          user.name,
+          otp
+        );
+
+        if (emailResult.success) {
+          console.log('   └─ ✅ OTP email sent');
+          otpSent = true;
+        } else {
+          console.warn('   └─ ⚠️ Failed to send OTP email:', emailResult.error);
+          errorMessage = emailResult.error;
+        }
+      } else if (selectedOtpMethod === 'sms') {
+        console.log(`📱 Sending password change OTP via SMS to ${user.phone}...`);
+
+        const smsResult = await AppAuthController.smsOtpService.sendPasswordChangeOTP(
+          projectId.toString(),
+          user.phone,
+          otp,
+          user.name
+        );
+
+        if (smsResult.success) {
+          console.log('   └─ ✅ OTP SMS sent');
+          otpSent = true;
+        } else {
+          console.warn('   └─ ⚠️ Failed to send OTP SMS:', smsResult.error);
+          errorMessage = smsResult.error;
+        }
+      }
+
+      if (!otpSent) {
+        return ResponseUtils.error(
+          res,
+          `Failed to send OTP via ${selectedOtpMethod}`,
+          null,
+          errorMessage,
+          500
+        );
+      }
+
+      ResponseUtils.success(res, `OTP sent successfully via ${selectedOtpMethod}`, {
+        message: `A verification code has been sent to your ${selectedOtpMethod}. Please enter the code to complete password change.`,
+        requires_otp: true,
+        otp_method: selectedOtpMethod,
+        destination: selectedOtpMethod === 'email'
+          ? user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3')
+          : user.phone.replace(/(\d{3})(\d*)(\d{2})/, '$1***$3'),
+      });
+    } catch (error) {
+      console.error('Error in changePasswordRequest:', error);
+      ResponseUtils.error(res, 'Failed to process password change request', error);
+    }
+  }
+
+  /**
+   * Verify OTP and complete password change
+   * 
+   * Verifies the OTP code sent to the user and completes the password change.
+   * The new password was stored temporarily when the OTP was sent.
+   * 
+   * Security Features:
+   * - Max 3 verification attempts
+   * - OTP expires in 10 minutes
+   * - One-time use OTP
+   * 
+   * POST /api/app-auth/auth/verify-password-change-otp
+   * 
+   * Request body: { code: string }
+   */
+  static async verifyPasswordChangeOTP(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // This endpoint requires authentication
+      if (!req.appUser || !req.appUser.userId) {
+        return ResponseUtils.error(res, 'Authentication required', null, null, 401);
+      }
+
+      const { code } = req.body;
+
+      if (!code) {
+        return ResponseUtils.error(res, 'OTP code is required', null, null, 400);
+      }
+
+      console.log('🔐 [verifyPasswordChangeOTP] Verifying password change OTP...');
+
+      // Get user
+      const userResult = await AppAuthController.pool.query(
+        `SELECT id, name, email, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        [req.appUser.userId]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+      console.log('   └─ User found:', user.email);
+
+      // Get pending password change OTP record
+      const otpResult = await AppAuthController.pool.query(
+        `SELECT id, otp_code, otp_method, expires_at, attempts, metadata 
+         FROM ${schemaName}.skaftin_system_otp_verifications 
+         WHERE user_id = $1 AND purpose = 'password_change' AND status = 'pending'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [user.id]
+      );
+
+      if (otpResult.rows.length === 0) {
+        return ResponseUtils.error(
+          res,
+          'No pending password change OTP found. Please request a new password change.',
+          null,
+          null,
+          400
+        );
+      }
+
+      const otpRecord = otpResult.rows[0];
+
+      // Check if OTP is expired
+      const expiresAt = new Date(otpRecord.expires_at);
+      if (expiresAt < new Date()) {
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+
+        return ResponseUtils.error(
+          res,
+          'OTP code has expired. Please request a new password change.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Check if max attempts reached
+      if (otpRecord.attempts >= 3) {
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+
+        return ResponseUtils.error(
+          res,
+          'Maximum verification attempts exceeded. Please request a new password change.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Verify OTP code
+      if (otpRecord.otp_code !== code) {
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+
+        const remainingAttempts = 3 - (otpRecord.attempts + 1);
+        return ResponseUtils.error(
+          res,
+          `Invalid OTP code. ${remainingAttempts} attempt(s) remaining.`,
+          null,
+          null,
+          400
+        );
+      }
+
+      console.log('   └─ ✅ OTP verified successfully');
+
+      // Get new password from metadata
+      const metadata = otpRecord.metadata || {};
+      const newPassword = metadata.new_password;
+
+      if (!newPassword) {
+        return ResponseUtils.error(
+          res,
+          'Password change request invalid. Please try again.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Update password in SuperTokens
+      const supertokensUserId = user.supertokens_user_id;
+      if (!supertokensUserId) {
+        return ResponseUtils.error(res, 'User authentication setup incomplete', null, null, 500);
+      }
+
+      const recipeUserId = convertToRecipeUserId(supertokensUserId);
+      const updateResponse = await EmailPassword.updateEmailOrPassword({
+        recipeUserId: recipeUserId,
+        password: newPassword,
+      });
+
+      if (updateResponse.status !== 'OK') {
+        console.error('Failed to update password in SuperTokens:', updateResponse);
+        return ResponseUtils.error(res, 'Failed to update password', null, null, 500);
+      }
+
+      console.log('   └─ ✅ Password updated in SuperTokens');
+
+      // Mark OTP as verified
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+         SET status = 'verified', verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [otpRecord.id]
+      );
+
+      // Invalidate all other password change OTPs for this user
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+         SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1 AND purpose = 'password_change' AND status = 'pending' AND id != $2`,
+        [user.id, otpRecord.id]
+      );
+
+      console.log('✅ Password changed successfully for:', user.email);
+
+      ResponseUtils.success(res, 'Password changed successfully', {
+        message: 'Your password has been changed successfully. You can continue using your current session.',
+      });
+    } catch (error) {
+      console.error('Error verifying password change OTP:', error);
       ResponseUtils.error(res, 'Failed to verify OTP', error);
     }
   }

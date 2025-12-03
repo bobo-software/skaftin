@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
-import { Plus, Search, RefreshCw, Edit, Trash2, UserPlus, Shield, Mail, Phone, CheckCircle, XCircle, Eye, EyeOff, RotateCw, Copy } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Plus, Search, RefreshCw, Edit, Trash2, UserPlus, Shield, Mail, Phone, CheckCircle, XCircle, Eye, EyeOff, RotateCw, Copy, Clock, AlertCircle } from 'lucide-react';
 import AuthUsersService, { AppUser, CreateUserRequest } from '../../../../../services/AuthUsersService';
 import RolesService, { Role } from '../../../../../services/RolesService';
 import CustomFieldsService, { CustomField } from '../../../../../services/CustomFieldsService';
@@ -10,6 +10,7 @@ import DeleteConfirmModal from '../../../../../components/modals/DeleteConfirmMo
 
 const AuthUsersTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
   const [users, setUsers] = useState<AppUser[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
@@ -78,10 +79,6 @@ const AuthUsersTab = () => {
     }
   }, [projectId, fetchUsers, fetchRoles, fetchCustomFields]);
 
-  const handleDeleteUser = (user: AppUser) => {
-    setUserToDelete(user);
-    setShowDeleteModal(true);
-  };
 
   const confirmDelete = async () => {
     if (!projectId || !userToDelete) return;
@@ -101,9 +98,44 @@ const AuthUsersTab = () => {
     }
   };
 
-  const handleEditUser = (user: AppUser) => {
+  const handleViewUser = (user: AppUser) => {
+    navigate(`/projects/${projectId}/auth/users/${user.id}`);
+  };
+
+  const handleEditUser = (user: AppUser, e?: React.MouseEvent) => {
+    e?.stopPropagation(); // Prevent row click
     setSelectedUser(user);
     setShowEditModal(true);
+  };
+
+  const handleDeleteUser = (user: AppUser, e?: React.MouseEvent) => {
+    e?.stopPropagation(); // Prevent row click
+    setUserToDelete(user);
+    setShowDeleteModal(true);
+  };
+
+  // Helper function to render OTP status indicator
+  const renderOTPStatus = (user: AppUser) => {
+    // Show verification status based on user's active and verified status
+    if (user.is_active && (user.email_verified || user.phone_verified)) {
+      return (
+        <span className="inline-flex items-center text-green-600 dark:text-green-400" title="Verified">
+          <CheckCircle className="w-4 h-4" />
+        </span>
+      );
+    } else if (!user.is_active) {
+      return (
+        <span className="inline-flex items-center text-yellow-600 dark:text-yellow-400" title="OTP Pending">
+          <Clock className="w-4 h-4" />
+        </span>
+      );
+    } else {
+      return (
+        <span className="inline-flex items-center text-red-600 dark:text-red-400" title="Not Verified">
+          <AlertCircle className="w-4 h-4" />
+        </span>
+      );
+    }
   };
 
   return (
@@ -231,6 +263,9 @@ const AuthUsersTab = () => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
                       Status
                     </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
+                      OTP
+                    </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
                       Created
                     </th>
@@ -241,7 +276,11 @@ const AuthUsersTab = () => {
                 </thead>
                 <tbody className="divide-y divide-dark-200 dark:divide-dark-700">
                   {users.map((user) => (
-                    <tr key={user.id} className="hover:bg-dark-50 dark:hover:bg-dark-700/50 transition-colors">
+                    <tr 
+                      key={user.id} 
+                      onClick={() => handleViewUser(user)}
+                      className="hover:bg-dark-50 dark:hover:bg-dark-700/50 transition-colors cursor-pointer"
+                    >
                       <td className="px-4 py-3">
                         <div className="flex items-center">
                           <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold mr-3">
@@ -313,20 +352,23 @@ const AuthUsersTab = () => {
                           </span>
                         )}
                       </td>
+                      <td className="px-4 py-3 text-center">
+                        {renderOTPStatus(user)}
+                      </td>
                       <td className="px-4 py-3 text-sm text-dark-600 dark:text-dark-400">
                         {new Date(user.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <button
-                            onClick={() => handleEditUser(user)}
+                            onClick={(e) => handleEditUser(user, e)}
                             className="p-1 text-dark-600 hover:text-primary-600 dark:text-dark-400 dark:hover:text-primary-400"
                             title="Edit user"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDeleteUser(user)}
+                            onClick={(e) => handleDeleteUser(user, e)}
                             className="p-1 text-dark-600 hover:text-red-600 dark:text-dark-400 dark:hover:text-red-400"
                             title="Delete user"
                           >

@@ -272,6 +272,187 @@ class AuthService {
       };
     }
   }
+
+  /**
+   * Send forgot password OTP
+   * Sends an OTP code to the user's email or phone
+   */
+  async sendForgotPasswordOTP(
+    email: string,
+    options?: {
+      method?: 'email' | 'sms';
+      projectId?: number;
+      apiKey?: string;
+    }
+  ): Promise<{ success: boolean; message?: string; data?: any; error?: string }> {
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      // Add API key or access token if provided
+      if (options?.apiKey) {
+        headers['x-api-key'] = options.apiKey;
+      }
+
+      // Build URL - support both with and without projectId
+      let url = `${API_BASE_URL}/api/app-auth/auth/forgot-password`;
+      if (options?.projectId) {
+        url = `${API_BASE_URL}/api/app-auth/${options.projectId}/auth/forgot-password`;
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({
+          email,
+          method: options?.method || 'email',
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        return {
+          success: true,
+          message: data.message,
+          data: data.data,
+        };
+      } else {
+        return {
+          success: false,
+          error: data.message || data.error || 'Failed to send OTP',
+        };
+      }
+    } catch (error) {
+      console.error('Send forgot password OTP error:', error);
+      return {
+        success: false,
+        error: 'Network error. Please try again.',
+      };
+    }
+  }
+
+  /**
+   * Verify forgot password OTP
+   * Verifies the OTP code and returns a reset token
+   */
+  async verifyForgotPasswordOTP(
+    email: string,
+    code: string,
+    options?: {
+      projectId?: number;
+      apiKey?: string;
+    }
+  ): Promise<{ success: boolean; message?: string; data?: any; error?: string }> {
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      // Add API key or access token if provided
+      if (options?.apiKey) {
+        headers['x-api-key'] = options.apiKey;
+      }
+
+      // Build URL - support both with and without projectId
+      let url = `${API_BASE_URL}/api/app-auth/auth/verify-forgot-password-otp`;
+      if (options?.projectId) {
+        url = `${API_BASE_URL}/api/app-auth/${options.projectId}/auth/verify-forgot-password-otp`;
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ email, code }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        return {
+          success: true,
+          message: data.message,
+          data: data.data,
+        };
+      } else {
+        return {
+          success: false,
+          error: data.message || data.error || 'Failed to verify OTP',
+        };
+      }
+    } catch (error) {
+      console.error('Verify forgot password OTP error:', error);
+      return {
+        success: false,
+        error: 'Network error. Please try again.',
+      };
+    }
+  }
+
+  /**
+   * Reset password
+   * Changes the user's password after OTP verification
+   */
+  async resetPassword(
+    email: string,
+    resetToken: string,
+    newPassword: string,
+    options?: {
+      projectId?: number;
+      apiKey?: string;
+    }
+  ): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      // Add API key or access token if provided
+      if (options?.apiKey) {
+        headers['x-api-key'] = options.apiKey;
+      }
+
+      // Build URL - support both with and without projectId
+      let url = `${API_BASE_URL}/api/app-auth/auth/reset-password`;
+      if (options?.projectId) {
+        url = `${API_BASE_URL}/api/app-auth/${options.projectId}/auth/reset-password`;
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({
+          email,
+          reset_token: resetToken,
+          new_password: newPassword,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        return {
+          success: true,
+          message: data.message || 'Password reset successfully',
+        };
+      } else {
+        return {
+          success: false,
+          error: data.message || data.error || 'Failed to reset password',
+        };
+      }
+    } catch (error) {
+      console.error('Reset password error:', error);
+      return {
+        success: false,
+        error: 'Network error. Please try again.',
+      };
+    }
+  }
 }
 
 export default new AuthService();

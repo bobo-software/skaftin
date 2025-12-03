@@ -54,6 +54,17 @@ export interface UsersListResponse {
   };
 }
 
+export interface OTPStatus {
+  id: number;
+  otp_method: 'email' | 'sms';
+  destination: string;
+  status: 'pending' | 'verified' | 'expired' | 'failed';
+  expires_at: string;
+  verified_at?: string;
+  attempts: number;
+  created_at: string;
+}
+
 class AuthUsersService {
   private getToken(): string {
     return localStorage.getItem('skaftin-token') || 'session-managed-by-supertokens';
@@ -236,6 +247,67 @@ class AuthUsersService {
     } catch (error: any) {
       console.error('Error getting users by role:', error);
       throw new Error(error.message || 'Failed to get users by role');
+    }
+  }
+
+  /**
+   * Get OTP verification status for a user
+   */
+  async getUserOTPStatus(projectId: string, userId: string): Promise<OTPStatus[]> {
+    try {
+      const response = await RequestUtils.get(
+        `/api/auth/${projectId}/users/${userId}/otp-status`,
+        this.getToken()
+      );
+
+      if (response.success) {
+        return response.data;
+      }
+
+      throw new Error(response.error || 'Failed to get OTP status');
+    } catch (error: any) {
+      console.error('Error getting OTP status:', error);
+      throw new Error(error.message || 'Failed to get OTP status');
+    }
+  }
+
+  /**
+   * Resend OTP to a user
+   */
+  async resendOTP(projectId: string, userId: string): Promise<void> {
+    try {
+      const response = await RequestUtils.post(
+        `/api/auth/${projectId}/users/${userId}/resend-otp`,
+        this.getToken(),
+        {}
+      );
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to resend OTP');
+      }
+    } catch (error: any) {
+      console.error('Error resending OTP:', error);
+      throw new Error(error.message || 'Failed to resend OTP');
+    }
+  }
+
+  /**
+   * Manually verify a user without OTP
+   */
+  async manuallyVerifyUser(projectId: string, userId: string): Promise<void> {
+    try {
+      const response = await RequestUtils.post(
+        `/api/auth/${projectId}/users/${userId}/manual-verify`,
+        this.getToken(),
+        {}
+      );
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to manually verify user');
+      }
+    } catch (error: any) {
+      console.error('Error manually verifying user:', error);
+      throw new Error(error.message || 'Failed to manually verify user');
     }
   }
 }

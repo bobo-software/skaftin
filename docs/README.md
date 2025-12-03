@@ -20,12 +20,16 @@ Welcome to the Skaftin platform documentation! This directory contains comprehen
 - [SuperTokens Integration](./SUPERTOKENS_INTEGRATION.md) - SuperTokens setup and configuration
 - [SuperTokens Setup Complete](./SUPERTOKENS_SETUP_COMPLETE.md) - Installation guide
 - [SuperTokens Production Setup](./SUPERTOKENS_PRODUCTION_SETUP.md) - Production deployment
+- [SuperTokens Cookie Fix](./SUPERTOKENS_COOKIE_FIX.md) - Troubleshooting cookie issues
 - [Enhanced JWT Security](./ENHANCED_JWT_SECURITY.md) - Security best practices
 
 **App User Authentication:**
 - [Auth System Implementation](./AUTH_SYSTEM_IMPLEMENTATION.md) - Backend implementation details
 - [Auth Quick Start](./AUTH_QUICK_START.md) - Quick start guide for app users
 - [Auth Feature Complete](./AUTH_FEATURE_COMPLETE.md) - Feature summary
+- **[Forgot Password Feature](./FORGOT_PASSWORD_FEATURE.md)** ⭐ NEW - Password reset flow
+- [Forgot Password SMS Support](./FORGOT_PASSWORD_SMS_SUPPORT.md) - SMS OTP for password reset
+- **[Auth Improvements Dec 2025](./AUTH_IMPROVEMENTS_DEC_2025.md)** ⭐ NEW - Latest improvements
 
 ### 🗄️ Database
 
@@ -200,9 +204,9 @@ All documentation should:
 
 ---
 
-**Last Updated:** November 12, 2025
+**Last Updated:** December 3, 2025
 
-**Platform Version:** 1.0.0
+**Platform Version:** 1.1.0
 
 For questions or support, contact the Skaftin development team.
 

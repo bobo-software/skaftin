@@ -30,6 +30,36 @@ This guide covers authenticating **your application's end users** (not the clien
 
 ---
 
+## 🔐 Password Reset / Forgot Password
+
+If users forget their password, use the secure OTP-based password reset flow:
+
+**See:** [`08-FORGOT-PASSWORD.md`](./08-FORGOT-PASSWORD.md) for complete documentation.
+
+**Quick Example:**
+```typescript
+// 1. Send OTP
+await AuthService.sendForgotPasswordOTP('user@example.com', {
+  apiKey: 'sk_your_key',
+  method: 'email'
+});
+
+// 2. Verify OTP
+const result = await AuthService.verifyForgotPasswordOTP('user@example.com', '123456', {
+  apiKey: 'sk_your_key'
+});
+const resetToken = result.data.reset_token;
+
+// 3. Reset Password
+await AuthService.resetPassword('user@example.com', resetToken, 'NewPassword123!', {
+  apiKey: 'sk_your_key'
+});
+```
+
+**Security:** App users are completely isolated from platform admins. The same email can exist as both.
+
+---
+
 ## Authentication Endpoints
 
 These endpoints allow your app's users to register and log in. **No authentication required** for these endpoints, but you must include your API key/token to identify the project.
@@ -51,13 +81,15 @@ Body:
   "email": "john@example.com",
   "password": "SecurePassword123!",
   "phone": "+1234567890",              // Optional
+  "role_key": "user",                   // Optional - role to assign
+  "otp_method": "email",                // Optional: "email" | "sms" | null
   "metadata": {                         // Optional custom data
     "department": "Engineering",
     "employee_id": "EMP001"
   }
 }
 
-Response:
+Response (No OTP):
 {
   "success": true,
   "message": "User registered successfully",
@@ -72,10 +104,37 @@ Response:
     "session": {
       "accessToken": "eyJhbGciOiJIUzI1NiIs..."  // SuperTokens access token
       // Refresh token is handled automatically via /auth/session/refresh
-    }
+    },
+    "requires_otp_verification": false
+  }
+}
+
+Response (With OTP):
+{
+  "success": true,
+  "message": "User registered successfully. Please check your email for the OTP code to activate your account.",
+  "data": {
+    "user": {
+      "id": 123,
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone": "+1234567890",
+      "is_active": false                // User inactive until OTP verified
+    },
+    "session": {
+      "accessToken": "eyJhbGciOiJIUzI1NiIs..."
+    },
+    "requires_otp_verification": true,
+    "otp_method": "email",
+    "message": "Check your email for OTP code. Your account will be activated after verification."
   }
 }
 ```
+
+**OTP Method Options:**
+- `"email"` - Send OTP via email (requires email provider configured)
+- `"sms"` - Send OTP via SMS (requires SMS provider configured and phone number)
+- `null` or omitted - No OTP, user activated immediately
 
 ### Login User
 
@@ -166,6 +225,73 @@ Response:
 ```
 
 **Note:** This endpoint revokes the SuperTokens session server-side. You should also remove the access token from client storage.
+
+### Verify OTP
+
+After registration with `otp_method`, users must verify their OTP code to activate their account.
+
+```typescript
+POST /app-api/auth/auth/verify-otp
+
+Headers:
+{
+  "X-API-Key": "sk_your_api_key",
+  "Content-Type": "application/json"
+}
+
+Body (Option 1 - Using user_id):
+{
+  "user_id": 123,
+  "code": "123456"
+}
+
+Body (Option 2 - Using email):
+{
+  "email": "john@example.com",
+  "code": "123456"
+}
+
+Response (Success):
+{
+  "success": true,
+  "message": "OTP verified successfully. Your account is now active!",
+  "data": {
+    "user": {
+      "id": 123,
+      "email": "john@example.com",
+      "is_active": true,
+      "email_verified": true  // or phone_verified: true for SMS
+    }
+  }
+}
+
+Response (Invalid OTP):
+{
+  "success": false,
+  "message": "Invalid OTP code. 2 attempt(s) remaining.",
+  "statusCode": 400
+}
+
+Response (Expired OTP):
+{
+  "success": false,
+  "message": "OTP code has expired. Please request a new OTP code.",
+  "statusCode": 400
+}
+
+Response (Max Attempts):
+{
+  "success": false,
+  "message": "Maximum verification attempts exceeded. Please request a new OTP code.",
+  "statusCode": 400
+}
+```
+
+**OTP Details:**
+- 6-digit numeric code
+- Valid for 10 minutes
+- Maximum 3 verification attempts
+- After verification, user is activated and can log in
 
 ### Refresh Session Token
 
@@ -1125,7 +1251,7 @@ class UserManagementService {
 export default new UserManagementService();
 ```
 
-### Example 3: User Registration Flow
+### Example 3: User Registration Flow (No OTP)
 
 ```typescript
 // In your React component
@@ -1145,6 +1271,7 @@ const RegisterForm = () => {
         email: formData.email,
         password: formData.password,
         phone: formData.phone,
+        otp_method: null,  // No OTP - user activated immediately
         metadata: {
           company: formData.company,
           department: formData.department
@@ -1172,6 +1299,139 @@ const RegisterForm = () => {
   return (
     <form onSubmit={handleRegister}>
       {error && <div className="error">{error}</div>}
+      {/* Form fields */}
+      <button type="submit" disabled={loading}>
+        {loading ? 'Registering...' : 'Register'}
+      </button>
+    </form>
+  );
+};
+```
+
+### Example 3b: User Registration Flow with OTP
+
+```typescript
+// In your React component
+import AppUserAuthService from './backend/services/AppUserAuthService';
+
+const RegisterWithOTPForm = () => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showOTPInput, setShowOTPInput] = useState(false);
+  const [userId, setUserId] = useState<number | null>(null);
+  const [otpMethod, setOtpMethod] = useState<'email' | 'sms'>('email');
+
+  const handleRegister = async (formData: any) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await AppUserAuthService.register({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        phone: formData.phone,
+        role_key: 'user',
+        otp_method: otpMethod  // 'email' or 'sms'
+      });
+
+      if (response.success) {
+        if (response.data.requires_otp_verification) {
+          // Show OTP input form
+          setUserId(response.data.user.id);
+          setShowOTPInput(true);
+          console.log(`OTP sent via ${response.data.otp_method}`);
+        } else {
+          // User activated immediately
+          AppUserAuthService.storeToken(response.data.session.accessToken);
+          window.location.href = '/dashboard';
+        }
+      }
+    } catch (error: any) {
+      console.error('Registration failed:', error);
+      setError(error.message || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async (otpCode: string) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/app-api/auth/auth/verify-otp', {
+        method: 'POST',
+        headers: {
+          'X-API-Key': 'sk_your_api_key',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          code: otpCode
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        console.log('OTP verified! User activated.');
+        // Now login the user
+        const loginResponse = await AppUserAuthService.login({
+          email: formData.email,
+          password: formData.password
+        });
+        
+        if (loginResponse.success) {
+          AppUserAuthService.storeToken(loginResponse.data.session.accessToken);
+          window.location.href = '/dashboard';
+        }
+      } else {
+        setError(data.message || 'Invalid OTP code');
+      }
+    } catch (error: any) {
+      console.error('OTP verification failed:', error);
+      setError(error.message || 'Verification failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (showOTPInput) {
+    return (
+      <div>
+        <h2>Verify Your {otpMethod === 'email' ? 'Email' : 'Phone'}</h2>
+        <p>Enter the 6-digit code sent to your {otpMethod}</p>
+        {error && <div className="error">{error}</div>}
+        <input 
+          type="text" 
+          maxLength={6}
+          placeholder="123456"
+          onInput={(e) => {
+            const value = e.currentTarget.value;
+            if (value.length === 6) {
+              handleVerifyOTP(value);
+            }
+          }}
+        />
+        <button onClick={() => setShowOTPInput(false)}>Back</button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleRegister}>
+      {error && <div className="error">{error}</div>}
+      
+      {/* OTP Method Selection */}
+      <div>
+        <label>Verification Method:</label>
+        <select value={otpMethod} onChange={(e) => setOtpMethod(e.target.value as 'email' | 'sms')}>
+          <option value="email">Email</option>
+          <option value="sms">SMS</option>
+        </select>
+      </div>
+      
       {/* Form fields */}
       <button type="submit" disabled={loading}>
         {loading ? 'Registering...' : 'Register'}
@@ -1986,9 +2246,11 @@ headers: { 'X-API-Key': 'sk_your_key' }  // Note: Capital X
 
 2. **Use auth endpoints WITHOUT project ID** (simpler URLs):
 ```typescript
-POST /app-api/auth/auth/register  // NOT /app-api/auth/:projectId/auth/register
+POST /app-api/auth/auth/register    // NOT /app-api/auth/:projectId/auth/register
 POST /app-api/auth/auth/login
 POST /app-api/auth/auth/verify
+POST /app-api/auth/auth/verify-otp  // Verify OTP after registration
+POST /app-api/auth/auth/logout
 ```
 
 3. **Store JWT tokens returned from login/register**:
@@ -2012,7 +2274,36 @@ Use project-scoped endpoints (requires platform admin session):
 GET /app-api/auth/users
 POST /app-api/auth/users
 PUT /app-api/auth/users/:userId
+DELETE /app-api/auth/users/:userId
+GET /app-api/auth/users/:userId/otp-status      // View OTP history
+POST /app-api/auth/users/:userId/resend-otp     // Resend OTP
+POST /app-api/auth/users/:userId/manual-verify  // Manual verification
 ```
+
+---
+
+## Quick Reference - Authentication Endpoints
+
+### Public Endpoints (No Auth Required)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/app-api/auth/auth/register` | Register new user with optional OTP |
+| POST | `/app-api/auth/auth/login` | Login user |
+| POST | `/app-api/auth/auth/verify` | Verify session token |
+| POST | `/app-api/auth/auth/logout` | Logout user |
+| POST | `/app-api/auth/auth/verify-otp` | Verify OTP code (email/SMS) |
+
+### Admin Endpoints (Requires Auth)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/app-api/auth/users` | List all users |
+| GET | `/app-api/auth/users/:userId` | Get user details |
+| POST | `/app-api/auth/users` | Create new user |
+| PUT | `/app-api/auth/users/:userId` | Update user |
+| DELETE | `/app-api/auth/users/:userId` | Delete user |
+| GET | `/app-api/auth/users/:userId/otp-status` | Get OTP verification history |
+| POST | `/app-api/auth/users/:userId/resend-otp` | Resend OTP to user |
+| POST | `/app-api/auth/users/:userId/manual-verify` | Manually verify user |
 
 ---
 
@@ -2022,7 +2313,8 @@ PUT /app-api/auth/users/:userId
 ✅ **JWT Token** → Authenticates individual users (from login/register)  
 ✅ **No Project ID in Auth URLs** → Extracted from API key automatically  
 ✅ **Two Service Types** → `AppUserAuthService` (end-users) + `UserManagementService` (admins)  
-✅ **SuperTokens Integration** → Recommended for automatic session management and token refresh
+✅ **SuperTokens Integration** → Recommended for automatic session management and token refresh  
+✅ **OTP Verification** → Optional email/SMS verification for enhanced security
 
 ---
 

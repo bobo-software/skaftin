@@ -261,12 +261,12 @@ class CommunicationsService {
   /**
    * Test email provider connection
    */
-  async testConnection(projectId: string, providerId: string): Promise<boolean> {
+  async testConnection(projectId: string, providerId: string, testEmail?: string): Promise<boolean> {
     try {
       const response = await RequestUtils.post(
         ApiRoutes.COMMUNICATIONS.TEST_CONNECTION(projectId, providerId),
         this.getToken(),
-        {}
+        testEmail ? { test_email: testEmail } : {}
       );
 
       return response.success;

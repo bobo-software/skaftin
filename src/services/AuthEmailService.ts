@@ -386,6 +386,184 @@ The ${projectName} Team
   }
 
   /**
+   * Send password reset OTP email
+   */
+  async sendPasswordResetOTP(
+    projectId: number,
+    userEmail: string,
+    userName: string,
+    otp: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const provider = await this.getEmailProvider(projectId);
+      if (!provider) {
+        return {
+          success: false,
+          error: 'Email provider not configured. Please configure an email provider in project settings.',
+        };
+      }
+
+      const projectName = await this.getProjectName(projectId);
+
+      const subject = `Password Reset Code - ${projectName}`;
+      const text = `
+Hello ${userName},
+
+We received a request to reset your password. Use the following verification code to proceed:
+
+${otp}
+
+This code will expire in 10 minutes.
+
+If you didn't request a password reset, please ignore this email and your password will remain unchanged.
+
+Best regards,
+The ${projectName} Team
+      `.trim();
+
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #32A956; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+    .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+    .otp-box { background-color: #fff; border: 2px dashed #32A956; padding: 20px; text-align: center; margin: 20px 0; border-radius: 5px; }
+    .otp-code { font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #32A956; }
+    .warning { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 20px 0; }
+    .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔐 Password Reset</h1>
+    </div>
+    <div class="content">
+      <p>Hello ${userName},</p>
+      <p>We received a request to reset your password. Enter the verification code below to proceed:</p>
+      <div class="otp-box">
+        <div class="otp-code">${otp}</div>
+      </div>
+      <p style="text-align: center; color: #666;">This code will expire in 10 minutes.</p>
+      <div class="warning">
+        <strong>Security Notice:</strong> If you didn't request a password reset, please ignore this email and your password will remain unchanged.
+      </div>
+      <div class="footer">
+        <p>Best regards,<br>The ${projectName} Team</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+      `.trim();
+
+      const success = await this.sendEmail(provider, {
+        to: userEmail,
+        subject,
+        text,
+        html,
+      });
+
+      return { success };
+    } catch (error: any) {
+      console.error('Error sending password reset OTP email:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Send password change OTP email (for logged-in users changing their password)
+   */
+  async sendPasswordChangeOTP(
+    projectId: number,
+    userEmail: string,
+    userName: string,
+    otp: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const provider = await this.getEmailProvider(projectId);
+      if (!provider) {
+        return {
+          success: false,
+          error: 'Email provider not configured. Please configure an email provider in project settings.',
+        };
+      }
+
+      const projectName = await this.getProjectName(projectId);
+
+      const subject = `Password Change Verification - ${projectName}`;
+      const text = `
+Hello ${userName},
+
+We received a request to change your password. Use the following verification code to proceed:
+
+${otp}
+
+This code will expire in 10 minutes.
+
+If you didn't request a password change, please ignore this email and contact support immediately.
+
+Best regards,
+The ${projectName} Team
+      `.trim();
+
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #32A956; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+    .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+    .otp-box { background-color: #fff; border: 2px dashed #32A956; padding: 20px; text-align: center; margin: 20px 0; border-radius: 5px; }
+    .otp-code { font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #32A956; }
+    .warning { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 20px 0; }
+    .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔐 Password Change</h1>
+    </div>
+    <div class="content">
+      <p>Hello ${userName},</p>
+      <p>We received a request to change your password. Enter the verification code below to proceed:</p>
+      <div class="otp-box">
+        <div class="otp-code">${otp}</div>
+      </div>
+      <p style="text-align: center; color: #666;">This code will expire in 10 minutes.</p>
+      <div class="warning">
+        <strong>Security Notice:</strong> If you didn't request a password change, please ignore this email and contact support immediately as your account may be compromised.
+      </div>
+      <div class="footer">
+        <p>Best regards,<br>The ${projectName} Team</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+      `.trim();
+
+      const success = await this.sendEmail(provider, {
+        to: userEmail,
+        subject,
+        text,
+        html,
+      });
+
+      return { success };
+    } catch (error: any) {
+      console.error('Error sending password change OTP email:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Send welcome email after successful registration
    */
   async sendWelcomeEmail(

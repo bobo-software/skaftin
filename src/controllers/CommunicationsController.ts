@@ -385,14 +385,16 @@ class CommunicationsController {
   testConnection = async (req: Request, res: Response): Promise<void> => {
     try {
       const { projectId, providerId } = req.params;
+      const { test_email } = req.body;
       
       console.log('🧪 [testConnection] Starting connection test');
       console.log('  └─ projectId:', projectId);
       console.log('  └─ providerId:', providerId);
+      console.log('  └─ test_email:', test_email || 'N/A (verification only)');
 
-      // Get provider details
+      // Get provider details (include from_email and from_name for sending test email)
       const query = `
-        SELECT smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password
+        SELECT smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, from_email, from_name, name
         FROM skaftin_system_email_providers
         WHERE id = $1 AND project_id = $2
       `;
@@ -458,10 +460,75 @@ class CommunicationsController {
       await Promise.race([verifyPromise, timeoutPromise]);
 
       console.log('  └─ ✅ Connection verified successfully!');
-      res.json({
-        success: true,
-        message: 'Connection successful',
-      });
+
+      // If test_email is provided, send a test email
+      if (test_email) {
+        console.log('  └─ 📧 Sending test email to:', test_email);
+
+        const mailOptions = {
+          from: provider.from_name 
+            ? `"${provider.from_name}" <${provider.from_email}>` 
+            : provider.from_email,
+          to: test_email,
+          subject: `Test Email from ${provider.name || 'Email Provider'}`,
+          text: `This is a test email to verify your email provider configuration.\n\nProvider: ${provider.name || 'Unknown'}\nSMTP Host: ${provider.smtp_host}\nSMTP Port: ${provider.smtp_port}\n\nIf you received this email, your email provider is configured correctly!`,
+          html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background-color: #32A956; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+                .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+                .success-icon { font-size: 48px; text-align: center; margin: 20px 0; }
+                .details { background-color: #fff; padding: 15px; border-left: 4px solid #32A956; margin: 20px 0; }
+                .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>✅ Email Provider Test</h1>
+                </div>
+                <div class="content">
+                  <div class="success-icon">📧</div>
+                  <p><strong>Success!</strong> This is a test email to verify your email provider configuration.</p>
+                  
+                  <div class="details">
+                    <p><strong>Provider:</strong> ${provider.name || 'Unknown'}</p>
+                    <p><strong>SMTP Host:</strong> ${provider.smtp_host}</p>
+                    <p><strong>SMTP Port:</strong> ${provider.smtp_port}</p>
+                    <p><strong>Secure:</strong> ${provider.smtp_secure ? 'Yes (SSL/TLS)' : 'No (STARTTLS)'}</p>
+                  </div>
+                  
+                  <p>If you received this email, your email provider is configured correctly and ready to send emails!</p>
+                  
+                  <div class="footer">
+                    <p>This is an automated test email from Skaftin Platform.</p>
+                  </div>
+                </div>
+              </div>
+            </body>
+            </html>
+          `,
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log('  └─ ✅ Test email sent successfully!');
+
+        res.json({
+          success: true,
+          message: `Connection successful and test email sent to ${test_email}`,
+          emailSent: true,
+        });
+      } else {
+        res.json({
+          success: true,
+          message: 'Connection successful',
+          emailSent: false,
+        });
+      }
     } catch (error: any) {
       console.error('  └─ ❌ Connection test failed:');
       console.error('     └─ Error name:', error.name);

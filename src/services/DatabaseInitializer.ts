@@ -843,6 +843,7 @@ export class DatabaseInitializer {
           send_verification_email BOOLEAN DEFAULT false,
           send_password_reset_email BOOLEAN DEFAULT true,
           send_welcome_email BOOLEAN DEFAULT false,
+          require_otp_for_password_change BOOLEAN DEFAULT false,
           settings_json JSONB DEFAULT '{}',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -1012,6 +1013,36 @@ export class DatabaseInitializer {
       `));
 
       console.log(`✅ skaftin_system_users table created in schema: ${schemaName}`);
+
+      // Create skaftin_system_otp_verifications table in project schema
+      await this.db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_otp_verifications (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES ${schemaName}.skaftin_system_users(id) ON DELETE CASCADE,
+          otp_code VARCHAR(10) NOT NULL,
+          otp_method VARCHAR(10) NOT NULL CHECK (otp_method IN ('email', 'sms')),
+          destination VARCHAR(255) NOT NULL,
+          status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'expired', 'failed')),
+          expires_at TIMESTAMP NOT NULL,
+          verified_at TIMESTAMP,
+          attempts INTEGER DEFAULT 0,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `));
+
+      // Create indexes for skaftin_system_otp_verifications
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_otp_user_id ON ${schemaName}.skaftin_system_otp_verifications(user_id);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_otp_status ON ${schemaName}.skaftin_system_otp_verifications(status);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_otp_expires_at ON ${schemaName}.skaftin_system_otp_verifications(expires_at);
+      `));
+
+      console.log(`✅ skaftin_system_otp_verifications table created in schema: ${schemaName}`);
 
       // Create skaftin_system_roles table in project schema
       await this.db.execute(sql.raw(`

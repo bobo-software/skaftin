@@ -250,12 +250,24 @@ These guides show you how to manually create the SDK structure. This is perfect 
 - 403 errors → Check credential permissions
 - Type errors → Regenerate types from schema
 
+## 📋 What's New
+
+**December 2025 Updates:**
+- ✅ **Forgot Password Flow** - Complete OTP-based password reset
+- ✅ **SMS OTP Support** - Password reset via SMS
+- ✅ **Enhanced Email Testing** - Send test emails to any address
+- ✅ **Bug Fixes** - SuperTokens sync, table names, custom fields
+- ✅ **Improved Documentation** - Comprehensive guides and examples
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for complete details.
+
 ## 📖 Additional Resources
 
 - **Skaftin Documentation:** `/docs/`
 - **API Endpoints:** `docs/DATABASE_API_SUMMARY.md`
 - **GraphQL Schema:** `docs/GRAPHQL_API_GUIDE.md`
 - **MCP Integration:** `docs/MCP_KEY_FEATURE.md`
+- **Auth Improvements:** `docs/AUTH_IMPROVEMENTS_DEC_2025.md` ⭐ NEW
 
 ## ✨ Happy Coding!
 

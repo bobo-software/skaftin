@@ -6,6 +6,9 @@ import ResponseUtils from '../utils/ResponseUtils';
 import EmailPassword from 'supertokens-node/recipe/emailpassword';
 import { deleteUser } from 'supertokens-node';
 import { AuthUtils } from '../utils/AuthUtils';
+import { AuthEmailService } from '../services/AuthEmailService';
+import { SmsOtpService } from '../services/SmsOtpService';
+import crypto from 'crypto';
 
 interface AppUser {
   id: number;
@@ -45,9 +48,13 @@ interface UpdateUserRequest {
 
 class AuthUsersController {
   private static pool: Pool;
+  private static emailService: AuthEmailService;
+  private static smsOtpService: SmsOtpService;
 
   static initialize(pool: Pool) {
     AuthUsersController.pool = pool;
+    AuthUsersController.emailService = new AuthEmailService(pool);
+    AuthUsersController.smsOtpService = new SmsOtpService(pool);
   }
 
   /**
@@ -704,6 +711,195 @@ class AuthUsersController {
     } catch (error) {
       console.error('Error fetching users by role:', error);
       ResponseUtils.error(res, 'Failed to fetch users by role', error);
+    }
+  }
+
+  /**
+   * Get OTP verification status for a user
+   * GET /api/auth/:projectId/users/:userId/otp-status
+   */
+  static async getUserOTPStatus(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
+    try {
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { userId } = req.params;
+
+      const schemaName = req.schemaName || await AuthUsersController.getProjectSchema(projectId);
+      if (!schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Get all OTP records for the user
+      const otpRecords = await AuthUsersController.pool.query(
+        `SELECT id, otp_method, destination, status, expires_at, verified_at, attempts, created_at
+         FROM ${schemaName}.skaftin_system_otp_verifications
+         WHERE user_id = $1
+         ORDER BY created_at DESC`,
+        [parseInt(userId)]
+      );
+
+      ResponseUtils.success(res, 'OTP status fetched successfully', otpRecords.rows);
+    } catch (error) {
+      console.error('Error fetching OTP status:', error);
+      ResponseUtils.error(res, 'Failed to fetch OTP status', error);
+    }
+  }
+
+  /**
+   * Resend OTP to a user
+   * POST /api/auth/:projectId/users/:userId/resend-otp
+   */
+  static async resendOTP(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
+    try {
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { userId } = req.params;
+
+      const schemaName = req.schemaName || await AuthUsersController.getProjectSchema(projectId);
+      if (!schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Get user details
+      const userResult = await AuthUsersController.pool.query(
+        `SELECT id, name, email, phone FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        [parseInt(userId)]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+
+      // Get the last OTP record to determine method
+      const lastOtpResult = await AuthUsersController.pool.query(
+        `SELECT otp_method, destination FROM ${schemaName}.skaftin_system_otp_verifications
+         WHERE user_id = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [parseInt(userId)]
+      );
+
+      if (lastOtpResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'No previous OTP found for this user', null, null, 404);
+      }
+
+      const lastOtp = lastOtpResult.rows[0];
+      const otpMethod = lastOtp.otp_method;
+
+      // Mark all pending OTPs as expired
+      await AuthUsersController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications
+         SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1 AND status = 'pending'`,
+        [parseInt(userId)]
+      );
+
+      // Generate new OTP
+      const otp = crypto.randomInt(100000, 999999).toString();
+      const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      // Send OTP based on method
+      let sendSuccess = false;
+      let destination = '';
+
+      if (otpMethod === 'email') {
+        destination = user.email;
+        console.log(`📧 Resending OTP via email to ${destination}...`);
+        
+        const emailResult = await AuthUsersController.emailService.sendRegistrationEmail(
+          projectId,
+          destination,
+          user.name,
+          otp
+        );
+        
+        sendSuccess = emailResult.success;
+      } else if (otpMethod === 'sms') {
+        destination = user.phone || lastOtp.destination;
+        console.log(`📱 Resending OTP via SMS to ${destination}...`);
+        
+        const smsResult = await AuthUsersController.smsOtpService.sendOTP(
+          projectId.toString(),
+          destination,
+          otp,
+          user.name
+        );
+        
+        sendSuccess = smsResult.success;
+      }
+
+      if (!sendSuccess) {
+        return ResponseUtils.error(res, `Failed to send OTP via ${otpMethod}`, null, null, 500);
+      }
+
+      // Store new OTP record
+      await AuthUsersController.pool.query(
+        `INSERT INTO ${schemaName}.skaftin_system_otp_verifications 
+         (user_id, otp_code, otp_method, destination, expires_at)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [parseInt(userId), otp, otpMethod, destination, otpExpiresAt]
+      );
+
+      console.log(`   └─ ✅ OTP resent successfully via ${otpMethod}`);
+
+      ResponseUtils.success(res, `OTP resent successfully via ${otpMethod}`, {
+        method: otpMethod,
+        destination: destination,
+      });
+    } catch (error) {
+      console.error('Error resending OTP:', error);
+      ResponseUtils.error(res, 'Failed to resend OTP', error);
+    }
+  }
+
+  /**
+   * Manually verify a user without OTP
+   * POST /api/auth/:projectId/users/:userId/manual-verify
+   */
+  static async manuallyVerifyUser(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
+    try {
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { userId } = req.params;
+
+      const schemaName = req.schemaName || await AuthUsersController.getProjectSchema(projectId);
+      if (!schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Mark all pending OTPs as expired
+      await AuthUsersController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications
+         SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1 AND status = 'pending'`,
+        [parseInt(userId)]
+      );
+
+      // Activate user and mark both email and phone as verified
+      await AuthUsersController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_users
+         SET is_active = true,
+             email_verified = true,
+             phone_verified = true,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [parseInt(userId)]
+      );
+
+      console.log(`✅ User ${userId} manually verified by admin`);
+
+      ResponseUtils.success(res, 'User manually verified successfully');
+    } catch (error) {
+      console.error('Error manually verifying user:', error);
+      ResponseUtils.error(res, 'Failed to manually verify user', error);
     }
   }
 }

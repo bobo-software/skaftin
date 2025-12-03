@@ -5,6 +5,7 @@ import AuthRolesTab from './tabs/AuthRolesTab';
 import AuthCustomFieldsTab from './tabs/AuthCustomFieldsTab';
 import AuthEmailSettingsTab from './tabs/AuthEmailSettingsTab';
 import AuthGeneralSettingsTab from './tabs/AuthGeneralSettingsTab';
+import UserDetailsPage from './UserDetailsPage';
 
 const AuthTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -50,6 +51,7 @@ const AuthTab = () => {
         <Routes>
           <Route index element={<Navigate to="users" replace />} />
           <Route path="users" element={<AuthUsersTab />} />
+          <Route path="users/:userId" element={<UserDetailsPage />} />
           <Route path="roles" element={<AuthRolesTab />} />
           <Route path="fields" element={<AuthCustomFieldsTab />} />
           <Route path="messaging" element={<AuthEmailSettingsTab />} />

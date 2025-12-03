@@ -69,6 +69,46 @@ export function createAuthRouteDefinitions(isAdmin: boolean): RouteDefinition[] 
       requiresProject: true,
       requiresAuth: false, // Public endpoint
     },
+    {
+      method: 'post',
+      path: createPath('/auth/forgot-password', isAdmin),
+      handler: AppAuthController.sendForgotPasswordOTP,
+      description: 'Send OTP for forgot password',
+      requiresProject: true,
+      requiresAuth: false, // Public endpoint
+    },
+    {
+      method: 'post',
+      path: createPath('/auth/verify-forgot-password-otp', isAdmin),
+      handler: AppAuthController.verifyForgotPasswordOTP,
+      description: 'Verify OTP for forgot password',
+      requiresProject: true,
+      requiresAuth: false, // Public endpoint
+    },
+    {
+      method: 'post',
+      path: createPath('/auth/reset-password', isAdmin),
+      handler: AppAuthController.resetPassword,
+      description: 'Reset password after OTP verification',
+      requiresProject: true,
+      requiresAuth: false, // Public endpoint
+    },
+    {
+      method: 'post',
+      path: createPath('/auth/change-password-request', isAdmin),
+      handler: AppAuthController.changePasswordRequest,
+      description: 'Request password change (logged-in users)',
+      requiresProject: true,
+      requiresAuth: true, // Requires authentication
+    },
+    {
+      method: 'post',
+      path: createPath('/auth/verify-password-change-otp', isAdmin),
+      handler: AppAuthController.verifyPasswordChangeOTP,
+      description: 'Verify OTP for password change',
+      requiresProject: true,
+      requiresAuth: true, // Requires authentication
+    },
 
     // ============================================================================
     // USER MANAGEMENT ROUTES (Auth required)
@@ -119,6 +159,30 @@ export function createAuthRouteDefinitions(isAdmin: boolean): RouteDefinition[] 
       path: createPath('/users/:userId', isAdmin),
       handler: AuthUsersController.deleteUser,
       description: 'Delete a user (soft delete by default, permanent with ?permanent=true)',
+      requiresProject: true,
+      requiresAuth: true,
+    },
+    {
+      method: 'get',
+      path: createPath('/users/:userId/otp-status', isAdmin),
+      handler: AuthUsersController.getUserOTPStatus,
+      description: 'Get user OTP verification status',
+      requiresProject: true,
+      requiresAuth: true,
+    },
+    {
+      method: 'post',
+      path: createPath('/users/:userId/resend-otp', isAdmin),
+      handler: AuthUsersController.resendOTP,
+      description: 'Resend OTP to user',
+      requiresProject: true,
+      requiresAuth: true,
+    },
+    {
+      method: 'post',
+      path: createPath('/users/:userId/manual-verify', isAdmin),
+      handler: AuthUsersController.manuallyVerifyUser,
+      description: 'Manually verify user without OTP',
       requiresProject: true,
       requiresAuth: true,
     },

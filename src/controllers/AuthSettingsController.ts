@@ -26,6 +26,7 @@ interface AuthSettings {
   send_password_reset_sms?: boolean;
   send_welcome_email: boolean;
   send_welcome_sms?: boolean;
+  require_otp_for_password_change?: boolean;
   settings_json: any;
   created_at: Date;
   updated_at: Date;
@@ -50,6 +51,7 @@ interface UpdateAuthSettingsRequest {
   send_password_reset_sms?: boolean;
   send_welcome_email?: boolean;
   send_welcome_sms?: boolean;
+  require_otp_for_password_change?: boolean;
   settings_json?: any;
 }
 
@@ -211,6 +213,11 @@ class AuthSettingsController {
       if (updates.send_welcome_email !== undefined) {
         updateFields.push(`send_welcome_email = $${paramIndex++}`);
         values.push(updates.send_welcome_email);
+      }
+
+      if (updates.require_otp_for_password_change !== undefined) {
+        updateFields.push(`require_otp_for_password_change = $${paramIndex++}`);
+        values.push(updates.require_otp_for_password_change);
       }
 
       // Handle SMS notification settings (stored in settings_json for now)
@@ -850,7 +857,7 @@ class AuthSettingsController {
       const providerQuery = `
         SELECT smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, 
                from_email, from_name, is_active
-        FROM email_providers
+        FROM skaftin_system_email_providers
         WHERE id = $1 AND project_id = $2 AND is_active = true
       `;
 
@@ -995,7 +1002,7 @@ Skaftin Platform - Email Testing Service
 
       const providersResult = await AuthSettingsController.pool.query(
         `SELECT id, name, provider_type, from_email, is_active
-         FROM email_providers
+         FROM skaftin_system_email_providers
          WHERE project_id = $1 AND is_active = true
          ORDER BY created_at ASC`,
         [projectId]
@@ -1025,7 +1032,7 @@ Skaftin Platform - Email Testing Service
 
       const providersResult = await AuthSettingsController.pool.query(
         `SELECT id, name, provider_type, post_url, is_active
-         FROM public.sms_providers
+         FROM skaftin_system_sms_providers
          WHERE project_id = $1 AND is_active = true
          ORDER BY created_at ASC`,
         [projectId]
@@ -1076,7 +1083,7 @@ Skaftin Platform - Email Testing Service
       // Fetch provider credentials
       const providerQuery = `
         SELECT provider_type, api_key, api_secret, post_url, is_active
-        FROM public.sms_providers
+        FROM skaftin_system_sms_providers
         WHERE id = $1 AND project_id = $2 AND is_active = true
       `;
       const providerResult = await AuthSettingsController.pool.query(providerQuery, [smsProviderId, projectId]);

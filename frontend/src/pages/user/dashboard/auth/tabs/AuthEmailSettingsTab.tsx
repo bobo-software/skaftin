@@ -123,6 +123,7 @@ const AuthEmailSettingsTab = () => {
         send_password_reset_sms: settings.send_password_reset_sms,
         send_welcome_email: settings.send_welcome_email,
         send_welcome_sms: settings.send_welcome_sms,
+        require_otp_for_password_change: settings.require_otp_for_password_change,
       });
       
       setMessage({ type: 'success', text: 'Notification settings saved successfully!' });
@@ -425,7 +426,7 @@ const AuthEmailSettingsTab = () => {
               </div>
 
               {/* Welcome Notification */}
-              <div className="pb-2">
+              <div className="border-b border-dark-100 dark:border-dark-700 pb-4">
                 <div className="mb-3">
                   <label className="font-medium text-dark-900 dark:text-white">Welcome Notification</label>
                   <p className="text-sm text-dark-600 dark:text-dark-400">
@@ -451,6 +452,31 @@ const AuthEmailSettingsTab = () => {
                     />
                     <span className="text-sm text-dark-700 dark:text-dark-300">SMS</span>
                   </label>
+                </div>
+              </div>
+
+              {/* Password Change OTP Requirement */}
+              <div className="pb-2">
+                <div className="mb-3">
+                  <label className="font-medium text-dark-900 dark:text-white">Password Change Verification</label>
+                  <p className="text-sm text-dark-600 dark:text-dark-400">
+                    Require OTP verification when logged-in users change their password
+                  </p>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.require_otp_for_password_change || false}
+                      onChange={(e) => setSettings({ ...settings, require_otp_for_password_change: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-dark-700 dark:text-dark-300">Require OTP verification</span>
+                  </label>
+                  <p className="text-xs text-dark-500 dark:text-dark-500 mt-2 ml-6">
+                    When enabled, users must verify their identity via OTP (email or SMS) before completing a password change.
+                    This adds an extra layer of security but requires users to have a valid email or phone number.
+                  </p>
                 </div>
               </div>
             </div>

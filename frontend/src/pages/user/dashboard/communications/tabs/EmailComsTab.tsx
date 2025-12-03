@@ -193,9 +193,23 @@ const EmailComsTab = () => {
   };
 
   const handleTestConnection = async (providerId: number) => {
+    // Prompt user for test email address
+    const testEmail = prompt('Enter email address to send test email:');
+    
+    if (!testEmail) {
+      return; // User cancelled
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(testEmail)) {
+      ToastUtils.error('Please enter a valid email address');
+      return;
+    }
+
     try {
-      await CommunicationsService.testConnection(projectId!, providerId.toString());
-      ToastUtils.success('Connection test successful!');
+      await CommunicationsService.testConnection(projectId!, providerId.toString(), testEmail);
+      ToastUtils.success(`Test email sent to ${testEmail}!`);
     } catch (error: any) {
       ToastUtils.error(error.message || 'Connection test failed');
     }
