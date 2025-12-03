@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, 
   Mail, 
-  Phone, 
   Shield, 
   Calendar, 
   CheckCircle, 
@@ -12,7 +11,9 @@ import {
   Trash2,
   User,
   Clock,
-  Key
+  Key,
+  AlertTriangle,
+  Trash
 } from 'lucide-react';
 import AuthUsersService, { AppUser } from '../../../../services/AuthUsersService';
 import RolesService, { Role } from '../../../../services/RolesService';
@@ -36,6 +37,7 @@ const UserDetailsPage = () => {
       fetchRoles();
       fetchCustomFields();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, userId]);
 
   const fetchUserDetails = async () => {
@@ -198,6 +200,68 @@ const UserDetailsPage = () => {
           )}
         </div>
 
+        {/* Deletion Warning Banner */}
+        {user.deletion_scheduled_at && !user.deleted_at && (
+          <div className="mb-6 bg-orange-50 dark:bg-orange-900/20 border-l-4 border-orange-500 p-4 rounded-r-lg">
+            <div className="flex items-start">
+              <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400 mr-3 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-orange-800 dark:text-orange-200 mb-1">
+                  Account Scheduled for Deletion
+                </h3>
+                <p className="text-sm text-orange-700 dark:text-orange-300 mb-2">
+                  This user has requested account deletion. The account will be permanently deactivated on{' '}
+                  <strong>{new Date(user.deletion_scheduled_at).toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}</strong>
+                  {user.deletion_requested_at && (
+                    <> (requested {new Date(user.deletion_requested_at).toLocaleDateString()})</>
+                  )}.
+                </p>
+                {user.deletion_reason && (
+                  <p className="text-sm text-orange-700 dark:text-orange-300 mb-2">
+                    <strong>Reason:</strong> {user.deletion_reason}
+                  </p>
+                )}
+                <div className="flex items-center gap-2 mt-3">
+                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200">
+                    <Clock className="w-3 h-3 mr-1" />
+                    {Math.ceil((new Date(user.deletion_scheduled_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))} days remaining
+                  </span>
+                  <span className="text-xs text-orange-600 dark:text-orange-400">
+                    User can cancel deletion before scheduled date
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {user.deleted_at && (
+          <div className="mb-6 bg-gray-50 dark:bg-gray-900/20 border-l-4 border-gray-500 p-4 rounded-r-lg">
+            <div className="flex items-start">
+              <Trash className="w-5 h-5 text-gray-600 dark:text-gray-400 mr-3 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
+                  Account Deleted
+                </h3>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  This account was deleted on{' '}
+                  <strong>{new Date(user.deleted_at).toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}</strong>. The account is deactivated but data is retained for compliance.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Contact Information */}
@@ -213,9 +277,13 @@ const UserDetailsPage = () => {
                 <div className="flex items-center mt-1">
                   <p className="text-dark-900 dark:text-white">{user.email}</p>
                   {user.email_verified ? (
-                    <CheckCircle className="w-4 h-4 text-green-500 ml-2" title="Verified" />
+                    <span title="Verified">
+                      <CheckCircle className="w-4 h-4 text-green-500 ml-2" />
+                    </span>
                   ) : (
-                    <XCircle className="w-4 h-4 text-red-500 ml-2" title="Not verified" />
+                    <span title="Not verified">
+                      <XCircle className="w-4 h-4 text-red-500 ml-2" />
+                    </span>
                   )}
                 </div>
               </div>
@@ -226,7 +294,9 @@ const UserDetailsPage = () => {
                   <div className="flex items-center mt-1">
                     <p className="text-dark-900 dark:text-white">{user.phone}</p>
                     {user.phone_verified && (
-                      <CheckCircle className="w-4 h-4 text-green-500 ml-2" title="Verified" />
+                      <span title="Verified">
+                        <CheckCircle className="w-4 h-4 text-green-500 ml-2" />
+                      </span>
                     )}
                   </div>
                 </div>

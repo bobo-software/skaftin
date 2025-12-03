@@ -109,6 +109,30 @@ export function createAuthRouteDefinitions(isAdmin: boolean): RouteDefinition[] 
       requiresProject: true,
       requiresAuth: true, // Requires authentication
     },
+    {
+      method: 'post',
+      path: createPath('/auth/request-account-deletion', isAdmin),
+      handler: AppAuthController.requestAccountDeletion,
+      description: 'Request account deletion (logged-in users)',
+      requiresProject: true,
+      requiresAuth: true, // Requires authentication
+    },
+    {
+      method: 'post',
+      path: createPath('/auth/verify-account-deletion-otp', isAdmin),
+      handler: AppAuthController.verifyAccountDeletionOTP,
+      description: 'Verify OTP for account deletion',
+      requiresProject: true,
+      requiresAuth: true, // Requires authentication
+    },
+    {
+      method: 'post',
+      path: createPath('/auth/cancel-account-deletion', isAdmin),
+      handler: AppAuthController.cancelAccountDeletion,
+      description: 'Cancel scheduled account deletion',
+      requiresProject: true,
+      requiresAuth: true, // Requires authentication
+    },
 
     // ============================================================================
     // USER MANAGEMENT ROUTES (Auth required)

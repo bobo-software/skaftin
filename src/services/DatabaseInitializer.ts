@@ -844,6 +844,7 @@ export class DatabaseInitializer {
           send_password_reset_email BOOLEAN DEFAULT true,
           send_welcome_email BOOLEAN DEFAULT false,
           require_otp_for_password_change BOOLEAN DEFAULT false,
+          require_otp_for_account_deletion BOOLEAN DEFAULT false,
           settings_json JSONB DEFAULT '{}',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -942,6 +943,10 @@ export class DatabaseInitializer {
           is_active BOOLEAN DEFAULT true,
           email_verified BOOLEAN DEFAULT false,
           phone_verified BOOLEAN DEFAULT false,
+          deletion_requested_at TIMESTAMP,
+          deletion_scheduled_at TIMESTAMP,
+          deletion_reason TEXT,
+          deleted_at TIMESTAMP,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -1011,6 +1016,9 @@ export class DatabaseInitializer {
       await this.db.execute(sql.raw(`
         CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_custom_field_2 ON ${schemaName}.skaftin_system_users(custom_field_2);
       `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_users_deletion_scheduled ON ${schemaName}.skaftin_system_users(deletion_scheduled_at) WHERE deletion_scheduled_at IS NOT NULL AND deleted_at IS NULL;
+      `));
 
       console.log(`✅ skaftin_system_users table created in schema: ${schemaName}`);
 
@@ -1026,6 +1034,8 @@ export class DatabaseInitializer {
           expires_at TIMESTAMP NOT NULL,
           verified_at TIMESTAMP,
           attempts INTEGER DEFAULT 0,
+          purpose VARCHAR(20) NOT NULL DEFAULT 'registration' CHECK (purpose IN ('registration', 'password_reset', 'password_change', 'account_deletion')),
+          metadata JSONB DEFAULT '{}',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );

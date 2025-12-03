@@ -120,5 +120,42 @@ export class SmsOtpService {
       return { success: false, error: error.message || 'Failed to send password change OTP SMS' };
     }
   }
+
+  /**
+   * Send account deletion OTP via SMS (for users deleting their account)
+   */
+  async sendAccountDeletionOTP(projectId: string, phone: string, otp: string, userName: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Get project name for the SMS message
+      const projectResult = await this.pool.query(
+        'SELECT name FROM skaftin_system_projects WHERE id = $1',
+        [projectId]
+      );
+
+      const projectName = projectResult.rows.length > 0 ? projectResult.rows[0].name : 'Skaftin';
+
+      // Construct account deletion OTP message
+      const message = `URGENT: Your account deletion code is: ${otp}. Valid for 10 minutes. Account will be deleted in 7 days after confirmation. If you didn't request this, contact support NOW. - ${projectName}`;
+
+      // Send SMS using SmsService
+      const result = await this.smsService.send(projectId, [
+        {
+          content: message,
+          destination: phone,
+        },
+      ]);
+
+      if (result.success) {
+        console.log(`✅ Account deletion OTP SMS sent to ${phone}`);
+        return { success: true };
+      } else {
+        console.error(`❌ Failed to send account deletion OTP SMS: ${result.error}`);
+        return { success: false, error: result.error };
+      }
+    } catch (error: any) {
+      console.error('Error sending account deletion OTP SMS:', error);
+      return { success: false, error: error.message || 'Failed to send account deletion OTP SMS' };
+    }
+  }
 }
 

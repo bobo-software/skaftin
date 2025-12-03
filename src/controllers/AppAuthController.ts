@@ -1938,6 +1938,562 @@ class AppAuthController {
       ResponseUtils.error(res, 'Failed to verify OTP', error);
     }
   }
+
+  /**
+   * Request account deletion for logged-in user
+   * 
+   * Allows authenticated users to request deletion of their account with optional OTP verification.
+   * Account will be scheduled for deletion 7 days from the request.
+   * 
+   * Security Features:
+   * - Requires password verification
+   * - Optional OTP verification (configurable per project)
+   * - 7-day grace period before final deletion
+   * - Email notification sent
+   * 
+   * POST /api/app-auth/auth/request-account-deletion
+   * 
+   * Request body: { password: string, reason?: string, otp_method?: 'email' | 'sms' }
+   */
+  static async requestAccountDeletion(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // This endpoint requires authentication
+      if (!req.appUser || !req.appUser.userId) {
+        return ResponseUtils.error(res, 'Authentication required', null, null, 401);
+      }
+
+      const { password, reason, otp_method } = req.body;
+
+      if (!password) {
+        return ResponseUtils.error(res, 'Password is required', null, null, 400);
+      }
+
+      // Validate otp_method if provided
+      if (otp_method && !['email', 'sms'].includes(otp_method)) {
+        return ResponseUtils.error(res, 'Invalid otp_method. Must be "email" or "sms"', null, null, 400);
+      }
+
+      console.log('🗑️ [requestAccountDeletion] Processing account deletion request...');
+
+      // Get user details
+      const userResult = await AppAuthController.pool.query(
+        `SELECT id, name, email, phone, supertokens_user_id, deletion_scheduled_at FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        [req.appUser.userId]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+      console.log('   └─ User found:', user.email);
+
+      // Check if deletion already scheduled
+      if (user.deletion_scheduled_at) {
+        const scheduledDate = new Date(user.deletion_scheduled_at);
+        return ResponseUtils.error(
+          res,
+          `Account deletion already scheduled for ${scheduledDate.toISOString()}. You can cancel it before that date.`,
+          null,
+          null,
+          409
+        );
+      }
+
+      // Get auth settings to check if OTP is required
+      const settingsResult = await AppAuthController.pool.query(
+        `SELECT require_otp_for_account_deletion, email_provider_id, sms_provider_id
+         FROM skaftin_system_auth_settings WHERE project_id = $1`,
+        [projectId]
+      );
+
+      if (settingsResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'Auth settings not found', null, null, 404);
+      }
+
+      const settings = settingsResult.rows[0];
+      const requireOTP = settings.require_otp_for_account_deletion || false;
+
+      console.log('   └─ OTP required:', requireOTP);
+
+      // Verify password with SuperTokens
+      const supertokensEmail = createProjectScopedEmail(user.email, projectId);
+      const signInResponse = await EmailPassword.signIn("public", supertokensEmail, password);
+
+      if (signInResponse.status !== "OK") {
+        return ResponseUtils.error(res, 'Invalid password', null, null, 401);
+      }
+
+      console.log('   └─ Password verified');
+
+      // Calculate deletion date (7 days from now)
+      const deletionDate = new Date();
+      deletionDate.setDate(deletionDate.getDate() + 7);
+
+      // If OTP is not required, schedule deletion immediately
+      if (!requireOTP) {
+        console.log('   └─ OTP not required, scheduling deletion immediately...');
+
+        const now = new Date();
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_users 
+           SET deletion_requested_at = $1,
+               deletion_scheduled_at = $2,
+               deletion_reason = $3,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = $4`,
+          [now, deletionDate, reason || null, user.id]
+        );
+
+        // Send confirmation email
+        console.log('📧 Sending account deletion scheduled email...');
+        const emailResult = await AppAuthController.emailService.sendAccountDeletionScheduled(
+          projectId,
+          user.email,
+          user.name,
+          deletionDate
+        );
+
+        if (emailResult.success) {
+          console.log('   └─ ✅ Confirmation email sent');
+        } else {
+          console.warn('   └─ ⚠️ Failed to send confirmation email:', emailResult.error);
+        }
+
+        return ResponseUtils.success(res, 'Account deletion scheduled', {
+          message: `Your account will be deleted on ${deletionDate.toISOString()}. You can cancel this at any time before that date.`,
+          scheduled_at: deletionDate.toISOString(),
+        });
+      }
+
+      // OTP is required - send OTP
+      const selectedOtpMethod = otp_method || 'email'; // Default to email
+
+      // Validate that user has the required contact method
+      if (selectedOtpMethod === 'sms' && !user.phone) {
+        return ResponseUtils.error(res, 'Phone number not available. Please use email method.', null, null, 400);
+      }
+
+      if (selectedOtpMethod === 'email' && !settings.email_provider_id) {
+        return ResponseUtils.error(res, 'Email provider not configured for this project', null, null, 500);
+      }
+
+      if (selectedOtpMethod === 'sms' && !settings.sms_provider_id) {
+        return ResponseUtils.error(res, 'SMS provider not configured for this project', null, null, 500);
+      }
+
+      // Generate OTP
+      const otp = crypto.randomInt(100000, 999999).toString();
+      const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      console.log(`   └─ Sending OTP via ${selectedOtpMethod}...`);
+
+      // Invalidate any existing pending account deletion OTPs for this user
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+         SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1 AND purpose = 'account_deletion' AND status = 'pending'`,
+        [user.id]
+      );
+
+      // Store deletion request temporarily in OTP metadata
+      await AppAuthController.pool.query(
+        `INSERT INTO ${schemaName}.skaftin_system_otp_verifications 
+         (user_id, otp_code, otp_method, destination, expires_at, purpose, metadata)
+         VALUES ($1, $2, $3, $4, $5, 'account_deletion', $6)`,
+        [
+          user.id,
+          otp,
+          selectedOtpMethod,
+          selectedOtpMethod === 'email' ? user.email : user.phone,
+          otpExpiresAt,
+          JSON.stringify({ reason, deletion_date: deletionDate.toISOString() })
+        ]
+      );
+
+      // Send OTP based on method
+      let otpSent = false;
+      let errorMessage: string | undefined;
+
+      if (selectedOtpMethod === 'email') {
+        console.log(`📧 Sending account deletion OTP via email to ${user.email}...`);
+
+        const emailResult = await AppAuthController.emailService.sendAccountDeletionOTP(
+          projectId,
+          user.email,
+          user.name,
+          otp
+        );
+
+        if (emailResult.success) {
+          console.log('   └─ ✅ OTP email sent');
+          otpSent = true;
+        } else {
+          console.warn('   └─ ⚠️ Failed to send OTP email:', emailResult.error);
+          errorMessage = emailResult.error;
+        }
+      } else if (selectedOtpMethod === 'sms') {
+        console.log(`📱 Sending account deletion OTP via SMS to ${user.phone}...`);
+
+        const smsResult = await AppAuthController.smsOtpService.sendAccountDeletionOTP(
+          projectId.toString(),
+          user.phone,
+          otp,
+          user.name
+        );
+
+        if (smsResult.success) {
+          console.log('   └─ ✅ OTP SMS sent');
+          otpSent = true;
+        } else {
+          console.warn('   └─ ⚠️ Failed to send OTP SMS:', smsResult.error);
+          errorMessage = smsResult.error;
+        }
+      }
+
+      if (!otpSent) {
+        return ResponseUtils.error(
+          res,
+          `Failed to send OTP via ${selectedOtpMethod}`,
+          null,
+          errorMessage,
+          500
+        );
+      }
+
+      ResponseUtils.success(res, `OTP sent successfully via ${selectedOtpMethod}`, {
+        message: `A verification code has been sent to your ${selectedOtpMethod}. Please enter the code to confirm account deletion.`,
+        requires_otp: true,
+        otp_method: selectedOtpMethod,
+        destination: selectedOtpMethod === 'email'
+          ? user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3')
+          : user.phone.replace(/(\d{3})(\d*)(\d{2})/, '$1***$3'),
+      });
+    } catch (error) {
+      console.error('Error in requestAccountDeletion:', error);
+      ResponseUtils.error(res, 'Failed to process account deletion request', error);
+    }
+  }
+
+  /**
+   * Verify OTP and complete account deletion scheduling
+   * 
+   * Verifies the OTP code sent to the user and schedules account deletion for 7 days later.
+   * 
+   * Security Features:
+   * - Max 3 verification attempts
+   * - OTP expires in 10 minutes
+   * - One-time use OTP
+   * 
+   * POST /api/app-auth/auth/verify-account-deletion-otp
+   * 
+   * Request body: { code: string }
+   */
+  static async verifyAccountDeletionOTP(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // This endpoint requires authentication
+      if (!req.appUser || !req.appUser.userId) {
+        return ResponseUtils.error(res, 'Authentication required', null, null, 401);
+      }
+
+      const { code } = req.body;
+
+      if (!code) {
+        return ResponseUtils.error(res, 'OTP code is required', null, null, 400);
+      }
+
+      console.log('🔐 [verifyAccountDeletionOTP] Verifying account deletion OTP...');
+
+      // Get user
+      const userResult = await AppAuthController.pool.query(
+        `SELECT id, name, email FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        [req.appUser.userId]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+      console.log('   └─ User found:', user.email);
+
+      // Get pending account deletion OTP record
+      const otpResult = await AppAuthController.pool.query(
+        `SELECT id, otp_code, otp_method, expires_at, attempts, metadata 
+         FROM ${schemaName}.skaftin_system_otp_verifications 
+         WHERE user_id = $1 AND purpose = 'account_deletion' AND status = 'pending'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [user.id]
+      );
+
+      if (otpResult.rows.length === 0) {
+        return ResponseUtils.error(
+          res,
+          'No pending account deletion OTP found. Please request account deletion again.',
+          null,
+          null,
+          400
+        );
+      }
+
+      const otpRecord = otpResult.rows[0];
+
+      // Check if OTP is expired
+      const expiresAt = new Date(otpRecord.expires_at);
+      if (expiresAt < new Date()) {
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+
+        return ResponseUtils.error(
+          res,
+          'OTP code has expired. Please request account deletion again.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Check if max attempts reached
+      if (otpRecord.attempts >= 3) {
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+
+        return ResponseUtils.error(
+          res,
+          'Maximum verification attempts exceeded. Please request account deletion again.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Verify OTP code
+      if (otpRecord.otp_code !== code) {
+        await AppAuthController.pool.query(
+          `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+           SET attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [otpRecord.id]
+        );
+
+        const remainingAttempts = 3 - (otpRecord.attempts + 1);
+        return ResponseUtils.error(
+          res,
+          `Invalid OTP code. ${remainingAttempts} attempt(s) remaining.`,
+          null,
+          null,
+          400
+        );
+      }
+
+      console.log('   └─ ✅ OTP verified successfully');
+
+      // Mark OTP as verified
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+         SET status = 'verified', verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [otpRecord.id]
+      );
+
+      // Get deletion details from metadata
+      const metadata = otpRecord.metadata || {};
+      const reason = metadata.reason;
+      const deletionDate = new Date(metadata.deletion_date || Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      // Schedule deletion
+      const now = new Date();
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_users 
+         SET deletion_requested_at = $1,
+             deletion_scheduled_at = $2,
+             deletion_reason = $3,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $4`,
+        [now, deletionDate, reason || null, user.id]
+      );
+
+      console.log('   └─ ✅ Account deletion scheduled');
+
+      // Send confirmation email
+      console.log('📧 Sending account deletion scheduled email...');
+      const emailResult = await AppAuthController.emailService.sendAccountDeletionScheduled(
+        projectId,
+        user.email,
+        user.name,
+        deletionDate
+      );
+
+      if (emailResult.success) {
+        console.log('   └─ ✅ Confirmation email sent');
+      } else {
+        console.warn('   └─ ⚠️ Failed to send confirmation email:', emailResult.error);
+      }
+
+      // Invalidate all other account deletion OTPs for this user
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_otp_verifications 
+         SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1 AND purpose = 'account_deletion' AND status = 'pending' AND id != $2`,
+        [user.id, otpRecord.id]
+      );
+
+      console.log('✅ Account deletion scheduled for:', user.email);
+
+      ResponseUtils.success(res, 'Account deletion scheduled', {
+        message: `Your account will be deleted on ${deletionDate.toISOString()}. You can cancel this at any time before that date.`,
+        scheduled_at: deletionDate.toISOString(),
+      });
+    } catch (error) {
+      console.error('Error verifying account deletion OTP:', error);
+      ResponseUtils.error(res, 'Failed to verify OTP', error);
+    }
+  }
+
+  /**
+   * Cancel account deletion
+   * 
+   * Allows user to cancel a scheduled account deletion before the scheduled date.
+   * 
+   * Security Features:
+   * - Requires password verification
+   * - Can only cancel before deletion_scheduled_at
+   * - Email confirmation sent
+   * 
+   * POST /api/app-auth/auth/cancel-account-deletion
+   * 
+   * Request body: { password: string }
+   */
+  static async cancelAccountDeletion(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // This endpoint requires authentication
+      if (!req.appUser || !req.appUser.userId) {
+        return ResponseUtils.error(res, 'Authentication required', null, null, 401);
+      }
+
+      const { password } = req.body;
+
+      if (!password) {
+        return ResponseUtils.error(res, 'Password is required', null, null, 400);
+      }
+
+      console.log('↩️ [cancelAccountDeletion] Processing account deletion cancellation...');
+
+      // Get user details
+      const userResult = await AppAuthController.pool.query(
+        `SELECT id, name, email, supertokens_user_id, deletion_scheduled_at, deleted_at FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        [req.appUser.userId]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+      console.log('   └─ User found:', user.email);
+
+      // Check if account already deleted
+      if (user.deleted_at) {
+        return ResponseUtils.error(res, 'Account has already been deleted', null, null, 410);
+      }
+
+      // Check if deletion is scheduled
+      if (!user.deletion_scheduled_at) {
+        return ResponseUtils.error(res, 'No account deletion scheduled', null, null, 404);
+      }
+
+      // Check if scheduled date has passed
+      const scheduledDate = new Date(user.deletion_scheduled_at);
+      if (scheduledDate <= new Date()) {
+        return ResponseUtils.error(
+          res,
+          'Account deletion date has passed. Cannot cancel at this time.',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Verify password with SuperTokens
+      const supertokensEmail = createProjectScopedEmail(user.email, projectId);
+      const signInResponse = await EmailPassword.signIn("public", supertokensEmail, password);
+
+      if (signInResponse.status !== "OK") {
+        return ResponseUtils.error(res, 'Invalid password', null, null, 401);
+      }
+
+      console.log('   └─ Password verified');
+
+      // Cancel deletion
+      await AppAuthController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_users 
+         SET deletion_requested_at = NULL,
+             deletion_scheduled_at = NULL,
+             deletion_reason = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [user.id]
+      );
+
+      console.log('   └─ ✅ Account deletion cancelled');
+
+      // Send cancellation confirmation email
+      console.log('📧 Sending account deletion cancelled email...');
+      const emailResult = await AppAuthController.emailService.sendAccountDeletionCancelled(
+        projectId,
+        user.email,
+        user.name
+      );
+
+      if (emailResult.success) {
+        console.log('   └─ ✅ Confirmation email sent');
+      } else {
+        console.warn('   └─ ⚠️ Failed to send confirmation email:', emailResult.error);
+      }
+
+      console.log('✅ Account deletion cancelled for:', user.email);
+
+      ResponseUtils.success(res, 'Account deletion cancelled', {
+        message: 'Your account deletion has been cancelled. Your account will remain active.',
+      });
+    } catch (error) {
+      console.error('Error cancelling account deletion:', error);
+      ResponseUtils.error(res, 'Failed to cancel account deletion', error);
+    }
+  }
 }
 
 export default AppAuthController;

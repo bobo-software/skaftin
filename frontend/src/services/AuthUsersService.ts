@@ -12,6 +12,10 @@ export interface AppUser {
   is_active: boolean;
   email_verified: boolean;
   phone_verified: boolean;
+  deletion_requested_at?: string;
+  deletion_scheduled_at?: string;
+  deletion_reason?: string;
+  deleted_at?: string;
   created_at: string;
   updated_at: string;
   roles?: Role[];

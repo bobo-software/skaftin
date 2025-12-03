@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, Search, RefreshCw, Edit, Trash2, UserPlus, Shield, Mail, Phone, CheckCircle, XCircle, Eye, EyeOff, RotateCw, Copy, Clock, AlertCircle } from 'lucide-react';
+import { Plus, Search, RefreshCw, Edit, Trash2, UserPlus, Shield, Mail, Phone, CheckCircle, XCircle, Eye, EyeOff, RotateCw, Copy, Clock, AlertCircle, Trash } from 'lucide-react';
 import AuthUsersService, { AppUser, CreateUserRequest } from '../../../../../services/AuthUsersService';
 import RolesService, { Role } from '../../../../../services/RolesService';
 import CustomFieldsService, { CustomField } from '../../../../../services/CustomFieldsService';
@@ -18,6 +18,7 @@ const AuthUsersTab = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [filterActive, setFilterActive] = useState<boolean | undefined>(undefined);
+  const [filterDeletion, setFilterDeletion] = useState<'all' | 'scheduled' | 'none'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -47,7 +48,7 @@ const AuthUsersTab = () => {
     } finally {
       setLoading(false);
     }
-  }, [projectId, searchTerm, filterRole, filterActive, currentPage]);
+  }, [projectId, searchTerm, filterRole, filterActive, filterDeletion, currentPage]);
 
   const fetchRoles = useCallback(async () => {
     if (!projectId) return;
@@ -138,15 +139,58 @@ const AuthUsersTab = () => {
     }
   };
 
+  // Helper function to render deletion status indicator
+  const renderDeletionStatus = (user: AppUser) => {
+    if (user.deleted_at) {
+      return (
+        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-300">
+          <Trash className="w-3 h-3 mr-1" />
+          Deleted
+        </span>
+      );
+    }
+    
+    if (user.deletion_scheduled_at) {
+      const scheduledDate = new Date(user.deletion_scheduled_at);
+      const daysRemaining = Math.ceil((scheduledDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      
+      return (
+        <span 
+          className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300"
+          title={`Scheduled for deletion on ${scheduledDate.toLocaleDateString()}`}
+        >
+          <Trash className="w-3 h-3 mr-1" />
+          {daysRemaining > 0 ? `${daysRemaining}d left` : 'Today'}
+        </span>
+      );
+    }
+    
+    return null;
+  };
+
   return (
     <div className="p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-dark-900 dark:text-white mb-2">User Management</h1>
-          <p className="text-dark-600 dark:text-dark-400">
-            Manage application users, assign roles, and control access.
-          </p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-dark-900 dark:text-white mb-2">User Management</h1>
+              <p className="text-dark-600 dark:text-dark-400">
+                Manage application users, assign roles, and control access.
+              </p>
+            </div>
+            {users.filter(u => u.deletion_scheduled_at && !u.deleted_at).length > 0 && (
+              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <Trash className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                  <span className="text-sm font-medium text-orange-800 dark:text-orange-200">
+                    {users.filter(u => u.deletion_scheduled_at && !u.deleted_at).length} account(s) scheduled for deletion
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Toolbar */}
@@ -197,6 +241,19 @@ const AuthUsersTab = () => {
               <option value="">All Status</option>
               <option value="true">Active</option>
               <option value="false">Inactive</option>
+            </select>
+
+            <select
+              value={filterDeletion}
+              onChange={(e) => {
+                setFilterDeletion(e.target.value as 'all' | 'scheduled' | 'none');
+                setCurrentPage(1);
+              }}
+              className="px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+            >
+              <option value="all">All Accounts</option>
+              <option value="scheduled">⚠️ Scheduled for Deletion</option>
+              <option value="none">Not Scheduled</option>
             </select>
 
             {/* Actions */}
@@ -275,7 +332,16 @@ const AuthUsersTab = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-200 dark:divide-dark-700">
-                  {users.map((user) => (
+                  {users
+                    .filter(user => {
+                      if (filterDeletion === 'scheduled') {
+                        return user.deletion_scheduled_at && !user.deleted_at;
+                      } else if (filterDeletion === 'none') {
+                        return !user.deletion_scheduled_at;
+                      }
+                      return true; // 'all'
+                    })
+                    .map((user) => (
                     <tr 
                       key={user.id} 
                       onClick={() => handleViewUser(user)}
@@ -286,8 +352,15 @@ const AuthUsersTab = () => {
                           <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold mr-3">
                             {user.name.charAt(0).toUpperCase()}
                           </div>
-                          <div>
-                            <div className="font-medium text-dark-900 dark:text-white">{user.name}</div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-dark-900 dark:text-white">{user.name}</span>
+                              {user.deletion_scheduled_at && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300" title={`Deletion scheduled for ${new Date(user.deletion_scheduled_at).toLocaleDateString()}`}>
+                                  <Trash className="w-3 h-3" />
+                                </span>
+                              )}
+                            </div>
                             <div className="text-sm text-dark-500 dark:text-dark-400">{user.email}</div>
                           </div>
                         </div>
@@ -340,17 +413,20 @@ const AuthUsersTab = () => {
                         </td>
                       ))}
                       <td className="px-4 py-3">
-                        {user.is_active ? (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Active
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
-                            <XCircle className="w-3 h-3 mr-1" />
-                            Inactive
-                          </span>
-                        )}
+                        <div className="flex flex-col gap-1">
+                          {user.is_active ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+                              <XCircle className="w-3 h-3 mr-1" />
+                              Inactive
+                            </span>
+                          )}
+                          {renderDeletionStatus(user)}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-center">
                         {renderOTPStatus(user)}

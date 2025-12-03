@@ -27,6 +27,7 @@ interface AuthSettings {
   send_welcome_email: boolean;
   send_welcome_sms?: boolean;
   require_otp_for_password_change?: boolean;
+  require_otp_for_account_deletion?: boolean;
   settings_json: any;
   created_at: Date;
   updated_at: Date;
@@ -52,6 +53,7 @@ interface UpdateAuthSettingsRequest {
   send_welcome_email?: boolean;
   send_welcome_sms?: boolean;
   require_otp_for_password_change?: boolean;
+  require_otp_for_account_deletion?: boolean;
   settings_json?: any;
 }
 
@@ -218,6 +220,11 @@ class AuthSettingsController {
       if (updates.require_otp_for_password_change !== undefined) {
         updateFields.push(`require_otp_for_password_change = $${paramIndex++}`);
         values.push(updates.require_otp_for_password_change);
+      }
+
+      if (updates.require_otp_for_account_deletion !== undefined) {
+        updateFields.push(`require_otp_for_account_deletion = $${paramIndex++}`);
+        values.push(updates.require_otp_for_account_deletion);
       }
 
       // Handle SMS notification settings (stored in settings_json for now)

@@ -639,6 +639,285 @@ The ${projectName} Team
   }
 
   /**
+   * Send account deletion OTP email (for users deleting their account)
+   */
+  async sendAccountDeletionOTP(
+    projectId: number,
+    userEmail: string,
+    userName: string,
+    otp: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const provider = await this.getEmailProvider(projectId);
+      if (!provider) {
+        return {
+          success: false,
+          error: 'Email provider not configured. Please configure an email provider in project settings.',
+        };
+      }
+
+      const projectName = await this.getProjectName(projectId);
+
+      const subject = `Account Deletion Verification - ${projectName}`;
+      const text = `
+Hello ${userName},
+
+We received a request to delete your account. Use the following verification code to proceed:
+
+${otp}
+
+This code will expire in 10 minutes.
+
+⚠️ WARNING: Account deletion is permanent. Your account will be deleted 7 days after confirmation.
+
+If you didn't request account deletion, please ignore this email and contact support immediately to secure your account.
+
+Best regards,
+The ${projectName} Team
+      `.trim();
+
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #DC2626; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+    .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+    .otp-box { background-color: #fff; border: 2px dashed #DC2626; padding: 20px; text-align: center; margin: 20px 0; border-radius: 5px; }
+    .otp-code { font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #DC2626; }
+    .warning { background-color: #FEF2F2; border-left: 4px solid #DC2626; padding: 15px; margin: 20px 0; }
+    .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🗑️ Account Deletion</h1>
+    </div>
+    <div class="content">
+      <p>Hello ${userName},</p>
+      <p>We received a request to delete your account. Enter the verification code below to proceed:</p>
+      <div class="otp-box">
+        <div class="otp-code">${otp}</div>
+      </div>
+      <p style="text-align: center; color: #666;">This code will expire in 10 minutes.</p>
+      <div class="warning">
+        <strong>⚠️ WARNING:</strong> Account deletion is permanent. After confirming, your account will be deleted in 7 days. During this grace period, you can cancel the deletion.
+      </div>
+      <div class="warning">
+        <strong>Security Notice:</strong> If you didn't request account deletion, please ignore this email and contact support immediately to secure your account.
+      </div>
+      <div class="footer">
+        <p>Best regards,<br>The ${projectName} Team</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+      `.trim();
+
+      const success = await this.sendEmail(provider, {
+        to: userEmail,
+        subject,
+        text,
+        html,
+      });
+
+      return { success };
+    } catch (error: any) {
+      console.error('Error sending account deletion OTP email:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Send account deletion scheduled confirmation email
+   */
+  async sendAccountDeletionScheduled(
+    projectId: number,
+    userEmail: string,
+    userName: string,
+    deletionDate: Date
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const provider = await this.getEmailProvider(projectId);
+      if (!provider) {
+        return {
+          success: false,
+          error: 'Email provider not configured. Please configure an email provider in project settings.',
+        };
+      }
+
+      const projectName = await this.getProjectName(projectId);
+      const formattedDate = deletionDate.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+
+      const subject = `Account Deletion Scheduled - ${projectName}`;
+      const text = `
+Hello ${userName},
+
+Your account deletion has been scheduled for:
+${formattedDate}
+
+You have 7 days to cancel this deletion if you change your mind. After this date, your account will be permanently deactivated.
+
+To cancel account deletion, log in to your account and visit your account settings.
+
+If you did not request this, please contact support immediately.
+
+Best regards,
+The ${projectName} Team
+      `.trim();
+
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #DC2626; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+    .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+    .date-box { background-color: #fff; border: 2px solid #DC2626; padding: 20px; text-align: center; margin: 20px 0; border-radius: 5px; }
+    .date { font-size: 20px; font-weight: bold; color: #DC2626; }
+    .info { background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 15px; margin: 20px 0; }
+    .warning { background-color: #FEF2F2; border-left: 4px solid #DC2626; padding: 15px; margin: 20px 0; }
+    .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Account Deletion Scheduled</h1>
+    </div>
+    <div class="content">
+      <p>Hello ${userName},</p>
+      <p>Your account deletion has been scheduled for:</p>
+      <div class="date-box">
+        <div class="date">${formattedDate}</div>
+      </div>
+      <div class="info">
+        <strong>Grace Period:</strong> You have 7 days to cancel this deletion if you change your mind. After this date, your account will be permanently deactivated.
+      </div>
+      <p>To cancel account deletion, log in to your account and visit your account settings.</p>
+      <div class="warning">
+        <strong>Security Notice:</strong> If you did not request this, please contact support immediately.
+      </div>
+      <div class="footer">
+        <p>Best regards,<br>The ${projectName} Team</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+      `.trim();
+
+      const success = await this.sendEmail(provider, {
+        to: userEmail,
+        subject,
+        text,
+        html,
+      });
+
+      return { success };
+    } catch (error: any) {
+      console.error('Error sending account deletion scheduled email:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Send account deletion cancelled confirmation email
+   */
+  async sendAccountDeletionCancelled(
+    projectId: number,
+    userEmail: string,
+    userName: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const provider = await this.getEmailProvider(projectId);
+      if (!provider) {
+        return {
+          success: false,
+          error: 'Email provider not configured. Please configure an email provider in project settings.',
+        };
+      }
+
+      const projectName = await this.getProjectName(projectId);
+
+      const subject = `Account Deletion Cancelled - ${projectName}`;
+      const text = `
+Hello ${userName},
+
+Good news! Your account deletion has been successfully cancelled.
+
+Your account will remain active and you can continue using ${projectName} as normal.
+
+If you did not cancel this deletion, please contact support immediately.
+
+Best regards,
+The ${projectName} Team
+      `.trim();
+
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #10B981; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+    .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+    .success-box { background-color: #D1FAE5; border: 2px solid #10B981; padding: 20px; text-align: center; margin: 20px 0; border-radius: 5px; }
+    .info { background-color: #EFF6FF; border-left: 4px solid #3B82F6; padding: 15px; margin: 20px 0; }
+    .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>✅ Deletion Cancelled</h1>
+    </div>
+    <div class="content">
+      <p>Hello ${userName},</p>
+      <div class="success-box">
+        <h2 style="color: #10B981; margin: 0;">Good news!</h2>
+        <p style="margin: 10px 0 0 0;">Your account deletion has been successfully cancelled.</p>
+      </div>
+      <div class="info">
+        <strong>What this means:</strong> Your account will remain active and you can continue using ${projectName} as normal. All your data is safe.
+      </div>
+      <p>If you did not cancel this deletion, please contact support immediately.</p>
+      <div class="footer">
+        <p>Best regards,<br>The ${projectName} Team</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+      `.trim();
+
+      const success = await this.sendEmail(provider, {
+        to: userEmail,
+        subject,
+        text,
+        html,
+      });
+
+      return { success };
+    } catch (error: any) {
+      console.error('Error sending account deletion cancelled email:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Check if email provider is configured for a project
    */
   async isEmailProviderConfigured(projectId: number): Promise<boolean> {

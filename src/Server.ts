@@ -191,6 +191,7 @@ import { createWorkflowsRouter } from './routers/WorkflowsRouter';
 import { router as BackupRouter } from './routers/BackupRouter';
 import BackupController from './controllers/BackupController';
 import { BackupScheduler } from './services/BackupScheduler';
+import { AccountDeletionService } from './services/AccountDeletionService';
 import { initializeApiKeyMiddleware } from './middleware/apiKeyMiddleware';
 import { AnalyticsService } from './services/AnalyticsService';
 
@@ -383,6 +384,23 @@ const startServer = async () => {
   console.log('📦 Initializing backup scheduler...');
   const backupScheduler = BackupScheduler.initialize(pool, s3Client);
   await backupScheduler.loadScheduledBackups();
+
+  // Initialize Account Deletion Service (runs daily at 2 AM)
+  console.log('🗑️  Initializing account deletion service...');
+  const accountDeletionService = new AccountDeletionService(pool);
+  const cron = require('node-cron');
+  
+  // Schedule daily deletion processing at 2 AM
+  cron.schedule('0 2 * * *', async () => {
+    console.log('🗑️  [CRON] Running scheduled account deletion processing...');
+    try {
+      const result = await accountDeletionService.processPendingDeletions();
+      console.log(`✅ [CRON] Account deletion completed: ${result.processed} processed, ${result.errors} errors`);
+    } catch (error) {
+      console.error('❌ [CRON] Error processing account deletions:', error);
+    }
+  });
+  console.log('✅ Account deletion service scheduled (daily at 2 AM)');
 
   // Handle graceful shutdown
   const gracefulShutdown = () => {
