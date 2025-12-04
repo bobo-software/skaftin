@@ -314,6 +314,78 @@ class AuthUsersService {
       throw new Error(error.message || 'Failed to manually verify user');
     }
   }
+
+  /**
+   * Export users as SQL dump
+   */
+  async exportUsers(projectId: string): Promise<void> {
+    try {
+      const token = this.getToken();
+      const API_BASE = import.meta.env.VITE_API_URL || '';
+      
+      const response = await fetch(`${API_BASE}/api/auth/${projectId}/users/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to export users');
+      }
+
+      // Get the blob
+      const blob = await response.blob();
+      
+      // Extract filename from Content-Disposition header or use default
+      let fileName = 'users-export.sql';
+      const contentDisposition = response.headers.get('Content-Disposition');
+      if (contentDisposition) {
+        const matches = /filename="?(.+)"?/i.exec(contentDisposition);
+        if (matches && matches[1]) {
+          fileName = matches[1];
+        }
+      }
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('Error exporting users:', error);
+      throw new Error(error.message || 'Failed to export users');
+    }
+  }
+
+  /**
+   * Import users from SQL dump
+   */
+  async importUsers(projectId: string, sqlContent: string, clearExisting: boolean = false): Promise<{ success: boolean; result?: any }> {
+    try {
+      const response = await RequestUtils.post(
+        `/api/auth/${projectId}/users/import`,
+        this.getToken(),
+        { sqlContent, clearExisting }
+      );
+
+      if (response.success) {
+        return { success: true, result: response.data };
+      } else {
+        throw new Error(response.message || 'Failed to import users');
+      }
+    } catch (error: any) {
+      console.error('Error importing users:', error);
+      throw new Error(error.message || 'Failed to import users');
+    }
+  }
 }
 
 export default new AuthUsersService();

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, Search, RefreshCw, Edit, Trash2, UserPlus, Shield, Mail, Phone, CheckCircle, XCircle, Eye, EyeOff, RotateCw, Copy, Clock, AlertCircle, Trash } from 'lucide-react';
+import { Plus, Search, RefreshCw, Edit, Trash2, UserPlus, Shield, Mail, Phone, CheckCircle, XCircle, Eye, EyeOff, RotateCw, Copy, Clock, AlertCircle, Trash, Download, Upload } from 'lucide-react';
 import AuthUsersService, { AppUser, CreateUserRequest } from '../../../../../services/AuthUsersService';
 import RolesService, { Role } from '../../../../../services/RolesService';
 import CustomFieldsService, { CustomField } from '../../../../../services/CustomFieldsService';
-import { AppButton } from '../../../../../components/ComponentsIndex';
+import ToastUtils from '../../../../../utils/ToastUtils';
+import { AppButton, UserImportModal } from '../../../../../components/ComponentsIndex';
 import AppLabledAutocomplete from '../../../../../components/forms/AppLabledAutocomplete';
 import DeleteConfirmModal from '../../../../../components/modals/DeleteConfirmModal';
 
@@ -22,9 +23,12 @@ const AuthUsersTab = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
   const [userToDelete, setUserToDelete] = useState<AppUser | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const pageSize = 20;
@@ -113,6 +117,56 @@ const AuthUsersTab = () => {
     e?.stopPropagation(); // Prevent row click
     setUserToDelete(user);
     setShowDeleteModal(true);
+  };
+
+  const handleExportUsers = async () => {
+    if (!projectId) return;
+    
+    setExportLoading(true);
+    try {
+      await AuthUsersService.exportUsers(projectId);
+      ToastUtils.success('Users exported successfully!');
+    } catch (error: any) {
+      console.error('Error exporting users:', error);
+      ToastUtils.error(error.message || 'Failed to export users');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleImportUsers = async (sqlContent: string, clearExisting: boolean) => {
+    if (!projectId) return;
+    
+    setImportLoading(true);
+    try {
+      const result = await AuthUsersService.importUsers(projectId, sqlContent, clearExisting);
+      
+      if (result.success && result.result) {
+        const { successCount, errorCount, errors } = result.result;
+        
+        if (errorCount === 0) {
+          ToastUtils.success(`Successfully imported ${successCount} SQL statements!`);
+        } else {
+          let message = `Imported ${successCount} statements with ${errorCount} errors.`;
+          ToastUtils.warning(message);
+          
+          // Log errors to console for debugging
+          if (errors && errors.length > 0) {
+            console.error('Import errors:', errors);
+          }
+        }
+        
+        setShowImportModal(false);
+        await fetchUsers();
+      } else {
+        ToastUtils.error('Failed to import users. Please check the SQL content and console for errors.');
+      }
+    } catch (error: any) {
+      console.error('Error importing users:', error);
+      ToastUtils.error(error.message || 'Failed to import users.');
+    } finally {
+      setImportLoading(false);
+    }
   };
 
   // Helper function to render OTP status indicator
@@ -261,9 +315,28 @@ const AuthUsersTab = () => {
               <button
                 onClick={fetchUsers}
                 className="px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors"
+                title="Refresh"
               >
                 <RefreshCw className="w-5 h-5" />
               </button>
+              <AppButton
+                onClick={() => setShowImportModal(true)}
+                icon={<Upload className="w-5 h-5" />}
+                variant="secondary"
+                loading={importLoading}
+                disabled={importLoading}
+              >
+                Import
+              </AppButton>
+              <AppButton
+                onClick={handleExportUsers}
+                icon={<Download className="w-5 h-5" />}
+                variant="secondary"
+                loading={exportLoading}
+                disabled={exportLoading}
+              >
+                Export
+              </AppButton>
               <AppButton
                 onClick={() => setShowCreateModal(true)}
                 icon={<Plus className="w-5 h-5" />}
@@ -531,6 +604,14 @@ const AuthUsersTab = () => {
         message={`Are you sure you want to permanently delete ${userToDelete?.name} (${userToDelete?.email})? This will also delete the user from SuperTokens and cannot be undone.`}
         itemName="user"
         loading={deleteLoading}
+      />
+
+      {/* User Import Modal */}
+      <UserImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImport={handleImportUsers}
+        loading={importLoading}
       />
     </div>
   );

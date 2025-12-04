@@ -97,13 +97,17 @@ class DatabaseController {
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
+      
+      // Check if we should include system tables (for foreign key creation)
+      const includeSystemTables = req.query.includeSystemTables === 'true';
+      
       const client = await DatabaseController.getProjectClient(projectId);
       
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
-      const result = await client.query(`
+      let query = `
         SELECT 
           table_name,
           table_schema,
@@ -111,9 +115,16 @@ class DatabaseController {
         FROM information_schema.tables
         WHERE table_schema = current_schema()
           AND table_type = 'BASE TABLE'
-          AND table_name NOT LIKE 'skaftin_system_%'
-        ORDER BY table_name
-      `);
+      `;
+      
+      // Filter out system tables unless explicitly requested
+      if (!includeSystemTables) {
+        query += ` AND table_name NOT LIKE 'skaftin_system_%'`;
+      }
+      
+      query += ` ORDER BY table_name`;
+
+      const result = await client.query(query);
 
       client.release();
       ResponseUtils.success(res, 'Tables fetched successfully', result.rows);
@@ -338,7 +349,7 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
       const { tableName } = req.params;
-      const { columns, where, limit = 100, offset = 0 } = req.body;
+      const { columns, where, limit = 100, offset = 0, orderBy = 'id', orderDirection = 'ASC' } = req.body;
 
       const client = await DatabaseController.getProjectClient(projectId);
       
@@ -381,6 +392,13 @@ class DatabaseController {
         } else {
           console.log(`  └─ ⚠️  Column ${orgFilter.field} does not exist in table ${tableName}, skipping organization filter (app-wide table)`);
         }
+      }
+
+      // Add ORDER BY clause
+      if (orderBy) {
+        // Validate orderDirection
+        const direction = orderDirection && orderDirection.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+        query += ` ORDER BY "${orderBy}" ${direction}`;
       }
 
       if (limit) {

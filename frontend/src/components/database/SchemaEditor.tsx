@@ -172,13 +172,14 @@ const SchemaEditor = ({
   const loadAvailableTables = async () => {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
+      // Include system tables for foreign key creation (so users can reference skaftin_system_users)
       const result = await RequestUtils.get(
-        ApiRoutes.DATABASE.LIST_TABLES(projectId),
+        `${ApiRoutes.DATABASE.LIST_TABLES(projectId)}?includeSystemTables=true`,
         token
       );
       if (result.success) {
         console.log('Available tables loaded:', result.data);
-        // Filter out current table
+        // Filter out current table but keep system tables
         const otherTables = result.data.filter((table: any) => table.table_name !== tableName);
         setAvailableTables(otherTables);
       }

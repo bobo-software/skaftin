@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Loader2 } from 'lucide-react';
 import { AppButton, AppInput } from '@components/ComponentsIndex';
+import AppLabledAutocomplete from '../forms/AppLabledAutocomplete';
+import RequestUtils from '../../utils/RequestUtils';
+import ApiRoutes from '../../constants/ApiRoutes';
+import { useParams } from 'react-router-dom';
 
 interface AddRowModalProps {
   isOpen: boolean;
@@ -16,6 +20,13 @@ interface AddRowModalProps {
   tableName: string;
 }
 
+interface ForeignKey {
+  constraint_name: string;
+  column_name: string;
+  referenced_table_name: string;
+  referenced_column_name: string;
+}
+
 const AddRowModal = ({
   isOpen,
   onClose,
@@ -23,10 +34,55 @@ const AddRowModal = ({
   columns,
   tableName
 }: AddRowModalProps) => {
+  const { projectId } = useParams<{ projectId: string }>();
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [foreignKeys, setForeignKeys] = useState<ForeignKey[]>([]);
+  const [referencedData, setReferencedData] = useState<Record<string, any[]>>({});
+
+  // Fetch foreign keys when modal opens
+  useEffect(() => {
+    const fetchForeignKeys = async () => {
+      if (!isOpen || !projectId) return;
+      
+      try {
+        const token = localStorage.getItem('skaftin-token') || '';
+        const response = await RequestUtils.get(
+          ApiRoutes.DATABASE.LIST_FOREIGN_KEYS(projectId, tableName),
+          token
+        );
+        
+        if (response.success && response.data) {
+          setForeignKeys(response.data);
+          
+          // Fetch data for each referenced table
+          const referencedDataMap: Record<string, any[]> = {};
+          for (const fk of response.data) {
+            try {
+              const dataResponse = await RequestUtils.post(
+                ApiRoutes.DATABASE.SELECT_DATA(projectId, fk.referenced_table_name),
+                token,
+                { limit: 100, orderBy: 'id', orderDirection: 'ASC' } // Limit to 100 records, sorted by id
+              );
+              
+              if (dataResponse.success && dataResponse.data) {
+                referencedDataMap[fk.column_name] = dataResponse.data;
+              }
+            } catch (error) {
+              console.error(`Error fetching data for ${fk.referenced_table_name}:`, error);
+            }
+          }
+          setReferencedData(referencedDataMap);
+        }
+      } catch (error) {
+        console.error('Error fetching foreign keys:', error);
+      }
+    };
+
+    fetchForeignKeys();
+  }, [isOpen, projectId, tableName]);
 
   // Initialize form data when modal opens
   useEffect(() => {
@@ -200,16 +256,68 @@ const AddRowModal = ({
     }
   };
 
+  const getForeignKeyInfo = (columnName: string) => {
+    return foreignKeys.find(fk => fk.column_name === columnName);
+  };
+
+  const getDisplayField = (referencedTableData: any[]) => {
+    // Try to find a good display field (name, title, email, or first non-id column)
+    if (referencedTableData.length === 0) return 'id';
+    
+    const firstRow = referencedTableData[0];
+    const fields = Object.keys(firstRow);
+    
+    // Prioritize common display fields
+    const displayFieldPriority = ['name', 'title', 'email', 'username', 'label', 'description'];
+    for (const field of displayFieldPriority) {
+      if (fields.includes(field)) return field;
+    }
+    
+    // Return first non-id field, or 'id' as fallback
+    const nonIdField = fields.find(f => f !== 'id' && !f.endsWith('_id'));
+    return nonIdField || 'id';
+  };
+
   const renderInput = (column: any) => {
     const value = formData[column.column_name];
     const inputType = getInputType(column.data_type);
+    const fkInfo = getForeignKeyInfo(column.column_name);
 
     console.log(`Rendering input for ${column.column_name}:`, {
       dataType: column.data_type,
       inputType: inputType,
-      value: value
+      value: value,
+      isForeignKey: !!fkInfo
     });
 
+    // Use autocomplete for foreign key columns
+    if (fkInfo && referencedData[column.column_name]) {
+      const options = referencedData[column.column_name];
+      const displayField = getDisplayField(options);
+      const selectedOption = options.find(opt => opt[fkInfo.referenced_column_name] === value);
+      
+      return (
+        <AppLabledAutocomplete
+          label=""
+          options={options}
+          onSelect={(item) => {
+            handleInputChange(column.column_name, item[fkInfo.referenced_column_name]);
+          }}
+          onClear={() => {
+            handleInputChange(column.column_name, '');
+          }}
+          value={value}
+          displayValue={selectedOption ? selectedOption[displayField] : ''}
+          accessor={displayField}
+          valueAccessor={fkInfo.referenced_column_name}
+          required={!column.is_nullable && !column.column_default}
+          error={errors[column.column_name]}
+          placeholder={`Select from ${fkInfo.referenced_table_name}`}
+        />
+      );
+    }
+
+    // Regular input for non-FK columns
     return (
       <AppInput
         type={inputType}
@@ -271,6 +379,8 @@ const AddRowModal = ({
                 return null;
               }
 
+              const fkInfo = getForeignKeyInfo(column.column_name);
+              
               return (
                 <div key={column.column_name} className="space-y-2">
                   <label className="block text-sm font-medium text-dark-700 dark:text-dark-300">
@@ -281,6 +391,11 @@ const AddRowModal = ({
                     {column.column_default && (
                       <span className="text-green-600 dark:text-green-400 ml-1">(has default)</span>
                     )}
+                    {fkInfo && (
+                      <span className="text-blue-600 dark:text-blue-400 ml-1 text-xs">
+                        → {fkInfo.referenced_table_name}
+                      </span>
+                    )}
                   </label>
 
                   <div className="text-xs text-dark-500 dark:text-dark-400 mb-2">
@@ -289,6 +404,9 @@ const AddRowModal = ({
                       <span> (max {column.character_maximum_length} chars)</span>
                     )}
                     {column.is_nullable ? ' • Nullable' : ' • Required'}
+                    {fkInfo && (
+                      <span className="text-blue-600 dark:text-blue-400"> • References {fkInfo.referenced_table_name}.{fkInfo.referenced_column_name}</span>
+                    )}
                   </div>
 
                   {renderInput(column)}

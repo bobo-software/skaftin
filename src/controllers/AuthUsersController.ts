@@ -902,6 +902,245 @@ class AuthUsersController {
       ResponseUtils.error(res, 'Failed to manually verify user', error);
     }
   }
+
+  /**
+   * Export users as SQL dump
+   * POST /api/auth/:projectId/users/export
+   */
+  static async exportUsers(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      const schemaName = await AuthUsersController.getProjectSchema(projectId);
+      if (!schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      const client = await AuthUsersController.pool.connect();
+
+      try {
+        await client.query(`SET search_path TO ${schemaName}, public`);
+
+        let sqlContent = '';
+
+        // Add header
+        sqlContent += `-- PostgreSQL User Data Export\n`;
+        sqlContent += `-- Exported from schema: ${schemaName}\n`;
+        sqlContent += `-- Exported at: ${new Date().toISOString()}\n`;
+        sqlContent += `-- Note: This export contains users, roles, and authentication data\n\n`;
+
+        const systemTables = [
+          'skaftin_system_users',
+          'skaftin_system_roles',
+          'skaftin_system_user_roles',
+          'skaftin_system_user_custom_fields',
+          'skaftin_system_otp_verifications',
+        ];
+
+        for (const tableName of systemTables) {
+          try {
+            // Check if table exists
+            const tableExistsQuery = `
+              SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = $1 AND table_name = $2
+              )
+            `;
+            const tableExists = await client.query(tableExistsQuery, [schemaName, tableName]);
+            
+            if (!tableExists.rows[0].exists) {
+              sqlContent += `-- Table ${tableName} does not exist, skipping\n\n`;
+              continue;
+            }
+
+            const dataResult = await client.query(`SELECT * FROM "${schemaName}"."${tableName}"`);
+            
+            if (dataResult.rows.length > 0) {
+              sqlContent += `-- Data for ${tableName}\n`;
+              sqlContent += `DELETE FROM "${tableName}";\n`;
+
+              const columns = dataResult.fields.map(f => f.name);
+              
+              for (const row of dataResult.rows) {
+                const values = columns.map(col => {
+                  const value = row[col];
+                  if (value === null) return 'NULL';
+                  if (typeof value === 'string') {
+                    const hasSpecialChars = /[\n\r\t\\]/.test(value);
+                    
+                    if (hasSpecialChars) {
+                      const escaped = value
+                        .replace(/\\/g, '\\\\')
+                        .replace(/'/g, "\\'")
+                        .replace(/\n/g, '\\n')
+                        .replace(/\r/g, '\\r')
+                        .replace(/\t/g, '\\t');
+                      return `E'${escaped}'`;
+                    } else {
+                      return `'${value.replace(/'/g, "''")}'`;
+                    }
+                  }
+                  if (typeof value === 'boolean') {
+                    return value ? 'TRUE' : 'FALSE';
+                  }
+                  if (value instanceof Date) {
+                    return `'${value.toISOString()}'`;
+                  }
+                  if (typeof value === 'object') {
+                    const jsonStr = JSON.stringify(value)
+                      .replace(/\\/g, '\\\\')
+                      .replace(/'/g, "''");
+                    return `'${jsonStr}'::jsonb`;
+                  }
+                  return String(value);
+                });
+                
+                sqlContent += `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')});\n`;
+              }
+              sqlContent += '\n';
+            } else {
+              sqlContent += `-- No data in ${tableName}\n\n`;
+            }
+          } catch (tableError: any) {
+            console.warn(`Warning: Could not export ${tableName}:`, tableError.message);
+            sqlContent += `-- Warning: Could not export ${tableName}: ${tableError.message}\n\n`;
+          }
+        }
+
+        client.release();
+
+        // Generate filename with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+        const fileName = `users-export-${timestamp}.sql`;
+
+        // Set headers for file download
+        res.setHeader('Content-Type', 'application/sql');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Length', Buffer.byteLength(sqlContent, 'utf8'));
+
+        // Send the SQL content
+        res.send(sqlContent);
+
+        console.log(`✅ Users exported successfully: ${fileName}`);
+      } catch (error: any) {
+        client.release();
+        console.error('Error exporting users:', error);
+        throw error;
+      }
+    } catch (error: any) {
+      console.error('Error in exportUsers:', error);
+      ResponseUtils.error(res, 'Failed to export users', error);
+    }
+  }
+
+  /**
+   * Import users from SQL dump
+   * POST /api/auth/:projectId/users/import
+   */
+  static async importUsers(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      const { sqlContent, clearExisting = false } = req.body;
+
+      if (!sqlContent || typeof sqlContent !== 'string') {
+        return ResponseUtils.error(res, 'SQL content is required', null, null, 400);
+      }
+
+      const schemaName = await AuthUsersController.getProjectSchema(projectId);
+      if (!schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      const client = await AuthUsersController.pool.connect();
+
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      try {
+        await client.query(`SET search_path TO ${schemaName}, public`);
+        await client.query('BEGIN');
+
+        // If clearExisting, delete all user data first
+        if (clearExisting) {
+          console.log('🗑️  Clearing existing user data...');
+          await client.query(`DELETE FROM "${schemaName}"."skaftin_system_user_roles"`);
+          await client.query(`DELETE FROM "${schemaName}"."skaftin_system_otp_verifications"`);
+          await client.query(`DELETE FROM "${schemaName}"."skaftin_system_users"`);
+          console.log('✅ Existing user data cleared');
+        }
+
+        // Clean and parse SQL content
+        let cleanedSql = sqlContent
+          .split('\n')
+          .map(line => {
+            const commentIndex = line.indexOf('--');
+            if (commentIndex !== -1) {
+              return line.substring(0, commentIndex);
+            }
+            return line;
+          })
+          .join('\n');
+
+        cleanedSql = cleanedSql.replace(/\/\*[\s\S]*?\*\//g, '');
+
+        const statements = cleanedSql
+          .split(';')
+          .map((stmt: string) => stmt.trim())
+          .filter((stmt: string) => stmt.length > 0 && /\S/.test(stmt));
+
+        console.log(`📝 Found ${statements.length} SQL statements to execute`);
+
+        for (let i = 0; i < statements.length; i++) {
+          const statement = statements[i];
+          try {
+            await client.query(statement);
+            successCount++;
+            
+            if ((i + 1) % 10 === 0) {
+              console.log(`✅ Executed ${i + 1}/${statements.length} statements`);
+            }
+          } catch (err: any) {
+            errorCount++;
+            const errorMsg = `Statement ${i + 1}: ${statement.substring(0, 100)}... Error: ${err.message}`;
+            errors.push(errorMsg);
+            console.error('❌ SQL execution error:', errorMsg);
+          }
+        }
+
+        await client.query('COMMIT');
+        client.release();
+
+        const responseData: any = {
+          successCount,
+          errorCount,
+        };
+
+        if (errorCount === 0) {
+          responseData.message = `Successfully imported ${successCount} SQL statements`;
+          ResponseUtils.success(res, 'Users imported successfully', responseData);
+        } else {
+          responseData.errors = errors.slice(0, 10);
+          responseData.message = `Executed ${successCount} statements, ${errorCount} failed`;
+          ResponseUtils.success(res, 'Users imported with warnings', responseData);
+        }
+      } catch (error: any) {
+        await client.query('ROLLBACK');
+        client.release();
+        throw error;
+      }
+    } catch (error: any) {
+      console.error('Error in importUsers:', error);
+      ResponseUtils.error(res, 'Failed to import users', error);
+    }
+  }
 }
 
 export default AuthUsersController;
