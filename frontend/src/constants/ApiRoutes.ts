@@ -102,6 +102,7 @@ const ApiRoutes = {
     DROP_TABLE: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}`,
     EXECUTE_QUERY: (projectId: string) => `/api/database/${projectId}/query`,
     IMPORT_DUMP: (projectId: string) => `/api/database/${projectId}/import`,
+    EXPORT_DUMP: (projectId: string) => `/api/database/${projectId}/export`,
     // Column routes
     ADD_COLUMN: (projectId: string, tableName: string) => `/api/database/${projectId}/tables/${tableName}/columns`,
     ALTER_COLUMN: (projectId: string, tableName: string, columnName: string) => `/api/database/${projectId}/tables/${tableName}/columns/${columnName}`,

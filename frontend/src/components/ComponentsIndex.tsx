@@ -21,6 +21,7 @@ export { default as CursorIntegrationModal } from './modals/CursorIntegrationMod
 export { default as AddRowModal } from './modals/AddRowModal';
 export { default as CsvImportModal } from './modals/CsvImportModal';
 export { default as DatabaseImportModal } from './modals/DatabaseImportModal';
+export { default as DatabaseExportModal } from './modals/DatabaseExportModal';
 export { default as FileUploadModal } from './modals/FileUploadModal';
 export { default as CreateTableModal } from './modals/CreateTableModal';
 export { default as ExportModal } from './modals/ExportModal';

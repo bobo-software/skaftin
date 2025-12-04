@@ -3,18 +3,22 @@ import { Pool } from 'pg';
 import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { createReadStream, unlinkSync, existsSync, writeFileSync, statSync, createWriteStream } from 'fs';
+import { createReadStream, unlinkSync, existsSync, writeFileSync, statSync, createWriteStream, mkdirSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { Readable } from 'stream';
+import archiver from 'archiver';
+import unzipper from 'unzipper';
 import ResponseUtils from '../utils/ResponseUtils';
 import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
 import { db } from '../db/drizzle.config';
 import { backupSchedules } from '../db/schemas/BackupSchedulesSchema';
-import { eq, and } from 'drizzle-orm';
+import { projects } from '../db/schemas/ProjectsSchema';
+import { eq, and, sql } from 'drizzle-orm';
 import { BackupScheduler } from '../services/BackupScheduler';
 import * as cron from 'node-cron';
 import { verifyProjectAccess } from '../middleware/supertokensAuthMiddleware';
+import { DatabaseInitializer } from '../services/DatabaseInitializer';
 
 const execAsync = promisify(exec);
 
@@ -347,7 +351,18 @@ class BackupController {
       const backups: BackupMetadata[] = response.Contents.map((object) => {
         const key = object.Key || '';
         const fileName = key.split('/').pop() || '';
-        const backupName = fileName.replace('.sql', '');
+        
+        // Determine backup type based on file extension
+        let backupName = fileName;
+        let backupType: 'database' | 'full' = 'database';
+        
+        if (fileName.endsWith('.zip')) {
+          backupName = fileName.replace('.zip', '');
+          backupType = 'full';
+        } else if (fileName.endsWith('.sql')) {
+          backupName = fileName.replace('.sql', '');
+          backupType = 'database';
+        }
 
         // Extract metadata from object metadata or key
         return {
@@ -356,7 +371,7 @@ class BackupController {
           projectId: projectId,
           createdAt: object.LastModified?.toISOString() || new Date().toISOString(),
           size: object.Size || 0,
-          type: 'database' as const,
+          type: backupType,
         };
       }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
@@ -783,6 +798,632 @@ class BackupController {
     } catch (error: any) {
       console.error('Error deleting backup schedule:', error);
       return ResponseUtils.error(res, 'Failed to delete backup schedule', error);
+    }
+  }
+
+  /**
+   * Generate SQL dump for system settings tables
+   */
+  private static async generateSystemSettingsDump(projectId: number, schemaName: string): Promise<string> {
+    const client = await BackupController.pool.connect();
+    let sqlContent = '';
+
+    try {
+      sqlContent += `-- System Settings Dump for Project ID: ${projectId}\n`;
+      sqlContent += `-- Schema: ${schemaName}\n`;
+      sqlContent += `-- Dumped at: ${new Date().toISOString()}\n\n`;
+
+      // Tables to backup with their location (public or project schema)
+      const systemTables = [
+        // Project schema tables
+        { schema: schemaName, table: 'skaftin_system_users', pkColumn: 'id' },
+        { schema: schemaName, table: 'skaftin_system_roles', pkColumn: 'id' },
+        { schema: schemaName, table: 'skaftin_system_user_roles', pkColumn: 'id' },
+        { schema: schemaName, table: 'skaftin_system_user_custom_fields', pkColumn: 'id' },
+        { schema: schemaName, table: 'skaftin_system_otp_verifications', pkColumn: 'id' },
+        // Public schema tables (filtered by project_id)
+        { schema: 'public', table: 'skaftin_system_auth_settings', pkColumn: 'id', filterByProject: true },
+        { schema: 'public', table: 'skaftin_system_email_providers', pkColumn: 'id', filterByProject: true },
+        { schema: 'public', table: 'sms_providers', pkColumn: 'id', filterByProject: true },
+        { schema: 'public', table: 'skaftin_system_email_templates', pkColumn: 'id', filterByProject: true },
+        { schema: 'public', table: 'skaftin_system_sms_templates', pkColumn: 'id', filterByProject: true },
+        { schema: 'public', table: 'skaftin_system_api_credentials', pkColumn: 'id', filterByProject: true },
+      ];
+
+      for (const tableInfo of systemTables) {
+        try {
+          // Check if table exists
+          const tableExistsQuery = `
+            SELECT EXISTS (
+              SELECT FROM information_schema.tables 
+              WHERE table_schema = $1 AND table_name = $2
+            )
+          `;
+          const tableExists = await client.query(tableExistsQuery, [tableInfo.schema, tableInfo.table]);
+          
+          if (!tableExists.rows[0].exists) {
+            sqlContent += `-- Table ${tableInfo.schema}.${tableInfo.table} does not exist, skipping\n\n`;
+            continue;
+          }
+
+          // Build query with optional project_id filter
+          let dataQuery = `SELECT * FROM "${tableInfo.schema}"."${tableInfo.table}"`;
+          const queryParams: any[] = [];
+          
+          if (tableInfo.filterByProject) {
+            dataQuery += ` WHERE project_id = $1`;
+            queryParams.push(projectId);
+          }
+          
+          dataQuery += ` ORDER BY ${tableInfo.pkColumn}`;
+
+          const dataResult = await client.query(dataQuery, queryParams);
+          
+          if (dataResult.rows.length > 0) {
+            sqlContent += `-- Data for ${tableInfo.schema}.${tableInfo.table}\n`;
+            sqlContent += `DELETE FROM "${tableInfo.schema}"."${tableInfo.table}"`;
+            
+            if (tableInfo.filterByProject) {
+              sqlContent += ` WHERE project_id = ${projectId}`;
+            }
+            sqlContent += `;\n`;
+
+            const columns = dataResult.fields.map(f => f.name);
+            
+            for (const row of dataResult.rows) {
+              const values = columns.map(col => {
+                const value = row[col];
+                if (value === null) return 'NULL';
+                if (typeof value === 'string') {
+                  return `'${value.replace(/'/g, "''")}'`;
+                }
+                if (typeof value === 'boolean') {
+                  return value ? 'TRUE' : 'FALSE';
+                }
+                if (value instanceof Date) {
+                  return `'${value.toISOString()}'`;
+                }
+                if (typeof value === 'object') {
+                  // Handle JSONB
+                  return `'${JSON.stringify(value).replace(/'/g, "''")}'::jsonb`;
+                }
+                return String(value);
+              });
+              
+              sqlContent += `INSERT INTO "${tableInfo.schema}"."${tableInfo.table}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')});\n`;
+            }
+            sqlContent += '\n';
+          } else {
+            sqlContent += `-- No data in ${tableInfo.schema}.${tableInfo.table}\n\n`;
+          }
+        } catch (tableError: any) {
+          console.warn(`Warning: Could not backup ${tableInfo.table}:`, tableError.message);
+          sqlContent += `-- Warning: Could not backup ${tableInfo.table}: ${tableError.message}\n\n`;
+        }
+      }
+
+      return sqlContent;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Create a full backup (project data + system settings) as a ZIP file
+   */
+  static async createFullBackup(req: BackupRequest, res: Response) {
+    try {
+      const projectId = parseInt(req.params.projectId || req.params.id);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      const { name, description } = req.body;
+
+      // Get project info
+      const projectResult = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (projectResult.length === 0) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      const project = projectResult[0];
+      const schemaName = project.schema_name;
+
+      // Generate backup filename
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupName = name || `full-backup-${timestamp}`;
+      const backupFileName = `${backupName}.zip`;
+      const backupKey = `backups/${projectId}/${backupFileName}`;
+
+      // Create temporary directory
+      const tempDir = join(tmpdir(), `backup-${projectId}-${Date.now()}`);
+      mkdirSync(tempDir, { recursive: true });
+
+      const projectDataPath = join(tempDir, 'project_data.sql');
+      const systemSettingsPath = join(tempDir, 'system_settings.sql');
+      const metadataPath = join(tempDir, 'metadata.json');
+      const zipPath = join(tempDir, backupFileName);
+
+      try {
+        console.log(`📦 Creating full backup for project ${projectId}`);
+
+        // 1. Generate project data SQL dump
+        const client = await BackupController.pool.connect();
+        let projectSql = '';
+
+        try {
+          await client.query(`SET search_path TO ${schemaName}, public`);
+
+          projectSql += `-- Project Data Dump\n`;
+          projectSql += `-- Schema: ${schemaName}\n`;
+          projectSql += `-- Dumped at: ${new Date().toISOString()}\n\n`;
+          projectSql += `SET search_path TO ${schemaName}, public;\n\n`;
+
+          // Get all tables in the schema (excluding skaftin_system tables)
+          const tablesResult = await client.query(`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = $1 
+              AND table_type = 'BASE TABLE'
+              AND table_name NOT LIKE 'skaftin_system_%'
+            ORDER BY table_name
+          `, [schemaName]);
+
+          const tables = tablesResult.rows.map(row => row.table_name);
+
+          for (const tableName of tables) {
+            // Get column info
+            const columnsResult = await client.query(`
+              SELECT 
+                column_name,
+                data_type,
+                udt_name,
+                character_maximum_length,
+                numeric_precision,
+                numeric_scale,
+                is_nullable,
+                column_default,
+                ordinal_position
+              FROM information_schema.columns
+              WHERE table_schema = $1 AND table_name = $2
+              ORDER BY ordinal_position
+            `, [schemaName, tableName]);
+
+            if (columnsResult.rows.length > 0) {
+              projectSql += `\n-- Table: ${tableName}\n`;
+              projectSql += `CREATE TABLE IF NOT EXISTS "${schemaName}"."${tableName}" (\n`;
+              
+              const columnDefs = columnsResult.rows.map(col => {
+                let def = `  "${col.column_name}" `;
+                
+                if (col.data_type === 'USER-DEFINED') {
+                  def += col.udt_name;
+                } else if (col.data_type === 'ARRAY') {
+                  def += col.udt_name.replace(/_/g, ' ') + '[]';
+                } else {
+                  def += col.data_type;
+                }
+                
+                if (col.character_maximum_length) {
+                  def += `(${col.character_maximum_length})`;
+                } else if (col.numeric_precision) {
+                  if (col.numeric_scale) {
+                    def += `(${col.numeric_precision},${col.numeric_scale})`;
+                  } else {
+                    def += `(${col.numeric_precision})`;
+                  }
+                }
+                
+                if (col.is_nullable === 'NO') {
+                  def += ' NOT NULL';
+                }
+                
+                if (col.column_default) {
+                  def += ` DEFAULT ${col.column_default}`;
+                }
+                
+                return def;
+              });
+              
+              projectSql += columnDefs.join(',\n') + '\n);\n\n';
+
+              // Get table data
+              const dataResult = await client.query(`SELECT * FROM "${schemaName}"."${tableName}"`);
+              
+              if (dataResult.rows.length > 0) {
+                const columns = dataResult.fields.map(f => f.name);
+                projectSql += `-- Data for table: ${tableName}\n`;
+                
+                for (const row of dataResult.rows) {
+                  const values = columns.map(col => {
+                    const value = row[col];
+                    if (value === null) return 'NULL';
+                    if (typeof value === 'string') {
+                      return `'${value.replace(/'/g, "''")}'`;
+                    }
+                    if (value instanceof Date) {
+                      return `'${value.toISOString()}'`;
+                    }
+                    if (typeof value === 'object') {
+                      return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
+                    }
+                    return String(value);
+                  });
+                  projectSql += `INSERT INTO "${schemaName}"."${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')});\n`;
+                }
+                projectSql += '\n';
+              }
+            }
+          }
+        } finally {
+          client.release();
+        }
+
+        writeFileSync(projectDataPath, projectSql, 'utf8');
+        console.log(`✓ Project data SQL generated`);
+
+        // 2. Generate system settings dump
+        const systemSql = await BackupController.generateSystemSettingsDump(projectId, schemaName);
+        writeFileSync(systemSettingsPath, systemSql, 'utf8');
+        console.log(`✓ System settings SQL generated`);
+
+        // 3. Create metadata.json
+        const metadata = {
+          version: '1.0.0',
+          backupName: backupName,
+          description: description || '',
+          projectId: projectId,
+          projectName: project.name,
+          projectDescription: project.description || '',
+          schemaName: schemaName,
+          timestamp: new Date().toISOString(),
+          backupType: 'full',
+          files: ['project_data.sql', 'system_settings.sql', 'metadata.json'],
+        };
+        writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+        console.log(`✓ Metadata created`);
+
+        // 4. Create ZIP file
+        await new Promise<void>((resolve, reject) => {
+          const output = createWriteStream(zipPath);
+          const archive = archiver('zip', { zlib: { level: 9 } });
+
+          output.on('close', () => resolve());
+          archive.on('error', (err) => reject(err));
+
+          archive.pipe(output);
+          archive.file(projectDataPath, { name: 'project_data.sql' });
+          archive.file(systemSettingsPath, { name: 'system_settings.sql' });
+          archive.file(metadataPath, { name: 'metadata.json' });
+          archive.finalize();
+        });
+
+        console.log(`✓ ZIP file created`);
+
+        // 5. Upload to MinIO
+        const fileStream = createReadStream(zipPath);
+        const bucketName = process.env.MINIO_BUCKET || 'skaftin';
+        const stats = statSync(zipPath);
+
+        await BackupController.s3Client.send(
+          new PutObjectCommand({
+            Bucket: bucketName,
+            Key: backupKey,
+            Body: fileStream,
+            ContentType: 'application/zip',
+            Metadata: {
+              projectId: projectId.toString(),
+              projectName: project.name,
+              backupName: backupName,
+              type: 'full',
+              description: description || '',
+              createdAt: new Date().toISOString(),
+            },
+          })
+        );
+
+        console.log(`✅ Full backup created and uploaded: ${backupKey}`);
+
+        // Clean up temp files
+        try {
+          if (existsSync(projectDataPath)) unlinkSync(projectDataPath);
+          if (existsSync(systemSettingsPath)) unlinkSync(systemSettingsPath);
+          if (existsSync(metadataPath)) unlinkSync(metadataPath);
+          if (existsSync(zipPath)) unlinkSync(zipPath);
+        } catch (cleanupError) {
+          console.warn('Failed to cleanup temp files:', cleanupError);
+        }
+
+        const backupMetadata: BackupMetadata = {
+          id: backupKey,
+          name: backupName,
+          projectId: projectId,
+          createdAt: new Date().toISOString(),
+          size: stats.size,
+          type: 'full',
+          description: description,
+        };
+
+        ResponseUtils.success(res, 'Full backup created successfully', backupMetadata);
+      } catch (error: any) {
+        // Cleanup on error
+        try {
+          if (existsSync(projectDataPath)) unlinkSync(projectDataPath);
+          if (existsSync(systemSettingsPath)) unlinkSync(systemSettingsPath);
+          if (existsSync(metadataPath)) unlinkSync(metadataPath);
+          if (existsSync(zipPath)) unlinkSync(zipPath);
+        } catch (cleanupError) {
+          console.warn('Failed to cleanup temp files on error:', cleanupError);
+        }
+
+        console.error('Error creating full backup:', error);
+        return ResponseUtils.error(res, 'Failed to create full backup', error);
+      }
+    } catch (error: any) {
+      console.error('Error in createFullBackup:', error);
+      return ResponseUtils.error(res, 'Failed to create full backup', error);
+    }
+  }
+
+  /**
+   * Restore a full backup (creates a new project)
+   */
+  static async restoreFullBackup(req: BackupRequest, res: Response) {
+    try {
+      const { backupId, newProjectName, organizationId } = req.body;
+      const userId = req.user?.userId;
+
+      if (!backupId || !newProjectName || !organizationId) {
+        return ResponseUtils.error(res, 'Backup ID, new project name, and organization ID are required', null, null, 400);
+      }
+
+      const bucketName = process.env.MINIO_BUCKET || 'skaftin';
+      const tempDir = join(tmpdir(), `restore-${Date.now()}`);
+      mkdirSync(tempDir, { recursive: true });
+      
+      const zipPath = join(tempDir, 'backup.zip');
+
+      try {
+        console.log(`🔄 Restoring backup: ${backupId}`);
+
+        // 1. Download ZIP from MinIO
+        const getCommand = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: backupId,
+        });
+
+        const response = await BackupController.s3Client.send(getCommand);
+
+        if (!response.Body) {
+          return ResponseUtils.error(res, 'Backup file not found', null, null, 404);
+        }
+
+        // Save ZIP to temp file
+        const writeStream = createWriteStream(zipPath);
+        if (response.Body instanceof Readable) {
+          response.Body.pipe(writeStream);
+          await new Promise<void>((resolve, reject) => {
+            writeStream.on('finish', () => resolve());
+            writeStream.on('error', reject);
+          });
+        } else {
+          const chunks: Buffer[] = [];
+          for await (const chunk of response.Body as any) {
+            chunks.push(Buffer.from(chunk));
+          }
+          writeFileSync(zipPath, Buffer.concat(chunks));
+        }
+
+        console.log(`✓ Backup downloaded`);
+
+        // 2. Extract ZIP
+        const extractDir = join(tempDir, 'extracted');
+        mkdirSync(extractDir, { recursive: true });
+
+        await new Promise<void>((resolve, reject) => {
+          createReadStream(zipPath)
+            .pipe(unzipper.Extract({ path: extractDir }))
+            .on('close', () => resolve())
+            .on('error', reject);
+        });
+
+        console.log(`✓ Backup extracted`);
+
+        // 3. Read metadata
+        const metadataPath = join(extractDir, 'metadata.json');
+        const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
+        
+        console.log(`✓ Metadata read: ${metadata.projectName}`);
+
+        // 4. Create new project
+        const timestamp = Date.now();
+        const sanitizedName = newProjectName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        const newSchemaName = `project_${sanitizedName}_${timestamp}`;
+
+        const [newProject] = await db
+          .insert(projects)
+          .values({
+            name: newProjectName,
+            description: `Restored from backup: ${metadata.projectName}`,
+            organization_id: organizationId,
+            user_id: userId || '',
+            schema_name: newSchemaName,
+          })
+          .returning();
+
+        console.log(`✓ New project created: ${newProject.id}`);
+
+        // 5. Create schema
+        await db.execute(sql.raw(`CREATE SCHEMA IF NOT EXISTS ${newSchemaName}`));
+        console.log(`✓ Schema created: ${newSchemaName}`);
+
+        // 6. Initialize auth tables (creates base skaftin_system tables)
+        const dbInitializer = new DatabaseInitializer(BackupController.pool);
+        await dbInitializer.initializeProjectAuthTables(newSchemaName, newProject.id);
+        console.log(`✓ Auth tables initialized`);
+
+        // 7. Restore project data
+        const projectDataPath = join(extractDir, 'project_data.sql');
+        if (existsSync(projectDataPath)) {
+          let projectSql = readFileSync(projectDataPath, 'utf8');
+          // Replace old schema name with new schema name
+          projectSql = projectSql.replace(new RegExp(metadata.schemaName, 'g'), newSchemaName);
+          projectSql = projectSql.replace(/SET search_path TO [^;]+;/, `SET search_path TO ${newSchemaName}, public;`);
+          
+          const client = await BackupController.pool.connect();
+          try {
+            await client.query(projectSql);
+            console.log(`✓ Project data restored`);
+          } finally {
+            client.release();
+          }
+        }
+
+        // 8. Restore system settings
+        const systemSettingsPath = join(extractDir, 'system_settings.sql');
+        if (existsSync(systemSettingsPath)) {
+          let systemSql = readFileSync(systemSettingsPath, 'utf8');
+          // Replace old project ID and schema name with new ones
+          systemSql = systemSql.replace(new RegExp(`project_id = ${metadata.projectId}`, 'g'), `project_id = ${newProject.id}`);
+          systemSql = systemSql.replace(new RegExp(`'${metadata.projectId}'`, 'g'), `'${newProject.id}'`);
+          systemSql = systemSql.replace(new RegExp(metadata.schemaName, 'g'), newSchemaName);
+          
+          const client = await BackupController.pool.connect();
+          try {
+            await client.query(systemSql);
+            console.log(`✓ System settings restored`);
+          } finally {
+            client.release();
+          }
+        }
+
+        // Clean up temp files
+        try {
+          unlinkSync(zipPath);
+          unlinkSync(metadataPath);
+          if (existsSync(projectDataPath)) unlinkSync(projectDataPath);
+          if (existsSync(systemSettingsPath)) unlinkSync(systemSettingsPath);
+        } catch (cleanupError) {
+          console.warn('Failed to cleanup temp files:', cleanupError);
+        }
+
+        console.log(`✅ Backup restored successfully`);
+
+        ResponseUtils.success(res, 'Backup restored successfully', {
+          projectId: newProject.id,
+          projectName: newProject.name,
+          schemaName: newSchemaName,
+          backupId: backupId,
+        });
+      } catch (error: any) {
+        // Cleanup on error
+        try {
+          if (existsSync(zipPath)) unlinkSync(zipPath);
+        } catch (cleanupError) {
+          console.warn('Failed to cleanup temp files on error:', cleanupError);
+        }
+
+        console.error('Error restoring backup:', error);
+        return ResponseUtils.error(res, 'Failed to restore backup', error);
+      }
+    } catch (error: any) {
+      console.error('Error in restoreFullBackup:', error);
+      return ResponseUtils.error(res, 'Failed to restore backup', error);
+    }
+  }
+
+  /**
+   * Cleanup old backups based on retention policy
+   */
+  static async cleanupOldBackups(req: BackupRequest, res: Response) {
+    try {
+      const projectId = parseInt(req.params.projectId || req.params.id);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      const { retentionPolicy, retentionValue } = req.body;
+
+      if (!retentionPolicy || !['keep_count', 'keep_days'].includes(retentionPolicy)) {
+        return ResponseUtils.error(res, 'Invalid retention policy', null, null, 400);
+      }
+
+      if (!retentionValue || retentionValue < 1) {
+        return ResponseUtils.error(res, 'Invalid retention value', null, null, 400);
+      }
+
+      const bucketName = process.env.MINIO_BUCKET || 'skaftin';
+      const prefix = `backups/${projectId}/`;
+
+      // List all backups
+      const listCommand = new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: prefix,
+      });
+
+      const response = await BackupController.s3Client.send(listCommand);
+
+      if (!response.Contents || response.Contents.length === 0) {
+        return ResponseUtils.success(res, 'No backups to clean up', { deletedCount: 0 });
+      }
+
+      // Sort backups by date (newest first)
+      const backups = response.Contents
+        .map((object) => ({
+          key: object.Key || '',
+          lastModified: object.LastModified || new Date(),
+          size: object.Size || 0,
+        }))
+        .sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+
+      let backupsToDelete: string[] = [];
+
+      if (retentionPolicy === 'keep_count') {
+        // Keep only the N most recent backups
+        if (backups.length > retentionValue) {
+          backupsToDelete = backups.slice(retentionValue).map(b => b.key);
+        }
+      } else if (retentionPolicy === 'keep_days') {
+        // Delete backups older than N days
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - retentionValue);
+
+        backupsToDelete = backups
+          .filter(b => b.lastModified < cutoffDate)
+          .map(b => b.key);
+      }
+
+      // Delete old backups
+      let deletedCount = 0;
+      for (const key of backupsToDelete) {
+        try {
+          await BackupController.s3Client.send(
+            new DeleteObjectCommand({
+              Bucket: bucketName,
+              Key: key,
+            })
+          );
+          deletedCount++;
+          console.log(`🗑️  Deleted old backup: ${key}`);
+        } catch (deleteError) {
+          console.error(`Failed to delete backup ${key}:`, deleteError);
+        }
+      }
+
+      console.log(`✅ Cleaned up ${deletedCount} old backups`);
+
+      ResponseUtils.success(res, `Cleaned up ${deletedCount} old backups`, {
+        deletedCount,
+        totalBackups: backups.length,
+        remainingBackups: backups.length - deletedCount,
+      });
+    } catch (error: any) {
+      console.error('Error cleaning up backups:', error);
+      return ResponseUtils.error(res, 'Failed to cleanup backups', error);
     }
   }
 }

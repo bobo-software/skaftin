@@ -3,8 +3,8 @@ import { useDatabaseStore, useRealtimeStore } from '../../stores/StoresIndex';
 import RequestUtils from '../../utils/RequestUtils';
 import ApiRoutes from '../../constants/ApiRoutes';
 import ToastUtils from '../../utils/ToastUtils';
-import { Database, Plus, Search, Table, List, Settings, Upload } from 'lucide-react';
-import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem, TableSettingsTab, DatabaseImportModal, AppText } from '../ComponentsIndex';
+import { Database, Plus, Search, Table, List, Settings, Upload, Download } from 'lucide-react';
+import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem, TableSettingsTab, DatabaseImportModal, DatabaseExportModal, AppText } from '../ComponentsIndex';
 
 interface TableViewerProps {
   projectId: string;
@@ -22,6 +22,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     insertData,
     createTable,
     importDatabaseDump,
+    exportDatabaseDump,
     clearError 
   } = useDatabaseStore();
   
@@ -34,9 +35,11 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   const [showCsvImportModal, setShowCsvImportModal] = useState(false);
   const [showCreateTableModal, setShowCreateTableModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [tableData, setTableData] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
     type: 'single' | 'bulk' | 'table';
@@ -383,6 +386,32 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     }
   };
 
+  const handleDatabaseExport = async (tablesToExport: string[], includeSystemTables: boolean, schemaOnly: boolean) => {
+    setExportLoading(true);
+    try {
+      const result = await exportDatabaseDump(projectId, tablesToExport, includeSystemTables, schemaOnly);
+      
+      if (result.success) {
+        let message = `Successfully exported ${tablesToExport.length} table${tablesToExport.length !== 1 ? 's' : ''}!`;
+        if (schemaOnly) {
+          message += ' (Schema only)';
+        }
+        if (includeSystemTables) {
+          message += ' Including user & authentication data.';
+        }
+        ToastUtils.success(message);
+        setShowExportModal(false);
+      } else {
+        ToastUtils.error('Failed to export database dump. Please try again.');
+      }
+    } catch (error: any) {
+      console.error('Error exporting database:', error);
+      ToastUtils.error(error.message || 'Failed to export database dump.');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   if (loading && tables.length === 0) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -440,6 +469,14 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                   onClick={() => setShowImportModal(true)}
                 >
                   Import
+                </AppButton>
+                <AppButton
+                  variant="secondary"
+                  size="sm"
+                  icon={<Download className="w-4 h-4" />}
+                  onClick={() => setShowExportModal(true)}
+                >
+                  Export
                 </AppButton>
               </div>
               
@@ -695,6 +732,15 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         onClose={() => setShowImportModal(false)}
         onImport={handleDatabaseImport}
         loading={importLoading}
+      />
+
+      {/* Database Export Modal */}
+      <DatabaseExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onExport={handleDatabaseExport}
+        loading={exportLoading}
+        availableTables={tables}
       />
     </div>
   );

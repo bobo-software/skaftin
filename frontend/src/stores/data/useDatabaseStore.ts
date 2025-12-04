@@ -68,6 +68,7 @@ interface DatabaseStoreType {
   deleteData: (projectId: string, tableName: string, where: any) => Promise<boolean>;
   getTableSchema: (projectId: string, tableName: string) => Promise<Column[]>;
   importDatabaseDump: (projectId: string, sqlContent: string, dropExisting: boolean) => Promise<{success: boolean, result?: any}>;
+  exportDatabaseDump: (projectId: string, tables: string[], includeSystemTables: boolean, schemaOnly: boolean) => Promise<{success: boolean}>;
   saveQuery: (query: Omit<SqlQuery, 'id' | 'createdAt'>) => void;
   deleteQuery: (queryId: string) => void;
   fetchDatabaseStats: (projectId: string) => Promise<void>;
@@ -334,6 +335,60 @@ const useDatabaseStore = create<DatabaseStoreType>()(
           return { success: false };
         } finally {
           set({ loading: false });
+        }
+      },
+
+      exportDatabaseDump: async (projectId: string, tables: string[], includeSystemTables: boolean, schemaOnly: boolean) => {
+        set({ loading: true, error: null });
+        try {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const API_BASE = import.meta.env.VITE_API_URL || '';
+          
+          // Make request with responseType blob
+          const response = await fetch(`${API_BASE}${ApiRoutes.DATABASE.EXPORT_DUMP(projectId)}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            credentials: 'include',
+            body: JSON.stringify({ tables, includeSystemTables, schemaOnly }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to export database dump');
+          }
+
+          // Get the blob
+          const blob = await response.blob();
+          
+          // Extract filename from Content-Disposition header or use default
+          let fileName = 'database-export.sql';
+          const contentDisposition = response.headers.get('Content-Disposition');
+          if (contentDisposition) {
+            const matches = /filename="?(.+)"?/i.exec(contentDisposition);
+            if (matches && matches[1]) {
+              fileName = matches[1];
+            }
+          }
+
+          // Create download link
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', fileName);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.URL.revokeObjectURL(url);
+
+          set({ loading: false });
+          return { success: true };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Failed to export database dump';
+          set({ error: errorMsg, loading: false });
+          return { success: false };
         }
       },
 

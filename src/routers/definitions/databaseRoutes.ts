@@ -268,6 +268,14 @@ export function createDatabaseRouteDefinitions(): RouteDefinition[] {
       requiresProject: true,
       requiresAuth: true,
     },
+    {
+      method: 'post',
+      path: '/export',
+      handler: DatabaseController.exportDatabaseDump,
+      description: 'Export database dump',
+      requiresProject: true,
+      requiresAuth: true,
+    },
   ];
 }
 

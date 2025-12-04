@@ -16,23 +16,33 @@ import {
   PowerOff,
   Settings
 } from 'lucide-react';
-import BackupService, { BackupMetadata } from '../../services/BackupService';
+import BackupService, { Backup } from '../../services/BackupService';
 import ToastUtils from '../../utils/ToastUtils';
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+};
 
 const BackupTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
-  const [backups, setBackups] = useState<BackupMetadata[]>([]);
+  const [backups, setBackups] = useState<Backup[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [backupName, setBackupName] = useState('');
   const [backupDescription, setBackupDescription] = useState('');
+  const [backupType, setBackupType] = useState<'database' | 'full'>('database');
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [restoreBackupId, setRestoreBackupId] = useState<string | null>(null);
-  const [dropExisting, setDropExisting] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [organizationId, setOrganizationId] = useState<number>(1);
   
   // Automatic backup schedules
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -47,6 +57,9 @@ const BackupTab = () => {
   const [scheduleMode, setScheduleMode] = useState<'simple' | 'advanced'>('simple');
   const [intervalType, setIntervalType] = useState<'minute' | 'hour' | 'day' | 'week' | 'month'>('day');
   const [frequency, setFrequency] = useState(1);
+  const [scheduleBackupType, setScheduleBackupType] = useState<'database' | 'full'>('database');
+  const [retentionPolicy, setRetentionPolicy] = useState<'keep_all' | 'keep_count' | 'keep_days'>('keep_all');
+  const [retentionValue, setRetentionValue] = useState<number | undefined>();
 
   useEffect(() => {
     if (projectId) {
@@ -59,9 +72,9 @@ const BackupTab = () => {
     
     try {
       setLoading(true);
-      const result = await BackupService.listBackups(projectId);
-      if (result.success && result.data) {
-        setBackups(result.data);
+      const result = await BackupService.listBackups(parseInt(projectId));
+      if (result.success && result.backups) {
+        setBackups(result.backups);
       } else {
         ToastUtils.error(result.error || 'Failed to load backups');
       }
@@ -78,18 +91,24 @@ const BackupTab = () => {
 
     try {
       setCreating(true);
-      const result = await BackupService.createBackup(
-        projectId,
-        backupName || undefined,
-        backupDescription || undefined,
-        'database'
-      );
+      const result = backupType === 'full'
+        ? await BackupService.createFullBackup(
+            parseInt(projectId),
+            backupName || undefined,
+            backupDescription || undefined
+          )
+        : await BackupService.createDatabaseBackup(
+            parseInt(projectId),
+            backupName || undefined,
+            backupDescription || undefined
+          );
 
       if (result.success) {
-        ToastUtils.success('Backup created successfully!');
+        ToastUtils.success(`${backupType === 'full' ? 'Full' : 'Database'} backup created successfully!`);
         setShowCreateModal(false);
         setBackupName('');
         setBackupDescription('');
+        setBackupType('database');
         await loadBackups();
       } else {
         ToastUtils.error(result.error || 'Failed to create backup');
@@ -106,7 +125,7 @@ const BackupTab = () => {
 
     try {
       setDownloadingId(backupId);
-      await BackupService.downloadBackup(projectId, backupId);
+      await BackupService.downloadBackup(parseInt(projectId), backupId);
       ToastUtils.success('Backup download started');
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to download backup');
@@ -116,18 +135,22 @@ const BackupTab = () => {
   };
 
   const handleRestore = async () => {
-    if (!projectId || !restoreBackupId) return;
+    if (!restoreBackupId || !newProjectName || !organizationId) {
+      ToastUtils.error('Please provide a project name');
+      return;
+    }
 
     try {
       setRestoringId(restoreBackupId);
-      const result = await BackupService.restoreBackup(projectId, restoreBackupId, dropExisting);
+      const result = await BackupService.restoreBackup(restoreBackupId, newProjectName, organizationId);
 
       if (result.success) {
-        ToastUtils.success('Backup restored successfully!');
+        ToastUtils.success(`Backup restored successfully! New project "${newProjectName}" created.`);
         setShowRestoreModal(false);
         setRestoreBackupId(null);
-        setDropExisting(false);
-        await loadBackups();
+        setNewProjectName('');
+        // Optionally navigate to the new project
+        // navigate(`/projects/${result.project.projectId}`);
       } else {
         ToastUtils.error(result.error || 'Failed to restore backup');
       }
@@ -147,7 +170,7 @@ const BackupTab = () => {
 
     try {
       setDeletingId(backupId);
-      const result = await BackupService.deleteBackup(projectId, backupId);
+      const result = await BackupService.deleteBackup(parseInt(projectId), backupId);
 
       if (result.success) {
         ToastUtils.success('Backup deleted successfully');
@@ -167,9 +190,9 @@ const BackupTab = () => {
     
     try {
       setLoadingSchedules(true);
-      const result = await BackupService.listBackupSchedules(projectId);
-      if (result.success && result.data) {
-        setSchedules(result.data);
+      const result = await BackupService.listSchedules(parseInt(projectId));
+      if (result.success && result.schedules) {
+        setSchedules(result.schedules);
       } else {
         ToastUtils.error(result.error || 'Failed to load backup schedules');
       }
@@ -190,12 +213,15 @@ const BackupTab = () => {
     }
 
     try {
-      const result = await BackupService.createBackupSchedule(projectId, {
+      const result = await BackupService.createSchedule(parseInt(projectId), {
         name: scheduleName,
         description: scheduleDescription || undefined,
         schedule: scheduleCron,
         backupNamePrefix: schedulePrefix || undefined,
         retentionDays: retentionDays,
+        backupType: scheduleBackupType,
+        retentionPolicy: retentionPolicy,
+        retentionValue: retentionValue,
       });
 
       if (result.success) {
@@ -216,12 +242,15 @@ const BackupTab = () => {
     if (!projectId || !editingSchedule) return;
 
     try {
-      const result = await BackupService.updateBackupSchedule(projectId, editingSchedule.id, {
+      const result = await BackupService.updateSchedule(parseInt(projectId), editingSchedule.id, {
         name: scheduleName,
         description: scheduleDescription || undefined,
         schedule: scheduleCron,
         backupNamePrefix: schedulePrefix || undefined,
         retentionDays: retentionDays,
+        backupType: scheduleBackupType,
+        retentionPolicy: retentionPolicy,
+        retentionValue: retentionValue,
       });
 
       if (result.success) {
@@ -242,7 +271,7 @@ const BackupTab = () => {
     if (!projectId) return;
 
     try {
-      const result = await BackupService.updateBackupSchedule(projectId, schedule.id, {
+      const result = await BackupService.updateSchedule(parseInt(projectId), schedule.id, {
         enabled: !schedule.enabled,
       });
 
@@ -265,7 +294,7 @@ const BackupTab = () => {
     }
 
     try {
-      const result = await BackupService.deleteBackupSchedule(projectId, scheduleId);
+      const result = await BackupService.deleteSchedule(parseInt(projectId), scheduleId);
 
       if (result.success) {
         ToastUtils.success('Backup schedule deleted successfully');
@@ -287,6 +316,9 @@ const BackupTab = () => {
     setScheduleMode('simple');
     setIntervalType('day');
     setFrequency(1);
+    setScheduleBackupType('database');
+    setRetentionPolicy('keep_all');
+    setRetentionValue(undefined);
   };
 
   const openScheduleModal = (schedule?: any) => {
@@ -297,6 +329,9 @@ const BackupTab = () => {
       setScheduleCron(schedule.schedule);
       setSchedulePrefix(schedule.backup_name_prefix || '');
       setRetentionDays(schedule.retention_days);
+      setScheduleBackupType(schedule.backup_type || 'database');
+      setRetentionPolicy(schedule.retention_policy || 'keep_all');
+      setRetentionValue(schedule.retention_value);
       
       // Try to parse cron to simple format
       const parsed = parseCronToSimple(schedule.schedule);
@@ -455,7 +490,7 @@ const BackupTab = () => {
                     </div>
                     <div className="flex items-center space-x-1">
                       <HardDrive className="w-3 h-3" />
-                      <span>{BackupService.formatFileSize(backup.size)}</span>
+                      <span>{formatFileSize(backup.size)}</span>
                     </div>
                   </div>
                 </div>
@@ -652,6 +687,25 @@ const BackupTab = () => {
             <form onSubmit={handleCreateBackup} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                  Backup Type *
+                </label>
+                <select
+                  value={backupType}
+                  onChange={(e) => setBackupType(e.target.value as 'database' | 'full')}
+                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                >
+                  <option value="database">Database Only (Schema + Data)</option>
+                  <option value="full">Full Backup (Database + Settings)</option>
+                </select>
+                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                  {backupType === 'database' 
+                    ? 'Backs up only your project schema and data' 
+                    : 'Backs up everything: database, users, roles, settings, and providers'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
                   Backup Name (optional)
                 </label>
                 <input
@@ -719,7 +773,6 @@ const BackupTab = () => {
                 onClick={() => {
                   setShowRestoreModal(false);
                   setRestoreBackupId(null);
-                  setDropExisting(false);
                 }}
                 className="p-2 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700"
               >
@@ -728,31 +781,35 @@ const BackupTab = () => {
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                 <div className="flex items-start space-x-3">
-                  <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                  <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
                   <div>
-                    <h4 className="font-medium text-amber-900 dark:text-amber-200 mb-1">
-                      Warning: This will restore your database
+                    <h4 className="font-medium text-blue-900 dark:text-blue-200 mb-1">
+                      Create New Project from Backup
                     </h4>
-                    <p className="text-sm text-amber-700 dark:text-amber-300">
-                      All current data will be replaced with the backup data. This action cannot be undone.
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      This will create a brand new project with the backup data. Your current project will not be affected.
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="dropExisting"
-                  checked={dropExisting}
-                  onChange={(e) => setDropExisting(e.target.checked)}
-                  className="w-4 h-4 text-primary-600 border-dark-300 rounded focus:ring-primary-500"
-                />
-                <label htmlFor="dropExisting" className="text-sm text-dark-700 dark:text-dark-300">
-                  Drop existing tables before restoring
+              <div>
+                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                  New Project Name *
                 </label>
+                <input
+                  type="text"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                  placeholder="Enter name for the new project"
+                  required
+                />
+                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                  A new project will be created with this name
+                </p>
               </div>
 
               <div className="flex items-center space-x-3 pt-4">
@@ -761,7 +818,6 @@ const BackupTab = () => {
                   onClick={() => {
                     setShowRestoreModal(false);
                     setRestoreBackupId(null);
-                    setDropExisting(false);
                   }}
                   className="flex-1 btn-secondary"
                   disabled={restoringId === restoreBackupId}
@@ -896,6 +952,20 @@ const BackupTab = () => {
 
               <div>
                 <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                  Backup Type
+                </label>
+                <select
+                  value={scheduleBackupType}
+                  onChange={(e) => setScheduleBackupType(e.target.value as 'database' | 'full')}
+                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                >
+                  <option value="database">Database Only</option>
+                  <option value="full">Full Backup (Database + Settings)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
                   Backup Name Prefix (optional)
                 </label>
                 <input
@@ -912,7 +982,44 @@ const BackupTab = () => {
 
               <div>
                 <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Retention Days (optional)
+                  Retention Policy
+                </label>
+                <select
+                  value={retentionPolicy}
+                  onChange={(e) => setRetentionPolicy(e.target.value as any)}
+                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                >
+                  <option value="keep_all">Keep All Backups</option>
+                  <option value="keep_count">Keep Last N Backups</option>
+                  <option value="keep_days">Keep Backups from Last N Days</option>
+                </select>
+              </div>
+
+              {retentionPolicy !== 'keep_all' && (
+                <div>
+                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                    {retentionPolicy === 'keep_count' ? 'Number of Backups to Keep' : 'Number of Days to Keep'}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={retentionValue || ''}
+                    onChange={(e) => setRetentionValue(e.target.value ? parseInt(e.target.value) : undefined)}
+                    className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                    placeholder={retentionPolicy === 'keep_count' ? '5' : '30'}
+                    required
+                  />
+                  <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                    {retentionPolicy === 'keep_count' 
+                      ? 'Old backups beyond this count will be automatically deleted'
+                      : 'Backups older than this will be automatically deleted'}
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                  Legacy Retention Days (optional, deprecated)
                 </label>
                 <input
                   type="number"
@@ -923,7 +1030,7 @@ const BackupTab = () => {
                   placeholder="30"
                 />
                 <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                  Automatically delete backups older than this many days (leave empty to keep all)
+                  Use the Retention Policy above instead. This field is kept for backwards compatibility.
                 </p>
               </div>
 

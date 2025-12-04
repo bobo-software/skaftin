@@ -2055,6 +2055,339 @@ class DatabaseController {
       ResponseUtils.error(res, 'Failed to import database dump', error);
     }
   }
+
+  /**
+   * Export PostgreSQL database dump
+   * POST /api/database/:projectId/export
+   */
+  static async exportDatabaseDump(req: DatabaseRequest, res: Response) {
+    try {
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      const { tables = [], includeSystemTables = false, schemaOnly = false } = req.body;
+
+      // Get project schema
+      const projectIdInt = parseInt(projectId, 10);
+      const projectResult = await DatabaseController.pool.query(
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
+        [projectIdInt]
+      );
+
+      if (projectResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      const schemaName = projectResult.rows[0].schema_name;
+      const client = await DatabaseController.pool.connect();
+
+      try {
+        await client.query(`SET search_path TO ${schemaName}, public`);
+
+        let sqlContent = '';
+
+        // Add header
+        sqlContent += `-- PostgreSQL database dump\n`;
+        sqlContent += `-- Exported from schema: ${schemaName}\n`;
+        sqlContent += `-- Exported at: ${new Date().toISOString()}\n`;
+        sqlContent += `-- Export type: ${schemaOnly ? 'Schema only (no data)' : 'Schema + Data'}\n`;
+        sqlContent += `-- Note: Import this dump into your target project. Schema will be set automatically.\n\n`;
+
+        // Get all tables in the schema if no specific tables provided
+        let tablesToExport: string[] = tables;
+        if (tablesToExport.length === 0) {
+          const tablesResult = await client.query(`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = $1 
+              AND table_type = 'BASE TABLE'
+              AND table_name NOT LIKE 'skaftin_system_%'
+            ORDER BY table_name
+          `, [schemaName]);
+          tablesToExport = tablesResult.rows.map(row => row.table_name);
+        }
+
+        console.log(`📦 Exporting ${tablesToExport.length} tables for project ${projectId}`);
+
+        // Export user tables
+        for (const tableName of tablesToExport) {
+          // Get detailed column information
+          const columnsResult = await client.query(`
+            SELECT 
+              column_name,
+              data_type,
+              udt_name,
+              character_maximum_length,
+              numeric_precision,
+              numeric_scale,
+              is_nullable,
+              column_default,
+              ordinal_position
+            FROM information_schema.columns
+            WHERE table_schema = $1 AND table_name = $2
+            ORDER BY ordinal_position
+          `, [schemaName, tableName]);
+
+          if (columnsResult.rows.length > 0) {
+            sqlContent += `\n-- Table: ${tableName}\n`;
+            sqlContent += `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
+            
+            const columnDefs = columnsResult.rows.map(col => {
+              let def = `  "${col.column_name}" `;
+              
+              // Check if this is a serial/auto-increment column
+              const isSerial = col.column_default && col.column_default.includes('nextval(');
+              
+              // Handle data types
+              if (isSerial) {
+                // Convert to SERIAL type instead of integer with nextval
+                if (col.data_type === 'integer') {
+                  def += 'SERIAL';
+                } else if (col.data_type === 'bigint') {
+                  def += 'BIGSERIAL';
+                } else if (col.data_type === 'smallint') {
+                  def += 'SMALLSERIAL';
+                } else {
+                  def += col.data_type;
+                }
+              } else if (col.data_type === 'USER-DEFINED') {
+                def += col.udt_name;
+              } else if (col.data_type === 'ARRAY') {
+                def += col.udt_name.replace(/_/g, ' ') + '[]';
+              } else {
+                def += col.data_type;
+              }
+              
+              // Add length/precision ONLY for specific types that need it
+              if (!isSerial) {
+                if (col.character_maximum_length && (col.data_type === 'character varying' || col.data_type === 'character')) {
+                  def += `(${col.character_maximum_length})`;
+                } else if (col.numeric_precision && (col.data_type === 'numeric' || col.data_type === 'decimal')) {
+                  if (col.numeric_scale) {
+                    def += `(${col.numeric_precision},${col.numeric_scale})`;
+                  } else {
+                    def += `(${col.numeric_precision})`;
+                  }
+                }
+              }
+              // Note: integer, bigint, smallint, etc. don't take precision in PostgreSQL
+              
+              // Add constraints
+              if (col.is_nullable === 'NO') {
+                def += ' NOT NULL';
+              }
+              
+              // Add default value only if not a serial column
+              if (col.column_default && !isSerial) {
+                def += ` DEFAULT ${col.column_default}`;
+              }
+              
+              return def;
+            });
+            
+            sqlContent += columnDefs.join(',\n') + '\n);\n\n';
+
+            // Get table data as INSERT statements (skip if schemaOnly)
+            if (!schemaOnly) {
+              const dataResult = await client.query(`SELECT * FROM "${schemaName}"."${tableName}"`);
+              
+              if (dataResult.rows.length > 0) {
+                const columns = dataResult.fields.map(f => f.name);
+                sqlContent += `-- Data for table: ${tableName}\n`;
+                
+                for (const row of dataResult.rows) {
+                  const values = columns.map(col => {
+                    const value = row[col];
+                    if (value === null) return 'NULL';
+                    if (typeof value === 'string') {
+                      // Check if string contains special characters that need escape string syntax
+                      const hasSpecialChars = /[\n\r\t\\]/.test(value);
+                      
+                      if (hasSpecialChars) {
+                        // Use PostgreSQL escape string syntax E''
+                        const escaped = value
+                          .replace(/\\/g, '\\\\')    // Escape backslashes first (becomes \\)
+                          .replace(/'/g, "\\'")      // Escape single quotes with backslash for E'' syntax
+                          .replace(/\n/g, '\\n')     // Escape newlines
+                          .replace(/\r/g, '\\r')     // Escape carriage returns
+                          .replace(/\t/g, '\\t');    // Escape tabs
+                        return `E'${escaped}'`;
+                      } else {
+                        // Standard string, just escape single quotes
+                        return `'${value.replace(/'/g, "''")}'`;
+                      }
+                    }
+                    if (typeof value === 'boolean') {
+                      return value ? 'TRUE' : 'FALSE';
+                    }
+                    if (value instanceof Date) {
+                      return `'${value.toISOString()}'`;
+                    }
+                    if (typeof value === 'object') {
+                      // For JSON objects, use proper escaping
+                      const jsonStr = JSON.stringify(value)
+                        .replace(/\\/g, '\\\\')
+                        .replace(/'/g, "''");
+                      return `'${jsonStr}'`;
+                    }
+                    return String(value);
+                  });
+                  sqlContent += `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')});\n`;
+                }
+                sqlContent += '\n';
+              }
+            }
+          }
+
+          // Get foreign keys
+          const fkResult = await client.query(`
+            SELECT
+              tc.constraint_name,
+              kcu.column_name,
+              ccu.table_schema AS foreign_table_schema,
+              ccu.table_name AS foreign_table_name,
+              ccu.column_name AS foreign_column_name
+            FROM information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage AS kcu
+              ON tc.constraint_name = kcu.constraint_name
+            JOIN information_schema.constraint_column_usage AS ccu
+              ON ccu.constraint_name = tc.constraint_name
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+              AND tc.table_schema = $1
+              AND tc.table_name = $2
+          `, [schemaName, tableName]);
+
+          if (fkResult.rows.length > 0) {
+            sqlContent += `-- Foreign keys for table: ${tableName}\n`;
+            for (const fk of fkResult.rows) {
+              sqlContent += `ALTER TABLE "${tableName}" ADD CONSTRAINT "${fk.constraint_name}" FOREIGN KEY ("${fk.column_name}") REFERENCES "${fk.foreign_table_name}" ("${fk.foreign_column_name}");\n`;
+            }
+            sqlContent += '\n';
+          }
+        }
+
+        // Export system tables if requested
+        if (includeSystemTables) {
+          sqlContent += `\n-- ============================================\n`;
+          sqlContent += `-- System Tables (Users & Authentication)\n`;
+          sqlContent += `-- ============================================\n\n`;
+
+          const systemTables = [
+            'skaftin_system_users',
+            'skaftin_system_roles',
+            'skaftin_system_user_roles',
+            'skaftin_system_user_custom_fields',
+            'skaftin_system_otp_verifications',
+          ];
+
+          for (const tableName of systemTables) {
+            try {
+              // Check if table exists
+              const tableExistsQuery = `
+                SELECT EXISTS (
+                  SELECT FROM information_schema.tables 
+                  WHERE table_schema = $1 AND table_name = $2
+                )
+              `;
+              const tableExists = await client.query(tableExistsQuery, [schemaName, tableName]);
+              
+              if (!tableExists.rows[0].exists) {
+                sqlContent += `-- Table ${tableName} does not exist, skipping\n\n`;
+                continue;
+              }
+
+              const dataResult = await client.query(`SELECT * FROM "${schemaName}"."${tableName}"`);
+              
+              if (dataResult.rows.length > 0) {
+                sqlContent += `-- Data for ${tableName}\n`;
+                sqlContent += `DELETE FROM "${tableName}";\n`;
+
+                const columns = dataResult.fields.map(f => f.name);
+                
+                for (const row of dataResult.rows) {
+                  const values = columns.map(col => {
+                    const value = row[col];
+                    if (value === null) return 'NULL';
+                    if (typeof value === 'string') {
+                      // Check if string contains special characters that need escape string syntax
+                      const hasSpecialChars = /[\n\r\t\\]/.test(value);
+                      
+                      if (hasSpecialChars) {
+                        // Use PostgreSQL escape string syntax E''
+                        const escaped = value
+                          .replace(/\\/g, '\\\\')    // Escape backslashes first (becomes \\)
+                          .replace(/'/g, "\\'")      // Escape single quotes with backslash for E'' syntax
+                          .replace(/\n/g, '\\n')     // Escape newlines
+                          .replace(/\r/g, '\\r')     // Escape carriage returns
+                          .replace(/\t/g, '\\t');    // Escape tabs
+                        return `E'${escaped}'`;
+                      } else {
+                        // Standard string, just escape single quotes
+                        return `'${value.replace(/'/g, "''")}'`;
+                      }
+                    }
+                    if (typeof value === 'boolean') {
+                      return value ? 'TRUE' : 'FALSE';
+                    }
+                    if (value instanceof Date) {
+                      return `'${value.toISOString()}'`;
+                    }
+                    if (typeof value === 'object') {
+                      // For JSON objects, use proper escaping
+                      const jsonStr = JSON.stringify(value)
+                        .replace(/\\/g, '\\\\')
+                        .replace(/'/g, "''");
+                      return `'${jsonStr}'::jsonb`;
+                    }
+                    return String(value);
+                  });
+                  
+                  sqlContent += `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')});\n`;
+                }
+                sqlContent += '\n';
+              }
+            } catch (tableError: any) {
+              console.warn(`Warning: Could not export ${tableName}:`, tableError.message);
+              sqlContent += `-- Warning: Could not export ${tableName}: ${tableError.message}\n\n`;
+            }
+          }
+        }
+
+        client.release();
+
+        // Generate filename with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+        const fileName = `database-export-${timestamp}.sql`;
+
+        // Set headers for file download
+        res.setHeader('Content-Type', 'application/sql');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Length', Buffer.byteLength(sqlContent, 'utf8'));
+
+        // Send the SQL content
+        res.send(sqlContent);
+
+        console.log(`✅ Database exported successfully: ${fileName}`);
+
+        // Track analytics
+        await AnalyticsService.recordDatabaseMetric({
+          projectId: projectIdInt,
+          queryType: 'export',
+          executionTimeMs: 0,
+          rowsAffected: tablesToExport.length,
+        });
+      } catch (error: any) {
+        client.release();
+        console.error('Error exporting database dump:', error);
+        throw error;
+      }
+    } catch (error: any) {
+      console.error('Error in exportDatabaseDump:', error);
+      ResponseUtils.error(res, 'Failed to export database dump', error);
+    }
+  }
 }
 
 export default DatabaseController;

@@ -7,13 +7,18 @@ const router = express.Router();
 // All backup routes require authentication
 router.use(authenticateAndAttachUser);
 
-// All routes need project access verification
+// Database backup routes
 router.post('/:projectId/create', verifyProjectAccess, BackupController.createBackup);
 router.get('/:projectId/list', verifyProjectAccess, BackupController.listBackups);
 // backupId is now just the filename (extracted from full path in frontend)
 router.get('/:projectId/:backupId/download', verifyProjectAccess, BackupController.downloadBackup);
 router.post('/:projectId/:backupId/restore', verifyProjectAccess, BackupController.restoreBackup);
 router.delete('/:projectId/:backupId', verifyProjectAccess, BackupController.deleteBackup);
+
+// Full backup routes (project data + system settings)
+router.post('/:projectId/full', verifyProjectAccess, BackupController.createFullBackup);
+router.post('/restore', authenticateAndAttachUser, BackupController.restoreFullBackup);
+router.post('/:projectId/cleanup', verifyProjectAccess, BackupController.cleanupOldBackups);
 
 // Backup schedule routes
 router.get('/:projectId/schedules', verifyProjectAccess, BackupController.listBackupSchedules);
