@@ -6,7 +6,8 @@ import {
   Key,
   Link,
   Shield,
-  RefreshCw
+  RefreshCw,
+  Hash
 } from 'lucide-react';
 import { AppButton, DeleteConfirmModal } from '../ComponentsIndex';
 import McpService from '../../services/McpService';
@@ -54,7 +55,9 @@ const SchemaEditor = ({
     type: '',
     nullable: true,
     defaultValue: '',
-    unique: false
+    unique: false,
+    primaryKey: false,
+    autoIncrement: false
   });
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
@@ -632,18 +635,30 @@ const SchemaEditor = ({
       constraint.constraint_type === 'UNIQUE'
     );
     
+    // Check if column is a primary key
+    const isPrimaryKey = allConstraints.some(constraint => 
+      constraint.column_name === column.column_name && 
+      constraint.constraint_type === 'PRIMARY KEY'
+    );
+    
+    // Check if column is auto-increment (SERIAL types or has nextval default)
+    const isAutoIncrement = column.data_type.includes('SERIAL') || 
+                           (column.column_default && column.column_default.includes('nextval('));
+    
     setEditColumnData({
       name: column.column_name,
       type: column.data_type,
       nullable: column.is_nullable,
       defaultValue: column.column_default || '',
-      unique: hasExistingUnique
+      unique: hasExistingUnique,
+      primaryKey: isPrimaryKey,
+      autoIncrement: isAutoIncrement
     });
   };
 
   const handleCancelEdit = () => {
     setEditingColumn(null);
-    setEditColumnData({ name: '', type: '', nullable: true, defaultValue: '', unique: false });
+    setEditColumnData({ name: '', type: '', nullable: true, defaultValue: '', unique: false, primaryKey: false, autoIncrement: false });
     setShowEditDatePicker(false);
   };
 
@@ -654,17 +669,46 @@ const SchemaEditor = ({
       const changes: any = {};
       let uniqueConstraintToCreate = false;
       let uniqueConstraintToDelete = false;
+      let primaryKeyToCreate = false;
+      let primaryKeyToDelete = false;
       let constraintNameToDelete = '';
+      let primaryKeyConstraintToDelete = '';
       
       // Check what has changed
       const originalColumn = columns.find(col => col.column_name === editingColumn);
       if (!originalColumn) return;
 
+      // Check if auto-increment changed
+      const wasAutoIncrement = originalColumn.data_type.includes('SERIAL') || 
+                              (originalColumn.column_default && originalColumn.column_default.includes('nextval('));
+      
+      if (editColumnData.autoIncrement && !wasAutoIncrement) {
+        // Convert to SERIAL type
+        if (editColumnData.type === 'INTEGER' || editColumnData.type === 'INT') {
+          changes.newType = 'SERIAL';
+        } else if (editColumnData.type === 'BIGINT') {
+          changes.newType = 'BIGSERIAL';
+        } else if (editColumnData.type === 'SMALLINT') {
+          changes.newType = 'SMALLSERIAL';
+        }
+      } else if (!editColumnData.autoIncrement && wasAutoIncrement) {
+        // Convert from SERIAL to regular integer
+        if (originalColumn.data_type.includes('SERIAL')) {
+          if (originalColumn.data_type === 'BIGSERIAL') {
+            changes.newType = 'BIGINT';
+          } else if (originalColumn.data_type === 'SMALLSERIAL') {
+            changes.newType = 'SMALLINT';
+          } else {
+            changes.newType = 'INTEGER';
+          }
+        }
+      }
+
       if (editColumnData.name !== originalColumn.column_name) {
         changes.newName = editColumnData.name;
       }
       
-      if (editColumnData.type !== originalColumn.data_type) {
+      if (!editColumnData.autoIncrement && editColumnData.type !== originalColumn.data_type && !changes.newType) {
         changes.newType = editColumnData.type;
       }
       
@@ -672,17 +716,19 @@ const SchemaEditor = ({
         changes.nullable = editColumnData.nullable;
       }
       
-      // Handle default value changes
-      const originalDefault = originalColumn.column_default || '';
-      let newDefaultValue = editColumnData.defaultValue;
-      
-      // For date/timestamp types without a specific value set, use PostgreSQL NOW() function
-      if (!showEditDatePicker && !newDefaultValue && (editColumnData.type === 'DATE' || editColumnData.type.includes('TIMESTAMP'))) {
-        newDefaultValue = 'CURRENT_TIMESTAMP';
-      }
-      
-      if (newDefaultValue !== originalDefault) {
-        changes.defaultValue = newDefaultValue || null;
+      // Handle default value changes (skip if using auto-increment)
+      if (!editColumnData.autoIncrement) {
+        const originalDefault = originalColumn.column_default || '';
+        let newDefaultValue = editColumnData.defaultValue;
+        
+        // For date/timestamp types without a specific value set, use PostgreSQL NOW() function
+        if (!showEditDatePicker && !newDefaultValue && (editColumnData.type === 'DATE' || editColumnData.type.includes('TIMESTAMP'))) {
+          newDefaultValue = 'CURRENT_TIMESTAMP';
+        }
+        
+        if (newDefaultValue !== originalDefault) {
+          changes.defaultValue = newDefaultValue || null;
+        }
       }
 
       // Check if unique constraint should be added or removed
@@ -700,8 +746,23 @@ const SchemaEditor = ({
         constraintNameToDelete = existingUniqueConstraint.constraint_name;
       }
 
+      // Check if primary key constraint should be added or removed
+      const existingPrimaryKeyConstraint = allConstraints.find(constraint => 
+        constraint.column_name === editingColumn && 
+        constraint.constraint_type === 'PRIMARY KEY'
+      );
+      
+      if (editColumnData.primaryKey && !existingPrimaryKeyConstraint) {
+        // Need to create primary key constraint
+        primaryKeyToCreate = true;
+      } else if (!editColumnData.primaryKey && existingPrimaryKeyConstraint) {
+        // Need to delete primary key constraint
+        primaryKeyToDelete = true;
+        primaryKeyConstraintToDelete = existingPrimaryKeyConstraint.constraint_name;
+      }
+
       // Only proceed if there are actual changes
-      if (Object.keys(changes).length === 0 && !uniqueConstraintToCreate && !uniqueConstraintToDelete) {
+      if (Object.keys(changes).length === 0 && !uniqueConstraintToCreate && !uniqueConstraintToDelete && !primaryKeyToCreate && !primaryKeyToDelete) {
         ToastUtils.info('No changes detected');
         handleCancelEdit();
         return;
@@ -754,6 +815,42 @@ const SchemaEditor = ({
         }
       }
 
+      // Delete primary key constraint if requested
+      if (primaryKeyToDelete && primaryKeyConstraintToDelete) {
+        const token = localStorage.getItem('skaftin-token') || '';
+        
+        const deleteResult = await RequestUtils.delete(
+          ApiRoutes.DATABASE.DROP_CONSTRAINT(projectId, tableName, primaryKeyConstraintToDelete),
+          token,
+          {}
+        );
+        
+        if (!deleteResult.success) {
+          ToastUtils.error(deleteResult.message || 'Failed to delete primary key constraint');
+          return;
+        }
+      }
+
+      // Create primary key constraint if requested
+      if (primaryKeyToCreate) {
+        const token = localStorage.getItem('skaftin-token') || '';
+        const columnNameToUse = editColumnData.name || editingColumn;
+        
+        const pkResult = await RequestUtils.post(
+          ApiRoutes.DATABASE.CREATE_PRIMARY_KEY(projectId, tableName),
+          token,
+          { 
+            columnNames: [columnNameToUse], // API expects an array
+            constraintName: `${tableName}_pkey`
+          }
+        );
+        
+        if (!pkResult.success) {
+          ToastUtils.error(pkResult.message || 'Failed to create primary key constraint');
+          return;
+        }
+      }
+
       // Success!
       onSchemaChange?.();
       setShowEditDatePicker(false);
@@ -764,6 +861,8 @@ const SchemaEditor = ({
       if (Object.keys(changes).length > 0) messages.push('Column updated');
       if (uniqueConstraintToCreate) messages.push('unique constraint created');
       if (uniqueConstraintToDelete) messages.push('unique constraint removed');
+      if (primaryKeyToCreate) messages.push('primary key created');
+      if (primaryKeyToDelete) messages.push('primary key removed');
       
       if (messages.length > 0) {
         ToastUtils.success(messages.join(' and ') + ' successfully!');
@@ -969,35 +1068,121 @@ const SchemaEditor = ({
                   <span>Unique</span>
                 </span>
               </label>
+              
+              <label className={`flex items-center space-x-2 p-2 border rounded cursor-pointer ${
+                editColumnData.primaryKey 
+                  ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20'
+                  : 'border-dark-200 dark:border-dark-700 hover:border-primary-500'
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={editColumnData.primaryKey}
+                  onChange={(e) => setEditColumnData({ ...editColumnData, primaryKey: e.target.checked })}
+                  className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-dark-700 dark:text-dark-300 flex items-center space-x-1">
+                  <Key className="w-3 h-3" />
+                  <span>Primary Key</span>
+                </span>
+              </label>
+              
+              <label className={`flex items-center space-x-2 p-2 border rounded cursor-pointer ${
+                editColumnData.autoIncrement 
+                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                  : 'border-dark-200 dark:border-dark-700 hover:border-primary-500'
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={editColumnData.autoIncrement}
+                  onChange={(e) => setEditColumnData({ ...editColumnData, autoIncrement: e.target.checked })}
+                  className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-dark-700 dark:text-dark-300 flex items-center space-x-1">
+                  <Hash className="w-3 h-3" />
+                  <span>Auto Increment</span>
+                </span>
+              </label>
             </div>
           </div>
         </div>
         
-        {/* Show info based on unique constraint state */}
-        {(() => {
-          const hasExistingUnique = allConstraints.some(c => c.column_name === editingColumn && c.constraint_type === 'UNIQUE');
-          
-          if (editColumnData.unique && !hasExistingUnique) {
-            return (
-              <div className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-2">
-                ℹ️ This will create a new UNIQUE constraint on this column
-              </div>
-            );
-          } else if (editColumnData.unique && hasExistingUnique) {
-            return (
-              <div className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-2">
-                ✅ This column already has a UNIQUE constraint
-              </div>
-            );
-          } else if (!editColumnData.unique && hasExistingUnique) {
-            return (
-              <div className="text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded p-2">
-                ⚠️ This will remove the existing UNIQUE constraint from this column
-              </div>
-            );
-          }
-          return null;
-        })()}
+        {/* Show info messages */}
+        <div className="space-y-2 mt-4">
+          {(() => {
+            const hasExistingUnique = allConstraints.some(c => c.column_name === editingColumn && c.constraint_type === 'UNIQUE');
+            const hasExistingPrimaryKey = allConstraints.some(c => c.column_name === editingColumn && c.constraint_type === 'PRIMARY KEY');
+            const originalColumn = columns.find(col => col.column_name === editingColumn);
+            const wasAutoIncrement = originalColumn && (originalColumn.data_type.includes('SERIAL') || 
+                                      (originalColumn.column_default && originalColumn.column_default.includes('nextval(')));
+            
+            const messages = [];
+            
+            // Unique constraint messages
+            if (editColumnData.unique && !hasExistingUnique) {
+              messages.push(
+                <div key="unique-create" className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-2">
+                  ℹ️ This will create a new UNIQUE constraint on this column
+                </div>
+              );
+            } else if (editColumnData.unique && hasExistingUnique) {
+              messages.push(
+                <div key="unique-exists" className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-2">
+                  ✅ This column already has a UNIQUE constraint
+                </div>
+              );
+            } else if (!editColumnData.unique && hasExistingUnique) {
+              messages.push(
+                <div key="unique-remove" className="text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded p-2">
+                  ⚠️ This will remove the existing UNIQUE constraint from this column
+                </div>
+              );
+            }
+            
+            // Primary key messages
+            if (editColumnData.primaryKey && !hasExistingPrimaryKey) {
+              messages.push(
+                <div key="pk-create" className="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-2">
+                  ℹ️ This will create a PRIMARY KEY constraint on this column
+                </div>
+              );
+            } else if (editColumnData.primaryKey && hasExistingPrimaryKey) {
+              messages.push(
+                <div key="pk-exists" className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-2">
+                  ✅ This column is already a PRIMARY KEY
+                </div>
+              );
+            } else if (!editColumnData.primaryKey && hasExistingPrimaryKey) {
+              messages.push(
+                <div key="pk-remove" className="text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded p-2">
+                  ⚠️ This will remove the PRIMARY KEY constraint from this column
+                </div>
+              );
+            }
+            
+            // Auto-increment messages
+            if (editColumnData.autoIncrement && !wasAutoIncrement) {
+              messages.push(
+                <div key="serial-create" className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-2">
+                  ℹ️ This will convert the column to SERIAL type (auto-incrementing)
+                </div>
+              );
+            } else if (editColumnData.autoIncrement && wasAutoIncrement) {
+              messages.push(
+                <div key="serial-exists" className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-2">
+                  ✅ This column is already auto-incrementing
+                </div>
+              );
+            } else if (!editColumnData.autoIncrement && wasAutoIncrement) {
+              messages.push(
+                <div key="serial-remove" className="text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded p-2">
+                  ⚠️ This will remove auto-increment from this column
+                </div>
+              );
+            }
+            
+            return messages.length > 0 ? messages : null;
+          })()}
+        </div>
         
         <div className="flex items-center justify-end space-x-2">
           <AppButton
