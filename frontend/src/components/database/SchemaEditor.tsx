@@ -718,16 +718,16 @@ const SchemaEditor = ({
       
       // Handle default value changes (skip if using auto-increment)
       if (!editColumnData.autoIncrement) {
-        const originalDefault = originalColumn.column_default || '';
-        let newDefaultValue = editColumnData.defaultValue;
-        
-        // For date/timestamp types without a specific value set, use PostgreSQL NOW() function
-        if (!showEditDatePicker && !newDefaultValue && (editColumnData.type === 'DATE' || editColumnData.type.includes('TIMESTAMP'))) {
-          newDefaultValue = 'CURRENT_TIMESTAMP';
-        }
-        
-        if (newDefaultValue !== originalDefault) {
-          changes.defaultValue = newDefaultValue || null;
+      const originalDefault = originalColumn.column_default || '';
+      let newDefaultValue = editColumnData.defaultValue;
+      
+      // For date/timestamp types without a specific value set, use PostgreSQL NOW() function
+      if (!showEditDatePicker && !newDefaultValue && (editColumnData.type === 'DATE' || editColumnData.type.includes('TIMESTAMP'))) {
+        newDefaultValue = 'CURRENT_TIMESTAMP';
+      }
+      
+      if (newDefaultValue !== originalDefault) {
+        changes.defaultValue = newDefaultValue || null;
         }
       }
 
@@ -1108,35 +1108,35 @@ const SchemaEditor = ({
         
         {/* Show info messages */}
         <div className="space-y-2 mt-4">
-          {(() => {
-            const hasExistingUnique = allConstraints.some(c => c.column_name === editingColumn && c.constraint_type === 'UNIQUE');
+        {(() => {
+          const hasExistingUnique = allConstraints.some(c => c.column_name === editingColumn && c.constraint_type === 'UNIQUE');
             const hasExistingPrimaryKey = allConstraints.some(c => c.column_name === editingColumn && c.constraint_type === 'PRIMARY KEY');
             const originalColumn = columns.find(col => col.column_name === editingColumn);
             const wasAutoIncrement = originalColumn && (originalColumn.data_type.includes('SERIAL') || 
                                       (originalColumn.column_default && originalColumn.column_default.includes('nextval(')));
-            
+          
             const messages = [];
             
             // Unique constraint messages
-            if (editColumnData.unique && !hasExistingUnique) {
+          if (editColumnData.unique && !hasExistingUnique) {
               messages.push(
                 <div key="unique-create" className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-2">
-                  ℹ️ This will create a new UNIQUE constraint on this column
-                </div>
-              );
-            } else if (editColumnData.unique && hasExistingUnique) {
+                ℹ️ This will create a new UNIQUE constraint on this column
+              </div>
+            );
+          } else if (editColumnData.unique && hasExistingUnique) {
               messages.push(
                 <div key="unique-exists" className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-2">
-                  ✅ This column already has a UNIQUE constraint
-                </div>
-              );
-            } else if (!editColumnData.unique && hasExistingUnique) {
+                ✅ This column already has a UNIQUE constraint
+              </div>
+            );
+          } else if (!editColumnData.unique && hasExistingUnique) {
               messages.push(
                 <div key="unique-remove" className="text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded p-2">
-                  ⚠️ This will remove the existing UNIQUE constraint from this column
-                </div>
-              );
-            }
+                ⚠️ This will remove the existing UNIQUE constraint from this column
+              </div>
+            );
+          }
             
             // Primary key messages
             if (editColumnData.primaryKey && !hasExistingPrimaryKey) {
@@ -1181,7 +1181,7 @@ const SchemaEditor = ({
             }
             
             return messages.length > 0 ? messages : null;
-          })()}
+        })()}
         </div>
         
         <div className="flex items-center justify-end space-x-2">

@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Trash2, 
   Plus,
   RefreshCw,
   Search,
-  Download
+  Download,
+  ChevronDown
 } from 'lucide-react';
 import { AppButton, AppText, ExportModal } from '../ComponentsIndex';
 import type { ExportFormat } from '../modals/ExportModal';
+import RequestUtils from '../../utils/RequestUtils';
+import ApiRoutes from '../../constants/ApiRoutes';
 
 interface DataTableProps {
   data: any[];
@@ -24,6 +27,15 @@ interface DataTableProps {
   pagination?: boolean;
   pageSize?: number;
   className?: string;
+  projectId?: string;
+  tableName?: string;
+}
+
+interface ForeignKey {
+  constraint_name: string;
+  column_name: string;
+  referenced_table_name: string;
+  referenced_column_name: string;
 }
 
 const DataTable = ({
@@ -40,7 +52,9 @@ const DataTable = ({
   sortable = true,
   pagination = true,
   pageSize: initialPageSize = 10,
-  className = ''
+  className = '',
+  projectId,
+  tableName
 }: DataTableProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
@@ -53,14 +67,73 @@ const DataTable = ({
   const [jumpToPage, setJumpToPage] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const [foreignKeys, setForeignKeys] = useState<ForeignKey[]>([]);
+  const [referencedData, setReferencedData] = useState<Record<string, any[]>>({});
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [filteredOptions, setFilteredOptions] = useState<any[]>([]);
+  const autocompleteRef = useRef<HTMLDivElement>(null);
 
   // Get columns from data if not provided
   const tableColumns = columns || (data.length > 0 ? Object.keys(data[0]) : []);
+  
+  // Fetch foreign keys when table is available
+  useEffect(() => {
+    const fetchForeignKeys = async () => {
+      if (!projectId || !tableName) return;
+      
+      try {
+        const token = localStorage.getItem('skaftin-token') || '';
+        const response = await RequestUtils.get(
+          ApiRoutes.DATABASE.LIST_FOREIGN_KEYS(projectId, tableName),
+          token
+        );
+        
+        if (response.success && response.data) {
+          setForeignKeys(response.data);
+          
+          // Fetch data for each referenced table
+          const referencedDataMap: Record<string, any[]> = {};
+          for (const fk of response.data) {
+            try {
+              const dataResponse = await RequestUtils.post(
+                ApiRoutes.DATABASE.SELECT_DATA(projectId, fk.referenced_table_name),
+                token,
+                { limit: 100, orderBy: 'id', orderDirection: 'ASC' }
+              );
+              
+              if (dataResponse.success && dataResponse.data) {
+                referencedDataMap[fk.column_name] = dataResponse.data;
+              }
+            } catch (error) {
+              console.error(`Error fetching data for ${fk.referenced_table_name}:`, error);
+            }
+          }
+          setReferencedData(referencedDataMap);
+        }
+      } catch (error) {
+        console.error('Error fetching foreign keys:', error);
+      }
+    };
+
+    fetchForeignKeys();
+  }, [projectId, tableName]);
   
   // Reset to page 1 when page size changes
   useEffect(() => {
     setCurrentPage(1);
   }, [pageSize]);
+  
+  // Close autocomplete when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (autocompleteRef.current && !autocompleteRef.current.contains(event.target as Node)) {
+        setShowAutocomplete(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
   
   // Filter data based on search term
   const filteredData = data.filter(row => {
@@ -129,6 +202,25 @@ const DataTable = ({
     setSelectedRows(new Set());
   };
 
+  const getForeignKeyInfo = (columnName: string) => {
+    return foreignKeys.find(fk => fk.column_name === columnName);
+  };
+
+  const getDisplayField = (referencedTableData: any[]) => {
+    if (referencedTableData.length === 0) return 'id';
+    
+    const firstRow = referencedTableData[0];
+    const fields = Object.keys(firstRow);
+    
+    const displayFieldPriority = ['name', 'title', 'email', 'username', 'label', 'description'];
+    for (const field of displayFieldPriority) {
+      if (fields.includes(field)) return field;
+    }
+    
+    const nonIdField = fields.find(f => f !== 'id' && !f.endsWith('_id'));
+    return nonIdField || 'id';
+  };
+
   const handleCellClick = (rowIndex: number, column: string, value: any) => {
     // Don't allow editing of certain columns (like id)
     if (column.toLowerCase() === 'id' || column.toLowerCase() === 'created_at' || column.toLowerCase() === 'updated_at') {
@@ -137,18 +229,70 @@ const DataTable = ({
     
     setEditingCell({ rowIndex, column });
     setEditValue(String(value || ''));
+    
+    // Check if this is a foreign key column
+    const fkInfo = getForeignKeyInfo(column);
+    if (fkInfo && referencedData[column]) {
+      setShowAutocomplete(true);
+      setFilteredOptions(referencedData[column]);
+    }
   };
 
   const handleCellEdit = (newValue: string) => {
     setEditValue(newValue);
+    
+    // Filter autocomplete options if FK column
+    if (editingCell) {
+      const fkInfo = getForeignKeyInfo(editingCell.column);
+      if (fkInfo && referencedData[editingCell.column]) {
+        const displayField = getDisplayField(referencedData[editingCell.column]);
+        const filtered = referencedData[editingCell.column].filter((item: any) => {
+          const displayValue = String(item[displayField] || '').toLowerCase();
+          const idValue = String(item[fkInfo.referenced_column_name] || '').toLowerCase();
+          const searchTerm = newValue.toLowerCase();
+          return displayValue.includes(searchTerm) || idValue.includes(searchTerm);
+        });
+        setFilteredOptions(filtered);
+        setShowAutocomplete(true);
+      }
+    }
   };
 
-  const handleCellSave = async () => {
+  const handleAutocompleteSelect = (item: any) => {
+    if (!editingCell) return;
+    
+    const fkInfo = getForeignKeyInfo(editingCell.column);
+    if (fkInfo) {
+      const value = item[fkInfo.referenced_column_name];
+      setEditValue(String(value));
+      setShowAutocomplete(false);
+      // Auto-save on selection with the actual value
+      setTimeout(() => handleCellSave(value), 100);
+    }
+  };
+
+  const handleCellSave = async (overrideValue?: any) => {
     if (!editingCell) return;
     
     const actualRowIndex = startIndex + editingCell.rowIndex;
     const row = paginatedData[editingCell.rowIndex];
-    const updatedRow = { ...row, [editingCell.column]: editValue };
+    
+    // Use override value if provided (from autocomplete), otherwise use editValue
+    let valueToSave = overrideValue !== undefined ? overrideValue : editValue;
+    
+    // Convert to number if it's a numeric string (for ID fields)
+    const fkInfo = getForeignKeyInfo(editingCell.column);
+    if (fkInfo && typeof valueToSave === 'string' && !isNaN(Number(valueToSave)) && valueToSave.trim() !== '') {
+      // Check if the referenced column is typically numeric (id, _id columns)
+      if (fkInfo.referenced_column_name.toLowerCase().includes('id') || 
+          fkInfo.referenced_column_name === 'id') {
+        valueToSave = Number(valueToSave);
+      }
+    } else if (typeof valueToSave === 'string' && valueToSave.trim() === '') {
+      valueToSave = null;
+    }
+    
+    const updatedRow = { ...row, [editingCell.column]: valueToSave };
     
     try {
       // Call the edit handler if provided
@@ -157,6 +301,7 @@ const DataTable = ({
       }
       setEditingCell(null);
       setEditValue('');
+      setShowAutocomplete(false);
     } catch (error) {
       console.error('Error saving cell:', error);
       // Keep editing on error
@@ -166,6 +311,7 @@ const DataTable = ({
   const handleCellCancel = () => {
     setEditingCell(null);
     setEditValue('');
+    setShowAutocomplete(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -524,15 +670,58 @@ const DataTable = ({
                         onClick={() => isEditable && handleCellClick(index, column, row[column])}
                       >
                         {isEditing ? (
-                          <input
-                            type="text"
-                            value={editValue}
-                            onChange={(e) => handleCellEdit(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            onBlur={handleCellSave}
-                            className="w-full px-2 py-1 border border-primary-500 rounded focus:outline-none focus:ring-2 focus:ring-primary-500/20 bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
-                            autoFocus
-                          />
+                          <div className="relative" ref={autocompleteRef}>
+                            <input
+                              type="text"
+                              value={editValue}
+                              onChange={(e) => handleCellEdit(e.target.value)}
+                              onKeyDown={handleKeyDown}
+                              onBlur={(e) => {
+                                // Delay to allow autocomplete click
+                                setTimeout(() => {
+                                  if (!autocompleteRef.current?.contains(document.activeElement)) {
+                                    handleCellSave();
+                                  }
+                                }, 150);
+                              }}
+                              onFocus={() => {
+                                const fkInfo = getForeignKeyInfo(column);
+                                if (fkInfo && referencedData[column]) {
+                                  setShowAutocomplete(true);
+                                }
+                              }}
+                              className="w-full px-2 py-1 border border-primary-500 rounded focus:outline-none focus:ring-2 focus:ring-primary-500/20 bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                              autoFocus
+                            />
+                            
+                            {/* Autocomplete dropdown for FK fields */}
+                            {showAutocomplete && getForeignKeyInfo(column) && referencedData[column] && filteredOptions.length > 0 && (
+                              <div className="absolute z-50 left-0 w-80 mt-1 bg-white dark:bg-dark-800 border border-dark-200 dark:border-dark-700 rounded-lg shadow-lg max-h-48 overflow-auto">
+                                {filteredOptions.map((item, idx) => {
+                                  const fkInfo = getForeignKeyInfo(column);
+                                  const displayField = getDisplayField(referencedData[column]);
+                                  const idValue = item[fkInfo!.referenced_column_name];
+                                  const displayValue = item[displayField];
+                                  
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="px-3 py-2 hover:bg-primary-50 dark:hover:bg-primary-900/20 cursor-pointer text-sm text-dark-900 dark:text-white"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault(); // Prevent blur
+                                        handleAutocompleteSelect(item);
+                                      }}
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-medium">{displayValue}</span>
+                                        <span className="text-xs text-dark-500 dark:text-dark-400">ID: {idValue}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <div className="max-w-xs truncate" title={String(row[column])}>
                             {row[column] === null ? (

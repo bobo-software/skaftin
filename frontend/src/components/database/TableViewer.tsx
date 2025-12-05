@@ -599,6 +599,8 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                     <DataTable
                       data={tableData}
                       loading={dataLoading}
+                      projectId={projectId}
+                      tableName={selectedTable || undefined}
                       onRefresh={() => selectedTable && fetchTableData(selectedTable)}
                       onAddRow={() => setShowAddRowModal(true)}
                       onCsvImport={() => setShowCsvImportModal(true)}

@@ -380,7 +380,7 @@ const AddRowModal = ({
               }
 
               const fkInfo = getForeignKeyInfo(column.column_name);
-              
+
               return (
                 <div key={column.column_name} className="space-y-2">
                   <label className="block text-sm font-medium text-dark-700 dark:text-dark-300">
