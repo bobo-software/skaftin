@@ -68,7 +68,7 @@ interface DatabaseStoreType {
   deleteData: (projectId: string, tableName: string, where: any) => Promise<boolean>;
   getTableSchema: (projectId: string, tableName: string) => Promise<Column[]>;
   importDatabaseDump: (projectId: string, sqlContent: string, dropExisting: boolean) => Promise<{success: boolean, result?: any}>;
-  exportDatabaseDump: (projectId: string, tables: string[], includeSystemTables: boolean, schemaOnly: boolean) => Promise<{success: boolean}>;
+  exportDatabaseDump: (projectId: string, tables: string[], includeSystemTables: boolean, schemaOnly: boolean, skipSystemTableForeignKeys?: boolean) => Promise<{success: boolean}>;
   saveQuery: (query: Omit<SqlQuery, 'id' | 'createdAt'>) => void;
   deleteQuery: (queryId: string) => void;
   fetchDatabaseStats: (projectId: string) => Promise<void>;
