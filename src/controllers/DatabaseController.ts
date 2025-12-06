@@ -2282,28 +2282,34 @@ class DatabaseController {
             }
           }
 
-          // Get foreign keys
+          // Get foreign keys (grouped by constraint to handle composite keys and avoid duplicates)
           const fkResult = await client.query(`
-            SELECT
+            SELECT DISTINCT
               tc.constraint_name,
-              kcu.column_name,
+              STRING_AGG(kcu.column_name, ', ' ORDER BY kcu.ordinal_position) AS column_names,
               ccu.table_schema AS foreign_table_schema,
               ccu.table_name AS foreign_table_name,
-              ccu.column_name AS foreign_column_name
+              STRING_AGG(ccu.column_name, ', ' ORDER BY kcu.ordinal_position) AS foreign_column_names
             FROM information_schema.table_constraints AS tc
             JOIN information_schema.key_column_usage AS kcu
               ON tc.constraint_name = kcu.constraint_name
+              AND tc.table_schema = kcu.table_schema
             JOIN information_schema.constraint_column_usage AS ccu
               ON ccu.constraint_name = tc.constraint_name
+              AND ccu.table_schema = tc.table_schema
             WHERE tc.constraint_type = 'FOREIGN KEY'
               AND tc.table_schema = $1
               AND tc.table_name = $2
+            GROUP BY tc.constraint_name, ccu.table_schema, ccu.table_name
           `, [schemaName, tableName]);
 
           if (fkResult.rows.length > 0) {
             sqlContent += `-- Foreign keys for table: ${tableName}\n`;
             for (const fk of fkResult.rows) {
-              sqlContent += `ALTER TABLE "${tableName}" ADD CONSTRAINT "${fk.constraint_name}" FOREIGN KEY ("${fk.column_name}") REFERENCES "${fk.foreign_table_name}" ("${fk.foreign_column_name}");\n`;
+              // Handle both single and composite foreign keys
+              const localColumns = fk.column_names.split(', ').map((col: string) => `"${col.trim()}"`).join(', ');
+              const foreignColumns = fk.foreign_column_names.split(', ').map((col: string) => `"${col.trim()}"`).join(', ');
+              sqlContent += `ALTER TABLE "${tableName}" ADD CONSTRAINT "${fk.constraint_name}" FOREIGN KEY (${localColumns}) REFERENCES "${fk.foreign_table_name}" (${foreignColumns});\n`;
             }
             sqlContent += '\n';
           }
