@@ -98,7 +98,7 @@ const DataTable = ({
               const dataResponse = await RequestUtils.post(
                 ApiRoutes.DATABASE.SELECT_DATA(projectId, fk.referenced_table_name),
                 token,
-                { limit: 100, orderBy: 'id', orderDirection: 'ASC' }
+                { orderBy: 'id', orderDirection: 'ASC' }
               );
               
               if (dataResponse.success && dataResponse.data) {

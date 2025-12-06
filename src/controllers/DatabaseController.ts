@@ -349,7 +349,7 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
       const { tableName } = req.params;
-      const { columns, where, limit = 100, offset = 0, orderBy = 'id', orderDirection = 'ASC' } = req.body;
+      const { columns, where, limit, offset = 0, orderBy = 'id', orderDirection = 'ASC' } = req.body;
 
       const client = await DatabaseController.getProjectClient(projectId);
       
@@ -716,16 +716,58 @@ class DatabaseController {
       }
 
       const query = `UPDATE "${tableName}" SET ${setClause} WHERE ${whereClause} RETURNING *`;
-      const result = await client.query(query, [...setValues, ...whereValues]);
+      const allValues = [...setValues, ...whereValues];
+      
+      // Log the query for debugging
+      console.log(`[UPDATE] Executing query: ${query}`);
+      console.log(`[UPDATE] With values:`, allValues);
+      console.log(`[UPDATE] Set columns:`, setColumns);
+      console.log(`[UPDATE] Where clause:`, whereClause);
+      
+      const result = await client.query(query, allValues);
 
       client.release();
+
+      // Check if any rows were actually updated
+      if (result.rowCount === 0) {
+        console.warn(`[UPDATE] No rows updated for table ${tableName} with where clause:`, whereClause);
+        return ResponseUtils.error(
+          res, 
+          'No rows were updated. The specified row may not exist or may not match the where clause.', 
+          { updatedCount: 0, whereClause, whereValues },
+          null,
+          404
+        );
+      }
+      
+      console.log(`[UPDATE] Successfully updated ${result.rowCount} row(s) in ${tableName}`);
+      console.log(`[UPDATE] Updated rows:`, result.rows);
 
       // Emit WebSocket event
       emitDatabaseChange(projectId, tableName, 'update', result.rows);
 
       ResponseUtils.success(res, `${result.rowCount} row(s) updated successfully`, result.rows);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating data:', error);
+      
+      // Make sure client is released even on error
+      // (It should already be released, but just in case)
+      
+      // Check for foreign key constraint violation
+      if (error.code === '23503') {
+        return ResponseUtils.error(
+          res, 
+          'Cannot update row: Foreign key constraint violation.', 
+          { 
+            errorCode: error.code,
+            constraint: error.constraint,
+            detail: error.detail 
+          },
+          null,
+          409
+        );
+      }
+      
       ResponseUtils.error(res, 'Failed to update data', error);
     }
   }
@@ -778,16 +820,66 @@ class DatabaseController {
       }
 
       const query = `DELETE FROM "${tableName}" WHERE ${whereClause} RETURNING *`;
+      
+      // Log the query for debugging
+      console.log(`[DELETE] Executing query: ${query}`);
+      console.log(`[DELETE] With values:`, whereValues);
+      
       const result = await client.query(query, whereValues);
 
       client.release();
 
+      // Check if any rows were actually deleted
+      if (result.rowCount === 0) {
+        console.warn(`[DELETE] No rows deleted for table ${tableName} with where clause:`, whereClause);
+        return ResponseUtils.error(
+          res, 
+          'No rows were deleted. The specified row may not exist, may be protected by foreign key constraints, or may not match the where clause.', 
+          { deletedCount: 0, whereClause, whereValues },
+          null,
+          404
+        );
+      }
+      
+      console.log(`[DELETE] Successfully deleted ${result.rowCount} row(s) from ${tableName}`);
+      
       // Emit WebSocket event
       emitDatabaseChange(projectId, tableName, 'delete', { count: result.rowCount });
 
       ResponseUtils.success(res, `${result.rowCount} row(s) deleted successfully`, { deletedCount: result.rowCount });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting data:', error);
+      
+      // Check for foreign key constraint violation
+      if (error.code === '23503') {
+        return ResponseUtils.error(
+          res, 
+          'Cannot delete row: It is referenced by other tables through foreign key constraints. Please delete or update the referencing rows first.', 
+          { 
+            errorCode: error.code,
+            constraint: error.constraint,
+            detail: error.detail 
+          },
+          null,
+          409
+        );
+      }
+      
+      // Check for other PostgreSQL constraint violations
+      if (error.code && error.code.startsWith('23')) {
+        return ResponseUtils.error(
+          res, 
+          `Database constraint violation: ${error.message || 'Cannot delete this row'}`, 
+          { 
+            errorCode: error.code,
+            constraint: error.constraint,
+            detail: error.detail 
+          },
+          null,
+          409
+        );
+      }
+      
       ResponseUtils.error(res, 'Failed to delete data', error);
     }
   }

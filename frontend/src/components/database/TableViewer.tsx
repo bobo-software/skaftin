@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useDatabaseStore, useRealtimeStore } from '../../stores/StoresIndex';
 import RequestUtils from '../../utils/RequestUtils';
 import ApiRoutes from '../../constants/ApiRoutes';
@@ -41,6 +41,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   const [dataLoading, setDataLoading] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const lastManualUpdateRef = useRef<{ tableName: string; timestamp: number } | null>(null);
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
     type: 'single' | 'bulk' | 'table';
@@ -114,6 +115,17 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
       
       // If this event affects the currently selected table, refresh the data
       if (selectedTable && dbEvent.tableName === selectedTable) {
+        // Skip WebSocket refresh if we just manually updated this table (within last 2 seconds)
+        // This prevents double-refreshing when the WebSocket event arrives right after manual update
+        const lastManualUpdate = lastManualUpdateRef.current;
+        if (lastManualUpdate && 
+            lastManualUpdate.tableName === selectedTable && 
+            dbEvent.type === 'update' &&
+            Date.now() - lastManualUpdate.timestamp < 2000) {
+          console.log('⏭️ Skipping WebSocket refresh (recent manual update)');
+          return;
+        }
+        
         console.log('🔄 Real-time update detected, refreshing table data...', dbEvent);
         
         // Refresh table data based on event type
@@ -672,11 +684,28 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                         try {
                           const token = localStorage.getItem('skaftin-token') || '';
                           // Find the original row to get the ID for the where clause
+                          // index is the actual row index in the full dataset
                           const originalRow = tableData[index];
+                          
+                          if (!originalRow || !originalRow.id) {
+                            console.error('Cannot update row: Original row or ID not found', { index, originalRow, tableDataLength: tableData.length });
+                            ToastUtils.error('Cannot update row: Row ID not found. Please refresh and try again.');
+                            return;
+                          }
+                          
                           const whereClause = { id: originalRow.id };
                           
-                          // Remove the id from the update data
-                          const { id, ...updateData } = updatedRow; // eslint-disable-line @typescript-eslint/no-unused-vars
+                          // Remove id, created_at, and updated_at from the update data
+                          // These fields should not be manually updated
+                          const { id, created_at, updated_at, ...updateData } = updatedRow; // eslint-disable-line @typescript-eslint/no-unused-vars
+                          
+                          console.log('Updating row:', { 
+                            tableName: selectedTable, 
+                            whereClause, 
+                            updateData,
+                            originalRowId: originalRow.id,
+                            updatedRowId: updatedRow.id
+                          });
                           
                           const result = await RequestUtils.put(
                             ApiRoutes.DATABASE.UPDATE_DATA(projectId, selectedTable),
@@ -685,12 +714,17 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                           );
                           
                           if (result.success) {
-                            console.log('Row updated successfully');
+                            console.log('Row updated successfully:', result);
+                            // Track manual update to prevent double-refresh from WebSocket
+                            lastManualUpdateRef.current = {
+                              tableName: selectedTable,
+                              timestamp: Date.now()
+                            };
                             await fetchTableData(selectedTable);
                             ToastUtils.success('Row updated successfully!');
                           } else {
-                            console.error('Failed to update row:', result.message);
-                            ToastUtils.error('Failed to update row. Please try again.');
+                            console.error('Failed to update row:', result);
+                            ToastUtils.error(result.message || 'Failed to update row. Please try again.');
                           }
                         } catch (error) {
                           console.error('Error updating row:', error);
