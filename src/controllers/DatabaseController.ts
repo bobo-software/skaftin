@@ -2376,14 +2376,21 @@ class DatabaseController {
           `, [schemaName, tableName]);
 
           if (fkResult.rows.length > 0) {
-            sqlContent += `-- Foreign keys for table: ${tableName}\n`;
-            for (const fk of fkResult.rows) {
-              // Handle both single and composite foreign keys
-              const localColumns = fk.column_names.split(', ').map((col: string) => `"${col.trim()}"`).join(', ');
-              const foreignColumns = fk.foreign_column_names.split(', ').map((col: string) => `"${col.trim()}"`).join(', ');
-              sqlContent += `ALTER TABLE "${tableName}" ADD CONSTRAINT "${fk.constraint_name}" FOREIGN KEY (${localColumns}) REFERENCES "${fk.foreign_table_name}" (${foreignColumns});\n`;
+            // Filter out foreign keys that reference system tables (unless includeSystemTables is true)
+            const fksToExport = includeSystemTables 
+              ? fkResult.rows 
+              : fkResult.rows.filter((fk: any) => !fk.foreign_table_name.startsWith('skaftin_system_'));
+            
+            if (fksToExport.length > 0) {
+              sqlContent += `-- Foreign keys for table: ${tableName}\n`;
+              for (const fk of fksToExport) {
+                // Handle both single and composite foreign keys
+                const localColumns = fk.column_names.split(', ').map((col: string) => `"${col.trim()}"`).join(', ');
+                const foreignColumns = fk.foreign_column_names.split(', ').map((col: string) => `"${col.trim()}"`).join(', ');
+                sqlContent += `ALTER TABLE "${tableName}" ADD CONSTRAINT "${fk.constraint_name}" FOREIGN KEY (${localColumns}) REFERENCES "${fk.foreign_table_name}" (${foreignColumns});\n`;
+              }
+              sqlContent += '\n';
             }
-            sqlContent += '\n';
           }
         }
 
