@@ -4,7 +4,8 @@ import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMi
 import { HybridAuthRequest } from '../middleware/hybridAuthMiddleware';
 import ResponseUtils from '../utils/ResponseUtils';
 import EmailPassword from 'supertokens-node/recipe/emailpassword';
-import { deleteUser } from 'supertokens-node';
+import { deleteUser, convertToRecipeUserId, listUsersByAccountInfo } from 'supertokens-node';
+import { createProjectScopedEmail } from '../middleware/appUserSuperTokensMiddleware';
 import { AuthUtils } from '../utils/AuthUtils';
 import { AuthEmailService } from '../services/AuthEmailService';
 import { SmsOtpService } from '../services/SmsOtpService';
@@ -99,7 +100,7 @@ class AuthUsersController {
     // Support both SuperTokens (req.user) and API key (req.credential) authentication
     const isSuperTokensAuth = 'user' in req && req.user && req.user.userId;
     const isApiKeyAuth = 'credential' in req && req.credential && req.projectId;
-    
+
     if (!isSuperTokensAuth && !isApiKeyAuth) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
@@ -213,7 +214,7 @@ class AuthUsersController {
     // Support both SuperTokens (req.user) and API key (req.credential) authentication
     const isSuperTokensAuth = 'user' in req && req.user && req.user.userId;
     const isApiKeyAuth = 'credential' in req && req.credential && req.projectId;
-    
+
     if (!isSuperTokensAuth && !isApiKeyAuth) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
@@ -346,7 +347,7 @@ class AuthUsersController {
 
       // Check if user exists
       const userResult = await AuthUsersController.pool.query(
-        `SELECT id, email FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        `SELECT id, email, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
         [parseInt(userId)]
       );
 
@@ -356,14 +357,101 @@ class AuthUsersController {
 
       const user = userResult.rows[0];
 
-      // Hash the password
+      if (!user.email) {
+        return ResponseUtils.error(res, 'User email is required for password reset', null, null, 400);
+      }
+
+      // Hash the password for database storage
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Update user password
+      // Update user password in database
       await AuthUsersController.pool.query(
         `UPDATE ${schemaName}.skaftin_system_users SET password = $1 WHERE id = $2`,
         [hashedPassword, parseInt(userId)]
       );
+
+      // Also update SuperTokens password if user exists in SuperTokens
+      const supertokensEmail = createProjectScopedEmail(user.email, projectId);
+
+      if (user.supertokens_user_id) {
+        // User exists in SuperTokens - update password
+        try {
+          const recipeUserId = convertToRecipeUserId(user.supertokens_user_id);
+          const updateResponse = await EmailPassword.updateEmailOrPassword({
+            recipeUserId: recipeUserId,
+            password: password,
+          });
+
+          if (updateResponse.status !== 'OK') {
+            console.error('Failed to update password in SuperTokens:', updateResponse);
+            // Don't fail the request - database password is updated, user can still login
+            console.warn(`⚠️  Password updated in database but SuperTokens update failed for user ${user.email}`);
+          } else {
+            console.log(`✅ Password updated in SuperTokens for user ${user.email}`);
+          }
+        } catch (error) {
+          console.error('Error updating password in SuperTokens:', error);
+          // Don't fail the request - database password is updated
+          console.warn(`⚠️  Password updated in database but SuperTokens update failed for user ${user.email}`);
+        }
+      } else {
+        // User doesn't exist in SuperTokens yet - try to create or find existing user
+        try {
+          // First, check if user already exists in SuperTokens (by email)
+          let supertokensUserId: string | null = null;
+          try {
+            const users = await listUsersByAccountInfo("public", {
+              email: supertokensEmail,
+            });
+            if (users.length > 0) {
+              supertokensUserId = users[0].id;
+              console.log(`✅ Found existing SuperTokens user for ${user.email}`);
+            }
+          } catch (error) {
+            // User doesn't exist, will create new one
+            console.log(`User ${user.email} doesn't exist in SuperTokens, creating new user...`);
+          }
+
+          if (supertokensUserId) {
+            // User exists in SuperTokens but ID not in database - update password and sync ID
+            const recipeUserId = convertToRecipeUserId(supertokensUserId);
+            const updateResponse = await EmailPassword.updateEmailOrPassword({
+              recipeUserId: recipeUserId,
+              password: password,
+            });
+
+            if (updateResponse.status === 'OK') {
+              // Update database with SuperTokens user ID
+              await AuthUsersController.pool.query(
+                `UPDATE ${schemaName}.skaftin_system_users SET supertokens_user_id = $1 WHERE id = $2`,
+                [supertokensUserId, parseInt(userId)]
+              );
+              console.log(`✅ Updated SuperTokens password and synced user ID for ${user.email}`);
+            } else {
+              console.error('Failed to update password in SuperTokens:', updateResponse);
+            }
+          } else {
+            // User doesn't exist - create SuperTokens user
+            const signUpResponse = await EmailPassword.signUp("public", supertokensEmail, password);
+
+            if (signUpResponse.status === "OK") {
+              supertokensUserId = signUpResponse.user.id;
+              // Update database with SuperTokens user ID
+              await AuthUsersController.pool.query(
+                `UPDATE ${schemaName}.skaftin_system_users SET supertokens_user_id = $1 WHERE id = $2`,
+                [supertokensUserId, parseInt(userId)]
+              );
+              console.log(`✅ Created SuperTokens user and set password for user ${user.email}`);
+            } else {
+              console.error('Failed to create SuperTokens user:', signUpResponse);
+              // Don't fail - database password is updated
+            }
+          }
+        } catch (error) {
+          console.error('Error syncing SuperTokens user:', error);
+          // Don't fail - database password is updated
+        }
+      }
 
       console.log(`✅ Password set for user ${user.email} (ID: ${userId})`);
 
@@ -383,11 +471,11 @@ class AuthUsersController {
     // Support both SuperTokens (req.user or req.session) and API key (req.credential) authentication
     const hybridReq = req as HybridAuthRequest;
     const superTokensReq = req as SuperTokensAuthenticatedRequest;
-    
-    const isSuperTokensAuth = (superTokensReq.user && superTokensReq.user.userId) || 
-                              (hybridReq.session && hybridReq.authType === 'supertokens');
+
+    const isSuperTokensAuth = (superTokensReq.user && superTokensReq.user.userId) ||
+      (hybridReq.session && hybridReq.authType === 'supertokens');
     const isApiKeyAuth = hybridReq.credential && hybridReq.credential.projectId && hybridReq.projectId;
-    
+
     console.log('🔐 [CreateUser] Authentication check:');
     console.log('  └─ Has req.user:', !!superTokensReq.user);
     console.log('  └─ Has req.credential:', !!hybridReq.credential);
@@ -396,7 +484,7 @@ class AuthUsersController {
     console.log('  └─ projectId:', hybridReq.projectId);
     console.log('  └─ isSuperTokensAuth:', isSuperTokensAuth);
     console.log('  └─ isApiKeyAuth:', isApiKeyAuth);
-    
+
     if (!isSuperTokensAuth && !isApiKeyAuth) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
@@ -429,7 +517,7 @@ class AuthUsersController {
 
       // Check if duplicate emails are allowed
       const allowDuplicates = await AuthUsersController.checkDuplicateEmailPolicy(projectId);
-      
+
       if (!allowDuplicates) {
         // Check if email already exists in this project
         const emailExists = await AuthUtils.emailExistsInProject(
@@ -519,7 +607,7 @@ class AuthUsersController {
     // Support both SuperTokens (req.user) and API key (req.credential) authentication
     const isSuperTokensAuth = 'user' in req && req.user && req.user.userId;
     const isApiKeyAuth = 'credential' in req && req.credential && req.projectId;
-    
+
     if (!isSuperTokensAuth && !isApiKeyAuth) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
@@ -550,7 +638,7 @@ class AuthUsersController {
       if (updates.email !== undefined) {
         // Check duplicate email policy if email is being changed
         const allowDuplicates = await AuthUsersController.checkDuplicateEmailPolicy(projectId);
-        
+
         if (!allowDuplicates) {
           const existingUser = await AuthUsersController.pool.query(
             `SELECT id FROM ${schemaName}.skaftin_system_users WHERE email = $1 AND id != $2`,
@@ -679,7 +767,7 @@ class AuthUsersController {
         return ResponseUtils.error(res, result.error || 'Failed to delete user', null, null, 500);
       }
 
-      const message = isPermanent 
+      const message = isPermanent
         ? `User permanently deleted${result.deletedFromSuperTokens ? ' (including SuperTokens account)' : ''}`
         : 'User deactivated successfully';
 
@@ -750,7 +838,7 @@ class AuthUsersController {
         // Handle primary key sequence out-of-sync error
         if (insertError.code === '23505' && insertError.constraint === 'skaftin_system_user_roles_pkey') {
           console.warn(`⚠️ Sequence out of sync for ${schemaName}.skaftin_system_user_roles, fixing...`);
-          
+
           // Reset the sequence to the max ID + 1
           await AuthUsersController.pool.query(`
             SELECT setval(
@@ -759,18 +847,18 @@ class AuthUsersController {
               false
             )
           `);
-          
+
           // Check again if assignment exists (might have been created by another process)
           const recheckAssignment = await AuthUsersController.pool.query(
             `SELECT id FROM ${schemaName}.skaftin_system_user_roles 
              WHERE app_user_id = $1 AND role_id = $2`,
             [parseInt(userId), role_id]
           );
-          
+
           if (recheckAssignment.rows.length > 0) {
             return ResponseUtils.success(res, 'Role already assigned to user');
           }
-          
+
           // Retry the insert after fixing the sequence
           await AuthUsersController.pool.query(
             `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id, assigned_by)
@@ -964,26 +1052,26 @@ class AuthUsersController {
       if (otpMethod === 'email') {
         destination = user.email;
         console.log(`📧 Resending OTP via email to ${destination}...`);
-        
+
         const emailResult = await AuthUsersController.emailService.sendRegistrationEmail(
           projectId,
           destination,
           user.name,
           otp
         );
-        
+
         sendSuccess = emailResult.success;
       } else if (otpMethod === 'sms') {
         destination = user.phone || lastOtp.destination;
         console.log(`📱 Resending OTP via SMS to ${destination}...`);
-        
+
         const smsResult = await AuthUsersController.smsOtpService.sendOTP(
           projectId.toString(),
           destination,
           otp,
           user.name
         );
-        
+
         sendSuccess = smsResult.success;
       }
 
@@ -1103,27 +1191,27 @@ class AuthUsersController {
               )
             `;
             const tableExists = await client.query(tableExistsQuery, [schemaName, tableName]);
-            
+
             if (!tableExists.rows[0].exists) {
               sqlContent += `-- Table ${tableName} does not exist, skipping\n\n`;
               continue;
             }
 
             const dataResult = await client.query(`SELECT * FROM "${schemaName}"."${tableName}"`);
-            
+
             if (dataResult.rows.length > 0) {
               sqlContent += `-- Data for ${tableName}\n`;
               sqlContent += `DELETE FROM "${tableName}";\n`;
 
               const columns = dataResult.fields.map(f => f.name);
-              
+
               for (const row of dataResult.rows) {
                 const values = columns.map(col => {
                   const value = row[col];
                   if (value === null) return 'NULL';
                   if (typeof value === 'string') {
                     const hasSpecialChars = /[\n\r\t\\]/.test(value);
-                    
+
                     if (hasSpecialChars) {
                       const escaped = value
                         .replace(/\\/g, '\\\\')
@@ -1150,7 +1238,7 @@ class AuthUsersController {
                   }
                   return String(value);
                 });
-                
+
                 sqlContent += `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')});\n`;
               }
               sqlContent += '\n';
@@ -1333,7 +1421,7 @@ class AuthUsersController {
           try {
             await client.query(statement);
             successCount++;
-            
+
             if ((i + 1) % 10 === 0) {
               console.log(`✅ Executed ${i + 1}/${statements.length} statements`);
             }
