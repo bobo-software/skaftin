@@ -1091,10 +1091,87 @@ class AuthUsersController {
 
         cleanedSql = cleanedSql.replace(/\/\*[\s\S]*?\*\//g, '');
 
-        const statements = cleanedSql
-          .split(';')
-          .map((stmt: string) => stmt.trim())
-          .filter((stmt: string) => stmt.length > 0 && /\S/.test(stmt));
+        // Split SQL statements by semicolons, respecting quoted strings
+        const statements: string[] = [];
+        let currentStatement = '';
+        let inSingleQuote = false;
+        let inDoubleQuote = false;
+        let inEscapeString = false; // E'' syntax
+        let i = 0;
+
+        while (i < cleanedSql.length) {
+          const char = cleanedSql[i];
+          const nextChar = i + 1 < cleanedSql.length ? cleanedSql[i + 1] : '';
+
+          // Handle escape sequences in E'' strings
+          if (inEscapeString && char === '\\') {
+            currentStatement += char;
+            if (nextChar) {
+              currentStatement += nextChar;
+              i += 2;
+              continue;
+            }
+            i++;
+            continue;
+          }
+
+          // Handle E'' escape string syntax
+          if (!inSingleQuote && !inDoubleQuote && char === 'E' && nextChar === "'") {
+            inEscapeString = true;
+            inSingleQuote = true;
+            currentStatement += char + nextChar;
+            i += 2;
+            continue;
+          }
+
+          // Handle single quotes (for strings and E'' escape strings)
+          if (char === "'" && !inDoubleQuote) {
+            if (inEscapeString && nextChar === "'") {
+              // End of E'' string
+              inEscapeString = false;
+              inSingleQuote = false;
+              currentStatement += char + nextChar;
+              i += 2;
+              continue;
+            } else if (!inEscapeString) {
+              // Regular single-quoted string
+              if (inSingleQuote && nextChar === "'") {
+                // Escaped single quote ('')
+                currentStatement += char + nextChar;
+                i += 2;
+                continue;
+              } else {
+                // Toggle single quote state
+                inSingleQuote = !inSingleQuote;
+              }
+            }
+          }
+
+          // Handle double quotes (for identifiers)
+          if (char === '"' && !inSingleQuote) {
+            inDoubleQuote = !inDoubleQuote;
+          }
+
+          // Handle semicolons (only split if not inside quotes)
+          if (char === ';' && !inSingleQuote && !inDoubleQuote) {
+            const trimmed = currentStatement.trim();
+            if (trimmed.length > 0 && /\S/.test(trimmed)) {
+              statements.push(trimmed);
+            }
+            currentStatement = '';
+            i++;
+            continue;
+          }
+
+          currentStatement += char;
+          i++;
+        }
+
+        // Add the last statement if any
+        const trimmed = currentStatement.trim();
+        if (trimmed.length > 0 && /\S/.test(trimmed)) {
+          statements.push(trimmed);
+        }
 
         console.log(`📝 Found ${statements.length} SQL statements to execute`);
 

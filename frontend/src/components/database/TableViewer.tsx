@@ -3,7 +3,7 @@ import { useDatabaseStore, useRealtimeStore } from '../../stores/StoresIndex';
 import RequestUtils from '../../utils/RequestUtils';
 import ApiRoutes from '../../constants/ApiRoutes';
 import ToastUtils from '../../utils/ToastUtils';
-import { Database, Plus, Search, Table, List, Settings, Upload, Download } from 'lucide-react';
+import { Database, Plus, Search, Table, List, Settings, Upload, Download, Trash2 } from 'lucide-react';
 import { AppButton, AddRowModal, DataTable, DeleteConfirmModal, SchemaEditor, CsvImportModal, CreateTableModal, TableItem, TableSettingsTab, DatabaseImportModal, DatabaseExportModal, AppText } from '../ComponentsIndex';
 
 interface TableViewerProps {
@@ -30,6 +30,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const [selectedTablesForDelete, setSelectedTablesForDelete] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState('data');
   const [showAddRowModal, setShowAddRowModal] = useState(false);
   const [showCsvImportModal, setShowCsvImportModal] = useState(false);
@@ -240,31 +241,48 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
       const token = localStorage.getItem('skaftin-token') || '';
       
       if (deleteModal.type === 'table') {
-        // Delete entire table
-        const tableNameToDelete = deleteModal.tableName;
-        if (!tableNameToDelete) return;
-
-        const result = await RequestUtils.delete(
-          ApiRoutes.DATABASE.DROP_TABLE(projectId, tableNameToDelete),
-          token,
-          {}
-        );
+        // Delete entire table(s) - handle both single and bulk
+        const tableNamesToDelete = deleteModal.tableName?.includes(', ') 
+          ? deleteModal.tableName.split(', ') 
+          : [deleteModal.tableName!];
         
-        if (result.success) {
-          console.log('Table deleted successfully');
-          // Clear selection if the deleted table was selected
-          if (selectedTable === tableNameToDelete) {
-            setSelectedTable(null);
-            setCurrentTable(null);
-            setTableData([]);
+        if (!tableNamesToDelete.length || !tableNamesToDelete[0]) return;
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const tableNameToDelete of tableNamesToDelete) {
+          const result = await RequestUtils.delete(
+            ApiRoutes.DATABASE.DROP_TABLE(projectId, tableNameToDelete),
+            token,
+            {}
+          );
+          
+          if (result.success) {
+            successCount++;
+            // Clear selection if the deleted table was selected
+            if (selectedTable === tableNameToDelete) {
+              setSelectedTable(null);
+              setCurrentTable(null);
+              setTableData([]);
+            }
+          } else {
+            errorCount++;
+            console.error(`Failed to delete table ${tableNameToDelete}:`, result.message);
           }
-          await fetchTables(projectId);
-          setDeleteModal({ isOpen: false, type: 'table', loading: false });
-        } else {
-          console.error('Failed to delete table:', result.message);
-          ToastUtils.error('Failed to delete table. Please try again.');
-          setDeleteModal(prev => ({ ...prev, loading: false }));
         }
+        
+        // Clear all selected tables after deletion completes
+        setSelectedTablesForDelete(new Set());
+        
+        if (errorCount > 0) {
+          ToastUtils.warning(`Deleted ${successCount} table(s) successfully. ${errorCount} table(s) failed to delete.`);
+        } else {
+          ToastUtils.success(`Successfully deleted ${successCount} table(s)`);
+        }
+        
+        await fetchTables(projectId);
+        setDeleteModal({ isOpen: false, type: 'table', loading: false });
       } else if (deleteModal.type === 'single') {
         // Single row delete
         if (!selectedTable || !deleteModal.indices) return;
@@ -320,6 +338,10 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     } catch (error) {
       console.error('Error deleting:', error);
       ToastUtils.error('Error deleting. Please try again.');
+      // Clear selected tables if it was a table deletion
+      if (deleteModal.type === 'table') {
+        setSelectedTablesForDelete(new Set());
+      }
       setDeleteModal(prev => ({ ...prev, loading: false }));
     }
   };
@@ -454,30 +476,60 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
               </div>
               
               <div className="flex items-center space-x-2 mb-3">
-                <AppButton
-                  variant="primary"
-                  size="sm"
-                  icon={<Plus className="w-4 h-4" />}
-                  onClick={() => setShowCreateTableModal(true)}
-                >
-                  Create
-                </AppButton>
-                <AppButton
-                  variant="secondary"
-                  size="sm"
-                  icon={<Upload className="w-4 h-4" />}
-                  onClick={() => setShowImportModal(true)}
-                >
-                  Import
-                </AppButton>
-                <AppButton
-                  variant="secondary"
-                  size="sm"
-                  icon={<Download className="w-4 h-4" />}
-                  onClick={() => setShowExportModal(true)}
-                >
-                  Export
-                </AppButton>
+                {selectedTablesForDelete.size > 0 ? (
+                  <>
+                    <AppButton
+                      variant="primary"
+                      size="sm"
+                      icon={<Plus className="w-4 h-4" />}
+                      onClick={() => setShowCreateTableModal(true)}
+                    >
+                      Create
+                    </AppButton>
+                    <AppButton
+                      variant="danger"
+                      size="sm"
+                      icon={<Trash2 className="w-4 h-4" />}
+                      onClick={() => {
+                        setDeleteModal({
+                          isOpen: true,
+                          type: 'table',
+                          tableName: Array.from(selectedTablesForDelete).join(', '),
+                          loading: false
+                        });
+                      }}
+                    >
+                      Delete ({selectedTablesForDelete.size})
+                    </AppButton>
+                  </>
+                ) : (
+                  <>
+                    <AppButton
+                      variant="primary"
+                      size="sm"
+                      icon={<Plus className="w-4 h-4" />}
+                      onClick={() => setShowCreateTableModal(true)}
+                    >
+                      Create
+                    </AppButton>
+                    <AppButton
+                      variant="secondary"
+                      size="sm"
+                      icon={<Upload className="w-4 h-4" />}
+                      onClick={() => setShowImportModal(true)}
+                    >
+                      Import
+                    </AppButton>
+                    <AppButton
+                      variant="secondary"
+                      size="sm"
+                      icon={<Download className="w-4 h-4" />}
+                      onClick={() => setShowExportModal(true)}
+                    >
+                      Export
+                    </AppButton>
+                  </>
+                )}
               </div>
               
               <div className="relative">
@@ -512,7 +564,17 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                       tableName={table.table_name}
                       tableType={table.table_type}
                       isSelected={selectedTable === table.table_name}
+                      isChecked={selectedTablesForDelete.has(table.table_name)}
                       onSelect={() => handleTableSelect(table.table_name)}
+                      onCheckboxChange={(checked) => {
+                        const newSet = new Set(selectedTablesForDelete);
+                        if (checked) {
+                          newSet.add(table.table_name);
+                        } else {
+                          newSet.delete(table.table_name);
+                        }
+                        setSelectedTablesForDelete(newSet);
+                      }}
                     />
                   ))}
                 </div>
@@ -688,24 +750,33 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
       {/* Delete Confirmation Modal */}
       <DeleteConfirmModal
         isOpen={deleteModal.isOpen}
-        onClose={() => setDeleteModal({ isOpen: false, type: 'single', loading: false })}
+        onClose={() => {
+          setDeleteModal({ isOpen: false, type: 'single', loading: false });
+          setSelectedTablesForDelete(new Set());
+        }}
         onConfirm={confirmDelete}
         title={
           deleteModal.type === 'table' 
-            ? `Delete Table "${deleteModal.tableName}"` 
+            ? deleteModal.tableName?.includes(', ')
+              ? `Delete ${deleteModal.tableName.split(', ').length} Tables`
+              : `Delete Table "${deleteModal.tableName}"`
             : deleteModal.type === 'single' 
               ? `Delete Row` 
               : `Delete ${deleteModal.indices?.length || 0} Rows`
         }
         message={
           deleteModal.type === 'table'
-            ? `Are you sure you want to delete the table "${deleteModal.tableName}"? All data in this table will be permanently deleted. This action cannot be undone.`
+            ? deleteModal.tableName?.includes(', ')
+              ? `Are you sure you want to delete ${deleteModal.tableName.split(', ').length} tables? All data in these tables will be permanently deleted. This action cannot be undone.`
+              : `Are you sure you want to delete the table "${deleteModal.tableName}"? All data in this table will be permanently deleted. This action cannot be undone.`
             : deleteModal.type === 'single' 
               ? 'Are you sure you want to delete this row? This action cannot be undone.'
               : `Are you sure you want to delete ${deleteModal.indices?.length || 0} rows? This action cannot be undone.`
         }
         itemName={deleteModal.type === 'table' ? 'table' : 'row'}
-        itemCount={deleteModal.type === 'table' ? 1 : (deleteModal.indices?.length || 1)}
+        itemCount={deleteModal.type === 'table' 
+          ? (deleteModal.tableName?.includes(', ') ? deleteModal.tableName.split(', ').length : 1)
+          : (deleteModal.indices?.length || 1)}
         loading={deleteModal.loading}
         variant={deleteModal.type === 'table' ? 'single' : deleteModal.type}
       />

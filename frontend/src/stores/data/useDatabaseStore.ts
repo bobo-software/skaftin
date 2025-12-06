@@ -367,9 +367,14 @@ const useDatabaseStore = create<DatabaseStoreType>()(
           let fileName = 'database-export.sql';
           const contentDisposition = response.headers.get('Content-Disposition');
           if (contentDisposition) {
-            const matches = /filename="?(.+)"?/i.exec(contentDisposition);
-            if (matches && matches[1]) {
-              fileName = matches[1];
+            // Handle both quoted and unquoted filenames
+            // Match: filename="value" or filename=value or filename*=UTF-8''value
+            const quotedMatch = /filename[*]?=['"]([^'"]+)['"]/i.exec(contentDisposition);
+            const unquotedMatch = /filename[*]?=([^'";\s]+)/i.exec(contentDisposition);
+            if (quotedMatch && quotedMatch[1]) {
+              fileName = quotedMatch[1];
+            } else if (unquotedMatch && unquotedMatch[1]) {
+              fileName = unquotedMatch[1];
             }
           }
 
