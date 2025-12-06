@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { ToolModule, ToolCategory, MCPToolsConfig, MCPToolResult, ToolExecutionContext } from '../registry/types';
+import { normalizeQuery } from '../../utils/SqlUtils';
 
 // Legacy export for backward compatibility during migration
 export interface DatabaseToolsConfig {
@@ -972,7 +973,9 @@ export async function handleDatabaseTool(
           }
         }
         
-        const result = await client.query(query, parameters);
+        // Normalize query from MySQL to PostgreSQL syntax
+        const normalizedQuery = normalizeQuery(query);
+        const result = await client.query(normalizedQuery, parameters);
         
         return { 
           content: [{ 

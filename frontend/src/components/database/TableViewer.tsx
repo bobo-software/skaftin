@@ -82,7 +82,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
       const result = await RequestUtils.post(
         ApiRoutes.DATABASE.SELECT_DATA(projectId, tableName),
         token,
-        { limit: 100, orderBy: 'id', orderDirection: 'ASC' }
+        { orderBy: 'id', orderDirection: 'ASC' }
       );
       console.log('fetchTableData result:', result);
       

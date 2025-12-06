@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { GraphQLError } from 'graphql';
 import { GraphQLScalarType, Kind, ValueNode } from 'graphql';
 import { emitDatabaseChange } from '../utils/websocketEmitter';
+import { normalizeQuery } from '../utils/SqlUtils';
 
 // Custom JSON scalar
 const JSONScalar: GraphQLScalarType = new GraphQLScalarType({
@@ -270,8 +271,11 @@ export const createResolvers = (pool: Pool) => ({
       const client = await getProjectClient(pool, projectId);
       
       try {
+        // Normalize query from MySQL to PostgreSQL syntax
+        const normalizedQuery = normalizeQuery(query);
+        
         const startTime = Date.now();
-        const result = await client.query(query, parameters);
+        const result = await client.query(normalizedQuery, parameters);
         const executionTime = Date.now() - startTime;
 
         client.release();

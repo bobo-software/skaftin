@@ -8,6 +8,7 @@ import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMi
 import { HybridAuthRequest } from '../middleware/hybridAuthMiddleware';
 import { OrganisationFilterRequest } from '../middleware/organisationFilterMiddleware';
 import { AnalyticsService } from '../services/AnalyticsService';
+import { normalizeQuery } from '../utils/SqlUtils';
 
 // Extended request type that can have projectId from middleware or params
 type DatabaseRequest = (SuperTokensAuthenticatedRequest | HybridAuthRequest | OrganisationFilterRequest) & {
@@ -287,6 +288,9 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Query is required', null, null, 400);
       }
 
+      // Normalize query from MySQL to PostgreSQL syntax
+      const normalizedQuery = normalizeQuery(query);
+
       const client = await DatabaseController.getProjectClient(projectId);
       
       if (!client) {
@@ -294,7 +298,7 @@ class DatabaseController {
       }
 
       const startTime = Date.now();
-      const result = await client.query(query, parameters);
+      const result = await client.query(normalizedQuery, parameters);
       const executionTime = Date.now() - startTime;
 
       client.release();
@@ -302,10 +306,10 @@ class DatabaseController {
       // Track database query metric
       const projectIdNum = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
       if (!isNaN(projectIdNum)) {
-        // Determine query type from query string
-        const queryType = query.trim().split(/\s+/)[0].toUpperCase() || 'SELECT';
+        // Determine query type from normalized query string
+        const queryType = normalizedQuery.trim().split(/\s+/)[0].toUpperCase() || 'SELECT';
         // Extract table name if possible (simple regex, may not catch all cases)
-        const tableMatch = query.match(/(?:FROM|INTO|UPDATE|DELETE\s+FROM)\s+["']?(\w+)["']?/i);
+        const tableMatch = normalizedQuery.match(/(?:FROM|INTO|UPDATE|DELETE\s+FROM)\s+["']?(\w+)["']?/i);
         const tableName = tableMatch ? tableMatch[1] : undefined;
         
         // Get user ID if available
