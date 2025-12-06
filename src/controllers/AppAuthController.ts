@@ -176,11 +176,20 @@ class AppAuthController {
           return ResponseUtils.error(res, `Role with ID ${roleToAssign} not found`, null, null, 404);
         }
 
-        await AppAuthController.pool.query(
-          `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
-           VALUES ($1, $2)`,
+        // Check if role assignment already exists (shouldn't happen during registration, but handle gracefully)
+        const existingAssignment = await AppAuthController.pool.query(
+          `SELECT id FROM ${schemaName}.skaftin_system_user_roles 
+           WHERE app_user_id = $1 AND role_id = $2`,
           [user.id, roleToAssign]
         );
+
+        if (existingAssignment.rows.length === 0) {
+          await AppAuthController.pool.query(
+            `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
+             VALUES ($1, $2)`,
+            [user.id, roleToAssign]
+          );
+        }
 
         // Fetch the assigned role with organization fields
         const roleResult = await AppAuthController.pool.query(

@@ -320,13 +320,50 @@ export class AuthUtils {
           [userId]
         );
 
-        // 3. Delete user from database
+        // 3. Find and delete from all tables with foreign keys referencing skaftin_system_users
+        // This handles user-created tables like user_associations
+        const foreignKeyTables = await client.query(`
+          SELECT DISTINCT
+            tc.table_name,
+            kcu.column_name
+          FROM information_schema.table_constraints AS tc
+          JOIN information_schema.key_column_usage AS kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+          JOIN information_schema.constraint_column_usage AS ccu
+            ON ccu.constraint_name = tc.constraint_name
+            AND ccu.table_schema = tc.table_schema
+          WHERE tc.table_schema = $1
+            AND tc.constraint_type = 'FOREIGN KEY'
+            AND ccu.table_name = 'skaftin_system_users'
+            AND ccu.column_name = 'id'
+            AND tc.table_name != 'skaftin_system_user_roles' -- Already handled above
+        `, [schemaName]);
+
+        // Delete records from each table that references the user
+        for (const fkTable of foreignKeyTables.rows) {
+          try {
+            const deleteResult = await client.query(
+              `DELETE FROM ${schemaName}."${fkTable.table_name}" WHERE "${fkTable.column_name}" = $1`,
+              [userId]
+            );
+            const rowCount = deleteResult.rowCount ?? 0;
+            if (rowCount > 0) {
+              console.log(`✅ Deleted ${rowCount} record(s) from ${fkTable.table_name}`);
+            }
+          } catch (deleteError: any) {
+            // Log but continue - some tables might have additional constraints
+            console.warn(`⚠️ Could not delete from ${fkTable.table_name}: ${deleteError.message}`);
+          }
+        }
+
+        // 4. Delete user from database
         await client.query(
           `DELETE FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
           [userId]
         );
 
-        // 4. Delete from SuperTokens if they have an ID
+        // 5. Delete from SuperTokens if they have an ID
         if (user.supertokens_user_id) {
           try {
             await deleteUser(user.supertokens_user_id);

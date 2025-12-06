@@ -622,13 +622,60 @@ class AuthUsersController {
         return ResponseUtils.error(res, 'Role not found', null, null, 404);
       }
 
-      // Assign role
-      await AuthUsersController.pool.query(
-        `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id, assigned_by)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (app_user_id, role_id) DO NOTHING`,
-        [parseInt(userId), role_id, req.user.userId]
+      // Check if role assignment already exists
+      const existingAssignment = await AuthUsersController.pool.query(
+        `SELECT id FROM ${schemaName}.skaftin_system_user_roles 
+         WHERE app_user_id = $1 AND role_id = $2`,
+        [parseInt(userId), role_id]
       );
+
+      if (existingAssignment.rows.length > 0) {
+        return ResponseUtils.success(res, 'Role already assigned to user');
+      }
+
+      // Assign role with error handling for sequence sync issues
+      try {
+        await AuthUsersController.pool.query(
+          `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id, assigned_by)
+           VALUES ($1, $2, $3)`,
+          [parseInt(userId), role_id, req.user.userId]
+        );
+      } catch (insertError: any) {
+        // Handle primary key sequence out-of-sync error
+        if (insertError.code === '23505' && insertError.constraint === 'skaftin_system_user_roles_pkey') {
+          console.warn(`⚠️ Sequence out of sync for ${schemaName}.skaftin_system_user_roles, fixing...`);
+          
+          // Reset the sequence to the max ID + 1
+          await AuthUsersController.pool.query(`
+            SELECT setval(
+              pg_get_serial_sequence('${schemaName}.skaftin_system_user_roles', 'id'),
+              COALESCE((SELECT MAX(id) FROM ${schemaName}.skaftin_system_user_roles), 0) + 1,
+              false
+            )
+          `);
+          
+          // Check again if assignment exists (might have been created by another process)
+          const recheckAssignment = await AuthUsersController.pool.query(
+            `SELECT id FROM ${schemaName}.skaftin_system_user_roles 
+             WHERE app_user_id = $1 AND role_id = $2`,
+            [parseInt(userId), role_id]
+          );
+          
+          if (recheckAssignment.rows.length > 0) {
+            return ResponseUtils.success(res, 'Role already assigned to user');
+          }
+          
+          // Retry the insert after fixing the sequence
+          await AuthUsersController.pool.query(
+            `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id, assigned_by)
+             VALUES ($1, $2, $3)`,
+            [parseInt(userId), role_id, req.user.userId]
+          );
+        } else {
+          // Re-throw if it's a different error
+          throw insertError;
+        }
+      }
 
       ResponseUtils.success(res, 'Role assigned successfully');
     } catch (error) {
