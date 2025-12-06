@@ -128,6 +128,24 @@ class BackupController {
           } else {
             // For each table, get the CREATE TABLE statement and data
             for (const tableName of tables) {
+              // Get primary key columns first (before creating table definition)
+              const pkResult = await client.query(`
+                SELECT 
+                  kcu.column_name,
+                  kcu.ordinal_position
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                  AND tc.table_schema = kcu.table_schema
+                  AND tc.table_name = kcu.table_name
+                WHERE tc.table_schema = $1 
+                  AND tc.table_name = $2 
+                  AND tc.constraint_type = 'PRIMARY KEY'
+                ORDER BY kcu.ordinal_position
+              `, [schemaName, tableName]);
+
+              const primaryKeyColumns = pkResult.rows.map(row => row.column_name);
+
               // Get detailed column information
               const columnsResult = await client.query(`
                 SELECT 
@@ -183,6 +201,13 @@ class BackupController {
                   
                   return def;
                 });
+
+                // Add PRIMARY KEY constraint if it exists
+                if (primaryKeyColumns.length > 0) {
+                  // Remove duplicates (in case of any data issues)
+                  const uniquePkColumns = [...new Set(primaryKeyColumns)];
+                  columnDefs.push(`  PRIMARY KEY (${uniquePkColumns.map(col => `"${col}"`).join(', ')})`);
+                }
                 
                 sqlContent += columnDefs.join(',\n') + '\n);\n\n';
 
@@ -210,13 +235,6 @@ class BackupController {
                   sqlContent += '\n';
                 }
               }
-
-              // Get primary keys
-              const pkResult = await client.query(`
-                SELECT constraint_name
-                FROM information_schema.table_constraints
-                WHERE table_schema = $1 AND table_name = $2 AND constraint_type = 'PRIMARY KEY'
-              `, [schemaName, tableName]);
 
               // Get foreign keys
               const fkResult = await client.query(`
@@ -976,6 +994,24 @@ class BackupController {
           const tables = tablesResult.rows.map(row => row.table_name);
 
           for (const tableName of tables) {
+            // Get primary key columns first (before creating table definition)
+            const pkResult = await client.query(`
+              SELECT 
+                kcu.column_name,
+                kcu.ordinal_position
+              FROM information_schema.table_constraints tc
+              JOIN information_schema.key_column_usage kcu
+                ON tc.constraint_name = kcu.constraint_name
+                AND tc.table_schema = kcu.table_schema
+                AND tc.table_name = kcu.table_name
+              WHERE tc.table_schema = $1 
+                AND tc.table_name = $2 
+                AND tc.constraint_type = 'PRIMARY KEY'
+              ORDER BY kcu.ordinal_position
+            `, [schemaName, tableName]);
+
+            const primaryKeyColumns = pkResult.rows.map(row => row.column_name);
+
             // Get column info
             const columnsResult = await client.query(`
               SELECT 
@@ -1028,6 +1064,13 @@ class BackupController {
                 
                 return def;
               });
+
+              // Add PRIMARY KEY constraint if it exists
+              if (primaryKeyColumns.length > 0) {
+                // Remove duplicates (in case of any data issues)
+                const uniquePkColumns = [...new Set(primaryKeyColumns)];
+                columnDefs.push(`  PRIMARY KEY (${uniquePkColumns.map(col => `"${col}"`).join(', ')})`);
+              }
               
               projectSql += columnDefs.join(',\n') + '\n);\n\n';
 

@@ -2080,11 +2080,41 @@ class DatabaseController {
 
         // Clean and parse SQL content
         // Remove SQL comments (both -- and /* */ style)
+        // But only remove comments that are NOT inside quoted strings
         let cleanedSql = sqlContent
           .split('\n')
           .map(line => {
-            // Remove inline comments (--) but keep the rest of the line
-            const commentIndex = line.indexOf('--');
+            // Remove inline comments (--) but only if not inside quotes
+            let inSingleQuote = false;
+            let inDoubleQuote = false;
+            let commentIndex = -1;
+            
+            for (let i = 0; i < line.length - 1; i++) {
+              const char = line[i];
+              const nextChar = line[i + 1];
+              
+              // Handle single quotes
+              if (char === "'" && !inDoubleQuote) {
+                // Check for escaped single quote ('')
+                if (inSingleQuote && nextChar === "'") {
+                  i++; // Skip the escaped quote
+                  continue;
+                }
+                inSingleQuote = !inSingleQuote;
+              }
+              
+              // Handle double quotes
+              if (char === '"' && !inSingleQuote) {
+                inDoubleQuote = !inDoubleQuote;
+              }
+              
+              // Found -- comment delimiter, but only if not inside quotes
+              if (char === '-' && nextChar === '-' && !inSingleQuote && !inDoubleQuote) {
+                commentIndex = i;
+                break;
+              }
+            }
+            
             if (commentIndex !== -1) {
               return line.substring(0, commentIndex);
             }
