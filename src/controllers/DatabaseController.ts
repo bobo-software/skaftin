@@ -1956,7 +1956,7 @@ class DatabaseController {
         // Start a transaction
         await client.query('BEGIN');
 
-        // If dropExisting is true, drop all tables in the current schema
+        // If dropExisting is true, drop all tables in the current schema (except system tables)
         if (dropExisting) {
           console.log('🗑️  Dropping existing tables...');
           const tablesResult = await client.query(`
@@ -1964,6 +1964,7 @@ class DatabaseController {
             FROM information_schema.tables 
             WHERE table_schema = current_schema() 
               AND table_type = 'BASE TABLE'
+              AND table_name NOT LIKE 'skaftin_system_%'
             ORDER BY table_name
           `);
 
@@ -1978,7 +1979,7 @@ class DatabaseController {
               console.error(`  ✗ Failed to drop table ${row.table_name}:`, err.message);
             }
           }
-          console.log(`🗑️  Dropped ${droppedTablesCount} tables`);
+          console.log(`🗑️  Dropped ${droppedTablesCount} tables (system tables preserved)`);
         }
 
         // Clean and parse SQL content
@@ -2148,6 +2149,20 @@ class DatabaseController {
             ORDER BY ordinal_position
           `, [schemaName, tableName]);
 
+          // Get primary key columns for this table
+          const pkResult = await client.query(`
+            SELECT kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+            WHERE tc.table_schema = $1 
+              AND tc.table_name = $2
+              AND tc.constraint_type = 'PRIMARY KEY'
+            ORDER BY kcu.ordinal_position
+          `, [schemaName, tableName]);
+
+          const primaryKeyColumns = pkResult.rows.map(row => row.column_name);
+
           if (columnsResult.rows.length > 0) {
             sqlContent += `\n-- Table: ${tableName}\n`;
             sqlContent += `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
@@ -2205,7 +2220,15 @@ class DatabaseController {
               return def;
             });
             
-            sqlContent += columnDefs.join(',\n') + '\n);\n\n';
+            // Add PRIMARY KEY constraint if there are primary key columns
+            if (primaryKeyColumns.length > 0) {
+              sqlContent += columnDefs.join(',\n');
+              sqlContent += `,\n  PRIMARY KEY (${primaryKeyColumns.map(col => `"${col}"`).join(', ')})`;
+            } else {
+              sqlContent += columnDefs.join(',\n');
+            }
+            
+            sqlContent += '\n);\n\n';
 
             // Get table data as INSERT statements (skip if schemaOnly)
             if (!schemaOnly) {
