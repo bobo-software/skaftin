@@ -408,10 +408,10 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     }
   };
 
-  const handleDatabaseExport = async (tablesToExport: string[], includeSystemTables: boolean, schemaOnly: boolean) => {
+  const handleDatabaseExport = async (tablesToExport: string[], includeSystemTables: boolean, schemaOnly: boolean, skipSystemTableForeignKeys: boolean) => {
     setExportLoading(true);
     try {
-      const result = await exportDatabaseDump(projectId, tablesToExport, includeSystemTables, schemaOnly);
+      const result = await exportDatabaseDump(projectId, tablesToExport, includeSystemTables, schemaOnly, skipSystemTableForeignKeys);
       
       if (result.success) {
         let message = `Successfully exported ${tablesToExport.length} table${tablesToExport.length !== 1 ? 's' : ''}!`;

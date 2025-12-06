@@ -338,7 +338,7 @@ const useDatabaseStore = create<DatabaseStoreType>()(
         }
       },
 
-      exportDatabaseDump: async (projectId: string, tables: string[], includeSystemTables: boolean, schemaOnly: boolean) => {
+      exportDatabaseDump: async (projectId: string, tables: string[], includeSystemTables: boolean, schemaOnly: boolean, skipSystemTableForeignKeys: boolean = true) => {
         set({ loading: true, error: null });
         try {
           const token = localStorage.getItem('skaftin-token') || '';
@@ -352,7 +352,7 @@ const useDatabaseStore = create<DatabaseStoreType>()(
               'Authorization': `Bearer ${token}`,
             },
             credentials: 'include',
-            body: JSON.stringify({ tables, includeSystemTables, schemaOnly }),
+            body: JSON.stringify({ tables, includeSystemTables, schemaOnly, skipSystemTableForeignKeys }),
           });
 
           if (!response.ok) {

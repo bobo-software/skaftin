@@ -2156,7 +2156,7 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
 
-      const { tables = [], includeSystemTables = false, schemaOnly = false } = req.body;
+      const { tables = [], includeSystemTables = false, schemaOnly = false, skipSystemTableForeignKeys = true } = req.body;
 
       // Get project schema
       const projectIdInt = parseInt(projectId, 10);
@@ -2199,6 +2199,15 @@ class DatabaseController {
         }
 
         console.log(`📦 Exporting ${tablesToExport.length} tables for project ${projectId}`);
+
+        // Collect foreign keys to add at the end (after all tables are created)
+        const foreignKeysToAdd: Array<{
+          tableName: string;
+          constraintName: string;
+          localColumns: string;
+          foreignTableName: string;
+          foreignColumns: string;
+        }> = [];
 
         // Export user tables
         for (const tableName of tablesToExport) {
@@ -2376,20 +2385,22 @@ class DatabaseController {
           `, [schemaName, tableName]);
 
           if (fkResult.rows.length > 0) {
-            // Filter out foreign keys that reference system tables (unless includeSystemTables is true)
-            const fksToExport = includeSystemTables 
-              ? fkResult.rows 
-              : fkResult.rows.filter((fk: any) => !fk.foreign_table_name.startsWith('skaftin_system_'));
+            // Filter out foreign keys that reference system tables based on skipSystemTableForeignKeys
+            const fksToExport = skipSystemTableForeignKeys
+              ? fkResult.rows.filter((fk: any) => !fk.foreign_table_name.startsWith('skaftin_system_'))
+              : fkResult.rows;
             
-            if (fksToExport.length > 0) {
-              sqlContent += `-- Foreign keys for table: ${tableName}\n`;
-              for (const fk of fksToExport) {
-                // Handle both single and composite foreign keys
-                const localColumns = fk.column_names.split(', ').map((col: string) => `"${col.trim()}"`).join(', ');
-                const foreignColumns = fk.foreign_column_names.split(', ').map((col: string) => `"${col.trim()}"`).join(', ');
-                sqlContent += `ALTER TABLE "${tableName}" ADD CONSTRAINT "${fk.constraint_name}" FOREIGN KEY (${localColumns}) REFERENCES "${fk.foreign_table_name}" (${foreignColumns});\n`;
-              }
-              sqlContent += '\n';
+            // Collect foreign keys to add at the end (after all tables are created)
+            for (const fk of fksToExport) {
+              const localColumns = fk.column_names.split(', ').map((col: string) => `"${col.trim()}"`).join(', ');
+              const foreignColumns = fk.foreign_column_names.split(', ').map((col: string) => `"${col.trim()}"`).join(', ');
+              foreignKeysToAdd.push({
+                tableName,
+                constraintName: fk.constraint_name,
+                localColumns,
+                foreignTableName: fk.foreign_table_name,
+                foreignColumns
+              });
             }
           }
         }
@@ -2480,6 +2491,30 @@ class DatabaseController {
               console.warn(`Warning: Could not export ${tableName}:`, tableError.message);
               sqlContent += `-- Warning: Could not export ${tableName}: ${tableError.message}\n\n`;
             }
+          }
+        }
+
+        // Add all foreign keys at the end (after all tables are created)
+        if (foreignKeysToAdd.length > 0) {
+          sqlContent += `\n-- ============================================\n`;
+          sqlContent += `-- Foreign Key Constraints\n`;
+          sqlContent += `-- ============================================\n\n`;
+          
+          // Group foreign keys by table for better organization
+          const fksByTable = foreignKeysToAdd.reduce((acc, fk) => {
+            if (!acc[fk.tableName]) {
+              acc[fk.tableName] = [];
+            }
+            acc[fk.tableName].push(fk);
+            return acc;
+          }, {} as Record<string, typeof foreignKeysToAdd>);
+
+          for (const [tableName, fks] of Object.entries(fksByTable)) {
+            sqlContent += `-- Foreign keys for table: ${tableName}\n`;
+            for (const fk of fks) {
+              sqlContent += `ALTER TABLE "${fk.tableName}" ADD CONSTRAINT "${fk.constraintName}" FOREIGN KEY (${fk.localColumns}) REFERENCES "${fk.foreignTableName}" (${fk.foreignColumns});\n`;
+            }
+            sqlContent += '\n';
           }
         }
 

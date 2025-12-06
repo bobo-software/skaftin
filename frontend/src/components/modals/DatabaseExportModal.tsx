@@ -6,7 +6,7 @@ import { Table } from '../../stores/data/useDatabaseStore';
 interface DatabaseExportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onExport: (tables: string[], includeSystemTables: boolean, schemaOnly: boolean) => Promise<void>;
+  onExport: (tables: string[], includeSystemTables: boolean, schemaOnly: boolean, skipSystemTableForeignKeys: boolean) => Promise<void>;
   loading?: boolean;
   availableTables: Table[];
 }
@@ -21,6 +21,7 @@ const DatabaseExportModal = ({
   const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
   const [includeSystemTables, setIncludeSystemTables] = useState(false);
   const [schemaOnly, setSchemaOnly] = useState(false);
+  const [skipSystemTableForeignKeys, setSkipSystemTableForeignKeys] = useState(true);
   const [error, setError] = useState<string>('');
   const [allSelected, setAllSelected] = useState(true);
 
@@ -65,7 +66,7 @@ const DatabaseExportModal = ({
     }
 
     try {
-      await onExport(Array.from(selectedTables), includeSystemTables, schemaOnly);
+      await onExport(Array.from(selectedTables), includeSystemTables, schemaOnly, skipSystemTableForeignKeys);
       handleClose();
     } catch (err: any) {
       setError(err.message || 'Failed to export database dump');
@@ -76,6 +77,7 @@ const DatabaseExportModal = ({
     setSelectedTables(new Set());
     setIncludeSystemTables(false);
     setSchemaOnly(false);
+    setSkipSystemTableForeignKeys(true);
     setError('');
     setAllSelected(true);
     onClose();
@@ -260,6 +262,25 @@ const DatabaseExportModal = ({
                 </div>
               </label>
             )}
+
+            {/* Skip System Table Foreign Keys Option */}
+            <label className="flex items-start space-x-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={skipSystemTableForeignKeys}
+                onChange={(e) => setSkipSystemTableForeignKeys(e.target.checked)}
+                disabled={loading}
+                className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500 focus:ring-offset-0 mt-0.5"
+              />
+              <div className="flex-1">
+                <div className="font-medium text-dark-900 dark:text-white">
+                  Skip Foreign Keys to System Tables
+                </div>
+                <p className="text-sm text-dark-500 dark:text-dark-400 mt-1">
+                  Exclude foreign key constraints that reference system tables (e.g., skaftin_system_users). Enable this if you're importing system users separately or into a different project.
+                </p>
+              </div>
+            </label>
           </div>
         </div>
 
