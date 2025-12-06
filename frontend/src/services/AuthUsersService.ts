@@ -133,6 +133,47 @@ class AuthUsersService {
   }
 
   /**
+   * Get user password (admin only - hidden feature)
+   */
+  async getUserPassword(projectId: string, userId: string): Promise<string> {
+    try {
+      const response = await RequestUtils.get(
+        `/api/auth/${projectId}/users/${userId}/password`,
+        this.getToken()
+      );
+
+      if (response.success) {
+        return response.data.password;
+      }
+
+      throw new Error(response.error || 'Failed to get user password');
+    } catch (error: any) {
+      console.error('Error getting user password:', error);
+      throw new Error(error.message || 'Failed to get user password');
+    }
+  }
+
+  /**
+   * Set/Create user password (admin only - hidden feature)
+   */
+  async setUserPassword(projectId: string, userId: string, password: string): Promise<void> {
+    try {
+      const response = await RequestUtils.post(
+        `/api/auth/${projectId}/users/${userId}/password`,
+        this.getToken(),
+        { password }
+      );
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to set user password');
+      }
+    } catch (error: any) {
+      console.error('Error setting user password:', error);
+      throw new Error(error.message || 'Failed to set user password');
+    }
+  }
+
+  /**
    * Create a new user
    */
   async createUser(projectId: string, userData: CreateUserRequest): Promise<AppUser> {

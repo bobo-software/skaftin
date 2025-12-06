@@ -9,6 +9,7 @@ import { AuthUtils } from '../utils/AuthUtils';
 import { AuthEmailService } from '../services/AuthEmailService';
 import { SmsOtpService } from '../services/SmsOtpService';
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 
 interface AppUser {
   id: number;
@@ -265,6 +266,111 @@ class AuthUsersController {
     } catch (error) {
       console.error('Error fetching user:', error);
       ResponseUtils.error(res, 'Failed to fetch user', error);
+    }
+  }
+
+  /**
+   * Get user password (admin only - hidden feature)
+   * GET /api/auth/:projectId/users/:userId/password
+   */
+  static async getUserPassword(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    try {
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { userId } = req.params;
+
+      const schemaName = await AuthUsersController.getProjectSchema(projectId);
+      if (!schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Get user password (only for admin users)
+      const result = await AuthUsersController.pool.query(
+        `SELECT password FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        [parseInt(userId)]
+      );
+
+      if (result.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const password = result.rows[0].password;
+
+      if (!password) {
+        return ResponseUtils.error(res, 'User does not have a password set', null, null, 404);
+      }
+
+      ResponseUtils.success(res, 'Password retrieved successfully', { password });
+    } catch (error) {
+      console.error('Error fetching user password:', error);
+      ResponseUtils.error(res, 'Failed to fetch user password', error);
+    }
+  }
+
+  /**
+   * Set/Create user password (admin only - hidden feature)
+   * POST /api/auth/:projectId/users/:userId/password
+   */
+  static async setUserPassword(req: SuperTokensAuthenticatedRequest & { projectId?: number; schemaName?: string }, res: Response) {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    try {
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+      const { userId } = req.params;
+      const { password } = req.body;
+
+      if (!password) {
+        return ResponseUtils.error(res, 'Password is required', null, null, 400);
+      }
+
+      const passwordValidation = AuthUtils.isValidPassword(password);
+      if (!passwordValidation.valid) {
+        return ResponseUtils.error(res, passwordValidation.message || 'Invalid password', null, null, 400);
+      }
+
+      const schemaName = await AuthUsersController.getProjectSchema(projectId);
+      if (!schemaName) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Check if user exists
+      const userResult = await AuthUsersController.pool.query(
+        `SELECT id, email FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        [parseInt(userId)]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+
+      // Hash the password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Update user password
+      await AuthUsersController.pool.query(
+        `UPDATE ${schemaName}.skaftin_system_users SET password = $1 WHERE id = $2`,
+        [hashedPassword, parseInt(userId)]
+      );
+
+      console.log(`✅ Password set for user ${user.email} (ID: ${userId})`);
+
+      ResponseUtils.success(res, 'Password set successfully', { message: 'Password has been set for the user' });
+    } catch (error) {
+      console.error('Error setting user password:', error);
+      ResponseUtils.error(res, 'Failed to set user password', error);
     }
   }
 

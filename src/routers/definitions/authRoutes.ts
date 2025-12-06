@@ -163,6 +163,22 @@ export function createAuthRouteDefinitions(isAdmin: boolean): RouteDefinition[] 
       requiresAuth: true,
     },
     {
+      method: 'get',
+      path: createPath('/users/:userId/password', isAdmin),
+      handler: AuthUsersController.getUserPassword,
+      description: 'Get user password (admin only - hidden feature)',
+      requiresProject: true,
+      requiresAuth: true,
+    },
+    {
+      method: 'post',
+      path: createPath('/users/:userId/password', isAdmin),
+      handler: AuthUsersController.setUserPassword,
+      description: 'Set/Create user password (admin only - hidden feature)',
+      requiresProject: true,
+      requiresAuth: true,
+    },
+    {
       method: 'post',
       path: createPath('/users', isAdmin),
       handler: AuthUsersController.createUser,

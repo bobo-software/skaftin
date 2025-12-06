@@ -13,7 +13,10 @@ import {
   Clock,
   Key,
   AlertTriangle,
-  Trash
+  Trash,
+  Eye,
+  X,
+  Copy
 } from 'lucide-react';
 import AuthUsersService, { AppUser } from '../../../../services/AuthUsersService';
 import RolesService, { Role } from '../../../../services/RolesService';
@@ -30,6 +33,14 @@ const UserDetailsPage = () => {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [password, setPassword] = useState<string | null>(null);
+  const [loadingPassword, setLoadingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [creatingPassword, setCreatingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   useEffect(() => {
     if (projectId && userId) {
@@ -54,6 +65,94 @@ const UserDetailsPage = () => {
       ToastUtils.error('Failed to load user details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleViewPassword = async () => {
+    if (!projectId || !userId) return;
+    
+    setLoadingPassword(true);
+    setPassword(null);
+    setPasswordError(null);
+    setNewPassword('');
+    setConfirmPassword('');
+    setIsChangingPassword(false);
+    setShowPasswordModal(true);
+    
+    try {
+      const userPassword = await AuthUsersService.getUserPassword(projectId, userId);
+      setPassword(userPassword);
+    } catch (err: any) {
+      // If password doesn't exist, that's okay - we'll show the creation form
+      if (err.message?.includes('does not have a password set') || err.message?.includes('404')) {
+        setPassword(null);
+      } else {
+        console.error('Error fetching password:', err);
+        ToastUtils.error(err.message || 'Failed to load password');
+        setPasswordError(err.message || 'Failed to load password');
+      }
+    } finally {
+      setLoadingPassword(false);
+    }
+  };
+
+  const handleCreatePassword = async () => {
+    if (!projectId || !userId) return;
+
+    // Validation
+    if (!newPassword) {
+      setPasswordError('Password is required');
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordError('Password must be at least 8 characters long');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match');
+      return;
+    }
+
+    setCreatingPassword(true);
+    setPasswordError(null);
+
+    try {
+      await AuthUsersService.setUserPassword(projectId, userId, newPassword);
+      const successMessage = isChangingPassword ? 'Password changed successfully' : 'Password created successfully';
+      ToastUtils.success(successMessage);
+      setPassword(newPassword);
+      setNewPassword('');
+      setConfirmPassword('');
+      setIsChangingPassword(false);
+    } catch (err: any) {
+      console.error('Error setting password:', err);
+      setPasswordError(err.message || 'Failed to set password');
+      ToastUtils.error(err.message || 'Failed to set password');
+    } finally {
+      setCreatingPassword(false);
+    }
+  };
+
+  const handleStartChangePassword = () => {
+    setIsChangingPassword(true);
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordError(null);
+  };
+
+  const handleCancelChangePassword = () => {
+    setIsChangingPassword(false);
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordError(null);
+  };
+
+  const handleCopyPassword = () => {
+    if (password) {
+      navigator.clipboard.writeText(password);
+      ToastUtils.success('Password copied to clipboard');
     }
   };
 
@@ -306,9 +405,18 @@ const UserDetailsPage = () => {
 
           {/* Account Information */}
           <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6">
-            <h2 className="text-lg font-semibold text-dark-900 dark:text-white mb-4 flex items-center">
-              <User className="w-5 h-5 mr-2" />
-              Account Information
+            <h2 className="text-lg font-semibold text-dark-900 dark:text-white mb-4 flex items-center justify-between">
+              <div className="flex items-center">
+                <User className="w-5 h-5 mr-2" />
+                Account Information
+              </div>
+              <button
+                onClick={handleViewPassword}
+                className="p-1.5 rounded-md hover:bg-dark-100 dark:hover:bg-dark-700 text-dark-400 hover:text-dark-600 dark:hover:text-dark-300 transition-colors"
+                title="View Password (Admin)"
+              >
+                <Key className="w-4 h-4" />
+              </button>
             </h2>
             
             <div className="space-y-4">
@@ -476,6 +584,203 @@ const UserDetailsPage = () => {
                 {JSON.stringify(user.metadata, null, 2)}
               </code>
             </pre>
+          </div>
+        )}
+
+        {/* Password Modal */}
+        {showPasswordModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowPasswordModal(false)}>
+            <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-dark-900 dark:text-white flex items-center">
+                  <Key className="w-5 h-5 mr-2" />
+                  User Password
+                </h3>
+                <button
+                  onClick={() => setShowPasswordModal(false)}
+                  className="p-1 rounded-md hover:bg-dark-100 dark:hover:bg-dark-700 text-dark-400 hover:text-dark-600 dark:hover:text-dark-300"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              {loadingPassword ? (
+                <div className="py-8 text-center">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-dark-600 dark:border-dark-400"></div>
+                  <p className="mt-4 text-dark-500 dark:text-dark-400">Loading password...</p>
+                </div>
+              ) : password && !isChangingPassword ? (
+                <div>
+                  <div className="bg-dark-50 dark:bg-dark-900 rounded-md p-4 mb-4">
+                    <div className="flex items-center justify-between">
+                      <code className="text-sm font-mono text-dark-900 dark:text-white break-all">{password}</code>
+                      <button
+                        onClick={handleCopyPassword}
+                        className="ml-2 p-2 rounded-md hover:bg-dark-200 dark:hover:bg-dark-700 text-dark-500 hover:text-dark-700 dark:text-dark-400 dark:hover:text-dark-300 transition-colors flex-shrink-0"
+                        title="Copy password"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center text-xs text-dark-500 dark:text-dark-400 mb-4">
+                    <AlertTriangle className="w-4 h-4 mr-1" />
+                    <span>This is a sensitive operation. Keep this information secure.</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <AppButton
+                      onClick={handleStartChangePassword}
+                      variant="secondary"
+                      className="flex-1"
+                    >
+                      Change Password
+                    </AppButton>
+                    <AppButton
+                      onClick={() => setShowPasswordModal(false)}
+                      className="flex-1"
+                    >
+                      Close
+                    </AppButton>
+                  </div>
+                </div>
+              ) : password && isChangingPassword ? (
+                <div>
+                  <p className="text-dark-500 dark:text-dark-400 mb-4">Enter a new password for this user:</p>
+                  
+                  {passwordError && (
+                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                      <p className="text-sm text-red-600 dark:text-red-400">{passwordError}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                        New Password
+                      </label>
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => {
+                          setNewPassword(e.target.value);
+                          setPasswordError(null);
+                        }}
+                        className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Enter new password (min 8 characters)"
+                        disabled={creatingPassword}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                        Confirm Password
+                      </label>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => {
+                          setConfirmPassword(e.target.value);
+                          setPasswordError(null);
+                        }}
+                        className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Confirm new password"
+                        disabled={creatingPassword}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !creatingPassword) {
+                            handleCreatePassword();
+                          }
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <AppButton
+                        onClick={handleCreatePassword}
+                        disabled={creatingPassword || !newPassword || !confirmPassword}
+                        className="flex-1"
+                      >
+                        {creatingPassword ? 'Changing...' : 'Change Password'}
+                      </AppButton>
+                      <AppButton
+                        onClick={handleCancelChangePassword}
+                        variant="secondary"
+                        disabled={creatingPassword}
+                      >
+                        Cancel
+                      </AppButton>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-dark-500 dark:text-dark-400 mb-4">No password set for this user. Create one below:</p>
+                  
+                  {passwordError && (
+                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                      <p className="text-sm text-red-600 dark:text-red-400">{passwordError}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                        New Password
+                      </label>
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => {
+                          setNewPassword(e.target.value);
+                          setPasswordError(null);
+                        }}
+                        className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Enter new password (min 8 characters)"
+                        disabled={creatingPassword}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                        Confirm Password
+                      </label>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => {
+                          setConfirmPassword(e.target.value);
+                          setPasswordError(null);
+                        }}
+                        className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Confirm new password"
+                        disabled={creatingPassword}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !creatingPassword) {
+                            handleCreatePassword();
+                          }
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <AppButton
+                        onClick={handleCreatePassword}
+                        disabled={creatingPassword || !newPassword || !confirmPassword}
+                        className="flex-1"
+                      >
+                        {creatingPassword ? 'Creating...' : 'Create Password'}
+                      </AppButton>
+                      <AppButton
+                        onClick={() => setShowPasswordModal(false)}
+                        variant="secondary"
+                        disabled={creatingPassword}
+                      >
+                        Cancel
+                      </AppButton>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
