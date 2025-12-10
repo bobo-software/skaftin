@@ -2125,6 +2125,10 @@ class DatabaseController {
         // Remove multi-line comments /* */
         cleanedSql = cleanedSql.replace(/\/\*[\s\S]*?\*\//g, '');
 
+        // Fix common SQL issues: duplicate primary key columns
+        // Pattern: PRIMARY KEY ("id", "id") -> PRIMARY KEY ("id")
+        cleanedSql = cleanedSql.replace(/PRIMARY KEY\s*\(\s*"([^"]+)"\s*,\s*"\1"\s*\)/gi, 'PRIMARY KEY ("$1")');
+
         // Split SQL statements by semicolons, respecting quoted strings
         const statements: string[] = [];
         let currentStatement = '';
@@ -2211,19 +2215,47 @@ class DatabaseController {
 
         for (let i = 0; i < statements.length; i++) {
           const statement = statements[i];
+          const savepointName = `sp_${i}`;
+          
           try {
-            await client.query(statement);
-            successCount++;
+            // Create a savepoint for this statement
+            await client.query(`SAVEPOINT ${savepointName}`);
             
-            // Log progress for every 10 statements
-            if ((i + 1) % 10 === 0) {
-              console.log(`✅ Executed ${i + 1}/${statements.length} statements`);
+            try {
+              await client.query(statement);
+              // Release savepoint on success
+              await client.query(`RELEASE SAVEPOINT ${savepointName}`);
+              successCount++;
+              
+              // Log progress for every 10 statements
+              if ((i + 1) % 10 === 0) {
+                console.log(`✅ Executed ${i + 1}/${statements.length} statements`);
+              }
+            } catch (err: any) {
+              // Rollback to savepoint to undo just this statement
+              await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+              errorCount++;
+              const errorMsg = `Statement ${i + 1}: ${statement.substring(0, 100)}... Error: ${err.message}`;
+              errors.push(errorMsg);
+              console.error('❌ SQL execution error:', errorMsg);
             }
-          } catch (err: any) {
-            errorCount++;
-            const errorMsg = `Statement ${i + 1}: ${statement.substring(0, 100)}... Error: ${err.message}`;
-            errors.push(errorMsg);
-            console.error('❌ SQL execution error:', errorMsg);
+          } catch (savepointErr: any) {
+            // If savepoint creation fails, the transaction might be aborted
+            // Try to rollback and continue
+            try {
+              await client.query('ROLLBACK');
+              await client.query('BEGIN');
+              errorCount++;
+              const errorMsg = `Statement ${i + 1}: Transaction aborted. Error: ${savepointErr.message}`;
+              errors.push(errorMsg);
+              console.error('❌ Transaction error:', errorMsg);
+            } catch (rollbackErr: any) {
+              // Transaction is completely broken, break out
+              errorCount++;
+              errors.push(`Statement ${i + 1}: Fatal transaction error. Cannot continue.`);
+              console.error('❌ Fatal transaction error:', rollbackErr);
+              break;
+            }
           }
         }
 

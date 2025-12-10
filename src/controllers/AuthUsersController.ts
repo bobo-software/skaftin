@@ -110,23 +110,55 @@ class AuthUsersController {
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
-      if (!projectId) {
-        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
-      }
-      const { search, role_id, is_active, page = '1', limit = '50' } = req.query;
+      const { search, role_id, is_active, page = '1', limit = '50', ...dynamicFilters } = req.query;
 
       const schemaName = await AuthUsersController.getProjectSchema(projectId);
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
+      // Flatten nested query parameters (Express parses metadata.association_id as nested object)
+      // Convert { metadata: { association_id: '1' } } to { 'metadata.association_id': '1' }
+      const flattenQueryParams = (obj: any, prefix = ''): Record<string, string> => {
+        const flattened: Record<string, string> = {};
+        for (const [key, value] of Object.entries(obj)) {
+          const newKey = prefix ? `${prefix}.${key}` : key;
+          if (value && typeof value === 'object' && !Array.isArray(value) && value.constructor === Object) {
+            // Nested object - recurse
+            Object.assign(flattened, flattenQueryParams(value, newKey));
+          } else if (value !== undefined && value !== null) {
+            // Leaf value
+            flattened[newKey] = String(value);
+          }
+        }
+        return flattened;
+      };
+
+      const flattenedFilters = flattenQueryParams(dynamicFilters);
+
+      // Debug logging for dynamic filters
+      if (Object.keys(flattenedFilters).length > 0) {
+        console.log(`🔍 Dynamic filters detected:`, flattenedFilters);
+      }
+
       const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+
+      // Get available columns in the users table for dynamic filtering
+      const columnsResult = await AuthUsersController.pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = $1 
+          AND table_name = 'skaftin_system_users'
+      `, [schemaName]);
+      
+      const availableColumns = new Set(columnsResult.rows.map((row: any) => row.column_name));
 
       // Build query with filters
       let whereConditions: string[] = [];
       let queryParams: any[] = [];
       let paramIndex = 1;
 
+      // Standard filters
       if (search) {
         whereConditions.push(`(u.name ILIKE $${paramIndex} OR u.email ILIKE $${paramIndex})`);
         queryParams.push(`%${search}%`);
@@ -139,13 +171,147 @@ class AuthUsersController {
         paramIndex++;
       }
 
+      // Get role information if role_id is provided (to check for organization lookup)
+      let roleOrgLookup: { fieldName?: string; lookupTable?: string; lookupField?: string } | null = null;
       if (role_id) {
+        const roleResult = await AuthUsersController.pool.query(`
+          SELECT organisation_field_name, organisation_lookup_table, organisation_lookup_field
+          FROM ${schemaName}.skaftin_system_roles
+          WHERE id = $1
+        `, [parseInt(role_id as string)]);
+        
+        if (roleResult.rows.length > 0 && roleResult.rows[0].organisation_lookup_table) {
+          roleOrgLookup = {
+            fieldName: roleResult.rows[0].organisation_field_name,
+            lookupTable: roleResult.rows[0].organisation_lookup_table,
+            lookupField: roleResult.rows[0].organisation_lookup_field || roleResult.rows[0].organisation_field_name
+          };
+        }
+        
         whereConditions.push(`EXISTS (
           SELECT 1 FROM ${schemaName}.skaftin_system_user_roles ur 
           WHERE ur.app_user_id = u.id AND ur.role_id = $${paramIndex}
         )`);
         queryParams.push(parseInt(role_id as string));
         paramIndex++;
+      }
+
+      // Dynamic filters: handle any query parameter that's not a reserved one
+      // Supports both direct columns, metadata fields, and organization lookup tables
+      for (const [key, value] of Object.entries(flattenedFilters)) {
+        if (!value || value === '') continue; // Skip empty values
+        
+        const filterValue = value as string;
+        const isMetadataField = key.startsWith('metadata.') || key.includes('.');
+        
+        // Check if this filter matches the role's organization field and use lookup table if configured
+        const isOrgField = roleOrgLookup && key === roleOrgLookup.fieldName;
+        const isOrgMetadataField = roleOrgLookup && key === `metadata.${roleOrgLookup.fieldName}`;
+        
+        if (isOrgField || isOrgMetadataField) {
+          // Use organization lookup table instead of metadata
+          const lookupTable = roleOrgLookup!.lookupTable;
+          const lookupField = roleOrgLookup!.lookupField || roleOrgLookup!.fieldName;
+          const numericValue = isNaN(Number(filterValue)) ? null : Number(filterValue);
+          
+          if (numericValue !== null && !isNaN(numericValue)) {
+            // Numeric comparison for lookup table
+            whereConditions.push(`EXISTS (
+              SELECT 1 FROM ${schemaName}."${lookupTable}" ua
+              WHERE ua.user_id = u.id 
+                AND (
+                  ua."${lookupField}"::text = $${paramIndex} OR
+                  (ua."${lookupField}"::numeric = $${paramIndex + 1})
+                )
+            )`);
+            queryParams.push(filterValue, numericValue);
+            paramIndex += 2;
+          } else {
+            // String comparison for lookup table
+            whereConditions.push(`EXISTS (
+              SELECT 1 FROM ${schemaName}."${lookupTable}" ua
+              WHERE ua.user_id = u.id 
+                AND ua."${lookupField}"::text = $${paramIndex}
+            )`);
+            queryParams.push(filterValue);
+            paramIndex++;
+          }
+        } else if (isMetadataField) {
+          // Metadata field: metadata.field_name or metadata.field.subfield
+          const metadataPath = key.replace(/^metadata\./, ''); // Remove 'metadata.' prefix if present
+          const pathParts = metadataPath.split('.');
+          
+          // Build JSONB path: metadata->>'field'->>'subfield' etc.
+          let jsonbPath = 'u.metadata';
+          for (let i = 0; i < pathParts.length - 1; i++) {
+            jsonbPath += `->'${pathParts[i]}'`;
+          }
+          jsonbPath += `->>'${pathParts[pathParts.length - 1]}'`;
+          
+          // JSONB comparison - handle both numeric and string values
+          // JSONB can store numbers as numbers or as strings, so we need to handle both
+          const numericValue = isNaN(Number(filterValue)) ? null : Number(filterValue);
+          
+          if (numericValue !== null && !isNaN(numericValue)) {
+            // For numeric values, compare as text first (handles string storage)
+            // Then try numeric comparison - use ->> to get text, then cast to numeric
+            // This works for both JSONB number and string types
+            whereConditions.push(`(
+              u.metadata IS NOT NULL AND 
+              (
+                ${jsonbPath} = $${paramIndex} OR
+                (
+                  ${jsonbPath} ~ '^[0-9]+(\\.[0-9]+)?$' AND
+                  (${jsonbPath})::numeric = $${paramIndex + 1}
+                )
+              )
+            )`);
+            queryParams.push(filterValue, numericValue);
+            paramIndex += 2;
+          } else {
+            // String comparison only
+            whereConditions.push(`(
+              u.metadata IS NOT NULL AND 
+              ${jsonbPath} = $${paramIndex}
+            )`);
+            queryParams.push(filterValue);
+            paramIndex++;
+          }
+        } else if (availableColumns.has(key)) {
+          // Direct column exists - use it directly
+          whereConditions.push(`u."${key}" = $${paramIndex}`);
+          queryParams.push(filterValue);
+          paramIndex++;
+        } else {
+          // Column doesn't exist - assume it's a metadata field
+          // Check metadata.field_name
+          const numericValue = isNaN(Number(filterValue)) ? null : Number(filterValue);
+          
+          if (numericValue !== null && !isNaN(numericValue)) {
+            // Numeric comparison - JSONB can store numbers as numbers or strings
+            // Use ->> to get text, then cast to numeric (works for both types)
+            whereConditions.push(`(
+              u.metadata IS NOT NULL AND 
+              (
+                u.metadata->>'${key}' = $${paramIndex} OR
+                (
+                  u.metadata->>'${key}' ~ '^[0-9]+(\\.[0-9]+)?$' AND
+                  (u.metadata->>'${key}')::numeric = $${paramIndex + 1}
+                )
+              )
+            )`);
+            queryParams.push(filterValue, numericValue);
+            paramIndex += 2;
+          } else {
+            // String comparison
+            whereConditions.push(`(
+              u.metadata IS NOT NULL AND 
+              u.metadata->>'${key}' = $${paramIndex}
+            )`);
+            queryParams.push(filterValue);
+            paramIndex++;
+          }
+        }
       }
 
       const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -174,6 +340,12 @@ class AuthUsersController {
       `;
 
       queryParams.push(parseInt(limit as string), offset);
+
+      // Debug logging for query
+      if (whereConditions.length > 0) {
+        console.log(`📊 SQL WHERE conditions:`, whereConditions);
+        console.log(`📊 Query params:`, queryParams.slice(0, -2)); // Exclude limit/offset for logging
+      }
 
       const usersResult = await AuthUsersController.pool.query(usersQuery, queryParams);
 

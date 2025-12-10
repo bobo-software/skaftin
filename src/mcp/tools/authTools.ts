@@ -14,7 +14,7 @@ export function createAuthTools(config: AuthToolsConfig): Tool[] {
     // ============================================
     {
       name: 'list_app_users',
-      description: 'List application users for a project with optional filters',
+      description: 'List application users for a project with optional filters. Supports dynamic filtering by any column or metadata field (e.g., association_id, metadata.association_id, metadata.department, etc.)',
       inputSchema: {
         type: 'object',
         properties: {
@@ -44,6 +44,7 @@ export function createAuthTools(config: AuthToolsConfig): Tool[] {
           },
         },
         required: ['projectId'],
+        additionalProperties: true, // Allow dynamic filter properties
       },
     },
     {
@@ -497,7 +498,7 @@ export async function handleAuthTool(
     // ============================================
 
     if (name === 'list_app_users') {
-      const { search, role_id, is_active, page = 1, limit = 50 } = args;
+      const { search, role_id, is_active, page = 1, limit = 50, ...dynamicFilters } = args;
       const schemaName = await getProjectSchema(projectId);
 
       if (!schemaName) {
@@ -506,11 +507,22 @@ export async function handleAuthTool(
         };
       }
 
+      // Get available columns in the users table for dynamic filtering
+      const columnsResult = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = $1 
+          AND table_name = 'skaftin_system_users'
+      `, [schemaName]);
+      
+      const availableColumns = new Set(columnsResult.rows.map((row: any) => row.column_name));
+
       const offset = (page - 1) * limit;
       let whereConditions: string[] = [];
       let queryParams: any[] = [];
       let paramIndex = 1;
 
+      // Standard filters
       if (search) {
         whereConditions.push(`(u.name ILIKE $${paramIndex} OR u.email ILIKE $${paramIndex})`);
         queryParams.push(`%${search}%`);
@@ -530,6 +542,47 @@ export async function handleAuthTool(
         )`);
         queryParams.push(parseInt(role_id));
         paramIndex++;
+      }
+
+      // Dynamic filters: handle any parameter that's not a reserved one
+      // Supports both direct columns and metadata fields
+      for (const [key, value] of Object.entries(dynamicFilters)) {
+        if (value === null || value === undefined || value === '') continue; // Skip empty values
+        
+        const filterValue = String(value);
+        const isMetadataField = key.startsWith('metadata.') || key.includes('.');
+        
+        if (isMetadataField) {
+          // Metadata field: metadata.field_name or metadata.field.subfield
+          const metadataPath = key.replace(/^metadata\./, ''); // Remove 'metadata.' prefix if present
+          const pathParts = metadataPath.split('.');
+          
+          // Build JSONB path: metadata->>'field'->>'subfield' etc.
+          let jsonbPath = 'u.metadata';
+          for (let i = 0; i < pathParts.length - 1; i++) {
+            jsonbPath += `->'${pathParts[i]}'`;
+          }
+          jsonbPath += `->>'${pathParts[pathParts.length - 1]}'`;
+          
+          // Use text comparison
+          whereConditions.push(`(${jsonbPath})::text = $${paramIndex}`);
+          queryParams.push(filterValue);
+          paramIndex++;
+        } else if (availableColumns.has(key)) {
+          // Direct column exists - use it directly
+          whereConditions.push(`u."${key}" = $${paramIndex}`);
+          queryParams.push(filterValue);
+          paramIndex++;
+        } else {
+          // Column doesn't exist - assume it's a metadata field
+          // Check metadata.field_name
+          whereConditions.push(`(
+            u.metadata IS NOT NULL AND 
+            (u.metadata->>'${key}')::text = $${paramIndex}
+          )`);
+          queryParams.push(filterValue);
+          paramIndex++;
+        }
       }
 
       const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -759,11 +812,11 @@ export async function handleAuthTool(
 
       // Assign role with error handling for sequence sync issues
       try {
-        await pool.query(
-          `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
+      await pool.query(
+        `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
            VALUES ($1, $2)`,
-          [parseInt(userId), roleId]
-        );
+        [parseInt(userId), roleId]
+      );
       } catch (insertError: any) {
         // Handle primary key sequence out-of-sync error
         if (insertError.code === '23505' && insertError.constraint === 'skaftin_system_user_roles_pkey') {

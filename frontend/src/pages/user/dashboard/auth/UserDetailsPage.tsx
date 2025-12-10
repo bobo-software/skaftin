@@ -407,8 +407,8 @@ const UserDetailsPage = () => {
           <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6">
             <h2 className="text-lg font-semibold text-dark-900 dark:text-white mb-4 flex items-center justify-between">
               <div className="flex items-center">
-                <User className="w-5 h-5 mr-2" />
-                Account Information
+              <User className="w-5 h-5 mr-2" />
+              Account Information
               </div>
               <button
                 onClick={handleViewPassword}
