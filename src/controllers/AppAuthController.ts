@@ -184,11 +184,11 @@ class AppAuthController {
         );
 
         if (existingAssignment.rows.length === 0) {
-          await AppAuthController.pool.query(
-            `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
-             VALUES ($1, $2)`,
-            [user.id, roleToAssign]
-          );
+        await AppAuthController.pool.query(
+          `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
+           VALUES ($1, $2)`,
+          [user.id, roleToAssign]
+        );
         }
 
         // Fetch the assigned role with organization fields
@@ -568,16 +568,25 @@ class AppAuthController {
 
       const supertokensUserId = signInResponse.user.id;
 
-      // Sync SuperTokens user ID if it's missing or doesn't match
+      // Sync SuperTokens user ID - always update if it's missing or doesn't match
+      // Since we successfully authenticated, the SuperTokens user ID from the response is authoritative
       if (!user.supertokens_user_id || user.supertokens_user_id !== supertokensUserId) {
         if (user.supertokens_user_id && user.supertokens_user_id !== supertokensUserId) {
-          // If it exists but doesn't match, this is a real error (user might have been created differently)
-          console.error(`SuperTokens user ID mismatch: ${user.supertokens_user_id} vs ${supertokensUserId}`);
-          return ResponseUtils.error(res, 'User authentication mismatch', null, null, 500);
+          // ID exists but doesn't match - this can happen if:
+          // - User was created in SuperTokens separately
+          // - Password was reset, creating a new SuperTokens user
+          // - Multiple SuperTokens users exist (edge case)
+          // Since we successfully authenticated, update the database with the correct ID
+          console.warn(`⚠️  SuperTokens user ID mismatch detected for user ${user.id} (${user.email}):`);
+          console.warn(`   Database: ${user.supertokens_user_id}`);
+          console.warn(`   SuperTokens: ${supertokensUserId}`);
+          console.warn(`   Updating database with correct SuperTokens user ID...`);
+        } else {
+          // First time syncing (null in database)
+          console.log(`✅ Syncing SuperTokens user ID for user ${user.id} (${user.email}): ${supertokensUserId}`);
         }
         
-        // If it's null, sync it (first time login or user was created before SuperTokens integration)
-        console.log(`Syncing SuperTokens user ID for user ${user.id}: ${supertokensUserId}`);
+        // Always update with the SuperTokens user ID from successful authentication
         await AppAuthController.pool.query(
           `UPDATE ${schemaName}.skaftin_system_users 
            SET supertokens_user_id = $1 
