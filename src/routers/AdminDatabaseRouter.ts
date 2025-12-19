@@ -14,7 +14,7 @@ export function createAdminDatabaseRouter(pool: Pool): Router {
   const routes = createDatabaseRouteDefinitions();
 
   // Apply routes with admin middleware and path transformation
-  applyAdminRoutes(router, routes, middlewareBuilder.buildAuthMiddleware());
+  applyAdminRoutes(router, routes, middlewareBuilder.buildAuthMiddleware(), pool);
 
   return router;
 }

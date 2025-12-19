@@ -122,7 +122,7 @@ export function createClientCommunicationsRouter(pool: Pool): Router {
   ];
   
   // Apply routes with hybrid auth middleware
-  applyClientRoutes(router, routes, middlewareBuilder.buildAuthChain());
+  applyClientRoutes(router, routes, middlewareBuilder.buildAuthChain(), pool);
   
   return router;
 }

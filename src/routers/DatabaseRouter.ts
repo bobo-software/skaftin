@@ -14,7 +14,7 @@ export function createDatabaseRouter(pool: Pool): Router {
   const routes = createDatabaseRouteDefinitions();
 
   // Apply routes with hybrid middleware and client paths
-  applyClientRoutes(router, routes, middlewareBuilder.buildAuthChain());
+  applyClientRoutes(router, routes, middlewareBuilder.buildAuthChain(), pool);
 
   return router;
 }

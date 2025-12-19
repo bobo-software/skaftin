@@ -22,7 +22,8 @@ const pool = new Pool({
   password: process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || 'skaftin_password',
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '10000'), // 10 seconds default
+  query_timeout: parseInt(process.env.DB_QUERY_TIMEOUT || '30000'), // 30 seconds for queries
 });
 
 // MinIO/S3 client configuration

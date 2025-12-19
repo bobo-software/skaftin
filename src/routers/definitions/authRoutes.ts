@@ -47,6 +47,14 @@ export function createAuthRouteDefinitions(isAdmin: boolean): RouteDefinition[] 
     },
     {
       method: 'post',
+      path: createPath('/auth/single-credential-login', isAdmin),
+      handler: AppAuthController.singleCredentialLogin,
+      description: 'Passwordless login with single credential (email, phone, custom_field_1, or custom_field_2)',
+      requiresProject: true,
+      requiresAuth: false, // Public endpoint
+    },
+    {
+      method: 'post',
       path: createPath('/auth/verify', isAdmin),
       handler: AppAuthController.verify,
       description: 'Verify app user JWT token',

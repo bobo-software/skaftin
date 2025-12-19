@@ -8,7 +8,7 @@ import { AuthEmailService } from '../services/AuthEmailService';
 import { SmsOtpService } from '../services/SmsOtpService';
 import EmailPassword from "supertokens-node/recipe/emailpassword";
 import Session from "supertokens-node/recipe/session";
-import { convertToRecipeUserId } from "supertokens-node";
+import { convertToRecipeUserId, listUsersByAccountInfo } from "supertokens-node";
 import { createProjectScopedEmail, extractOriginalEmail } from '../middleware/appUserSuperTokensMiddleware';
 
 /**
@@ -651,6 +651,257 @@ class AppAuthController {
       });
     } catch (error) {
       console.error('Error logging in app user:', error);
+      ResponseUtils.error(res, 'Failed to login', error);
+    }
+  }
+
+  /**
+   * Single credential login (passwordless)
+   * POST /api/app-auth/auth/single-credential-login (with x-api-key or x-access-token)
+   * POST /api/app-auth/:projectId/auth/single-credential-login
+   * 
+   * Request body: { credential: string, method: 'email' | 'phone' | 'custom_field_1' | 'custom_field_2' }
+   */
+  static async singleCredentialLogin(req: AppUserAuthenticatedRequest, res: Response) {
+    try {
+      // Get projectId from middleware (extracted from API key/token) or URL param
+      const projectId = req.projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+      const schemaName = req.schemaName || (projectId ? await AppAuthController.getProjectSchema(projectId) : null);
+
+      if (!projectId || !schemaName) {
+        return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
+      }
+
+      const { credential, method } = req.body;
+
+      // Validate required fields
+      if (!credential) {
+        return ResponseUtils.error(res, 'Credential is required', null, null, 400);
+      }
+
+      if (!method) {
+        return ResponseUtils.error(res, 'Method is required. Use: "email", "phone", "custom_field_1", or "custom_field_2"', null, null, 400);
+      }
+
+      // Validate method
+      const validMethods = ['email', 'phone', 'custom_field_1', 'custom_field_2'];
+      if (!validMethods.includes(method)) {
+        return ResponseUtils.error(res, `Invalid method. Must be one of: ${validMethods.join(', ')}`, null, null, 400);
+      }
+
+      // Check if auth is enabled
+      const settingsResult = await AppAuthController.pool.query(
+        'SELECT auth_enabled FROM skaftin_system_auth_settings WHERE project_id = $1',
+        [projectId]
+      );
+
+      if (settingsResult.rows.length === 0 || !settingsResult.rows[0].auth_enabled) {
+        return ResponseUtils.error(res, 'Authentication is not enabled for this project', null, null, 403);
+      }
+
+      // Build WHERE clause based on method
+      let whereClause: string;
+      switch (method) {
+        case 'email':
+          whereClause = 'u.email = $1';
+          break;
+        case 'phone':
+          whereClause = 'u.phone = $1';
+          break;
+        case 'custom_field_1':
+          whereClause = 'u.custom_field_1 = $1';
+          break;
+        case 'custom_field_2':
+          whereClause = 'u.custom_field_2 = $1';
+          break;
+        default:
+          return ResponseUtils.error(res, 'Invalid method', null, null, 400);
+      }
+
+      // Find user with full role details including organization fields
+      const userResult = await AppAuthController.pool.query(
+        `SELECT u.*, 
+         COALESCE(
+           json_agg(
+             json_build_object(
+               'id', r.id, 
+               'role_name', r.role_name, 
+               'role_key', r.role_key,
+               'organisation_field_name', r.organisation_field_name,
+               'organisation_lookup_table', r.organisation_lookup_table,
+               'organisation_lookup_field', r.organisation_lookup_field
+             )
+           ) FILTER (WHERE r.id IS NOT NULL), 
+           '[]'
+         ) as roles
+        FROM ${schemaName}.skaftin_system_users u
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
+         WHERE ${whereClause}
+         GROUP BY u.id`,
+        [credential]
+      );
+
+      if (userResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'User not found', null, null, 401);
+      }
+
+      const user = userResult.rows[0];
+
+      // Ensure user has an email (required for SuperTokens)
+      if (!user.email) {
+        return ResponseUtils.error(res, 'User account is missing email address', null, null, 500);
+      }
+
+      // Check if user is active
+      if (!user.is_active) {
+        // Check if user has pending OTP verification
+        const metadata = user.metadata || {};
+        if (metadata.otp) {
+          return ResponseUtils.error(
+            res,
+            'Account pending verification. Please verify your email with the OTP code sent to you.',
+            null,
+            {
+              requires_otp: true,
+              user_id: user.id,
+              email: user.email,
+            },
+            403
+          );
+        }
+        
+        return ResponseUtils.error(res, 'Account is inactive. Please contact support.', null, null, 403);
+      }
+
+      // Get SuperTokens email (project-scoped)
+      const supertokensEmail = createProjectScopedEmail(user.email, projectId);
+
+      // Get or create SuperTokens user
+      let supertokensUserId: string;
+
+      // First, check if we have supertokens_user_id in database
+      if (user.supertokens_user_id) {
+        supertokensUserId = user.supertokens_user_id;
+        console.log(`✅ Using existing SuperTokens user ID from database: ${supertokensUserId}`);
+      } else {
+        // Check if SuperTokens user exists by email
+        try {
+          const users = await listUsersByAccountInfo("public", {
+            email: supertokensEmail,
+          });
+          
+          if (users.length > 0) {
+            supertokensUserId = users[0].id;
+            console.log(`✅ Found existing SuperTokens user: ${supertokensUserId}`);
+            
+            // Sync the ID to database
+            await AppAuthController.pool.query(
+              `UPDATE ${schemaName}.skaftin_system_users 
+               SET supertokens_user_id = $1 
+               WHERE id = $2`,
+              [supertokensUserId, user.id]
+            );
+          } else {
+            // SuperTokens user doesn't exist - create one with a random password
+            // Note: SuperTokens EmailPassword recipe requires a password, but we won't verify it for passwordless login
+            const randomPassword = crypto.randomBytes(32).toString('hex');
+            const signUpResponse = await EmailPassword.signUp("public", supertokensEmail, randomPassword);
+            
+            if (signUpResponse.status === "OK") {
+              supertokensUserId = signUpResponse.user.id;
+              console.log(`✅ Created new SuperTokens user: ${supertokensUserId}`);
+              
+              // Store the SuperTokens user ID in database
+              await AppAuthController.pool.query(
+                `UPDATE ${schemaName}.skaftin_system_users 
+                 SET supertokens_user_id = $1 
+                 WHERE id = $2`,
+                [supertokensUserId, user.id]
+              );
+            } else if (signUpResponse.status === "EMAIL_ALREADY_EXISTS_ERROR") {
+              // Email exists but we didn't find it - try to get it again
+              const usersRetry = await listUsersByAccountInfo("public", {
+                email: supertokensEmail,
+              });
+              if (usersRetry.length > 0) {
+                supertokensUserId = usersRetry[0].id;
+                await AppAuthController.pool.query(
+                  `UPDATE ${schemaName}.skaftin_system_users 
+                   SET supertokens_user_id = $1 
+                   WHERE id = $2`,
+                  [supertokensUserId, user.id]
+                );
+              } else {
+                console.error('Failed to create or find SuperTokens user:', signUpResponse);
+                return ResponseUtils.error(res, 'Failed to create authentication account', null, null, 500);
+              }
+            } else {
+              console.error('Failed to create SuperTokens user:', signUpResponse);
+              return ResponseUtils.error(res, 'Failed to create authentication account', null, null, 500);
+            }
+          }
+        } catch (error) {
+          console.error('Error checking/creating SuperTokens user:', error);
+          return ResponseUtils.error(res, 'Failed to authenticate user', null, null, 500);
+        }
+      }
+
+      // Resolve organization context based on user's roles
+      const { OrganizationContextResolver } = await import('../utils/OrganizationContextResolver');
+      console.log(`[AppAuthController] Resolving organization context for user ${user.id}`);
+      console.log(`[AppAuthController] User roles:`, JSON.stringify(user.roles, null, 2));
+      
+      const orgContext = await OrganizationContextResolver.resolveOrganisationContext(
+        {
+          id: user.id,
+          organisation_id: user.organisation_id,
+        },
+        user.roles || [],
+        AppAuthController.pool,
+        schemaName
+      );
+      
+      console.log(`[AppAuthController] Resolved organization context:`, JSON.stringify(orgContext, null, 2));
+
+      // Convert to RecipeUserId for session creation
+      const recipeUserId = convertToRecipeUserId(supertokensUserId);
+
+      // Create SuperTokens session with project context and organization info
+      const session = await Session.createNewSession(req, res, "public", recipeUserId, {
+        projectId: projectId,
+        appUserId: user.id.toString(),
+        email: user.email,
+        roles: user.roles || [],
+        organisation_name: orgContext.organisation_name,
+        organisation_id: orgContext.organisation_id,
+        is_admin: orgContext.is_admin,
+      }, {});
+
+      // Get session token (for header-based auth)
+      // SuperTokens handles refresh tokens automatically via the refresh endpoint
+      const accessToken = session.getAccessToken();
+
+      console.log(`✅ App user logged in with single credential: ${user.email} (Method: ${method}, Project: ${projectId})`);
+
+      // Remove password from response (not used anymore, but keep for compatibility)
+      delete user.password;
+      delete user.supertokens_user_id; // Don't expose SuperTokens user ID
+
+      ResponseUtils.success(res, 'Login successful', {
+        user,
+        organisation: {
+          name: orgContext.organisation_name,
+          id: orgContext.organisation_id,
+          is_admin: orgContext.is_admin,
+        },
+        session: {
+          accessToken,
+          // Refresh token is handled automatically by SuperTokens via /auth/session/refresh endpoint
+        },
+      });
+    } catch (error) {
+      console.error('Error in single credential login:', error);
       ResponseUtils.error(res, 'Failed to login', error);
     }
   }

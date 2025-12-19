@@ -31,10 +31,10 @@ export function createAuthRouter(pool: Pool): Router {
   const protectedRoutes = routes.filter(r => r.requiresAuth);
 
   // Apply public routes with project extraction only
-  applyClientRoutes(router, publicRoutes, middlewareBuilder.buildProjectOnlyChain());
+  applyClientRoutes(router, publicRoutes, middlewareBuilder.buildProjectOnlyChain(), pool);
 
   // Apply protected routes with full auth chain
-  applyClientRoutes(router, protectedRoutes, middlewareBuilder.buildAuthChain());
+  applyClientRoutes(router, protectedRoutes, middlewareBuilder.buildAuthChain(), pool);
 
   return router;
 }

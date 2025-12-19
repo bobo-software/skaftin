@@ -29,10 +29,10 @@ export function createAdminAuthRouter(pool: Pool): Router {
   const protectedRoutes = routes.filter(r => r.requiresAuth);
 
   // Apply public routes with project extraction only
-  applyAdminRoutes(router, publicRoutes, middlewareBuilder.buildProjectOnlyChain());
+  applyAdminRoutes(router, publicRoutes, middlewareBuilder.buildProjectOnlyChain(), pool);
 
   // Apply protected routes with full auth middleware
-  applyAdminRoutes(router, protectedRoutes, middlewareBuilder.buildAuthMiddleware());
+  applyAdminRoutes(router, protectedRoutes, middlewareBuilder.buildAuthMiddleware(), pool);
 
   return router;
 }

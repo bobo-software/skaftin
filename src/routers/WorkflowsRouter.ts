@@ -21,7 +21,7 @@ export function createWorkflowsRouter(pool: Pool): Router {
   const routes = createWorkflowRouteDefinitions();
 
   // Apply routes with admin middleware and path transformation
-  applyAdminRoutes(router, routes, middlewareBuilder.buildAuthChain());
+  applyAdminRoutes(router, routes, middlewareBuilder.buildAuthChain(), pool);
 
   return router;
 }

@@ -39,10 +39,10 @@ export function createStorageRouter(pool: Pool): Router {
   const projectOptionalRoutes = fileRoutes.filter(r => r.requiresProject === false);
   
   // Apply routes that require project with full auth chain
-  applyClientRoutes(router, projectRequiredRoutes, middlewareBuilder.buildAuthChain());
+  applyClientRoutes(router, projectRequiredRoutes, middlewareBuilder.buildAuthChain(), pool);
   
   // Apply routes that don't require project with optional project auth chain
-  applyClientRoutes(router, projectOptionalRoutes, middlewareBuilder.buildOptionalProjectAuthChain());
+  applyClientRoutes(router, projectOptionalRoutes, middlewareBuilder.buildOptionalProjectAuthChain(), pool);
 
   return router;
 }
