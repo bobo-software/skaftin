@@ -1,10 +1,17 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
+interface UserRole {
+  id: number;
+  role_name: string;
+  role_key: string;
+}
+
 interface User {
   id: string;
   email: string;
   name?: string;
+  roles?: UserRole[]; // App user roles (for client-side routes)
 }
 
 interface Project {

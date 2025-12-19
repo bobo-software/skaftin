@@ -15,7 +15,7 @@ export function createAdminStorageRouter(pool: Pool, s3Client: S3Client): Router
   const routes = createStorageRouteDefinitions(true); // isAdmin = true
 
   // Apply routes with admin middleware and path transformation
-  applyAdminRoutes(router, routes, middlewareBuilder.buildAuthMiddleware());
+  applyAdminRoutes(router, routes, middlewareBuilder.buildAuthMiddleware(), pool);
 
   return router;
 }

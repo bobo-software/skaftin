@@ -44,7 +44,8 @@ const pool = new Pool({
   password: process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || 'skaftin_password',
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '10000'), // 10 seconds default
+  query_timeout: parseInt(process.env.DB_QUERY_TIMEOUT || '30000'), // 30 seconds for queries
 });
 
 // Make pool available to routers via app.locals
@@ -237,6 +238,11 @@ app.get('/', (req: Request, res: Response) => {
         communications: '/app-api/communications',
         mcp: '/app-api/mcp',
       },
+      // Public API Routes (API Key / Access Token only, GET & POST, no user auth required)
+      app_api_2: {
+        database: '/app-api-2/database',
+        storage: '/app-api-2/storage',
+      },
     },
   });
 });
@@ -257,6 +263,10 @@ initializeApiKeyMiddleware(pool);
 import { initializeHybridAuthMiddleware } from './middleware/hybridAuthMiddleware';
 initializeHybridAuthMiddleware(pool);
 
+// Initialize API key only middleware (for public endpoints)
+import { initializeApiKeyOnlyMiddleware } from './middleware/apiKeyOnlyMiddleware';
+initializeApiKeyOnlyMiddleware(pool);
+
 // Initialize Communications Controller and create router
 const communicationsController = new CommunicationsController(pool);
 const CommunicationsRouter = createCommunicationsRouter(pool);
@@ -272,6 +282,12 @@ const AuthManagementRouter = createAuthRouter(pool);
 
 // Initialize Client Communications Router (for app-api routes)
 const ClientCommunicationsRouter = createClientCommunicationsRouter(pool);
+
+// Initialize Public Routers (for app-api-2 routes - API key only, no user auth)
+import { createPublicDatabaseRouter } from './routers/PublicDatabaseRouter';
+import { createPublicStorageRouter } from './routers/PublicStorageRouter';
+const PublicDatabaseRouter = createPublicDatabaseRouter(pool);
+const PublicStorageRouter = createPublicStorageRouter(pool);
 
 // Initialize Admin Router (for managing SuperTokens users)
 const AdminRouter = createAdminRouter(pool);
@@ -340,6 +356,16 @@ app.use('/app-api/database', createDatabaseRouter(pool));
 app.use('/app-api/communications', ClientCommunicationsRouter);
 // Client MCP operations (restricted tool set, MCP keys/API keys only)
 app.use('/app-api/mcp', ClientMCPRouter);
+
+// ============================================================================
+// PUBLIC API ROUTES (/app-api-2/*) - API Key / Access Token only (no user auth)
+// ============================================================================
+console.log('🔓 [Server] Registering public API routes at /app-api-2');
+// Public database operations (GET & POST only, API key/access token required)
+app.use('/app-api-2/database', PublicDatabaseRouter);
+// Public storage operations (GET & POST only, API key/access token required)
+app.use('/app-api-2/storage', PublicStorageRouter);
+console.log('✅ [Server] Public API routes registered');
 
 // SuperTokens error handler - MUST come after your routes
 app.use(supertokensErrorHandler() as ErrorRequestHandler);
@@ -432,6 +458,9 @@ const startServer = async () => {
     console.log(`   💾 Storage: http://localhost:${port}/app-api/storage`);
     console.log(`   🗄️  Database: http://localhost:${port}/app-api/database`);
     console.log(`   🔧 MCP: http://localhost:${port}/app-api/mcp`);
+    console.log('\n🌍 Public API (API Key / Access Token only, GET & POST):');
+    console.log(`   💾 Storage: http://localhost:${port}/app-api-2/storage`);
+    console.log(`   🗄️  Database: http://localhost:${port}/app-api-2/database`);
     console.log(`\n🔌 WebSocket: ws://localhost:${port}`);
     console.log('='.repeat(60) + '\n');
   });

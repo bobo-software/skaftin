@@ -139,13 +139,14 @@ class DatabaseController {
    * Get table schema (columns)
    */
   static async getTableSchema(req: DatabaseRequest, res: Response) {
+    let client: any = null;
     try {
       const projectId = DatabaseController.getProjectId(req);
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
       const { tableName } = req.params;
-      const client = await DatabaseController.getProjectClient(projectId);
+      client = await DatabaseController.getProjectClient(projectId);
       
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
@@ -167,6 +168,7 @@ class DatabaseController {
 
       if (result.rows.length === 0) {
         client.release();
+        client = null;
         return ResponseUtils.error(res, 'Table not found', null, null, 404);
       }
 
@@ -191,9 +193,17 @@ class DatabaseController {
       }));
 
       client.release();
+      client = null;
       ResponseUtils.success(res, 'Table schema fetched successfully', columns);
     } catch (error) {
       console.error('Error fetching table schema:', error);
+      if (client) {
+        try {
+          client.release();
+        } catch (releaseError) {
+          console.error('Error releasing client:', releaseError);
+        }
+      }
       ResponseUtils.error(res, 'Failed to fetch table schema', error);
     }
   }
@@ -346,7 +356,7 @@ class DatabaseController {
    */
   static async selectData(req: DatabaseRequest, res: Response) {
     // User info is attached by SuperTokens middleware
-
+    let client: any = null;
     try {
       const projectId = DatabaseController.getProjectId(req);
       if (!projectId) {
@@ -355,7 +365,7 @@ class DatabaseController {
       const { tableName } = req.params;
       const { columns, where, limit, offset = 0, orderBy = 'id', orderDirection = 'ASC' } = req.body;
 
-      const client = await DatabaseController.getProjectClient(projectId);
+      client = await DatabaseController.getProjectClient(projectId);
       
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
@@ -417,10 +427,18 @@ class DatabaseController {
 
       const result = await client.query(query, values);
       client.release();
+      client = null;
 
       ResponseUtils.success(res, 'Data fetched successfully', result.rows);
     } catch (error) {
       console.error('Error selecting data:', error);
+      if (client) {
+        try {
+          client.release();
+        } catch (releaseError) {
+          console.error('Error releasing client:', releaseError);
+        }
+      }
       ResponseUtils.error(res, 'Failed to select data', error);
     }
   }
@@ -1188,6 +1206,7 @@ class DatabaseController {
    * List foreign keys for a table
    */
   static async listForeignKeys(req: DatabaseRequest, res: Response) {
+    let client: any = null;
     try {
       const projectId = DatabaseController.getProjectId(req);
       if (!projectId) {
@@ -1195,7 +1214,7 @@ class DatabaseController {
       }
       const { tableName } = req.params;
 
-      const client = await DatabaseController.getProjectClient(projectId);
+      client = await DatabaseController.getProjectClient(projectId);
       
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
@@ -1226,9 +1245,17 @@ class DatabaseController {
       `, [tableName]);
 
       client.release();
+      client = null;
       ResponseUtils.success(res, 'Foreign keys fetched successfully', result.rows);
     } catch (error) {
       console.error('Error listing foreign keys:', error);
+      if (client) {
+        try {
+          client.release();
+        } catch (releaseError) {
+          console.error('Error releasing client:', releaseError);
+        }
+      }
       ResponseUtils.error(res, 'Failed to list foreign keys', error);
     }
   }

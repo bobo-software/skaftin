@@ -911,7 +911,17 @@ export async function handleAuthTool(
         };
       }
 
-      const result = await pool.query(`SELECT * FROM ${schemaName}.app_roles WHERE id = $1`, [parseInt(roleId)]);
+      const roleQuery = `
+        SELECT 
+          r.*,
+          COUNT(DISTINCT ur.app_user_id) as user_count
+        FROM ${schemaName}.skaftin_system_roles r
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON r.id = ur.role_id
+        WHERE r.id = $1
+        GROUP BY r.id
+      `;
+      
+      const result = await pool.query(roleQuery, [parseInt(roleId)]);
 
       if (result.rows.length === 0) {
         return {
@@ -934,8 +944,27 @@ export async function handleAuthTool(
         };
       }
 
+      // Validate role_key format
+      if (!/^[a-z0-9_]+$/.test(role_key)) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Role key must contain only lowercase letters, numbers, and underscores' }, null, 2) }],
+        };
+      }
+
+      // Check if role_key already exists
+      const existingRole = await pool.query(
+        `SELECT id FROM ${schemaName}.skaftin_system_roles WHERE role_key = $1`,
+        [role_key]
+      );
+
+      if (existingRole.rows.length > 0) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Role with this key already exists' }, null, 2) }],
+        };
+      }
+
       const insertQuery = `
-        INSERT INTO ${schemaName}.app_roles 
+        INSERT INTO ${schemaName}.skaftin_system_roles 
         (role_name, role_key, description, permissions, session_duration_minutes, is_system_role)
         VALUES ($1, $2, $3, $4, $5, false)
         RETURNING *
@@ -964,22 +993,56 @@ export async function handleAuthTool(
         };
       }
 
+      // Check if role exists and get its properties
+      const roleCheck = await pool.query(
+        `SELECT * FROM ${schemaName}.skaftin_system_roles WHERE id = $1`,
+        [parseInt(roleId)]
+      );
+
+      if (roleCheck.rows.length === 0) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Role not found' }, null, 2) }],
+        };
+      }
+
+      const role = roleCheck.rows[0];
+
+      // For system roles, only allow updating specific fields
+      if (role.is_system_role) {
+        // Check if trying to update restricted fields
+        const restrictedFields = ['role_name', 'description'];
+        const attemptedRestrictedFields = restrictedFields.filter(field => args[field] !== undefined);
+        
+        if (attemptedRestrictedFields.length > 0) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ success: false, error: `System roles cannot have ${attemptedRestrictedFields.join(', ')} modified. Only permissions and session duration can be updated.` }, null, 2) }],
+          };
+        }
+      }
+
       const updateFields: string[] = [];
       const values: any[] = [];
       let paramIndex = 1;
 
-      if (role_name !== undefined) {
-        updateFields.push(`role_name = $${paramIndex++}`);
-        values.push(role_name);
+      // Allow role_name and description updates for non-system roles only
+      if (!role.is_system_role) {
+        if (role_name !== undefined) {
+          updateFields.push(`role_name = $${paramIndex++}`);
+          values.push(role_name);
+        }
+        if (description !== undefined) {
+          updateFields.push(`description = $${paramIndex++}`);
+          values.push(description);
+        }
       }
-      if (description !== undefined) {
-        updateFields.push(`description = $${paramIndex++}`);
-        values.push(description);
-      }
+
+      // Allow permissions updates for all roles
       if (permissions !== undefined) {
         updateFields.push(`permissions = $${paramIndex++}`);
         values.push(JSON.stringify(permissions));
       }
+      
+      // Allow session duration updates for all roles
       if (session_duration_minutes !== undefined) {
         updateFields.push(`session_duration_minutes = $${paramIndex++}`);
         values.push(session_duration_minutes);
@@ -995,7 +1058,7 @@ export async function handleAuthTool(
       values.push(parseInt(roleId));
 
       const updateQuery = `
-        UPDATE ${schemaName}.app_roles
+        UPDATE ${schemaName}.skaftin_system_roles
         SET ${updateFields.join(', ')}
         WHERE id = $${paramIndex}
         RETURNING *
@@ -1024,8 +1087,11 @@ export async function handleAuthTool(
         };
       }
 
-      // Check if role is system role
-      const roleCheck = await pool.query(`SELECT is_system_role FROM ${schemaName}.app_roles WHERE id = $1`, [parseInt(roleId)]);
+      // Check if role exists and is not a system role
+      const roleCheck = await pool.query(
+        `SELECT * FROM ${schemaName}.skaftin_system_roles WHERE id = $1`,
+        [parseInt(roleId)]
+      );
 
       if (roleCheck.rows.length === 0) {
         return {
@@ -1033,13 +1099,29 @@ export async function handleAuthTool(
         };
       }
 
-      if (roleCheck.rows[0].is_system_role) {
+      const role = roleCheck.rows[0];
+
+      if (role.is_system_role) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'Cannot delete system roles' }, null, 2) }],
+          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'System roles cannot be deleted' }, null, 2) }],
         };
       }
 
-      await pool.query(`DELETE FROM ${schemaName}.app_roles WHERE id = $1`, [parseInt(roleId)]);
+      // Check if role has users assigned
+      const userCount = await pool.query(
+        `SELECT COUNT(*) as count FROM ${schemaName}.skaftin_system_user_roles WHERE role_id = $1`,
+        [parseInt(roleId)]
+      );
+
+      const count = parseInt(userCount.rows[0].count);
+
+      if (count > 0) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Cannot delete role. ${count} user(s) are assigned to this role. Please reassign users first.` }, null, 2) }],
+        };
+      }
+
+      await pool.query(`DELETE FROM ${schemaName}.skaftin_system_roles WHERE id = $1`, [parseInt(roleId)]);
 
       return {
         content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Role deleted successfully' }, null, 2) }],
@@ -1319,13 +1401,19 @@ export const authToolModule: ToolModule = {
     ];
   },
   getClientSafeTools: (): string[] => {
-    // Client-safe auth tools (basic user management only)
+    // Client-safe auth tools (user and role management)
     return [
       'list_app_users',
       'get_app_user',
       'create_app_user',
       'update_app_user',
       'delete_app_user',
+      'assign_user_role',
+      'list_app_roles',
+      'get_app_role',
+      'create_app_role',
+      'update_app_role',
+      'delete_app_role',
     ];
   },
 };

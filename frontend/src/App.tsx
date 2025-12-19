@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
@@ -10,36 +10,11 @@ import InviteAcceptPage from './pages/public/InviteAcceptPage';
 import InviteRegisterPage from './pages/public/InviteRegisterPage';
 import { useAppStore } from './stores/StoresIndex';
 import { initSuperTokensFrontend, Session } from './config/supertokens';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import './App.css';
 
 // Initialize SuperTokens
 initSuperTokensFrontend();
-
-// Protected Route Component
-const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
-  const { user, isLoading } = useAppStore();
-  
-  // Wait for session check to complete before redirecting
-  if (isLoading) {
-    return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        fontSize: '18px'
-      }}>
-        Loading...
-      </div>
-    );
-  }
-  
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-  
-  return children;
-};
 
 function App() {
   const { setUser, setLoading, user } = useAppStore();
@@ -61,7 +36,12 @@ function App() {
           if (response.ok) {
             const data = await response.json();
             if (data.success && data.data) {
-              setUser(data.data.user);
+              // Include roles if provided by the API
+              const userData = {
+                ...data.data.user,
+                roles: data.data.user.roles || [],
+              };
+              setUser(userData);
             }
           }
         }

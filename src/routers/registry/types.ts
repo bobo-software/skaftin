@@ -68,6 +68,13 @@ export interface RouteDefinition {
    * Whether this route requires authentication
    */
   requiresAuth?: boolean;
+
+  /**
+   * Required roles for this route (role keys or role IDs)
+   * User must have at least one of these roles to access the route
+   * Only applies when requiresAuth is true
+   */
+  requiredRoles?: string[] | number[];
 }
 
 /**

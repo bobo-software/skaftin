@@ -7,6 +7,7 @@ import { extractProjectFromCredentials } from '../../middleware/appUserAuthMiddl
 import { verifyProjectAccess } from '../../middleware/authMiddleware';
 import { attachAppUserInfo, AppUserSuperTokensRequest } from '../../middleware/appUserSuperTokensMiddleware';
 import { organisationFilterMiddleware } from '../../middleware/organisationFilterMiddleware';
+import { apiKeyOnlyAuthAndVerifyProject } from '../../middleware/apiKeyOnlyMiddleware';
 import Session from "supertokens-node/recipe/session";
 
 /**
@@ -193,6 +194,20 @@ export class MiddlewareBuilder {
       // Client routes: only extract project from API key if available
       return this.buildProjectOnlyChain();
     }
+  }
+
+  /**
+   * Build middleware chain for API key only authentication (no SuperTokens fallback)
+   * Used for public endpoints that require API key/access token but not user authentication
+   * 
+   * NOTE: This chain does NOT include organization filtering - app-api-2 routes
+   * have full project access without organization restrictions
+   */
+  buildApiKeyOnlyChain(): Middleware[] {
+    // API key only auth with project verification
+    // No app user extraction or organization filtering since no user auth
+    // This allows app-api-2 routes to access all data in the project without org filtering
+    return [...apiKeyOnlyAuthAndVerifyProject] as Middleware[];
   }
 
   /**
