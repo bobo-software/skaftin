@@ -547,8 +547,8 @@ async function handleBulkToolInternal(
 
             // Create user
             const insertResult = await pool.query(
-              `INSERT INTO ${schemaName}.skaftin_system_users (name, email, phone, password_hash, metadata, is_active)
-               VALUES ($1, $2, $3, $4, $5, true)
+              `INSERT INTO ${schemaName}.skaftin_system_users (name, email, phone, password, metadata, is_active, email_verified, phone_verified)
+               VALUES ($1, $2, $3, $4, $5, true, false, false)
                RETURNING id`,
               [
                 user.name,
@@ -725,8 +725,8 @@ async function handleBulkToolInternal(
 
       // Create user
       const insertResult = await pool.query(
-        `INSERT INTO ${schemaName}.skaftin_system_users (name, email, phone, password_hash, metadata, is_active)
-         VALUES ($1, $2, $3, $4, $5, true)
+        `INSERT INTO ${schemaName}.skaftin_system_users (name, email, phone, password, metadata, is_active, email_verified, phone_verified)
+         VALUES ($1, $2, $3, $4, $5, true, false, false)
          RETURNING *`,
         [
           createData.name,
@@ -1021,8 +1021,8 @@ async function handleBulkToolInternal(
                 // Similar to bulk_create_app_users but single user
                 const hashedPassword = await bcrypt.hash(op.data.password, 10);
                 const userResult = await (client || pool).query(
-                  `INSERT INTO ${schemaName}.skaftin_system_users (name, email, phone, password_hash, metadata, is_active)
-                   VALUES ($1, $2, $3, $4, $5, true)
+                  `INSERT INTO ${schemaName}.skaftin_system_users (name, email, phone, password, metadata, is_active, email_verified, phone_verified)
+                   VALUES ($1, $2, $3, $4, $5, true, false, false)
                    RETURNING id`,
                   [
                     op.data.name,
@@ -1285,8 +1285,8 @@ async function handleBulkToolInternal(
 
             // Create user
             const insertResult = await pool.query(
-              `INSERT INTO ${schemaName}.skaftin_system_users (name, email, phone, password_hash, metadata, is_active)
-               VALUES ($1, $2, $3, $4, $5, true)
+              `INSERT INTO ${schemaName}.skaftin_system_users (name, email, phone, password, metadata, is_active, email_verified, phone_verified)
+               VALUES ($1, $2, $3, $4, $5, true, false, false)
                RETURNING id`,
               [record.name, record.email, record.phone || null, hashedPassword, JSON.stringify(metadata)]
             );
