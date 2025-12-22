@@ -41,6 +41,7 @@ export enum ToolCategory {
   COMMUNICATIONS = 'communications',
   AUTH = 'auth',
   CREDENTIALS = 'credentials',
+  BULK = 'bulk',
 }
 
 /**

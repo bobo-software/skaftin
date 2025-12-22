@@ -7,6 +7,7 @@ import { graphqlToolModule } from '../tools/graphqlTools';
 import { communicationsToolModule } from '../tools/communicationsTools';
 import { authToolModule } from '../tools/authTools';
 import { credentialsToolModule } from '../tools/credentialsTools';
+import { bulkToolModule } from '../tools/bulkTools';
 
 /**
  * Central registry for MCP tools
@@ -27,6 +28,7 @@ export class ToolRegistry {
     this.registerModule(communicationsToolModule);
     this.registerModule(authToolModule);
     this.registerModule(credentialsToolModule);
+    this.registerModule(bulkToolModule);
   }
 
   /**
