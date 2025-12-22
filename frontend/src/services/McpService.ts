@@ -181,6 +181,180 @@ class McpService {
   static async dropConstraint(projectId: string, tableName: string, constraintName: string): Promise<any> {
     return await this.executeTool('drop_constraint', { projectId, tableName, constraintName });
   }
+
+  // ============================================
+  // BULK OPERATIONS
+  // ============================================
+
+  /**
+   * Create multiple application users in a single operation
+   */
+  static async bulkCreateAppUsers(
+    projectId: string,
+    users: Array<{
+      name: string;
+      email: string;
+      phone?: string;
+      password: string;
+      role_ids?: number[];
+      metadata?: Record<string, any>;
+    }>,
+    options?: {
+      continueOnError?: boolean;
+      skipDuplicates?: boolean;
+      batchSize?: number;
+    }
+  ): Promise<any> {
+    return await this.executeTool('bulk_create_app_users', { projectId, users, options });
+  }
+
+  /**
+   * Execute multiple operations in a single call, optionally within a transaction
+   */
+  static async executeBatchOperations(
+    projectId: string,
+    operations: Array<{
+      type: 'create_user' | 'insert_data' | 'update_data' | 'delete_data' | 'execute_sql';
+      data: any;
+    }>,
+    options?: {
+      transaction?: boolean;
+      continueOnError?: boolean;
+      rollbackOnError?: boolean;
+    }
+  ): Promise<any> {
+    return await this.executeTool('execute_batch_operations', { projectId, operations, options });
+  }
+
+  /**
+   * Migrate any table to app_users system
+   */
+  static async migrateTableToUsers(
+    projectId: string,
+    sourceTable: string,
+    sourceIdColumn: string,
+    mapping: {
+      name: string;
+      email: string;
+      phone?: string;
+      role_ids: number[];
+      metadata?: Record<string, string>;
+    },
+    options?: {
+      where?: Record<string, any>;
+      batchSize?: number;
+      continueOnError?: boolean;
+      skipDuplicates?: boolean;
+    }
+  ): Promise<any> {
+    return await this.executeTool('migrate_table_to_users', {
+      projectId,
+      sourceTable,
+      sourceIdColumn,
+      mapping,
+      options,
+    });
+  }
+
+  /**
+   * Create a migration job to track progress
+   */
+  static async createMigrationJob(
+    projectId: string,
+    jobName: string,
+    jobType: 'table_to_users' | 'bulk_create_users' | 'custom',
+    totalRecords: number,
+    metadata?: Record<string, any>
+  ): Promise<any> {
+    return await this.executeTool('create_migration_job', {
+      projectId,
+      jobName,
+      jobType,
+      totalRecords,
+      metadata,
+    });
+  }
+
+  /**
+   * Update migration job progress and status
+   */
+  static async updateMigrationJob(
+    projectId: string,
+    jobId: string,
+    processed: number,
+    created?: number,
+    skipped?: number,
+    errors?: number,
+    status?: 'running' | 'completed' | 'failed' | 'paused'
+  ): Promise<any> {
+    return await this.executeTool('update_migration_job', {
+      projectId,
+      jobId,
+      processed,
+      created,
+      skipped,
+      errors,
+      status,
+    });
+  }
+
+  /**
+   * Get migration job details and progress
+   */
+  static async getMigrationJob(projectId: string, jobId: string): Promise<any> {
+    return await this.executeTool('get_migration_job', { projectId, jobId });
+  }
+
+  /**
+   * Validate data before migration
+   */
+  static async validateMigrationData(
+    projectId: string,
+    sourceTable: string,
+    validation: {
+      requiredColumns: string[];
+      emailColumns?: string[];
+      phoneColumns?: string[];
+      uniqueColumns?: string[];
+      customRules?: Array<{
+        column: string;
+        rule: 'not_null' | 'unique' | 'email_format' | 'phone_format' | 'custom';
+        expression?: string;
+      }>;
+    },
+    options?: {
+      where?: Record<string, any>;
+      sampleSize?: number;
+    }
+  ): Promise<any> {
+    return await this.executeTool('validate_migration_data', {
+      projectId,
+      sourceTable,
+      validation,
+      options,
+    });
+  }
+
+  /**
+   * Find existing user by email or phone, or create new one if not found
+   */
+  static async findOrCreateUser(
+    projectId: string,
+    lookup: {
+      email?: string;
+      phone?: string;
+    },
+    createData?: {
+      name: string;
+      email: string;
+      phone?: string;
+      password: string;
+      role_ids?: number[];
+      metadata?: Record<string, any>;
+    }
+  ): Promise<any> {
+    return await this.executeTool('find_or_create_user', { projectId, lookup, createData });
+  }
 }
 
 export default McpService;
