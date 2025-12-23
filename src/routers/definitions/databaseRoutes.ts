@@ -276,6 +276,43 @@ export function createDatabaseRouteDefinitions(): RouteDefinition[] {
       requiresProject: true,
       requiresAuth: true,
     },
+
+    // ============================================================================
+    // USER ROUTES
+    // ============================================================================
+
+    {
+      method: 'post',
+      path: '/users/select',
+      handler: DatabaseController.selectUsers,
+      description: 'Select users with where clauses',
+      requiresProject: true,
+      requiresAuth: true,
+    },
+    {
+      method: 'post',
+      path: '/users/insert',
+      handler: DatabaseController.createUser,
+      description: 'Create a new user',
+      requiresProject: true,
+      requiresAuth: true,
+    },
+    {
+      method: 'put',
+      path: '/users/update',
+      handler: DatabaseController.updateUser,
+      description: 'Update a user',
+      requiresProject: true,
+      requiresAuth: true,
+    },
+    {
+      method: 'delete',
+      path: '/users/delete',
+      handler: DatabaseController.deleteUser,
+      description: 'Delete a user',
+      requiresProject: true,
+      requiresAuth: true,
+    },
   ];
 }
 
