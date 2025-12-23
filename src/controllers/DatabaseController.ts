@@ -9,6 +9,7 @@ import { HybridAuthRequest } from '../middleware/hybridAuthMiddleware';
 import { OrganisationFilterRequest } from '../middleware/organisationFilterMiddleware';
 import { AnalyticsService } from '../services/AnalyticsService';
 import { normalizeQuery } from '../utils/SqlUtils';
+import { AuthUtils } from '../utils/AuthUtils';
 
 // Extended request type that can have projectId from middleware or params
 type DatabaseRequest = (SuperTokensAuthenticatedRequest | HybridAuthRequest | OrganisationFilterRequest) & {
@@ -440,6 +441,661 @@ class DatabaseController {
         }
       }
       ResponseUtils.error(res, 'Failed to select data', error);
+    }
+  }
+
+  /**
+   * Select users from skaftin_system_users table with where clauses
+   * POST /app-api/database/users/select
+   * Handles role_id filtering via EXISTS subquery with roles junction table
+   */
+  static async selectUsers(req: DatabaseRequest, res: Response) {
+    let client: any = null;
+    try {
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      const { where = {}, limit, offset, columns, orderBy = 'created_at', orderDirection = 'ASC' } = req.body;
+
+      client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Get schema name for explicit table references
+      const projectIdInt = parseInt(projectId, 10);
+      const schemaResult = await client.query(
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
+        [projectIdInt]
+      );
+      if (schemaResult.rows.length === 0) {
+        client.release();
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+      const schemaName = schemaResult.rows[0].schema_name;
+
+      // Get available columns in the users table for validation
+      const columnsResult = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = $1 
+          AND table_name = 'skaftin_system_users'
+      `, [schemaName]);
+      
+      const availableColumns = new Set(columnsResult.rows.map((row: any) => row.column_name));
+
+      // Build SELECT clause (exclude password by default)
+      let selectClause: string;
+      if (columns && Array.isArray(columns) && columns.length > 0) {
+        // If specific columns requested, filter out password
+        const filteredColumns = columns.filter(col => col !== 'password' && col !== 'pwd');
+        if (filteredColumns.length === 0) {
+          client.release();
+          return ResponseUtils.error(res, 'Cannot select only password field', null, null, 400);
+        }
+        selectClause = filteredColumns.map((col: string) => `u."${col}"`).join(', ');
+      } else {
+        // Get all columns except password
+        const allColumns = columnsResult.rows
+          .map((row: any) => row.column_name)
+          .filter((col: string) => col !== 'password' && col !== 'pwd');
+        selectClause = allColumns.map((col: string) => `u."${col}"`).join(', ');
+      }
+
+      // Build WHERE clause
+      const whereConditions: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+
+      // Handle role_id as special case (requires EXISTS subquery)
+      if (where.role_id !== undefined && where.role_id !== null) {
+        whereConditions.push(`EXISTS (
+          SELECT 1 FROM ${schemaName}.skaftin_system_user_roles ur 
+          WHERE ur.app_user_id = u.id AND ur.role_id = $${paramIndex}
+        )`);
+        values.push(typeof where.role_id === 'string' ? parseInt(where.role_id) : where.role_id);
+        paramIndex++;
+      }
+
+      // Handle other where conditions
+      for (const [key, value] of Object.entries(where)) {
+        // Skip role_id as it's already handled above
+        if (key === 'role_id') continue;
+        if (value === undefined || value === null) continue;
+
+        const filterValue = typeof value === 'string' ? value : String(value);
+        const isMetadataField = key.startsWith('metadata.') || key.includes('.');
+
+        if (isMetadataField) {
+          // Metadata field: metadata.field_name or metadata.field.subfield
+          const metadataPath = key.replace(/^metadata\./, ''); // Remove 'metadata.' prefix if present
+          const pathParts = metadataPath.split('.');
+          
+          // Build JSONB path: metadata->>'field'->>'subfield' etc.
+          let jsonbPath = 'u.metadata';
+          for (let i = 0; i < pathParts.length - 1; i++) {
+            jsonbPath += `->'${pathParts[i]}'`;
+          }
+          jsonbPath += `->>'${pathParts[pathParts.length - 1]}'`;
+          
+          // JSONB comparison - handle both numeric and string values
+          const numericValue = isNaN(Number(filterValue)) ? null : Number(filterValue);
+          
+          if (numericValue !== null && !isNaN(numericValue)) {
+            // For numeric values, compare as text first (handles string storage)
+            // Then try numeric comparison
+            whereConditions.push(`(
+              u.metadata IS NOT NULL AND 
+              (
+                ${jsonbPath} = $${paramIndex} OR
+                (
+                  ${jsonbPath} ~ '^[0-9]+(\\.[0-9]+)?$' AND
+                  (${jsonbPath})::numeric = $${paramIndex + 1}
+                )
+              )
+            )`);
+            values.push(filterValue, numericValue);
+            paramIndex += 2;
+          } else {
+            // String comparison only
+            whereConditions.push(`(
+              u.metadata IS NOT NULL AND 
+              ${jsonbPath} = $${paramIndex}
+            )`);
+            values.push(filterValue);
+            paramIndex++;
+          }
+        } else {
+          // Direct column - check if it exists
+          // Support common column name mappings
+          const columnMap: Record<string, string> = {
+            user_id: 'id',
+            id: 'id',
+          };
+          const columnName = columnMap[key] || key;
+
+          if (availableColumns.has(columnName)) {
+            whereConditions.push(`u."${columnName}" = $${paramIndex}`);
+            values.push(value);
+            paramIndex++;
+          } else {
+            // Column doesn't exist - skip it or treat as metadata field
+            // For now, skip unknown columns to avoid errors
+            console.warn(`Column "${columnName}" does not exist in skaftin_system_users table, skipping filter`);
+          }
+        }
+      }
+
+      // Build query
+      const whereClause = whereConditions.length > 0 ? ` WHERE ${whereConditions.join(' AND ')}` : '';
+      let query = `SELECT ${selectClause} FROM ${schemaName}.skaftin_system_users u${whereClause}`;
+
+      // Add ORDER BY clause
+      if (orderBy) {
+        const direction = orderDirection && orderDirection.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+        query += ` ORDER BY u."${orderBy}" ${direction}`;
+      }
+
+      // Add LIMIT
+      if (limit !== undefined && limit !== null) {
+        query += ` LIMIT $${paramIndex}`;
+        values.push(limit);
+        paramIndex++;
+      }
+
+      // Add OFFSET
+      if (offset !== undefined && offset !== null) {
+        query += ` OFFSET $${paramIndex}`;
+        values.push(offset);
+        paramIndex++;
+      }
+
+      const result = await client.query(query, values);
+      client.release();
+      client = null;
+
+      ResponseUtils.success(res, 'Users fetched successfully', result.rows);
+    } catch (error) {
+      console.error('Error selecting users:', error);
+      if (client) {
+        try {
+          client.release();
+        } catch (releaseError) {
+          console.error('Error releasing client:', releaseError);
+        }
+      }
+      ResponseUtils.error(res, 'Failed to select users', error);
+    }
+  }
+
+  /**
+   * Create a new user
+   * POST /app-api/database/users/insert
+   */
+  static async createUser(req: DatabaseRequest, res: Response) {
+    let client: any = null;
+    try {
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      const { name, email, password, phone, metadata, role_ids, custom_field_1, custom_field_2 } = req.body;
+
+      // Enhanced validation
+      if (!name || !email || !password) {
+        return ResponseUtils.error(res, 'Name, email, and password are required', null, null, 400);
+      }
+
+      if (!AuthUtils.isValidEmail(email)) {
+        return ResponseUtils.error(res, 'Invalid email format', null, null, 400);
+      }
+
+      const passwordValidation = AuthUtils.isValidPassword(password);
+      if (!passwordValidation.valid) {
+        return ResponseUtils.error(res, passwordValidation.message || 'Invalid password', null, null, 400);
+      }
+
+      client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Get schema name
+      const projectIdInt = parseInt(projectId, 10);
+      const schemaResult = await client.query(
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
+        [projectIdInt]
+      );
+      if (schemaResult.rows.length === 0) {
+        client.release();
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+      const schemaName = schemaResult.rows[0].schema_name;
+
+      // Check if duplicate emails are allowed
+      const allowDuplicatesResult = await client.query(
+        `SELECT allow_duplicate_emails FROM skaftin_system_auth_settings WHERE project_id = $1`,
+        [projectIdInt]
+      );
+      const allowDuplicates = allowDuplicatesResult.rows.length > 0 && allowDuplicatesResult.rows[0].allow_duplicate_emails;
+
+      if (!allowDuplicates) {
+        // Check if email already exists in this project
+        const emailExists = await AuthUtils.emailExistsInProject(
+          DatabaseController.pool,
+          schemaName,
+          email
+        );
+
+        if (emailExists) {
+          client.release();
+          return ResponseUtils.error(res, 'User with this email already exists in this project', null, null, 400);
+        }
+      }
+
+      // Sanitize metadata
+      const sanitizedMetadata = AuthUtils.sanitizeMetadata(metadata);
+
+      // Get default role if no roles specified
+      let finalRoleIds = role_ids || [];
+      if (!finalRoleIds || finalRoleIds.length === 0) {
+        const defaultRoleResult = await client.query(
+          `SELECT default_role_id FROM skaftin_system_auth_settings WHERE project_id = $1`,
+          [projectIdInt]
+        );
+        if (defaultRoleResult.rows.length > 0 && defaultRoleResult.rows[0].default_role_id) {
+          finalRoleIds = [defaultRoleResult.rows[0].default_role_id];
+        }
+      }
+
+      // Use transaction-safe user creation
+      // NOTE: App users are NOT created in SuperTokens (they use separate JWT auth)
+      const result = await AuthUtils.createUserWithTransaction(
+        DatabaseController.pool,
+        schemaName,
+        {
+          name,
+          email,
+          password,
+          phone,
+          metadata: sanitizedMetadata,
+          role_ids: finalRoleIds,
+          custom_field_1,
+          custom_field_2,
+        },
+        false // Do NOT create in SuperTokens - app users use JWT auth
+      );
+
+      if (!result.success) {
+        client.release();
+        return ResponseUtils.error(res, result.error || 'Failed to create user', null, null, 500);
+      }
+
+      // Fetch the user with roles (excluding password)
+      const columnsResult = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = $1 
+          AND table_name = 'skaftin_system_users'
+          AND column_name != 'password'
+          AND column_name != 'pwd'
+      `, [schemaName]);
+      
+      const columns = columnsResult.rows.map((row: any) => `u."${row.column_name}"`).join(', ');
+
+      const userWithRoles = await client.query(
+        `
+        SELECT 
+          ${columns},
+          COALESCE(
+            json_agg(
+              json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key)
+            ) FILTER (WHERE r.id IS NOT NULL), 
+            '[]'
+          ) as roles
+        FROM ${schemaName}.skaftin_system_users u
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
+        WHERE u.id = $1
+        GROUP BY u.id
+        `,
+        [result.user.id]
+      );
+
+      client.release();
+      client = null;
+
+      console.log(`✅ User created: ${email} (ID: ${result.user.id})`);
+
+      ResponseUtils.success(res, 'User created successfully', userWithRoles.rows[0], 201);
+    } catch (error) {
+      console.error('Error creating user:', error);
+      if (client) {
+        try {
+          client.release();
+        } catch (releaseError) {
+          console.error('Error releasing client:', releaseError);
+        }
+      }
+      ResponseUtils.error(res, 'Failed to create user', error);
+    }
+  }
+
+  /**
+   * Update a user
+   * PUT /app-api/database/users/update
+   * Payload: { where: { user_id: 531 }, data: { name, email, phone, metadata, ... } }
+   */
+  static async updateUser(req: DatabaseRequest, res: Response) {
+    let client: any = null;
+    try {
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      const { where, data } = req.body;
+
+      if (!where || !data) {
+        return ResponseUtils.error(res, 'where and data are required in request body', null, null, 400);
+      }
+
+      // Extract user ID from where clause (support user_id or id)
+      const userId = where.user_id || where.id;
+      if (!userId) {
+        return ResponseUtils.error(res, 'where clause must contain user_id or id', null, null, 400);
+      }
+
+      client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Get schema name
+      const projectIdInt = parseInt(projectId, 10);
+      const schemaResult = await client.query(
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
+        [projectIdInt]
+      );
+      if (schemaResult.rows.length === 0) {
+        client.release();
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+      const schemaName = schemaResult.rows[0].schema_name;
+
+      // Check if user exists
+      const userCheck = await client.query(
+        `SELECT id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        [parseInt(userId)]
+      );
+
+      if (userCheck.rows.length === 0) {
+        client.release();
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      // Build update query dynamically
+      const updateFields: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+
+      if (data.name !== undefined) {
+        updateFields.push(`name = $${paramIndex++}`);
+        values.push(data.name);
+      }
+
+      if (data.email !== undefined) {
+        // Validate email format
+        if (!AuthUtils.isValidEmail(data.email)) {
+          client.release();
+          return ResponseUtils.error(res, 'Invalid email format', null, null, 400);
+        }
+
+        // Check duplicate email policy if email is being changed
+        const allowDuplicatesResult = await client.query(
+          `SELECT allow_duplicate_emails FROM skaftin_system_auth_settings WHERE project_id = $1`,
+          [projectIdInt]
+        );
+        const allowDuplicates = allowDuplicatesResult.rows.length > 0 && allowDuplicatesResult.rows[0].allow_duplicate_emails;
+
+        if (!allowDuplicates) {
+          const existingUser = await client.query(
+            `SELECT id FROM ${schemaName}.skaftin_system_users WHERE email = $1 AND id != $2`,
+            [data.email, parseInt(userId)]
+          );
+
+          if (existingUser.rows.length > 0) {
+            client.release();
+            return ResponseUtils.error(res, 'User with this email already exists', null, null, 400);
+          }
+        }
+
+        updateFields.push(`email = $${paramIndex++}`);
+        values.push(data.email);
+      }
+
+      if (data.phone !== undefined) {
+        updateFields.push(`phone = $${paramIndex++}`);
+        values.push(data.phone);
+      }
+
+      if (data.metadata !== undefined) {
+        // Sanitize metadata
+        const sanitizedMetadata = AuthUtils.sanitizeMetadata(data.metadata);
+        
+        // Merge with existing metadata instead of replacing it entirely
+        // Get current metadata first
+        const currentUserResult = await client.query(
+          `SELECT metadata FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+          [parseInt(userId)]
+        );
+        
+        let mergedMetadata = sanitizedMetadata;
+        if (currentUserResult.rows.length > 0 && currentUserResult.rows[0].metadata) {
+          // Merge existing metadata with new metadata (new values override existing ones)
+          mergedMetadata = {
+            ...currentUserResult.rows[0].metadata,
+            ...sanitizedMetadata
+          };
+        }
+        
+        updateFields.push(`metadata = $${paramIndex++}`);
+        values.push(JSON.stringify(mergedMetadata));
+      }
+
+      if (data.custom_field_1 !== undefined) {
+        updateFields.push(`custom_field_1 = $${paramIndex++}`);
+        values.push(data.custom_field_1);
+      }
+
+      if (data.custom_field_2 !== undefined) {
+        updateFields.push(`custom_field_2 = $${paramIndex++}`);
+        values.push(data.custom_field_2);
+      }
+
+      if (data.is_active !== undefined) {
+        updateFields.push(`is_active = $${paramIndex++}`);
+        values.push(data.is_active);
+      }
+
+      if (updateFields.length === 0) {
+        client.release();
+        return ResponseUtils.error(res, 'No fields to update', null, null, 400);
+      }
+
+      updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+      values.push(parseInt(userId));
+
+      const updateQuery = `
+        UPDATE ${schemaName}.skaftin_system_users
+        SET ${updateFields.join(', ')}
+        WHERE id = $${paramIndex}
+      `;
+
+      await client.query(updateQuery, values);
+
+      // Fetch the user with roles (excluding password)
+      const columnsResult = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = $1 
+          AND table_name = 'skaftin_system_users'
+          AND column_name != 'password'
+          AND column_name != 'pwd'
+      `, [schemaName]);
+      
+      const columns = columnsResult.rows.map((row: any) => `u."${row.column_name}"`).join(', ');
+
+      const userWithRoles = await client.query(
+        `
+        SELECT 
+          ${columns},
+          COALESCE(
+            json_agg(
+              json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key)
+            ) FILTER (WHERE r.id IS NOT NULL), 
+            '[]'
+          ) as roles
+        FROM ${schemaName}.skaftin_system_users u
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
+        WHERE u.id = $1
+        GROUP BY u.id
+        `,
+        [parseInt(userId)]
+      );
+
+      if (userWithRoles.rows.length === 0) {
+        client.release();
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      client.release();
+      client = null;
+
+      ResponseUtils.success(res, 'User updated successfully', userWithRoles.rows[0]);
+    } catch (error) {
+      console.error('Error updating user:', error);
+      if (client) {
+        try {
+          client.release();
+        } catch (releaseError) {
+          console.error('Error releasing client:', releaseError);
+        }
+      }
+      ResponseUtils.error(res, 'Failed to update user', error);
+    }
+  }
+
+  /**
+   * Delete a user
+   * DELETE /app-api/database/users/delete
+   * Payload: { where: { user_id: 531 }, permanent?: boolean }
+   */
+  static async deleteUser(req: DatabaseRequest, res: Response) {
+    try {
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      const { where, permanent = false } = req.body;
+
+      if (!where) {
+        return ResponseUtils.error(res, 'where clause is required in request body', null, null, 400);
+      }
+
+      // Extract user ID from where clause (support user_id or id)
+      const userId = where.user_id || where.id;
+      if (!userId) {
+        return ResponseUtils.error(res, 'where clause must contain user_id or id', null, null, 400);
+      }
+
+      // Get schema name
+      const projectIdInt = parseInt(projectId, 10);
+      const schemaResult = await DatabaseController.pool.query(
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
+        [projectIdInt]
+      );
+      if (schemaResult.rows.length === 0) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+      const schemaName = schemaResult.rows[0].schema_name;
+
+      const isPermanent = permanent === true || permanent === 'true';
+
+      if (isPermanent) {
+        // Use transaction-safe permanent deletion
+        const result = await AuthUtils.deleteUserWithTransaction(
+          DatabaseController.pool,
+          schemaName,
+          parseInt(userId),
+          true
+        );
+
+        if (!result.success) {
+          return ResponseUtils.error(res, result.error || 'Failed to delete user', null, null, 500);
+        }
+
+        const message = `User permanently deleted${result.deletedFromSuperTokens ? ' (including SuperTokens account)' : ''}`;
+        console.log(`✅ ${message} - User ID: ${userId}`);
+        ResponseUtils.success(res, message);
+      } else {
+        // Soft delete: set is_active = false and deleted_at = CURRENT_TIMESTAMP
+        let client: any = null;
+        try {
+          client = await DatabaseController.getProjectClient(projectId);
+          
+          if (!client) {
+            return ResponseUtils.error(res, 'Project not found', null, null, 404);
+          }
+
+          // Check if user exists
+          const userCheck = await client.query(
+            `SELECT id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+            [parseInt(userId)]
+          );
+
+          if (userCheck.rows.length === 0) {
+            client.release();
+            client = null;
+            return ResponseUtils.error(res, 'User not found', null, null, 404);
+          }
+
+          // Soft delete: set is_active = false, deleted_at = CURRENT_TIMESTAMP
+          await client.query(
+            `UPDATE ${schemaName}.skaftin_system_users 
+             SET is_active = false, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
+             WHERE id = $1`,
+            [parseInt(userId)]
+          );
+
+          client.release();
+          client = null;
+
+          const message = 'User deactivated successfully';
+          console.log(`✅ ${message} - User ID: ${userId}`);
+          ResponseUtils.success(res, message);
+        } catch (error) {
+          if (client) {
+            try {
+              client.release();
+            } catch (releaseError) {
+              console.error('Error releasing client:', releaseError);
+            }
+          }
+          ResponseUtils.error(res, 'Failed to delete user', error);
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      ResponseUtils.error(res, 'Failed to delete user', error);
     }
   }
 
