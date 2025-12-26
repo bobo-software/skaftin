@@ -518,7 +518,7 @@ const DataTable = ({
             weight="semibold"
             color="default"
           />
-          <p className="text-sm text-dark-600 dark:text-dark-300">
+          <p className="text-xs text-dark-600 dark:text-dark-300">
               {sortedData.length} rows
             {selectedRows.size > 0 && (
               <span className="ml-2 text-primary-600 dark:text-primary-400 font-medium">
@@ -601,7 +601,7 @@ const DataTable = ({
             placeholder="Search table data..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full text-xs pl-10 pr-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full text-[0.65rem] pl-10 pr-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
         </div>
       )}
@@ -613,7 +613,7 @@ const DataTable = ({
             <thead className="bg-dark-50 dark:bg-dark-800">
               <tr>
                 {selectable && (
-                  <th className="px-2 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase border-b border-dark-200 dark:border-dark-700">
+                  <th className="px-2 py-3 text-left text-[0.65rem] font-medium text-dark-500 dark:text-dark-400 uppercase border-b border-dark-200 dark:border-dark-700">
                     <input
                       type="checkbox"
                       checked={isAllSelected}
@@ -628,7 +628,7 @@ const DataTable = ({
                 {tableColumns.map((column) => (
                   <th 
                     key={column} 
-                    className={`px-2 py-1 text-left text-[0.7rem] font-light text-dark-500 dark:text-dark-400 uppercase tracking-wider border-b border-dark-200 dark:border-dark-700 ${
+                    className={`px-2 py-1 text-left text-[0.65rem] font-light text-dark-500 dark:text-dark-400 uppercase tracking-wider border-b border-dark-200 dark:border-dark-700 ${
                       sortable ? 'cursor-pointer hover:bg-dark-100 dark:hover:bg-dark-700' : ''
                     }`}
                     onClick={() => handleSort(column)}
@@ -649,7 +649,7 @@ const DataTable = ({
               {paginatedData.map((row, index) => (
                 <tr key={index} className="hover:bg-dark-50 dark:hover:bg-dark-800">
                   {selectable && (
-                    <td className="px-2 py-3 text-sm text-dark-900 dark:text-white border-b border-dark-100 dark:border-dark-800">
+                    <td className="px-2 py-3 text-xs text-dark-900 dark:text-white border-b border-dark-100 dark:border-dark-800">
                       <input
                         type="checkbox"
                         checked={selectedRows.has(startIndex + index)}
@@ -664,7 +664,7 @@ const DataTable = ({
                     
                     return (
                       <td key={cellIndex} 
-                        className={`px-2 text-[0.8rem]  text-dark-900 dark:text-white border-b border-dark-100 dark:border-dark-800 ${
+                        className={`px-2 text-[0.7rem]  text-dark-900 dark:text-white border-b border-dark-100 dark:border-dark-800 ${
                           isEditable ? 'cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20' : ''
                         }`}
                         onClick={() => isEditable && handleCellClick(index, column, row[column])}
@@ -706,7 +706,7 @@ const DataTable = ({
                                   return (
                                     <div
                                       key={idx}
-                                      className="px-3 py-2 hover:bg-primary-50 dark:hover:bg-primary-900/20 cursor-pointer text-sm text-dark-900 dark:text-white"
+                                      className="px-3 py-2 hover:bg-primary-50 dark:hover:bg-primary-900/20 cursor-pointer text-xs text-dark-900 dark:text-white"
                                       onMouseDown={(e) => {
                                         e.preventDefault(); // Prevent blur
                                         handleAutocompleteSelect(item);
@@ -714,7 +714,7 @@ const DataTable = ({
                                     >
                                       <div className="flex items-center justify-between">
                                         <span className="font-medium">{displayValue}</span>
-                                        <span className="text-xs text-dark-500 dark:text-dark-400">ID: {idValue}</span>
+                                        <span className="text-[0.65rem] text-dark-500 dark:text-dark-400">ID: {idValue}</span>
                                       </div>
                                     </div>
                                   );
@@ -727,7 +727,7 @@ const DataTable = ({
                             {row[column] === null ? (
                               <span className="text-dark-400 dark:text-dark-500 italic">null</span>
                             ) : typeof row[column] === 'boolean' ? (
-                              <span className={`px-2 py-1 rounded-full text-xs ${
+                              <span className={`px-2 py-1 rounded-full text-[0.65rem] ${
                                 row[column] ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
                               }`}>
                                 {row[column] ? 'true' : 'false'}
@@ -779,7 +779,7 @@ const DataTable = ({
           <div className="flex items-center justify-between flex-wrap gap-4">
             {/* Left: Results info and page size */}
             <div className="flex items-center space-x-4">
-              <div className="text-sm text-dark-600 dark:text-dark-300">
+              <div className="text-xs text-dark-600 dark:text-dark-300">
                 Showing <span className="font-medium text-dark-900 dark:text-white">{startIndex + 1}</span> to{' '}
                 <span className="font-medium text-dark-900 dark:text-white">{Math.min(endIndex, sortedData.length)}</span> of{' '}
                 <span className="font-medium text-dark-900 dark:text-white">{sortedData.length}</span> results
@@ -787,13 +787,13 @@ const DataTable = ({
               
               {/* Page size selector */}
               <div className="flex items-center space-x-2">
-                <label className="text-sm text-dark-600 dark:text-dark-300">
+                <label className="text-xs text-dark-600 dark:text-dark-300">
                   Rows per page:
                 </label>
                 <select
                   value={pageSize}
                   onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-                  className="px-3 py-1.5 text-sm border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="px-3 py-1.5 text-xs border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 >
                   <option value={10}>10</option>
                   <option value={25}>25</option>
@@ -841,7 +841,7 @@ const DataTable = ({
                       <button
                         key={page}
                         onClick={() => setCurrentPage(Number(page))}
-                        className={`min-w-[2.5rem] px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
+                        className={`min-w-[2.5rem] px-3 py-1.5 text-xs rounded-lg font-medium transition-colors ${
                           currentPage === page
                             ? 'bg-primary-500 text-white'
                             : 'bg-white dark:bg-dark-700 text-dark-700 dark:text-dark-300 hover:bg-dark-100 dark:hover:bg-dark-600 border border-dark-200 dark:border-dark-600'
@@ -854,7 +854,7 @@ const DataTable = ({
                 </div>
                 
                 {/* Current page indicator for mobile */}
-                <span className="sm:hidden text-sm text-dark-600 dark:text-dark-300 px-2">
+                <span className="sm:hidden text-xs text-dark-600 dark:text-dark-300 px-2">
                   {currentPage} / {totalPages}
                 </span>
                 
@@ -880,7 +880,7 @@ const DataTable = ({
                 
                 {/* Jump to page */}
                 <form onSubmit={handleJumpToPage} className="hidden md:flex items-center space-x-2 ml-4">
-                  <label className="text-sm text-dark-600 dark:text-dark-300 whitespace-nowrap">
+                  <label className="text-xs text-dark-600 dark:text-dark-300 whitespace-nowrap">
                     Go to:
                   </label>
                   <input
@@ -890,7 +890,7 @@ const DataTable = ({
                     value={jumpToPage}
                     onChange={(e) => setJumpToPage(e.target.value)}
                     placeholder={String(currentPage)}
-                    className="w-16 px-2 py-1.5 text-sm text-center border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-16 px-2 py-1.5 text-xs text-center border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   />
                   <AppButton
                     variant="secondary"
