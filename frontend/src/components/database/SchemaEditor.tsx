@@ -15,6 +15,7 @@ import DatabaseService from '../../services/DatabaseService';
 import RequestUtils from '../../utils/RequestUtils';
 import ApiRoutes from '../../constants/ApiRoutes';
 import ToastUtils from '../../utils/ToastUtils';
+import SchemaItem from './SchemaItem';
 
 interface SchemaEditorProps {
   projectId: string;
@@ -940,7 +941,7 @@ const SchemaEditor = ({
                 : now.toISOString().slice(0, 16);
               setNewColumn({ ...newColumn, defaultValue: value });
             }}
-            className="px-3 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 whitespace-nowrap"
+            className="px-3 py-2 text-xs font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 whitespace-nowrap"
           >
             Now
           </button>
@@ -950,7 +951,7 @@ const SchemaEditor = ({
               setShowDatePicker(false);
               setNewColumn({ ...newColumn, defaultValue: '' });
             }}
-            className="px-3 py-2 text-sm font-medium text-dark-600 dark:text-dark-400 hover:text-dark-700 dark:hover:text-dark-300 whitespace-nowrap"
+            className="px-3 py-2 text-xs font-medium text-dark-600 dark:text-dark-400 hover:text-dark-700 dark:hover:text-dark-300 whitespace-nowrap"
           >
             Cancel
           </button>
@@ -999,7 +1000,7 @@ const SchemaEditor = ({
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+            <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
               Column Name
             </label>
             <input
@@ -1011,7 +1012,7 @@ const SchemaEditor = ({
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+            <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
               Data Type
             </label>
             <select
@@ -1029,14 +1030,14 @@ const SchemaEditor = ({
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+            <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
               Default Value
             </label>
             {renderEditDefaultValueInput()}
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+            <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
               Constraints
             </label>
             <div className="space-y-2">
@@ -1047,7 +1048,7 @@ const SchemaEditor = ({
                   onChange={(e) => setEditColumnData({ ...editColumnData, nullable: e.target.checked })}
                   className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="text-sm text-dark-700 dark:text-dark-300">
+                <span className="text-xs text-dark-700 dark:text-dark-300">
                   {editColumnData.nullable ? 'Nullable' : 'Required'}
                 </span>
               </label>
@@ -1063,7 +1064,7 @@ const SchemaEditor = ({
                   onChange={(e) => setEditColumnData({ ...editColumnData, unique: e.target.checked })}
                   className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="text-sm text-dark-700 dark:text-dark-300 flex items-center space-x-1">
+                <span className="text-xs text-dark-700 dark:text-dark-300 flex items-center space-x-1">
                   <Shield className="w-3 h-3" />
                   <span>Unique</span>
                 </span>
@@ -1080,7 +1081,7 @@ const SchemaEditor = ({
                   onChange={(e) => setEditColumnData({ ...editColumnData, primaryKey: e.target.checked })}
                   className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="text-sm text-dark-700 dark:text-dark-300 flex items-center space-x-1">
+                <span className="text-xs text-dark-700 dark:text-dark-300 flex items-center space-x-1">
                   <Key className="w-3 h-3" />
                   <span>Primary Key</span>
                 </span>
@@ -1097,7 +1098,7 @@ const SchemaEditor = ({
                   onChange={(e) => setEditColumnData({ ...editColumnData, autoIncrement: e.target.checked })}
                   className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="text-sm text-dark-700 dark:text-dark-300 flex items-center space-x-1">
+                <span className="text-xs text-dark-700 dark:text-dark-300 flex items-center space-x-1">
                   <Hash className="w-3 h-3" />
                   <span>Auto Increment</span>
                 </span>
@@ -1269,7 +1270,7 @@ const SchemaEditor = ({
                 : now.toISOString().slice(0, 16);
               setEditColumnData({ ...editColumnData, defaultValue: value });
             }}
-            className="px-3 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 whitespace-nowrap"
+            className="px-3 py-2 text-xs font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 whitespace-nowrap"
           >
             Now
           </button>
@@ -1279,7 +1280,7 @@ const SchemaEditor = ({
               setShowEditDatePicker(false);
               setEditColumnData({ ...editColumnData, defaultValue: '' });
             }}
-            className="px-3 py-2 text-sm font-medium text-dark-600 dark:text-dark-400 hover:text-dark-700 dark:hover:text-dark-300 whitespace-nowrap"
+            className="px-3 py-2 text-xs font-medium text-dark-600 dark:text-dark-400 hover:text-dark-700 dark:hover:text-dark-300 whitespace-nowrap"
           >
             Cancel
           </button>
@@ -1411,7 +1412,7 @@ const SchemaEditor = ({
     <div className="space-y-6">
       {/* Schema Actions */}
       <div className="flex items-center justify-between">
-        <h5 className="text-lg font-semibold text-dark-900 dark:text-white">
+        <h5 className="text-base font-semibold text-dark-900 dark:text-white">
           Table Schema
         </h5>
         <div className="flex items-center space-x-2">
@@ -1470,125 +1471,39 @@ const SchemaEditor = ({
           <table className="w-full">
             <thead className="bg-dark-50 dark:bg-dark-700">
               <tr>
-                <th className="text-left py-3 px-4 text-sm font-medium text-dark-700 dark:text-dark-300">
+                <th className="text-left py-3 px-4 text-xs font-medium text-dark-700 dark:text-dark-300">
                   Column Name
                 </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-dark-700 dark:text-dark-300">
+                <th className="text-left py-3 px-4 text-xs font-medium text-dark-700 dark:text-dark-300">
                   Data Type
                 </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-dark-700 dark:text-dark-300">
+                <th className="text-left py-3 px-4 text-xs font-medium text-dark-700 dark:text-dark-300">
                   Constraints
                 </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-dark-700 dark:text-dark-300">
+                <th className="text-left py-3 px-4 text-xs font-medium text-dark-700 dark:text-dark-300">
                   Foreign Key
                 </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-dark-700 dark:text-dark-300">
+                <th className="text-left py-3 px-4 text-xs font-medium text-dark-700 dark:text-dark-300">
                   Default Value
                 </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-dark-700 dark:text-dark-300">
+                <th className="text-left py-3 px-4 text-xs font-medium text-dark-700 dark:text-dark-300">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-dark-200 dark:divide-dark-700">
               {columns.map((column, index) => (
-                <React.Fragment key={index}>
-                  <tr className="hover:bg-dark-50 dark:hover:bg-dark-700">
-                    <td className="py-3 px-4 text-sm text-dark-900 dark:text-white font-medium">
-                      {column.column_name}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-dark-600 dark:text-dark-300">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-xs bg-dark-100 dark:bg-dark-600 px-2 py-1 rounded">
-                          {column.data_type}
-                        </span>
-                        {column.character_maximum_length && (
-                          <span className="text-xs text-dark-500 dark:text-dark-400">
-                            ({column.character_maximum_length})
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-sm">
-                      <div className="flex flex-wrap gap-1">
-                        {isPrimaryKey(column.column_name) ? (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300">
-                            <Key className="w-3 h-3 mr-1" />
-                            Primary Key
-                          </span>
-                        ) : hasUniqueConstraint(column.column_name) ? (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
-                            <Shield className="w-3 h-3 mr-1" />
-                            Unique
-                          </span>
-                        ) : null}
-                        
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          column.is_nullable 
-                            ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300'
-                            : 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
-                        }`}>
-                          {column.is_nullable ? 'Nullable' : 'NOT NULL'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-dark-600 dark:text-dark-300">
-                      {(() => {
-                        const fk = getForeignKeyForColumn(column.column_name);
-                        return fk ? (
-                          <div className="flex items-center space-x-1">
-                            <Link className="w-3 h-3 text-blue-500" />
-                            <span className="text-xs">
-                              <span className="font-medium text-blue-600 dark:text-blue-400">
-                                {fk.referenced_table_name}
-                              </span>
-                              <span className="text-dark-400 dark:text-dark-500 mx-1">→</span>
-                              <span className="font-mono text-blue-600 dark:text-blue-400">
-                                {fk.referenced_column_name}
-                              </span>
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-dark-400 dark:text-dark-500">-</span>
-                        );
-                      })()}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-dark-600 dark:text-dark-300">
-                      {column.column_default ? (
-                        <span className="font-mono text-xs bg-dark-100 dark:bg-dark-600 px-2 py-1 rounded">
-                          {column.column_default}
-                        </span>
-                      ) : (
-                        <span className="text-dark-400 dark:text-dark-500">-</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-sm">
-                      <div className="flex items-center space-x-1">
-                        <button 
-                          className="p-1 text-dark-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-                          onClick={() => handleStartEdit(column)}
-                          title="Edit column"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button 
-                          className="p-1 text-dark-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                          onClick={() => handleDropColumn(column.column_name)}
-                          title="Delete column"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  {editingColumn === column.column_name && (
-                    <tr>
-                      <td colSpan={6} className="p-0">
-                        {renderEditForm(column)}
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
+                <SchemaItem
+                  key={index}
+                  column={column}
+                  isEditing={editingColumn === column.column_name}
+                  isPrimaryKey={isPrimaryKey}
+                  hasUniqueConstraint={hasUniqueConstraint}
+                  getForeignKeyForColumn={getForeignKeyForColumn}
+                  onEdit={handleStartEdit}
+                  onDelete={handleDropColumn}
+                  editForm={editingColumn === column.column_name ? renderEditForm(column) : undefined}
+                />
               ))}
               
               {/* Add Column Row */}
@@ -1612,7 +1527,7 @@ const SchemaEditor = ({
                         {/* Column Name and Data Type Row */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                            <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
                               Column Name *
                             </label>
                             <input
@@ -1625,7 +1540,7 @@ const SchemaEditor = ({
                           </div>
                           
                           <div>
-                            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                            <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
                               Data Type
                             </label>
                             <select
@@ -1644,9 +1559,9 @@ const SchemaEditor = ({
                           </div>
                           
                           <div>
-                            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                            <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
                               Length
-                              <span className="text-xs text-dark-500 ml-1">(for VARCHAR/CHAR)</span>
+                              <span className="text-[0.65rem] text-dark-500 ml-1">(for VARCHAR/CHAR)</span>
                             </label>
                             <input
                               type="number"
@@ -1661,7 +1576,7 @@ const SchemaEditor = ({
                         
                         {/* Default Value Row */}
                         <div>
-                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                          <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
                             Default Value
                           </label>
                           {renderDefaultValueInput()}
@@ -1669,7 +1584,7 @@ const SchemaEditor = ({
                         
                         {/* Constraints Section */}
                         <div className="border-t border-dark-200 dark:border-dark-700 pt-4">
-                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-3">
+                          <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-3">
                             Constraints
                           </label>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1681,7 +1596,7 @@ const SchemaEditor = ({
                               disabled={newColumn.primaryKey} // Primary keys cannot be nullable
                               className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
                             />
-                            <span className="text-sm text-dark-700 dark:text-dark-300">Nullable</span>
+                            <span className="text-xs text-dark-700 dark:text-dark-300">Nullable</span>
                           </label>
                           
                           <label className="flex items-center space-x-2 p-3 border border-dark-200 dark:border-dark-700 rounded-lg hover:border-primary-500 cursor-pointer transition-colors">
@@ -1699,7 +1614,7 @@ const SchemaEditor = ({
                               }}
                               className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
                             />
-                            <span className="text-sm text-dark-700 dark:text-dark-300 flex items-center space-x-1">
+                            <span className="text-xs text-dark-700 dark:text-dark-300 flex items-center space-x-1">
                               <Key className="w-3 h-3" />
                               <span>Primary Key</span>
                             </span>
@@ -1713,7 +1628,7 @@ const SchemaEditor = ({
                               disabled={newColumn.primaryKey} // Primary keys are already unique
                               className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
                             />
-                            <span className="text-sm text-dark-700 dark:text-dark-300 flex items-center space-x-1">
+                            <span className="text-xs text-dark-700 dark:text-dark-300 flex items-center space-x-1">
                               <Shield className="w-3 h-3" />
                               <span>Unique</span>
                             </span>
@@ -1727,7 +1642,7 @@ const SchemaEditor = ({
                               disabled={!['INTEGER', 'BIGINT', 'SMALLINT'].includes(newColumn.type)}
                               className="w-4 h-4 rounded border-dark-300 text-primary-600 focus:ring-primary-500"
                             />
-                            <span className="text-sm text-dark-700 dark:text-dark-300">Auto Increment</span>
+                            <span className="text-xs text-dark-700 dark:text-dark-300">Auto Increment</span>
                           </label>
                         </div>
                         
@@ -1773,7 +1688,7 @@ const SchemaEditor = ({
               ) : (
                 <tr className="hover:bg-dark-50 dark:hover:bg-dark-700 cursor-pointer" onClick={handleAddColumnClick}>
                   <td colSpan={6} className="py-3 px-4 text-center">
-                    <button className="inline-flex items-center space-x-2 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium text-sm">
+                    <button className="inline-flex items-center space-x-2 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium text-xs">
                       <Plus className="w-4 h-4" />
                       <span>Add Column</span>
                     </button>
@@ -1791,7 +1706,7 @@ const SchemaEditor = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <Shield className="w-5 h-5 text-primary-500" />
-              <h5 className="text-lg font-semibold text-dark-900 dark:text-white">
+              <h5 className="text-base font-semibold text-dark-900 dark:text-white">
                 Table Constraints
               </h5>
             </div>
@@ -1811,13 +1726,13 @@ const SchemaEditor = ({
           {constraintsLoading ? (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-3"></div>
-              <p className="text-dark-600 dark:text-dark-300">Loading constraints...</p>
+              <p className="text-xs text-dark-600 dark:text-dark-300">Loading constraints...</p>
             </div>
           ) : allConstraints.length === 0 ? (
             <div className="text-center py-8">
               <Shield className="w-12 h-12 text-dark-300 dark:text-dark-600 mx-auto mb-3" />
-              <p className="text-dark-600 dark:text-dark-300">No constraints found</p>
-              <p className="text-sm text-dark-500 dark:text-dark-400 mt-1">
+              <p className="text-xs text-dark-600 dark:text-dark-300">No constraints found</p>
+              <p className="text-[0.65rem] text-dark-500 dark:text-dark-400 mt-1">
                 Click "Refresh" to load constraints or create new ones
               </p>
             </div>
@@ -1828,7 +1743,7 @@ const SchemaEditor = ({
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-[0.65rem] font-medium ${
                           constraint.constraint_type === 'FOREIGN KEY' 
                             ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
                             : constraint.constraint_type === 'PRIMARY KEY'
@@ -1839,18 +1754,18 @@ const SchemaEditor = ({
                         }`}>
                           {constraint.constraint_type}
                         </span>
-                        <span className="font-mono text-sm text-dark-600 dark:text-dark-300">
+                        <span className="font-mono text-xs text-dark-600 dark:text-dark-300">
                           {constraint.constraint_name}
                         </span>
                       </div>
                       
                       {constraint.constraint_type === 'FOREIGN KEY' && (
                         <div className="space-y-1">
-                          <p className="text-sm text-dark-700 dark:text-dark-300">
+                          <p className="text-xs text-dark-700 dark:text-dark-300">
                             <span className="font-medium">{constraint.column_name}</span> → 
                             <span className="font-medium">{constraint.referenced_table_name}.{constraint.referenced_column_name}</span>
                           </p>
-                          <div className="flex items-center space-x-4 text-xs text-dark-500 dark:text-dark-400">
+                          <div className="flex items-center space-x-4 text-[0.65rem] text-dark-500 dark:text-dark-400">
                             <span>ON DELETE: <span className="font-medium">{constraint.delete_rule}</span></span>
                             <span>ON UPDATE: <span className="font-medium">{constraint.update_rule}</span></span>
                           </div>
@@ -1858,20 +1773,20 @@ const SchemaEditor = ({
                       )}
                       
                       {constraint.constraint_type === 'PRIMARY KEY' && (
-                        <p className="text-sm text-dark-700 dark:text-dark-300">
+                        <p className="text-xs text-dark-700 dark:text-dark-300">
                           Column: <span className="font-medium">{constraint.column_name}</span>
                         </p>
                       )}
                       
                       {constraint.constraint_type === 'CHECK' && constraint.check_clause && (
                         <div className="space-y-1">
-                          <p className="text-sm text-dark-700 dark:text-dark-300">
-                            Check: <span className="font-mono text-xs bg-dark-100 dark:bg-dark-600 px-2 py-1 rounded">
+                          <p className="text-xs text-dark-700 dark:text-dark-300">
+                            Check: <span className="font-mono text-[0.65rem] bg-dark-100 dark:bg-dark-600 px-2 py-1 rounded">
                               {constraint.check_clause}
                             </span>
                           </p>
                           {constraint.check_clause.includes('IS NOT NULL') && (
-                            <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                            <p className="text-[0.65rem] text-yellow-600 dark:text-yellow-400 mt-1">
                               ℹ️ System-generated NOT NULL constraint - Edit column to change
                             </p>
                           )}
@@ -1905,7 +1820,7 @@ const SchemaEditor = ({
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-3">
               <Key className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-              <h5 className="text-lg font-semibold text-blue-900 dark:text-blue-100">
+              <h5 className="text-base font-semibold text-blue-900 dark:text-blue-100">
                 Create Foreign Key Constraint
               </h5>
             </div>
@@ -1920,7 +1835,7 @@ const SchemaEditor = ({
           <div className="space-y-6">
             {/* Step 1: Select Referenced Table */}
             <div>
-              <label className="block text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">
+              <label className="block text-xs font-medium text-blue-900 dark:text-blue-100 mb-3">
                 1. Select Referenced Table
               </label>
               <select
@@ -1940,11 +1855,11 @@ const SchemaEditor = ({
             {/* Step 2: Select Referenced Column */}
             {selectedConstraintTable && (
               <div>
-                <label className="block text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">
+                <label className="block text-xs font-medium text-blue-900 dark:text-blue-100 mb-3">
                   2. Select Referenced Column
                 </label>
                 <div>
-                  <label className="block text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+                  <label className="block text-xs font-medium text-blue-800 dark:text-blue-200 mb-2">
                     Referenced Column (from {selectedConstraintTable})
                   </label>
                   <select
@@ -1965,7 +1880,7 @@ const SchemaEditor = ({
                     ))}
                   </select>
                   {constraintForm.referencedColumn && (
-                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                    <p className="text-[0.65rem] text-green-600 dark:text-green-400 mt-1">
                       ✅ Selected: {constraintForm.referencedColumn} ({normalizeDataType(selectedConstraintColumns.find(c => c.column_name === constraintForm.referencedColumn)?.data_type || '')})
                     </p>
                   )}
@@ -1976,13 +1891,13 @@ const SchemaEditor = ({
             {/* Step 3: Select Source Column */}
             {constraintForm.referencedColumn && (
               <div>
-                <label className="block text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">
+                <label className="block text-xs font-medium text-blue-900 dark:text-blue-100 mb-3">
                   3. Select Source Column
                 </label>
                 <div>
-                  <label className="block text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+                  <label className="block text-xs font-medium text-blue-800 dark:text-blue-200 mb-2">
                     Source Column (from {tableName})
-                    <span className="ml-2 text-xs text-blue-600 dark:text-blue-300">
+                    <span className="ml-2 text-[0.65rem] text-blue-600 dark:text-blue-300">
                       • Showing compatible types only
                     </span>
                   </label>
@@ -1999,7 +1914,7 @@ const SchemaEditor = ({
                       </option>
                     ))}
                   </select>
-                  <p className={`text-xs mt-1 ${
+                  <p className={`text-[0.65rem] mt-1 ${
                     getCompatibleSourceColumns(constraintForm.referencedColumn).length === 0
                       ? 'text-red-600 dark:text-red-400'
                       : 'text-green-600 dark:text-green-400'
@@ -2016,12 +1931,12 @@ const SchemaEditor = ({
             {/* Step 4: Action Configuration */}
             {constraintForm.sourceColumn && constraintForm.referencedColumn && (
               <div>
-                <label className="block text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">
+                <label className="block text-xs font-medium text-blue-900 dark:text-blue-100 mb-3">
                   4. Configure Actions
                 </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+                    <label className="block text-xs font-medium text-blue-800 dark:text-blue-200 mb-2">
                       On Delete
                     </label>
                     <select
@@ -2035,7 +1950,7 @@ const SchemaEditor = ({
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                    <p className="text-[0.65rem] text-blue-600 dark:text-blue-300 mt-1">
                       {constraintForm.onDelete === 'RESTRICT' && 'Prevent deletion if referenced'}
                       {constraintForm.onDelete === 'CASCADE' && 'Delete this row when referenced row is deleted'}
                       {constraintForm.onDelete === 'SET NULL' && 'Set to NULL when referenced row is deleted'}
@@ -2045,7 +1960,7 @@ const SchemaEditor = ({
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+                    <label className="block text-xs font-medium text-blue-800 dark:text-blue-200 mb-2">
                       On Update
                     </label>
                     <select
@@ -2059,7 +1974,7 @@ const SchemaEditor = ({
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                    <p className="text-[0.65rem] text-blue-600 dark:text-blue-300 mt-1">
                       {constraintForm.onUpdate === 'RESTRICT' && 'Prevent update if referenced'}
                       {constraintForm.onUpdate === 'CASCADE' && 'Update this value when referenced value updates'}
                       {constraintForm.onUpdate === 'SET NULL' && 'Set to NULL when referenced value updates'}
@@ -2074,10 +1989,10 @@ const SchemaEditor = ({
             {/* Constraint Preview */}
             {constraintForm.sourceColumn && constraintForm.referencedColumn && constraintForm.referencedTable && (
               <div className="bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700 rounded-lg p-4">
-                <h6 className="font-medium text-blue-900 dark:text-blue-100 mb-3">
+                <h6 className="font-medium text-xs text-blue-900 dark:text-blue-100 mb-3">
                   Constraint Preview
                 </h6>
-                <div className="font-mono text-sm text-blue-800 dark:text-blue-200 bg-white dark:bg-blue-950/30 p-3 rounded border border-blue-200 dark:border-blue-800">
+                <div className="font-mono text-xs text-blue-800 dark:text-blue-200 bg-white dark:bg-blue-950/30 p-3 rounded border border-blue-200 dark:border-blue-800">
                   <div className="space-y-1">
                     <div>
                       <span className="text-blue-600 dark:text-blue-400">Table:</span> {tableName}
@@ -2119,7 +2034,7 @@ const SchemaEditor = ({
                       : 'text-yellow-600 dark:text-yellow-400'
                   }`} />
                   <div className="flex-1">
-                    <h6 className={`font-medium mb-2 ${
+                    <h6 className={`font-medium mb-2 text-xs ${
                       constraintWarnings.some(w => w.startsWith('❌'))
                         ? 'text-red-800 dark:text-red-200'
                         : constraintWarnings.some(w => w.startsWith('✅'))
@@ -2132,7 +2047,7 @@ const SchemaEditor = ({
                         ? 'Constraint Validation'
                         : 'Compatibility Warnings'}
                     </h6>
-                    <ul className={`text-sm space-y-1 ${
+                    <ul className={`text-xs space-y-1 ${
                       constraintWarnings.some(w => w.startsWith('❌'))
                         ? 'text-red-700 dark:text-red-300'
                         : constraintWarnings.some(w => w.startsWith('✅'))
@@ -2223,7 +2138,7 @@ const SchemaEditor = ({
             <div className="flex items-center justify-between p-6 border-b border-dark-200 dark:border-dark-700">
               <div className="flex items-center space-x-3">
                 <Link className="w-6 h-6 text-primary-500" />
-                <h3 className="text-xl font-semibold text-dark-900 dark:text-white">
+                <h3 className="text-lg font-semibold text-dark-900 dark:text-white">
                   Foreign Keys
                 </h3>
               </div>
@@ -2257,7 +2172,7 @@ const SchemaEditor = ({
                   <div className="space-y-4">
                     {/* Step 1: Referenced Table */}
                     <div>
-                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                      <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
                         1. Referenced Table
                       </label>
                       <select
@@ -2277,7 +2192,7 @@ const SchemaEditor = ({
                     {/* Step 2: Referenced Column */}
                     {newForeignKey.referencedTable && (
                       <div>
-                        <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                        <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
                           2. Referenced Column (from {newForeignKey.referencedTable})
                         </label>
                         <select
@@ -2307,9 +2222,9 @@ const SchemaEditor = ({
                     {/* Step 3: Source Column */}
                     {newForeignKey.referencedColumn && (
                       <div>
-                        <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                        <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
                           3. Source Column (from {tableName})
-                          <span className="ml-2 text-xs text-primary-600 dark:text-primary-400">
+                          <span className="ml-2 text-[0.65rem] text-primary-600 dark:text-primary-400">
                             • Showing compatible types only
                           </span>
                         </label>
@@ -2346,7 +2261,7 @@ const SchemaEditor = ({
                     {newForeignKey.columnName && newForeignKey.referencedColumn && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                          <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
                             4a. On Delete
                           </label>
                           <select
@@ -2370,7 +2285,7 @@ const SchemaEditor = ({
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                          <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-2">
                             4b. On Update
                           </label>
                           <select
@@ -2401,7 +2316,7 @@ const SchemaEditor = ({
                         <h6 className="font-medium text-primary-900 dark:text-primary-100 mb-3">
                           Foreign Key Preview
                         </h6>
-                        <div className="font-mono text-sm text-primary-800 dark:text-primary-200 bg-white dark:bg-primary-950/30 p-3 rounded border border-primary-200 dark:border-primary-800">
+                        <div className="font-mono text-xs text-primary-800 dark:text-primary-200 bg-white dark:bg-primary-950/30 p-3 rounded border border-primary-200 dark:border-primary-800">
                           <div className="space-y-1">
                             <div>
                               <span className="text-primary-600 dark:text-primary-400">Table:</span> {tableName}
@@ -2456,7 +2371,7 @@ const SchemaEditor = ({
                                 ? 'Validation'
                                 : 'Warnings'}
                             </h6>
-                            <ul className={`text-sm space-y-1 ${
+                            <ul className={`text-xs space-y-1 ${
                               foreignKeyValidation.some(w => w.startsWith('❌'))
                                 ? 'text-red-700 dark:text-red-300'
                                 : foreignKeyValidation.some(w => w.startsWith('✅'))
@@ -2518,10 +2433,10 @@ const SchemaEditor = ({
                             <p className="font-medium text-dark-900 dark:text-white">
                               {fk.column_name} → {fk.referenced_table_name}.{fk.referenced_column_name}
                             </p>
-                            <p className="text-sm text-dark-600 dark:text-dark-300">
+                            <p className="text-xs text-dark-600 dark:text-dark-300">
                               ON DELETE {fk.delete_rule} • ON UPDATE {fk.update_rule}
                             </p>
-                            <p className="text-xs text-dark-500 dark:text-dark-400">
+                            <p className="text-[0.65rem] text-dark-500 dark:text-dark-400">
                               Constraint: {fk.constraint_name}
                             </p>
                           </div>
