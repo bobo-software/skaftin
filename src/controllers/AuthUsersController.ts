@@ -29,7 +29,7 @@ interface AppUser {
 
 interface CreateUserRequest {
   name: string;
-  email: string;
+  email?: string;
   password: string;
   phone?: string;
   metadata?: any;
@@ -668,24 +668,12 @@ class AuthUsersController {
       }
       const { name, email, password, phone, metadata, role_ids, custom_field_1, custom_field_2 }: CreateUserRequest = req.body;
 
-      // Check if users without email are allowed
-      const settingsResult = await AuthUsersController.pool.query(
-        `SELECT allow_users_without_email FROM skaftin_system_auth_settings WHERE project_id = $1`,
-        [projectId]
-      );
-      const allowUsersWithoutEmail = settingsResult.rows.length > 0 && settingsResult.rows[0].allow_users_without_email === true;
-
       // Enhanced validation
       if (!name || !password) {
         return ResponseUtils.error(res, 'Name and password are required', null, null, 400);
       }
 
-      // Email validation - only required if allow_users_without_email is false
-      if (!allowUsersWithoutEmail && !email) {
-        return ResponseUtils.error(res, 'Email is required', null, null, 400);
-      }
-
-      // If email is provided, validate it
+      // Email is optional - if provided, validate it
       if (email && !AuthUtils.isValidEmail(email)) {
         return ResponseUtils.error(res, 'Invalid email format', null, null, 400);
       }
