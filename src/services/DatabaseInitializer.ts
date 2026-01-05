@@ -1721,6 +1721,59 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Migrate email column to nullable for all existing project schemas
+   */
+  async migrateEmailColumnToNullable(): Promise<void> {
+    try {
+      console.log('🔧 Migrating email column to nullable for all project schemas...');
+      
+      // Get all project schemas
+      const projectsResult = await this.pool.query(
+        'SELECT id, name, schema_name FROM skaftin_system_projects WHERE schema_name IS NOT NULL'
+      );
+      
+      let migratedCount = 0;
+      for (const project of projectsResult.rows) {
+        const schemaName = project.schema_name;
+        
+        try {
+          // Check if email column exists and is NOT NULL, then make it nullable
+          const checkResult = await this.pool.query(`
+            SELECT is_nullable
+            FROM information_schema.columns 
+            WHERE table_schema = $1 
+            AND table_name = 'skaftin_system_users' 
+            AND column_name = 'email'
+          `, [schemaName]);
+          
+          if (checkResult.rows.length > 0 && checkResult.rows[0].is_nullable === 'NO') {
+            await this.pool.query(`
+              ALTER TABLE ${schemaName}.skaftin_system_users 
+              ALTER COLUMN email DROP NOT NULL
+            `);
+            console.log(`  ✅ Made email nullable in schema: ${schemaName}`);
+            migratedCount++;
+          }
+        } catch (error: any) {
+          // Log but don't fail - some schemas might not have the table yet
+          if (error.code !== '42P01') { // 42P01 = relation does not exist
+            console.error(`  ⚠️  Error migrating ${schemaName}:`, error.message);
+          }
+        }
+      }
+      
+      if (migratedCount > 0) {
+        console.log(`✅ Migrated ${migratedCount} project schema(s)`);
+      } else {
+        console.log('✅ All email columns are already nullable');
+      }
+    } catch (error: any) {
+      console.error('❌ Error migrating email columns:', error.message);
+      // Don't throw - allow server to continue
+    }
+  }
+
+  /**
    * Initialize all database tables
    * Order matters: organizations must be created before organization_members and projects
    */
@@ -1748,6 +1801,9 @@ export class DatabaseInitializer {
     
     // Migrate organization context fields to existing projects
     await this.migrateOrganizationContextToRoles();
+    
+    // Migrate email column to nullable for all existing project schemas
+    await this.migrateEmailColumnToNullable();
   }
 
   /**
