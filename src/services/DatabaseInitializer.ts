@@ -953,7 +953,7 @@ export class DatabaseInitializer {
           id SERIAL PRIMARY KEY,
           supertokens_user_id VARCHAR(255) UNIQUE,
           name VARCHAR(255) NOT NULL,
-          email VARCHAR(255) NOT NULL,
+          email VARCHAR(255),
           password VARCHAR(255),
           phone VARCHAR(50),
           metadata JSONB DEFAULT '{}',
@@ -982,6 +982,24 @@ export class DatabaseInitializer {
           ) THEN
             ALTER TABLE ${schemaName}.skaftin_system_users 
             ADD COLUMN organisation_id INTEGER;
+          END IF;
+        END $$;
+      `));
+
+      // Make email column nullable if it's currently NOT NULL (migration for existing databases)
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          -- Check if email column exists and is NOT NULL, then make it nullable
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = '${schemaName}' 
+            AND table_name = 'skaftin_system_users' 
+            AND column_name = 'email'
+            AND is_nullable = 'NO'
+          ) THEN
+            ALTER TABLE ${schemaName}.skaftin_system_users 
+            ALTER COLUMN email DROP NOT NULL;
           END IF;
         END $$;
       `));
