@@ -830,6 +830,7 @@ export class DatabaseInitializer {
           id SERIAL PRIMARY KEY,
           project_id INTEGER NOT NULL UNIQUE REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           allow_duplicate_emails BOOLEAN DEFAULT false,
+          allow_users_without_email BOOLEAN DEFAULT false,
           require_email_verification BOOLEAN DEFAULT false,
           require_phone_verification BOOLEAN DEFAULT false,
           enable_password_reset BOOLEAN DEFAULT true,
@@ -853,6 +854,23 @@ export class DatabaseInitializer {
     } catch (err: any) {
       if (err.code !== '23505' && err.code !== '42P07') {
         console.error('❌ Auth settings table creation error:', err.message);
+      }
+    }
+
+    try {
+      // Add allow_users_without_email column if it doesn't exist (migration for existing databases)
+      await this.db.execute(sql`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                        WHERE table_schema='public' AND table_name='skaftin_system_auth_settings' AND column_name='allow_users_without_email') THEN
+            ALTER TABLE public.skaftin_system_auth_settings ADD COLUMN allow_users_without_email BOOLEAN DEFAULT false;
+          END IF;
+        END $$;
+      `);
+    } catch (err: any) {
+      if (err.code !== '42710') {
+        console.error('❌ Auth settings allow_users_without_email migration error:', err.message);
       }
     }
 
