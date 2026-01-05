@@ -165,7 +165,7 @@ export class AuthUtils {
     schemaName: string,
     userData: {
       name: string;
-      email: string;
+      email?: string | null;
       password: string;
       phone?: string;
       metadata?: any;
@@ -186,8 +186,8 @@ export class AuthUtils {
     try {
       await client.query('BEGIN');
 
-      // 1. Create in SuperTokens if requested
-      if (createInSuperTokens) {
+      // 1. Create in SuperTokens if requested (only if email is provided)
+      if (createInSuperTokens && userData.email) {
         try {
           const signUpResponse = await EmailPassword.signUp('public', userData.email, userData.password);
           
@@ -207,6 +207,13 @@ export class AuthUtils {
             error: `SuperTokens error: ${stError.message}`,
           };
         }
+      } else if (createInSuperTokens && !userData.email) {
+        // Cannot create in SuperTokens without email
+        await client.query('ROLLBACK');
+        return {
+          success: false,
+          error: 'Cannot create user in SuperTokens without email',
+        };
       }
 
       // 2. Hash password if not using SuperTokens
@@ -226,7 +233,7 @@ export class AuthUtils {
       const userResult = await client.query(insertQuery, [
         superTokensUserId || null,
         userData.name,
-        userData.email,
+        userData.email || null,
         hashedPassword,
         userData.phone || null,
         JSON.stringify(userData.metadata || {}),
