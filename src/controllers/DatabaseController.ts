@@ -505,6 +505,25 @@ class DatabaseController {
         selectClause = allColumns.map((col: string) => `u."${col}"`).join(', ');
       }
 
+      // Add roles aggregation to SELECT clause
+      const rolesAggregation = `, COALESCE(
+        json_agg(
+          json_build_object(
+            'id', r.id,
+            'role_name', r.role_name,
+            'role_key', r.role_key,
+            'description', r.description,
+            'permissions', r.permissions,
+            'session_duration_minutes', r.session_duration_minutes,
+            'is_system_role', r.is_system_role,
+            'assigned_at', ur.assigned_at
+          )
+        ) FILTER (WHERE r.id IS NOT NULL), 
+        '[]'::json
+      ) as roles`;
+      
+      selectClause += rolesAggregation;
+
       // Build WHERE clause
       const whereConditions: string[] = [];
       const values: any[] = [];
@@ -589,9 +608,14 @@ class DatabaseController {
         }
       }
 
-      // Build query
+      // Build query with LEFT JOINs for roles
       const whereClause = whereConditions.length > 0 ? ` WHERE ${whereConditions.join(' AND ')}` : '';
-      let query = `SELECT ${selectClause} FROM ${schemaName}.skaftin_system_users u${whereClause}`;
+      let query = `SELECT ${selectClause} 
+        FROM ${schemaName}.skaftin_system_users u
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
+        ${whereClause}
+        GROUP BY u.id`;
 
       // Add ORDER BY clause
       if (orderBy) {
