@@ -669,12 +669,13 @@ class DatabaseController {
 
       const { name, email, password, phone, metadata, role_ids, custom_field_1, custom_field_2 } = req.body;
 
-      // Enhanced validation
-      if (!name || !email || !password) {
-        return ResponseUtils.error(res, 'Name, email, and password are required', null, null, 400);
+      // Enhanced validation - email is optional
+      if (!name || !password) {
+        return ResponseUtils.error(res, 'Name and password are required', null, null, 400);
       }
 
-      if (!AuthUtils.isValidEmail(email)) {
+      // Email is optional - if provided, validate it
+      if (email && !AuthUtils.isValidEmail(email)) {
         return ResponseUtils.error(res, 'Invalid email format', null, null, 400);
       }
 
@@ -701,24 +702,26 @@ class DatabaseController {
       }
       const schemaName = schemaResult.rows[0].schema_name;
 
-      // Check if duplicate emails are allowed
-      const allowDuplicatesResult = await client.query(
-        `SELECT allow_duplicate_emails FROM skaftin_system_auth_settings WHERE project_id = $1`,
-        [projectIdInt]
-      );
-      const allowDuplicates = allowDuplicatesResult.rows.length > 0 && allowDuplicatesResult.rows[0].allow_duplicate_emails;
-
-      if (!allowDuplicates) {
-        // Check if email already exists in this project
-        const emailExists = await AuthUtils.emailExistsInProject(
-          DatabaseController.pool,
-          schemaName,
-          email
+      // Check if duplicate emails are allowed (only if email is provided)
+      if (email) {
+        const allowDuplicatesResult = await client.query(
+          `SELECT allow_duplicate_emails FROM skaftin_system_auth_settings WHERE project_id = $1`,
+          [projectIdInt]
         );
+        const allowDuplicates = allowDuplicatesResult.rows.length > 0 && allowDuplicatesResult.rows[0].allow_duplicate_emails;
 
-        if (emailExists) {
-          client.release();
-          return ResponseUtils.error(res, 'User with this email already exists in this project', null, null, 400);
+        if (!allowDuplicates) {
+          // Check if email already exists in this project
+          const emailExists = await AuthUtils.emailExistsInProject(
+            DatabaseController.pool,
+            schemaName,
+            email
+          );
+
+          if (emailExists) {
+            client.release();
+            return ResponseUtils.error(res, 'User with this email already exists in this project', null, null, 400);
+          }
         }
       }
 
@@ -794,7 +797,7 @@ class DatabaseController {
       client.release();
       client = null;
 
-      console.log(`✅ User created: ${email} (ID: ${result.user.id})`);
+      console.log(`✅ User created: ${email || 'no email'} (ID: ${result.user.id})`);
 
       ResponseUtils.success(res, 'User created successfully', userWithRoles.rows[0], 201);
     } catch (error) {
@@ -875,31 +878,6 @@ class DatabaseController {
       }
 
       if (data.email !== undefined) {
-        // Validate email format
-        if (!AuthUtils.isValidEmail(data.email)) {
-          client.release();
-          return ResponseUtils.error(res, 'Invalid email format', null, null, 400);
-        }
-
-        // Check duplicate email policy if email is being changed
-        const allowDuplicatesResult = await client.query(
-          `SELECT allow_duplicate_emails FROM skaftin_system_auth_settings WHERE project_id = $1`,
-          [projectIdInt]
-        );
-        const allowDuplicates = allowDuplicatesResult.rows.length > 0 && allowDuplicatesResult.rows[0].allow_duplicate_emails;
-
-        if (!allowDuplicates) {
-          const existingUser = await client.query(
-            `SELECT id FROM ${schemaName}.skaftin_system_users WHERE email = $1 AND id != $2`,
-            [data.email, parseInt(userId)]
-          );
-
-          if (existingUser.rows.length > 0) {
-            client.release();
-            return ResponseUtils.error(res, 'User with this email already exists', null, null, 400);
-          }
-        }
-
         updateFields.push(`email = $${paramIndex++}`);
         values.push(data.email);
       }
@@ -913,7 +891,7 @@ class DatabaseController {
         // Sanitize metadata
         const sanitizedMetadata = AuthUtils.sanitizeMetadata(data.metadata);
         
-        // Merge with existing metadata instead of replacing it entirely
+        // Merge with existing metadata instead of replacing it entirely (deep merge for nested objects)
         // Get current metadata first
         const currentUserResult = await client.query(
           `SELECT metadata FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
@@ -922,11 +900,11 @@ class DatabaseController {
         
         let mergedMetadata = sanitizedMetadata;
         if (currentUserResult.rows.length > 0 && currentUserResult.rows[0].metadata) {
-          // Merge existing metadata with new metadata (new values override existing ones)
-          mergedMetadata = {
-            ...currentUserResult.rows[0].metadata,
-            ...sanitizedMetadata
-          };
+          // Deep merge existing metadata with new metadata (new values override existing ones)
+          mergedMetadata = AuthUtils.deepMerge(
+            currentUserResult.rows[0].metadata,
+            sanitizedMetadata
+          );
         }
         
         updateFields.push(`metadata = $${paramIndex++}`);

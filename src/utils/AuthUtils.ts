@@ -485,9 +485,19 @@ export class AuthUtils {
       return {};
     }
 
+    // Handle arrays
+    if (Array.isArray(metadata)) {
+      return metadata.map(item => {
+        if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+          return AuthUtils.sanitizeMetadata(item);
+        }
+        return item;
+      });
+    }
+
     const sanitized: any = {};
     for (const [key, value] of Object.entries(metadata)) {
-      // Only allow certain types
+      // Allow primitives
       if (
         typeof value === 'string' ||
         typeof value === 'number' ||
@@ -496,16 +506,63 @@ export class AuthUtils {
       ) {
         sanitized[key] = value;
       } else if (Array.isArray(value)) {
-        // Allow arrays of primitives
-        sanitized[key] = value.filter(
-          (item) =>
-            typeof item === 'string' ||
-            typeof item === 'number' ||
-            typeof item === 'boolean'
-        );
+        // Recursively sanitize array items (supports arrays of objects)
+        sanitized[key] = value.map(item => {
+          if (typeof item === 'object' && item !== null) {
+            return AuthUtils.sanitizeMetadata(item);
+          }
+          return item;
+        });
+      } else if (typeof value === 'object' && value !== null) {
+        // Recursively sanitize nested objects (supports nested permissions, etc.)
+        sanitized[key] = AuthUtils.sanitizeMetadata(value);
       }
     }
     return sanitized;
+  }
+
+  /**
+   * Deep merge two objects, with the second object's values taking precedence
+   * Recursively merges nested objects and arrays
+   */
+  static deepMerge(target: any, source: any): any {
+    if (!source || typeof source !== 'object') {
+      return source;
+    }
+
+    if (!target || typeof target !== 'object') {
+      return source;
+    }
+
+    // Handle arrays - replace entirely (don't merge array items)
+    if (Array.isArray(source)) {
+      return source;
+    }
+
+    if (Array.isArray(target)) {
+      return source;
+    }
+
+    const merged = { ...target };
+
+    for (const [key, value] of Object.entries(source)) {
+      if (
+        value !== null &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        target[key] !== null &&
+        typeof target[key] === 'object' &&
+        !Array.isArray(target[key])
+      ) {
+        // Recursively merge nested objects
+        merged[key] = AuthUtils.deepMerge(target[key], value);
+      } else {
+        // Replace with new value (or null/undefined)
+        merged[key] = value;
+      }
+    }
+
+    return merged;
   }
 }
 

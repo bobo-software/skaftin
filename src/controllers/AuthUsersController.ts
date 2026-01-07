@@ -835,8 +835,26 @@ class AuthUsersController {
       }
 
       if (updates.metadata !== undefined) {
+        // Sanitize metadata
+        const sanitizedMetadata = AuthUtils.sanitizeMetadata(updates.metadata);
+        
+        // Merge with existing metadata instead of replacing it entirely (deep merge for nested objects)
+        const currentUserResult = await AuthUsersController.pool.query(
+          `SELECT metadata FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+          [parseInt(userId)]
+        );
+        
+        let mergedMetadata = sanitizedMetadata;
+        if (currentUserResult.rows.length > 0 && currentUserResult.rows[0].metadata) {
+          // Deep merge existing metadata with new metadata (new values override existing ones)
+          mergedMetadata = AuthUtils.deepMerge(
+            currentUserResult.rows[0].metadata,
+            sanitizedMetadata
+          );
+        }
+        
         updateFields.push(`metadata = $${paramIndex++}`);
-        values.push(JSON.stringify(updates.metadata));
+        values.push(JSON.stringify(mergedMetadata));
       }
 
       if (updates.custom_field_1 !== undefined) {
