@@ -551,10 +551,19 @@ class CommunicationsController {
   /**
    * Send an email using a specific provider
    */
-  sendEmail = async (req: Request, res: Response): Promise<void> => {
+  sendEmail = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
     try {
-      const { projectId } = req.params;
+      const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
       const { provider_id, to, subject, text, html, cc, bcc, attachments }: SendEmailRequest = req.body;
+
+      // Validate project ID
+      if (!projectId) {
+        res.status(400).json({
+          success: false,
+          error: 'Project ID is required',
+        });
+        return;
+      }
 
       // Validate required fields
       if (!provider_id || !to || !subject || (!text && !html)) {

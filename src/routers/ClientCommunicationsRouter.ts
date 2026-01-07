@@ -20,6 +20,15 @@ export function createClientCommunicationsRouter(pool: Pool): Router {
   
   // Define routes (project ID will be auto-extracted from API key)
   const routes: RouteDefinition[] = [
+    // Email Sending
+    {
+      method: 'post',
+      path: '/email/send',
+      handler: controller.sendEmail,
+      description: 'Send email using a provider',
+      requiresProject: true,
+      requiresAuth: true,
+    },
     // SMS Sending
     {
       method: 'post',
