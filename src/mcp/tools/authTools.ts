@@ -79,6 +79,10 @@ export function createAuthTools(config: AuthToolsConfig): Tool[] {
             type: 'string',
             description: 'User full name',
           },
+          last_name: {
+            type: 'string',
+            description: 'User last name (optional)',
+          },
           email: {
             type: 'string',
             description: 'User email address',
@@ -121,6 +125,10 @@ export function createAuthTools(config: AuthToolsConfig): Tool[] {
           name: {
             type: 'string',
             description: 'Updated name (optional)',
+          },
+          last_name: {
+            type: 'string',
+            description: 'Updated last name (optional)',
           },
           email: {
             type: 'string',
@@ -653,7 +661,7 @@ export async function handleAuthTool(
     }
 
     if (name === 'create_app_user') {
-      const { name, email, password, phone, metadata, role_ids } = args;
+      const { name, last_name, email, password, phone, metadata, role_ids } = args;
       const schemaName = await getProjectSchema(projectId);
 
       if (!schemaName) {
@@ -665,12 +673,12 @@ export async function handleAuthTool(
       // For MCP tools, we'll create users directly without SuperTokens integration
       // SuperTokens integration is handled by the controller when called via HTTP
       const insertQuery = `
-        INSERT INTO ${schemaName}.skaftin_system_users (name, email, phone, metadata, is_active)
-        VALUES ($1, $2, $3, $4, true)
+        INSERT INTO ${schemaName}.skaftin_system_users (name, last_name, email, phone, metadata, is_active)
+        VALUES ($1, $2, $3, $4, $5, true)
         RETURNING *
       `;
 
-      const result = await pool.query(insertQuery, [name, email, phone || null, JSON.stringify(metadata || {})]);
+      const result = await pool.query(insertQuery, [name, last_name || null, email, phone || null, JSON.stringify(metadata || {})]);
       const newUser = result.rows[0];
 
       // Assign roles if provided
@@ -698,7 +706,7 @@ export async function handleAuthTool(
     }
 
     if (name === 'update_app_user') {
-      const { userId, name, email, phone, metadata, is_active } = args;
+      const { userId, name, last_name, email, phone, metadata, is_active } = args;
       const schemaName = await getProjectSchema(projectId);
 
       if (!schemaName) {
@@ -714,6 +722,10 @@ export async function handleAuthTool(
       if (name !== undefined) {
         updateFields.push(`name = $${paramIndex++}`);
         values.push(name);
+      }
+      if (last_name !== undefined) {
+        updateFields.push(`last_name = $${paramIndex++}`);
+        values.push(last_name);
       }
       if (email !== undefined) {
         updateFields.push(`email = $${paramIndex++}`);

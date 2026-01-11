@@ -667,7 +667,7 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
 
-      const { name, email, password, phone, metadata, role_ids, custom_field_1, custom_field_2 } = req.body;
+      const { name, last_name, email, password, phone, metadata, role_ids, custom_field_1, custom_field_2 } = req.body;
 
       // Enhanced validation - email is optional
       if (!name || !password) {
@@ -747,6 +747,7 @@ class DatabaseController {
         schemaName,
         {
           name,
+          last_name,
           email,
           password,
           phone,
@@ -875,6 +876,11 @@ class DatabaseController {
       if (data.name !== undefined) {
         updateFields.push(`name = $${paramIndex++}`);
         values.push(data.name);
+      }
+
+      if (data.last_name !== undefined) {
+        updateFields.push(`last_name = $${paramIndex++}`);
+        values.push(data.last_name);
       }
 
       if (data.email !== undefined) {

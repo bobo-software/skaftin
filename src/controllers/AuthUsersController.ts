@@ -29,6 +29,7 @@ interface AppUser {
 
 interface CreateUserRequest {
   name: string;
+  last_name?: string;
   email?: string;
   password: string;
   phone?: string;
@@ -40,6 +41,7 @@ interface CreateUserRequest {
 
 interface UpdateUserRequest {
   name?: string;
+  last_name?: string;
   email?: string;
   phone?: string;
   metadata?: any;
@@ -666,7 +668,7 @@ class AuthUsersController {
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
-      const { name, email, password, phone, metadata, role_ids, custom_field_1, custom_field_2 }: CreateUserRequest = req.body;
+      const { name, last_name, email, password, phone, metadata, role_ids, custom_field_1, custom_field_2 }: CreateUserRequest = req.body;
 
       // Enhanced validation
       if (!name || !password) {
@@ -729,6 +731,7 @@ class AuthUsersController {
         schemaName,
         {
           name,
+          last_name,
           email,
           password,
           phone,
@@ -808,6 +811,11 @@ class AuthUsersController {
       if (updates.name !== undefined) {
         updateFields.push(`name = $${paramIndex++}`);
         values.push(updates.name);
+      }
+
+      if (updates.last_name !== undefined) {
+        updateFields.push(`last_name = $${paramIndex++}`);
+        values.push(updates.last_name);
       }
 
       if (updates.email !== undefined) {
@@ -1200,7 +1208,7 @@ class AuthUsersController {
 
       // Get user details
       const userResult = await AuthUsersController.pool.query(
-        `SELECT id, name, email, phone FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        `SELECT id, name, last_name, email, phone FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
         [parseInt(userId)]
       );
 

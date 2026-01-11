@@ -93,6 +93,7 @@ export class DatabaseInitializer {
           email VARCHAR(255) UNIQUE NOT NULL,
           password_hash VARCHAR(255),
           full_name VARCHAR(255),
+          last_name VARCHAR(255),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -118,6 +119,23 @@ export class DatabaseInitializer {
     } catch (err: any) {
       if (err.code !== '42710') {
         console.error('❌ Users password_hash migration error:', err.message);
+      }
+    }
+
+    try {
+      // Add last_name column if it doesn't exist (migration for existing databases)
+      await this.db.execute(sql`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                        WHERE table_schema='public' AND table_name='skaftin_system_users' AND column_name='last_name') THEN
+            ALTER TABLE public.skaftin_system_users ADD COLUMN last_name VARCHAR(255);
+          END IF;
+        END $$;
+      `);
+    } catch (err: any) {
+      if (err.code !== '42710') {
+        console.error('❌ Users last_name migration error:', err.message);
       }
     }
 
@@ -936,6 +954,7 @@ export class DatabaseInitializer {
           id SERIAL PRIMARY KEY,
           supertokens_user_id VARCHAR(255) UNIQUE,
           name VARCHAR(255) NOT NULL,
+          last_name VARCHAR(255),
           email VARCHAR(255),
           password VARCHAR(255),
           phone VARCHAR(50),
@@ -983,6 +1002,22 @@ export class DatabaseInitializer {
           ) THEN
             ALTER TABLE ${schemaName}.skaftin_system_users 
             ALTER COLUMN email DROP NOT NULL;
+          END IF;
+        END $$;
+      `));
+
+      // Add last_name column to existing users table if it doesn't exist
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = '${schemaName}' 
+            AND table_name = 'skaftin_system_users' 
+            AND column_name = 'last_name'
+          ) THEN
+            ALTER TABLE ${schemaName}.skaftin_system_users 
+            ADD COLUMN last_name VARCHAR(255);
           END IF;
         END $$;
       `));

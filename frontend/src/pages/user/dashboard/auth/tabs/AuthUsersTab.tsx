@@ -649,6 +649,7 @@ const CreateUserModal = ({ projectId, roles, customFields, onClose, onSuccess }:
   
   const [formData, setFormData] = useState<CreateUserRequest>({
     name: '',
+    last_name: '',
     email: '',
     password: generatePassword(),
     phone: '',
@@ -719,6 +720,18 @@ const CreateUserModal = ({ projectId, roles, customFields, onClose, onSuccess }:
               required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+              Last Name
+            </label>
+            <input
+              type="text"
+              value={formData.last_name || ''}
+              onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
               className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
             />
           </div>
@@ -1005,6 +1018,7 @@ const renderCustomFieldInput = (field: CustomField, metadata: any, onChange: (va
 const EditUserModal = ({ projectId, user, roles, customFields, onClose, onSuccess }: { projectId: string; user: AppUser; roles: Role[]; customFields: CustomField[]; onClose: () => void; onSuccess: () => void }) => {
   const [formData, setFormData] = useState({
     name: user.name,
+    last_name: user.last_name || '',
     email: user.email,
     phone: user.phone || '',
     custom_field_1: user.custom_field_1 || '',
@@ -1083,6 +1097,18 @@ const EditUserModal = ({ projectId, user, roles, customFields, onClose, onSucces
               required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+              Last Name
+            </label>
+            <input
+              type="text"
+              value={formData.last_name || ''}
+              onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
               className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
             />
           </div>

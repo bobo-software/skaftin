@@ -57,7 +57,7 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
 
-      const { name, email, password, phone, metadata, custom_field_1, custom_field_2, role_id, role_key, otp_method } = req.body;
+      const { name, last_name, email, password, phone, metadata, custom_field_1, custom_field_2, role_id, role_key, otp_method } = req.body;
 
       if (!name || !email || !password) {
         return ResponseUtils.error(res, 'Name, email, and password are required', null, null, 400);
@@ -125,10 +125,10 @@ class AppAuthController {
       // Create app user in database
       const insertResult = await AppAuthController.pool.query(
         `INSERT INTO ${schemaName}.skaftin_system_users 
-         (supertokens_user_id, name, email, phone, metadata, custom_field_1, custom_field_2, is_active, email_verified)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false)
-         RETURNING id, name, email, phone, custom_field_1, custom_field_2, is_active, created_at`,
-        [supertokensUserId, name, email, phone || null, JSON.stringify(metadata || {}), custom_field_1 || null, custom_field_2 || null, isActive]
+         (supertokens_user_id, name, last_name, email, phone, metadata, custom_field_1, custom_field_2, is_active, email_verified)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false)
+         RETURNING id, name, last_name, email, phone, custom_field_1, custom_field_2, is_active, created_at`,
+        [supertokensUserId, name, last_name || null, email, phone || null, JSON.stringify(metadata || {}), custom_field_1 || null, custom_field_2 || null, isActive]
       );
 
       const user = insertResult.rows[0];
@@ -1035,10 +1035,10 @@ class AppAuthController {
       let queryParams: any[] = [];
 
       if (user_id) {
-        userQuery = `SELECT id, name, email, phone, is_active FROM ${schemaName}.skaftin_system_users WHERE id = $1`;
+        userQuery = `SELECT id, name, last_name, email, phone, is_active FROM ${schemaName}.skaftin_system_users WHERE id = $1`;
         queryParams = [parseInt(user_id)];
       } else {
-        userQuery = `SELECT id, name, email, phone, is_active FROM ${schemaName}.skaftin_system_users WHERE email = $1`;
+        userQuery = `SELECT id, name, last_name, email, phone, is_active FROM ${schemaName}.skaftin_system_users WHERE email = $1`;
         queryParams = [email];
       }
 
@@ -1259,7 +1259,7 @@ class AppAuthController {
 
       // Check if user exists
       const userResult = await AppAuthController.pool.query(
-        `SELECT id, name, email, phone FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
+        `SELECT id, name, last_name, email, phone FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
         [email]
       );
 
@@ -1406,7 +1406,7 @@ class AppAuthController {
 
       // Get user
       const userResult = await AppAuthController.pool.query(
-        `SELECT id, name, email FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
+        `SELECT id, name, last_name, email FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
         [email]
       );
 
@@ -1588,7 +1588,7 @@ class AppAuthController {
 
       // Get user with metadata
       const userResult = await AppAuthController.pool.query(
-        `SELECT id, name, email, metadata, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
+        `SELECT id, name, last_name, email, metadata, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
         [email]
       );
 
@@ -1843,7 +1843,7 @@ class AppAuthController {
 
       // Get user details
       const userResult = await AppAuthController.pool.query(
-        `SELECT id, name, email, phone, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        `SELECT id, name, last_name, email, phone, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
         [req.appUser.userId]
       );
 
@@ -2057,7 +2057,7 @@ class AppAuthController {
 
       // Get user
       const userResult = await AppAuthController.pool.query(
-        `SELECT id, name, email, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        `SELECT id, name, last_name, email, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
         [req.appUser.userId]
       );
 
@@ -2254,7 +2254,7 @@ class AppAuthController {
 
       // Get user details
       const userResult = await AppAuthController.pool.query(
-        `SELECT id, name, email, phone, supertokens_user_id, deletion_scheduled_at FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        `SELECT id, name, last_name, email, phone, supertokens_user_id, deletion_scheduled_at FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
         [req.appUser.userId]
       );
 
@@ -2683,7 +2683,7 @@ class AppAuthController {
 
       // Get user details
       const userResult = await AppAuthController.pool.query(
-        `SELECT id, name, email, supertokens_user_id, deletion_scheduled_at, deleted_at FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        `SELECT id, name, last_name, email, supertokens_user_id, deletion_scheduled_at, deleted_at FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
         [req.appUser.userId]
       );
 

@@ -6,6 +6,7 @@ export const users = pgTable('skaftin_system_users', {
   email: varchar('email', { length: 255 }).notNull().unique(),
   password_hash: varchar('password_hash', { length: 255 }),
   full_name: varchar('full_name', { length: 255 }),
+  last_name: varchar('last_name', { length: 255 }),
   created_at: timestamp('created_at').defaultNow(),
   updated_at: timestamp('updated_at').defaultNow(),
 });

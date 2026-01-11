@@ -4,6 +4,7 @@ export interface AppUser {
   id: number;
   supertokens_user_id?: string;
   name: string;
+  last_name?: string;
   email: string;
   phone?: string;
   custom_field_1?: string;
@@ -29,6 +30,7 @@ export interface Role {
 
 export interface CreateUserRequest {
   name: string;
+  last_name?: string;
   email: string;
   password: string;
   phone?: string;
@@ -40,6 +42,7 @@ export interface CreateUserRequest {
 
 export interface UpdateUserRequest {
   name?: string;
+  last_name?: string;
   email?: string;
   phone?: string;
   custom_field_1?: string;

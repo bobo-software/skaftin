@@ -165,6 +165,7 @@ export class AuthUtils {
     schemaName: string,
     userData: {
       name: string;
+      last_name?: string;
       email?: string | null;
       password: string;
       phone?: string;
@@ -225,14 +226,15 @@ export class AuthUtils {
       // 3. Create in skaftin_system_users table
       const insertQuery = `
         INSERT INTO ${schemaName}.skaftin_system_users 
-        (supertokens_user_id, name, email, password, phone, metadata, custom_field_1, custom_field_2, is_active, email_verified, phone_verified)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, false, false)
+        (supertokens_user_id, name, last_name, email, password, phone, metadata, custom_field_1, custom_field_2, is_active, email_verified, phone_verified)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, false, false)
         RETURNING *
       `;
 
       const userResult = await client.query(insertQuery, [
         superTokensUserId || null,
         userData.name,
+        userData.last_name || null,
         userData.email || null,
         hashedPassword,
         userData.phone || null,

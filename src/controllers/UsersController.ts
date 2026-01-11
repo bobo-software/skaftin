@@ -45,6 +45,7 @@ class UsersController {
           username: users.username,
           email: users.email,
           full_name: users.full_name,
+          last_name: users.last_name,
           created_at: users.created_at,
         })
         .from(users)
@@ -67,7 +68,7 @@ class UsersController {
     }
 
     try {
-      const { username, email, full_name } = req.body;
+      const { username, email, full_name, last_name } = req.body;
 
       // Validation
       if (!username || !email) {
@@ -80,6 +81,7 @@ class UsersController {
           username,
           email,
           full_name: full_name || null,
+          last_name: last_name || null,
         })
         .returning();
 
