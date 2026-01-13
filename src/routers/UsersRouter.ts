@@ -7,6 +7,12 @@ const router = express.Router();
 // Get current user info (requires authentication only)
 router.get('/me', authenticateAndAttachUser, UsersController.getCurrentUser);
 
+// Update current user profile (requires authentication only)
+router.put('/me', authenticateAndAttachUser, UsersController.updateProfile);
+
+// Change current user password (requires authentication only)
+router.put('/me/password', authenticateAndAttachUser, UsersController.changePassword);
+
 // Admin-only routes
 router.get('/list', authenticateAndAttachUser, requireAdmin, UsersController.getAll);
 router.post('/create', authenticateAndAttachUser, requireAdmin, UsersController.create);

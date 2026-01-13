@@ -8,6 +8,7 @@ import ProjectDashboardPage from './pages/user/dashboard/ProjectDashboardPage';
 import CreateOrganizationPage from './pages/user/organizations/CreateOrganizationPage';
 import InviteAcceptPage from './pages/public/InviteAcceptPage';
 import InviteRegisterPage from './pages/public/InviteRegisterPage';
+import UserProfile from './pages/user/dashboard/settings/UserProfile';
 import { useAppStore } from './stores/StoresIndex';
 import { initSuperTokensFrontend, Session } from './config/supertokens';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -182,6 +183,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ProjectDashboardPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/profile" 
+          element={
+            <ProtectedRoute>
+              <UserProfile />
             </ProtectedRoute>
           } 
         />

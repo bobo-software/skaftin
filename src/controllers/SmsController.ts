@@ -47,8 +47,9 @@ export default class SmsController {
     }
     const { providerId } = req.params;
     try {
+      // Return api_key and api_secret when fetching a single provider for editing
       const query = `
-        SELECT id, project_id, name, provider_type, post_url, is_active, created_at, updated_at
+        SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, is_active, created_at, updated_at
         FROM public.sms_providers
         WHERE id = $1 AND project_id = $2
       `;

@@ -105,27 +105,16 @@ const AccountDropdown = ({ onLogout }: AccountDropdownProps) => {
 
           {/* Menu Items */}
           <div className="py-1">
-            {/* Profile/Settings (optional for future) */}
+            {/* Profile */}
             <button
               onClick={() => {
                 setIsOpen(false);
-                // navigate to profile/settings when available
+                navigate('/profile');
               }}
               className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-dark-700 dark:text-dark-300 hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors"
             >
               <User className="w-4 h-4" />
               <span>Profile</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setIsOpen(false);
-                // navigate to settings when available
-              }}
-              className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-dark-700 dark:text-dark-300 hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors"
-            >
-              <Settings className="w-4 h-4" />
-              <span>Settings</span>
             </button>
 
             {/* Theme Toggle */}

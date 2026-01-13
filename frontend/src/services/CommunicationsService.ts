@@ -92,6 +92,8 @@ export interface SmsProvider {
   project_id: string;
   name: string;
   provider_type: 'mymobileapi' | 'sa_mobile_sms';
+  api_key?: string;
+  api_secret?: string;
   post_url: string;
   is_active: boolean;
   created_at?: string;
@@ -406,6 +408,22 @@ class CommunicationsService {
     } catch (error: any) {
       console.error('Error listing SMS providers:', error);
       throw new Error(error.message || 'Failed to list SMS providers');
+    }
+  }
+
+  async getSmsProvider(projectId: string, providerId: string): Promise<SmsProvider> {
+    try {
+      const response = await RequestUtils.get(
+        ApiRoutes.COMMUNICATIONS.GET_SMS_PROVIDER(projectId, providerId),
+        this.getToken()
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to get SMS provider');
+    } catch (error: any) {
+      console.error('Error getting SMS provider:', error);
+      throw new Error(error.message || 'Failed to get SMS provider');
     }
   }
 

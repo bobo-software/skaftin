@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { MessageSquare, Plus, Edit2, Trash2, TestTube, Power, PowerOff, X, FileText, AlertCircle } from 'lucide-react';
+import { MessageSquare, Plus, Edit2, Trash2, TestTube, Power, PowerOff, X, FileText, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import CommunicationsService, {
   SmsProvider,
   CreateSmsProviderRequest,
@@ -23,6 +23,8 @@ const SmsComsTab = () => {
   const [smsTestMessage, setSmsTestMessage] = useState('Hello from Skaftin!');
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<SmsTemplate | null>(null);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [showApiSecret, setShowApiSecret] = useState(false);
   const [smsFormData, setSmsFormData] = useState({
     name: '',
     provider_type: 'sa_mobile_sms' as 'mymobileapi' | 'sa_mobile_sms',
@@ -66,17 +68,33 @@ const SmsComsTab = () => {
     }
   };
 
-  const handleOpenSmsModal = (provider?: SmsProvider) => {
-    if (provider) {
-      setEditingSmsProvider(provider);
-      setSmsFormData({
-        name: provider.name,
-        provider_type: provider.provider_type,
-        api_key: '',
-        api_secret: '',
-        post_url: provider.post_url,
-        is_active: provider.is_active,
-      });
+  const handleOpenSmsModal = async (provider?: SmsProvider) => {
+    if (provider && provider.id) {
+      try {
+        // Fetch full provider details including api_key and api_secret
+        const fullProvider = await CommunicationsService.getSmsProvider(projectId!, provider.id.toString());
+        setEditingSmsProvider(fullProvider);
+        setSmsFormData({
+          name: fullProvider.name,
+          provider_type: fullProvider.provider_type,
+          api_key: fullProvider.api_key || '',
+          api_secret: fullProvider.api_secret || '',
+          post_url: fullProvider.post_url,
+          is_active: fullProvider.is_active,
+        });
+      } catch (error: any) {
+        ToastUtils.error(error.message || 'Failed to load provider details');
+        // Fallback to basic provider data if fetch fails
+        setEditingSmsProvider(provider);
+        setSmsFormData({
+          name: provider.name,
+          provider_type: provider.provider_type,
+          api_key: '',
+          api_secret: '',
+          post_url: provider.post_url,
+          is_active: provider.is_active,
+        });
+      }
     } else {
       setEditingSmsProvider(null);
       setSmsFormData({
@@ -491,27 +509,45 @@ const SmsComsTab = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                    API Key {editingSmsProvider ? '(leave blank to keep)' : '*'}
+                    API Key *
                   </label>
-                  <input
-                    type="password"
-                    value={smsFormData.api_key}
-                    onChange={(e) => setSmsFormData({ ...smsFormData, api_key: e.target.value })}
-                    className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
-                    required={!editingSmsProvider}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showApiKey ? 'text' : 'password'}
+                      value={smsFormData.api_key}
+                      onChange={(e) => setSmsFormData({ ...smsFormData, api_key: e.target.value })}
+                      className="w-full px-4 py-2 pr-10 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
+                      required={!editingSmsProvider}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-400 hover:text-dark-600 dark:hover:text-dark-300"
+                    >
+                      {showApiKey ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                    API Secret {editingSmsProvider ? '(leave blank to keep)' : '*'}
+                    API Secret *
                   </label>
-                  <input
-                    type="password"
-                    value={smsFormData.api_secret}
-                    onChange={(e) => setSmsFormData({ ...smsFormData, api_secret: e.target.value })}
-                    className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
-                    required={!editingSmsProvider}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showApiSecret ? 'text' : 'password'}
+                      value={smsFormData.api_secret}
+                      onChange={(e) => setSmsFormData({ ...smsFormData, api_secret: e.target.value })}
+                      className="w-full px-4 py-2 pr-10 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
+                      required={!editingSmsProvider}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiSecret(!showApiSecret)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-400 hover:text-dark-600 dark:hover:text-dark-300"
+                    >
+                      {showApiSecret ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
               </div>
 
