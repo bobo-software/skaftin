@@ -371,7 +371,13 @@ const AuthUsersTab = () => {
                 <thead className="bg-dark-50 dark:bg-dark-900 border-b border-dark-200 dark:border-dark-700">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
+                      ID
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
                       User
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
+                      Last Name
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
                       Contact
@@ -420,6 +426,9 @@ const AuthUsersTab = () => {
                       onClick={() => handleViewUser(user)}
                       className="hover:bg-dark-50 dark:hover:bg-dark-700/50 transition-colors cursor-pointer"
                     >
+                      <td className="px-4 py-3 text-sm text-dark-600 dark:text-dark-400 font-mono">
+                        {user.id}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center">
                           <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold mr-3">
@@ -437,6 +446,9 @@ const AuthUsersTab = () => {
                             <div className="text-sm text-dark-500 dark:text-dark-400">{user.email}</div>
                           </div>
                         </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-dark-600 dark:text-dark-400">
+                        {user.last_name || '-'}
                       </td>
                       <td className="px-4 py-3">
                         <div className="space-y-1">
