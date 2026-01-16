@@ -2,10 +2,151 @@ import { Pool, PoolClient } from 'pg';
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { ToolModule, ToolCategory, MCPToolsConfig, MCPToolResult, ToolExecutionContext } from '../registry/types';
 import { normalizeQuery } from '../../utils/SqlUtils';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 // Legacy export for backward compatibility during migration
 export interface DatabaseToolsConfig {
   pool: Pool;
+}
+
+/**
+ * Split SQL script into individual statements
+ * Handles semicolons within string literals and comments
+ */
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let currentStatement = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inDollarQuote = false;
+  let dollarTag = '';
+  let inLineComment = false;
+  let inBlockComment = false;
+  
+  for (let i = 0; i < sql.length; i++) {
+    const char = sql[i];
+    const nextChar = sql[i + 1] || '';
+    const prevChar = i > 0 ? sql[i - 1] : '';
+    
+    // Handle block comments
+    if (!inSingleQuote && !inDoubleQuote && !inDollarQuote && char === '/' && nextChar === '*') {
+      inBlockComment = true;
+      currentStatement += char;
+      i++; // Skip next char
+      continue;
+    }
+    if (inBlockComment && char === '*' && nextChar === '/') {
+      inBlockComment = false;
+      currentStatement += char + nextChar;
+      i++; // Skip next char
+      continue;
+    }
+    if (inBlockComment) {
+      currentStatement += char;
+      continue;
+    }
+    
+    // Handle line comments
+    if (!inSingleQuote && !inDoubleQuote && !inDollarQuote && char === '-' && nextChar === '-') {
+      inLineComment = true;
+      currentStatement += char;
+      i++; // Skip next char
+      continue;
+    }
+    if (inLineComment && char === '\n') {
+      inLineComment = false;
+    }
+    if (inLineComment) {
+      currentStatement += char;
+      continue;
+    }
+    
+    // Handle dollar-quoted strings
+    if (!inSingleQuote && !inDoubleQuote && char === '$') {
+      const match = sql.substring(i).match(/^\$([^$]*)\$/);
+      if (match) {
+        if (inDollarQuote) {
+          if (match[0] === `$${dollarTag}$`) {
+            inDollarQuote = false;
+            dollarTag = '';
+          }
+        } else {
+          inDollarQuote = true;
+          dollarTag = match[1] || '';
+        }
+        currentStatement += match[0];
+        i += match[0].length - 1;
+        continue;
+      }
+    }
+    
+    // Handle single quotes
+    if (!inDoubleQuote && !inDollarQuote && char === "'" && prevChar !== '\\') {
+      inSingleQuote = !inSingleQuote;
+    }
+    
+    // Handle double quotes
+    if (!inSingleQuote && !inDollarQuote && char === '"' && prevChar !== '\\') {
+      inDoubleQuote = !inDoubleQuote;
+    }
+    
+    // Only treat semicolon as statement separator outside of quotes/comments
+    if (!inSingleQuote && !inDoubleQuote && !inDollarQuote && char === ';') {
+      const trimmed = currentStatement.trim();
+      if (trimmed) {
+        statements.push(trimmed);
+      }
+      currentStatement = '';
+      continue;
+    }
+    
+    currentStatement += char;
+  }
+  
+  // Add remaining statement
+  const trimmed = currentStatement.trim();
+  if (trimmed) {
+    statements.push(trimmed);
+  }
+  
+  return statements.filter(s => s.length > 0);
+}
+
+/**
+ * Apply conflict handling to INSERT statements
+ */
+function applyConflictStrategy(statement: string, strategy: 'fail' | 'skip' | 'update'): string {
+  if (strategy === 'fail') {
+    return statement;
+  }
+  
+  // Match INSERT statements
+  const insertRegex = /INSERT\s+INTO\s+(\S+)\s*(\([^)]+\))?\s*VALUES\s*([^;]+)/i;
+  const match = statement.match(insertRegex);
+  
+  if (!match) {
+    return statement; // Not an INSERT statement, return as-is
+  }
+  
+  const tableName = match[1];
+  const columns = match[2] || '';
+  const values = match[3];
+  
+  if (strategy === 'skip') {
+    return `${statement} ON CONFLICT DO NOTHING`;
+  } else if (strategy === 'update') {
+    // Extract column names from columns or VALUES
+    if (columns) {
+      const columnNames = columns.slice(1, -1).split(',').map(c => c.trim().replace(/"/g, ''));
+      const updates = columnNames.map(col => `"${col}" = EXCLUDED."${col}"`).join(', ');
+      return `${statement} ON CONFLICT DO UPDATE SET ${updates}`;
+    }
+    // Fallback: update all columns
+    return `${statement} ON CONFLICT DO UPDATE SET ${columns}`;
+  }
+  
+  return statement;
 }
 
 /**
@@ -139,7 +280,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
     },
     {
       name: 'apply_migration',
-      description: 'Execute database migrations',
+      description: 'Execute database migrations with enhanced features: file path support, batch processing, conflict handling, and detailed progress reporting',
       inputSchema: {
         type: 'object',
         properties: {
@@ -155,6 +296,38 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
             type: 'boolean',
             description: 'Rollback the migration instead of applying it',
             default: false,
+          },
+          options: {
+            type: 'object',
+            description: 'Advanced migration options',
+            properties: {
+              batchSize: {
+                type: 'number',
+                description: 'Number of statements per batch (0 = no batching)',
+                default: 0,
+              },
+              conflictStrategy: {
+                type: 'string',
+                enum: ['fail', 'skip', 'update'],
+                description: 'Conflict resolution strategy: fail (default), skip (ON CONFLICT DO NOTHING), or update (ON CONFLICT DO UPDATE)',
+                default: 'fail',
+              },
+              transaction: {
+                type: 'boolean',
+                description: 'Wrap in transaction (default: true)',
+                default: true,
+              },
+              continueOnError: {
+                type: 'boolean',
+                description: 'Continue executing remaining statements on error (default: false)',
+                default: false,
+              },
+              dryRun: {
+                type: 'boolean',
+                description: 'Preview changes without executing (default: false)',
+                default: false,
+              },
+            },
           },
         },
         required: ['projectId', 'migrationFile'],
@@ -856,7 +1029,22 @@ export async function handleDatabaseTool(
     }
 
     case 'apply_migration': {
-      const { projectId, migrationFile, rollback = false } = args;
+      const { 
+        projectId, 
+        migrationFile, 
+        rollback = false,
+        options = {}
+      } = args;
+      
+      const {
+        batchSize = 0,
+        conflictStrategy = 'fail',
+        transaction: useTransaction = true,
+        continueOnError = false,
+        dryRun = false
+      } = options;
+      
+      const startTime = Date.now();
       const client = await pool.connect();
       
       try {
@@ -894,40 +1082,213 @@ export async function handleDatabaseTool(
         await client.query(`SET search_path TO ${schemaName}, public`);
         
         // Read migration file or use provided SQL
-        let sql = migrationFile;
-        if (migrationFile.includes('\n') || migrationFile.startsWith('CREATE') || migrationFile.startsWith('ALTER')) {
-          sql = migrationFile;
+        let sql: string;
+        const isFilePath = !migrationFile.includes('\n') && 
+                          !migrationFile.trim().toUpperCase().startsWith('CREATE') && 
+                          !migrationFile.trim().toUpperCase().startsWith('ALTER') &&
+                          !migrationFile.trim().toUpperCase().startsWith('INSERT') &&
+                          !migrationFile.trim().toUpperCase().startsWith('UPDATE') &&
+                          !migrationFile.trim().toUpperCase().startsWith('DELETE') &&
+                          !migrationFile.trim().toUpperCase().startsWith('SELECT') &&
+                          (migrationFile.includes('/') || migrationFile.includes('\\') || migrationFile.endsWith('.sql'));
+        
+        if (isFilePath) {
+          try {
+            // Try relative to workspace root, then absolute path
+            let filePath = migrationFile;
+            if (!path.isAbsolute(filePath)) {
+              // Try relative to workspace (assuming we're in src/mcp/tools)
+              const workspaceRoot = process.cwd();
+              filePath = path.resolve(workspaceRoot, migrationFile);
+            }
+            sql = await fs.readFile(filePath, 'utf-8');
+          } catch (fileError: any) {
+            return {
+              content: [{ 
+                type: 'text', 
+                text: JSON.stringify({ 
+                  error: `Failed to read migration file: ${fileError.message}`,
+                  hint: 'Ensure the file path is correct and accessible.'
+                }, null, 2) 
+              }],
+              isError: true
+            };
+          }
         } else {
-          // Assume it's a file path - read it (would need fs module)
+          sql = migrationFile;
+        }
+        
+        // Dry run: just return what would be executed
+        if (dryRun) {
+          const statements = splitSqlStatements(sql);
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ 
-                error: 'File path migrations not yet supported. Please provide SQL directly.' 
-              }, null, 2) 
-            }],
-            isError: true
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                dryRun: true,
+                message: 'Dry run - no changes executed',
+                statementsToExecute: statements.length,
+                preview: statements.slice(0, 10).map((s, i) => ({
+                  index: i + 1,
+                  preview: s.substring(0, 100) + (s.length > 100 ? '...' : '')
+                })),
+                totalSize: sql.length,
+                options: { batchSize, conflictStrategy, useTransaction, continueOnError }
+              }, null, 2)
+            }]
           };
         }
         
-        // Execute in transaction
-        await client.query('BEGIN');
+        // Split SQL into statements
+        let statements = splitSqlStatements(sql);
+        
+        // Apply conflict strategy if needed
+        if (conflictStrategy !== 'fail') {
+          statements = statements.map(stmt => applyConflictStrategy(stmt, conflictStrategy));
+        }
+        
+        // Track execution results
+        let statementsExecuted = 0;
+        let totalRowsAffected = 0;
+        let conflicts = 0;
+        const errors: Array<{ statementIndex: number; error: string; statement?: string }> = [];
+        
+        // Execute statements
+        if (useTransaction) {
+          await client.query('BEGIN');
+        }
+        
         try {
-          await client.query(sql);
-          await client.query('COMMIT');
+          // Batch processing
+          if (batchSize > 0 && statements.length > batchSize) {
+            // Process in batches
+            for (let i = 0; i < statements.length; i += batchSize) {
+              const batch = statements.slice(i, i + batchSize);
+              
+              for (let j = 0; j < batch.length; j++) {
+                const statementIndex = i + j + 1;
+                const statement = batch[j];
+                
+                try {
+                  const result = await client.query(statement);
+                  statementsExecuted++;
+                  if (result.rowCount !== null) {
+                    totalRowsAffected += result.rowCount;
+                  }
+                } catch (error: any) {
+                  // Check for conflict errors
+                  if (error.code === '23505' || error.message.includes('duplicate key') || error.message.includes('conflict')) {
+                    conflicts++;
+                    if (conflictStrategy === 'skip') {
+                      // Already handled by ON CONFLICT DO NOTHING, but track it
+                      statementsExecuted++;
+                      continue;
+                    }
+                  }
+                  
+                  errors.push({
+                    statementIndex,
+                    error: error.message,
+                    statement: statement.substring(0, 200)
+                  });
+                  
+                  if (!continueOnError) {
+                    throw error;
+                  }
+                }
+              }
+            }
+          } else {
+            // Execute all statements sequentially
+            for (let i = 0; i < statements.length; i++) {
+              const statement = statements[i];
+              
+              try {
+                const result = await client.query(statement);
+                statementsExecuted++;
+                if (result.rowCount !== null) {
+                  totalRowsAffected += result.rowCount;
+                }
+              } catch (error: any) {
+                // Check for conflict errors
+                if (error.code === '23505' || error.message.includes('duplicate key') || error.message.includes('conflict')) {
+                  conflicts++;
+                  if (conflictStrategy === 'skip') {
+                    // Already handled by ON CONFLICT DO NOTHING, but track it
+                    statementsExecuted++;
+                    continue;
+                  }
+                }
+                
+                errors.push({
+                  statementIndex: i + 1,
+                  error: error.message,
+                  statement: statement.substring(0, 200)
+                });
+                
+                if (!continueOnError) {
+                  throw error;
+                }
+              }
+            }
+          }
           
-          return { 
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ 
-                success: true, 
-                message: rollback ? 'Migration rolled back' : 'Migration applied' 
-              }, null, 2) 
-            }] 
+          if (useTransaction) {
+            await client.query('COMMIT');
+          }
+          
+          const executionTime = ((Date.now() - startTime) / 1000).toFixed(2) + 's';
+          
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: errors.length === 0 || continueOnError,
+                message: rollback ? 'Migration rolled back' : 'Migration applied',
+                statementsExecuted,
+                totalStatements: statements.length,
+                rowsAffected: totalRowsAffected,
+                conflicts,
+                errors: errors.length > 0 ? errors : undefined,
+                executionTime,
+                options: {
+                  batchSize: batchSize > 0 ? batchSize : 'none',
+                  conflictStrategy,
+                  transaction: useTransaction,
+                  continueOnError
+                }
+              }, null, 2)
+            }]
           };
         } catch (error: any) {
-          await client.query('ROLLBACK');
-          throw error;
+          if (useTransaction) {
+            try {
+              await client.query('ROLLBACK');
+            } catch (rollbackError) {
+              // Ignore rollback errors
+            }
+          }
+          
+          const executionTime = ((Date.now() - startTime) / 1000).toFixed(2) + 's';
+          
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                error: error.message,
+                statementsExecuted,
+                totalStatements: statements.length,
+                rowsAffected: totalRowsAffected,
+                conflicts,
+                errors: errors.length > 0 ? errors : [{ statementIndex: statementsExecuted + 1, error: error.message }],
+                executionTime,
+                message: `Migration failed at statement ${statementsExecuted + 1}`
+              }, null, 2)
+            }],
+            isError: true
+          };
         }
       } finally {
         client.release();
