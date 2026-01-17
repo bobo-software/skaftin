@@ -18,8 +18,8 @@ interface DataTableProps {
   onRefresh?: () => void;
   onAddRow?: () => void;
   onCsvImport?: () => void;
-  onEditRow?: (row: any, index: number) => void;
-  onBulkDelete?: (selectedIndices: number[]) => void;
+  onEditRow?: (row: any) => void;
+  onBulkDelete?: (selectedRows: any[]) => void;
   columns?: string[];
   searchable?: boolean;
   selectable?: boolean;
@@ -197,8 +197,11 @@ const DataTable = ({
   const handleBulkDelete = () => {
     if (selectedRows.size === 0) return;
     
+    // Get the actual row objects instead of indices
+    // This ensures correct rows are deleted even after filtering/sorting
     const selectedIndices = Array.from(selectedRows);
-    onBulkDelete?.(selectedIndices);
+    const selectedRowData = selectedIndices.map(index => sortedData[index]).filter(Boolean);
+    onBulkDelete?.(selectedRowData);
     setSelectedRows(new Set());
   };
 
@@ -274,7 +277,6 @@ const DataTable = ({
   const handleCellSave = async (overrideValue?: any) => {
     if (!editingCell) return;
     
-    const actualRowIndex = startIndex + editingCell.rowIndex;
     const row = paginatedData[editingCell.rowIndex];
     
     // Use override value if provided (from autocomplete), otherwise use editValue
@@ -296,8 +298,9 @@ const DataTable = ({
     
     try {
       // Call the edit handler if provided
+      // Pass the updated row directly (with ID) so parent can use it correctly
       if (onEditRow) {
-        await onEditRow(updatedRow, actualRowIndex);
+        await onEditRow(updatedRow);
       }
       setEditingCell(null);
       setEditValue('');

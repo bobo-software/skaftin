@@ -46,7 +46,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     isOpen: boolean;
     type: 'single' | 'bulk' | 'table';
     item?: any;
-    indices?: number[];
+    selectedRows?: any[];
     tableName?: string;
     loading: boolean;
   }>({
@@ -227,11 +227,11 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     }
   };
 
-  const handleBulkDelete = (indices: number[]) => {
+  const handleBulkDelete = (selectedRows: any[]) => {
     setDeleteModal({
       isOpen: true,
       type: 'bulk',
-      indices,
+      selectedRows,
       loading: false
     });
   };
@@ -297,7 +297,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         setDeleteModal({ isOpen: false, type: 'table', loading: false });
       } else if (deleteModal.type === 'single') {
         // Single row delete
-        if (!selectedTable || !deleteModal.indices) return;
+        if (!selectedTable || !deleteModal.item) return;
         const row = deleteModal.item;
         const whereClause = { id: row.id };
         const result = await RequestUtils.delete(
@@ -316,12 +316,19 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         }
       } else {
         // Bulk delete
-        if (!selectedTable || !deleteModal.indices) return;
+        if (!selectedTable || !deleteModal.selectedRows || deleteModal.selectedRows.length === 0) return;
         let successCount = 0;
         let errorCount = 0;
         
-        for (const index of deleteModal.indices!) {
-          const row = tableData[index];
+        // Use the actual row data passed from DataTable
+        // This ensures correct rows are deleted even after filtering/sorting
+        for (const row of deleteModal.selectedRows) {
+          if (!row || !row.id) {
+            console.error('Cannot delete row: Row or ID not found', row);
+            errorCount++;
+            continue;
+          }
+          
           const whereClause = { id: row.id };
           const result = await RequestUtils.delete(
             ApiRoutes.DATABASE.DELETE_DATA(projectId, selectedTable),
@@ -678,22 +685,20 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                       onRefresh={() => selectedTable && fetchTableData(selectedTable)}
                       onAddRow={() => setShowAddRowModal(true)}
                       onCsvImport={() => setShowCsvImportModal(true)}
-                      onEditRow={async (updatedRow, index) => {
+                      onEditRow={async (updatedRow) => {
                         if (!selectedTable) return;
                         
                         try {
                           const token = localStorage.getItem('skaftin-token') || '';
-                          // Find the original row to get the ID for the where clause
-                          // index is the actual row index in the full dataset
-                          const originalRow = tableData[index];
-                          
-                          if (!originalRow || !originalRow.id) {
-                            console.error('Cannot update row: Original row or ID not found', { index, originalRow, tableDataLength: tableData.length });
+                          // Use the ID from the updated row directly
+                          // This ensures correct row is updated even after filtering/sorting
+                          if (!updatedRow || !updatedRow.id) {
+                            console.error('Cannot update row: Row or ID not found', updatedRow);
                             ToastUtils.error('Cannot update row: Row ID not found. Please refresh and try again.');
                             return;
                           }
                           
-                          const whereClause = { id: originalRow.id };
+                          const whereClause = { id: updatedRow.id };
                           
                           // Remove id, created_at, and updated_at from the update data
                           // These fields should not be manually updated
@@ -703,8 +708,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
                             tableName: selectedTable, 
                             whereClause, 
                             updateData,
-                            originalRowId: originalRow.id,
-                            updatedRowId: updatedRow.id
+                            rowId: updatedRow.id
                           });
                           
                           const result = await RequestUtils.put(
@@ -796,7 +800,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
               : `Delete Table "${deleteModal.tableName}"`
             : deleteModal.type === 'single' 
               ? `Delete Row` 
-              : `Delete ${deleteModal.indices?.length || 0} Rows`
+              : `Delete ${deleteModal.selectedRows?.length || 0} Rows`
         }
         message={
           deleteModal.type === 'table'
@@ -805,12 +809,12 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
               : `Are you sure you want to delete the table "${deleteModal.tableName}"? All data in this table will be permanently deleted. This action cannot be undone.`
             : deleteModal.type === 'single' 
               ? 'Are you sure you want to delete this row? This action cannot be undone.'
-              : `Are you sure you want to delete ${deleteModal.indices?.length || 0} rows? This action cannot be undone.`
+              : `Are you sure you want to delete ${deleteModal.selectedRows?.length || 0} rows? This action cannot be undone.`
         }
         itemName={deleteModal.type === 'table' ? 'table' : 'row'}
         itemCount={deleteModal.type === 'table' 
           ? (deleteModal.tableName?.includes(', ') ? deleteModal.tableName.split(', ').length : 1)
-          : (deleteModal.indices?.length || 1)}
+          : (deleteModal.type === 'single' ? 1 : (deleteModal.selectedRows?.length || 0))}
         loading={deleteModal.loading}
         variant={deleteModal.type === 'table' ? 'single' : deleteModal.type}
       />
