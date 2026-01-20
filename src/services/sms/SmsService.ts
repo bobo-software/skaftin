@@ -1,15 +1,18 @@
 import { Pool } from 'pg';
 import { BaseSmsProvider, SmsMessage, SendSmsResult } from './BaseSmsProvider';
 import { MyMobileApiProvider } from './MyMobileApiProvider';
+import { TwilioProvider } from './TwilioProvider';
 
 export interface SmsProviderRecord {
   id: number;
   project_id: string;
   name: string;
-  provider_type: 'mymobileapi' | 'sa_mobile_sms';
+  provider_type: 'mymobileapi' | 'sa_mobile_sms' | 'twilio';
   api_key: string;
   api_secret: string;
   post_url: string;
+  messaging_service_sid?: string;
+  phone_number?: string;
   is_active: boolean;
 }
 
@@ -23,7 +26,8 @@ export class SmsService {
   private async getActiveProvider(projectId: string): Promise<SmsProviderRecord | null> {
     const result = await this.pool.query(
       `
-      SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, is_active
+      SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, 
+             messaging_service_sid, phone_number, is_active
       FROM public.sms_providers
       WHERE project_id = $1 AND is_active = true
       ORDER BY updated_at DESC, id DESC
@@ -43,6 +47,17 @@ export class SmsService {
         postUrl: record.post_url,
       });
     }
+
+    // Twilio provider
+    if (record.provider_type === 'twilio') {
+      return new TwilioProvider({
+        accountSid: record.api_key,
+        authToken: record.api_secret,
+        messagingServiceSid: record.messaging_service_sid,
+        phoneNumber: record.phone_number,
+      });
+    }
+
     throw new Error(`Unsupported SMS provider_type: ${record.provider_type}`);
   }
 

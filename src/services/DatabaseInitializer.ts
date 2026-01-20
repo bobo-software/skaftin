@@ -497,10 +497,12 @@ export class DatabaseInitializer {
           id SERIAL PRIMARY KEY,
           project_id VARCHAR(255) NOT NULL,
           name VARCHAR(255) NOT NULL,
-          provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('mymobileapi', 'sa_mobile_sms')),
+          provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('mymobileapi', 'sa_mobile_sms', 'twilio')),
           api_key TEXT NOT NULL,
           api_secret TEXT NOT NULL,
-          post_url VARCHAR(500) NOT NULL,
+          post_url VARCHAR(500),
+          messaging_service_sid VARCHAR(255),
+          phone_number VARCHAR(50),
           is_active BOOLEAN DEFAULT true,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -511,6 +513,49 @@ export class DatabaseInitializer {
       if (err.code !== '23505' && err.code !== '42P07') {
         console.error('❌ SMS providers table creation error:', err.message);
       }
+    }
+
+    // Migration: Add Twilio support to existing tables
+    try {
+      // Add new columns for Twilio if they don't exist
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'sms_providers' AND column_name = 'messaging_service_sid'
+          ) THEN
+            ALTER TABLE public.sms_providers ADD COLUMN messaging_service_sid VARCHAR(255);
+          END IF;
+          
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'sms_providers' AND column_name = 'phone_number'
+          ) THEN
+            ALTER TABLE public.sms_providers ADD COLUMN phone_number VARCHAR(50);
+          END IF;
+
+          -- Make post_url nullable for Twilio (which doesn't need it)
+          ALTER TABLE public.sms_providers ALTER COLUMN post_url DROP NOT NULL;
+        EXCEPTION WHEN OTHERS THEN
+          NULL;
+        END $$;
+      `));
+
+      // Update CHECK constraint to include twilio
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          ALTER TABLE public.sms_providers DROP CONSTRAINT IF EXISTS sms_providers_provider_type_check;
+          ALTER TABLE public.sms_providers ADD CONSTRAINT sms_providers_provider_type_check 
+            CHECK (provider_type IN ('mymobileapi', 'sa_mobile_sms', 'twilio'));
+        EXCEPTION WHEN OTHERS THEN
+          NULL;
+        END $$;
+      `));
+    } catch (err: any) {
+      // Ignore migration errors for existing databases
+      console.log('SMS providers migration note:', err.message);
     }
 
     try {

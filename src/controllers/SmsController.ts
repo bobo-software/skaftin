@@ -24,7 +24,7 @@ export default class SmsController {
     }
     try {
       const query = `
-        SELECT id, project_id, name, provider_type, post_url, is_active, created_at, updated_at
+        SELECT id, project_id, name, provider_type, post_url, messaging_service_sid, phone_number, is_active, created_at, updated_at
         FROM public.sms_providers
         WHERE project_id = $1
         ORDER BY created_at DESC
@@ -49,7 +49,7 @@ export default class SmsController {
     try {
       // Return api_key and api_secret when fetching a single provider for editing
       const query = `
-        SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, is_active, created_at, updated_at
+        SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, is_active, created_at, updated_at
         FROM public.sms_providers
         WHERE id = $1 AND project_id = $2
       `;
@@ -73,18 +73,33 @@ export default class SmsController {
       res.status(400).json({ success: false, error: 'Project ID is required' });
       return;
     }
-    const { name, provider_type, api_key, api_secret, post_url, is_active } = req.body || {};
-    if (!name || !provider_type || !api_key || !api_secret || !post_url) {
-      res.status(400).json({ success: false, error: 'Missing required fields' });
+    const { name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, is_active } = req.body || {};
+    
+    // Validate required fields based on provider type
+    if (!name || !provider_type || !api_key || !api_secret) {
+      res.status(400).json({ success: false, error: 'Missing required fields: name, provider_type, api_key, api_secret' });
       return;
     }
+    
+    // For non-Twilio providers, post_url is required
+    if (provider_type !== 'twilio' && !post_url) {
+      res.status(400).json({ success: false, error: 'Missing required field: post_url (required for non-Twilio providers)' });
+      return;
+    }
+    
+    // For Twilio, either messaging_service_sid or phone_number is required
+    if (provider_type === 'twilio' && !messaging_service_sid && !phone_number) {
+      res.status(400).json({ success: false, error: 'Twilio requires either messaging_service_sid or phone_number' });
+      return;
+    }
+    
     try {
       const query = `
-        INSERT INTO public.sms_providers (project_id, name, provider_type, api_key, api_secret, post_url, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, true))
-        RETURNING id, project_id, name, provider_type, post_url, is_active, created_at, updated_at
+        INSERT INTO public.sms_providers (project_id, name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, true))
+        RETURNING id, project_id, name, provider_type, post_url, messaging_service_sid, phone_number, is_active, created_at, updated_at
       `;
-      const result = await this.pool.query(query, [projectId, name, provider_type, api_key, api_secret, post_url, is_active]);
+      const result = await this.pool.query(query, [projectId, name, provider_type, api_key, api_secret, post_url || null, messaging_service_sid || null, phone_number || null, is_active]);
       res.status(201).json({ success: true, data: result.rows[0] });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error?.message ?? 'Failed to create SMS provider' });
@@ -101,7 +116,7 @@ export default class SmsController {
       return;
     }
     const { providerId } = req.params;
-    const allowed = ['name', 'provider_type', 'api_key', 'api_secret', 'post_url', 'is_active'];
+    const allowed = ['name', 'provider_type', 'api_key', 'api_secret', 'post_url', 'messaging_service_sid', 'phone_number', 'is_active'];
     const updates = req.body || {};
     const fields: string[] = [];
     const values: any[] = [];
@@ -123,7 +138,7 @@ export default class SmsController {
         UPDATE public.sms_providers
         SET ${fields.join(', ')}
         WHERE id = $${idx++} AND project_id = $${idx++}
-        RETURNING id, project_id, name, provider_type, post_url, is_active, created_at, updated_at
+        RETURNING id, project_id, name, provider_type, post_url, messaging_service_sid, phone_number, is_active, created_at, updated_at
       `;
       const result = await this.pool.query(query, values);
       if (result.rows.length === 0) {
