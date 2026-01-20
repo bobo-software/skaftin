@@ -903,16 +903,64 @@ export class DatabaseInitializer {
           email_provider_id INTEGER REFERENCES public.skaftin_system_email_providers(id) ON DELETE SET NULL,
           sms_provider_id INTEGER,
           send_registration_email BOOLEAN DEFAULT false,
+          send_registration_sms BOOLEAN DEFAULT false,
           send_verification_email BOOLEAN DEFAULT false,
+          send_verification_sms BOOLEAN DEFAULT false,
           send_password_reset_email BOOLEAN DEFAULT true,
+          send_password_reset_sms BOOLEAN DEFAULT false,
           send_welcome_email BOOLEAN DEFAULT false,
+          send_welcome_sms BOOLEAN DEFAULT false,
           require_otp_for_password_change BOOLEAN DEFAULT false,
           require_otp_for_account_deletion BOOLEAN DEFAULT false,
+          otp_length INTEGER DEFAULT 6 CHECK (otp_length >= 4 AND otp_length <= 6),
           settings_json JSONB DEFAULT '{}',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
+      
+      // Migration: Add missing columns if they don't exist (for existing databases)
+      await this.db.execute(sql.raw(`
+        DO $$
+        BEGIN
+          -- Add otp_length if missing
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_auth_settings' AND column_name = 'otp_length'
+          ) THEN
+            ALTER TABLE public.skaftin_system_auth_settings ADD COLUMN otp_length INTEGER DEFAULT 6 CHECK (otp_length >= 4 AND otp_length <= 6);
+          END IF;
+          
+          -- Add SMS notification columns if missing
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_auth_settings' AND column_name = 'send_registration_sms'
+          ) THEN
+            ALTER TABLE public.skaftin_system_auth_settings ADD COLUMN send_registration_sms BOOLEAN DEFAULT false;
+          END IF;
+          
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_auth_settings' AND column_name = 'send_verification_sms'
+          ) THEN
+            ALTER TABLE public.skaftin_system_auth_settings ADD COLUMN send_verification_sms BOOLEAN DEFAULT false;
+          END IF;
+          
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_auth_settings' AND column_name = 'send_password_reset_sms'
+          ) THEN
+            ALTER TABLE public.skaftin_system_auth_settings ADD COLUMN send_password_reset_sms BOOLEAN DEFAULT false;
+          END IF;
+          
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_auth_settings' AND column_name = 'send_welcome_sms'
+          ) THEN
+            ALTER TABLE public.skaftin_system_auth_settings ADD COLUMN send_welcome_sms BOOLEAN DEFAULT false;
+          END IF;
+        END $$;
+      `));
     } catch (err: any) {
       if (err.code !== '23505' && err.code !== '42P07') {
         console.error('❌ Auth settings table creation error:', err.message);

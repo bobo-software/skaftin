@@ -2,20 +2,33 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { MessageSquare, Plus, Edit2, Trash2, TestTube, Power, PowerOff, X, FileText, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import CommunicationsService, {
-  SmsProvider,
-  CreateSmsProviderRequest,
-  UpdateSmsProviderRequest,
   SmsTemplate,
   CreateSmsTemplateRequest,
   UpdateSmsTemplateRequest,
 } from '../../../../../services/CommunicationsService';
+import useComProviderStore, {
+  SmsProvider,
+  CreateSmsProviderRequest,
+  UpdateSmsProviderRequest,
+} from '../../../../../stores/data/useComProviderStore';
 import ToastUtils from '../../../../../utils/ToastUtils';
 
 const SmsComsTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
-  const [smsProviders, setSmsProviders] = useState<SmsProvider[]>([]);
+  
+  // Use Zustand store for SMS providers
+  const {
+    smsProviders,
+    smsProvidersLoading,
+    fetchSmsProviders,
+    getSmsProvider,
+    createSmsProvider,
+    updateSmsProvider,
+    deleteSmsProvider,
+  } = useComProviderStore();
+
   const [smsTemplates, setSmsTemplates] = useState<SmsTemplate[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
   const [showSmsModal, setShowSmsModal] = useState(false);
   const [editingSmsProvider, setEditingSmsProvider] = useState<SmsProvider | null>(null);
   const [showSmsTestModal, setShowSmsTestModal] = useState(false);
@@ -50,42 +63,46 @@ const SmsComsTab = () => {
   }, [projectId]);
 
   const loadSmsProviders = async () => {
+    if (!projectId) return;
     try {
-      setLoading(true);
-      const data = await CommunicationsService.listSmsProviders(projectId!);
-      setSmsProviders(data);
+      await fetchSmsProviders(projectId);
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to load SMS providers');
-    } finally {
-      setLoading(false);
     }
   };
 
   const loadSmsTemplates = async () => {
+    setTemplatesLoading(true);
     try {
       const data = await CommunicationsService.listSmsTemplates(projectId!);
       setSmsTemplates(data);
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to load SMS templates');
+    } finally {
+      setTemplatesLoading(false);
     }
   };
 
   const handleOpenSmsModal = async (provider?: SmsProvider) => {
     if (provider && provider.id) {
       try {
-        // Fetch full provider details including api_key and api_secret
-        const fullProvider = await CommunicationsService.getSmsProvider(projectId!, provider.id.toString());
-        setEditingSmsProvider(fullProvider);
-        setSmsFormData({
-          name: fullProvider.name,
-          provider_type: fullProvider.provider_type,
-          api_key: fullProvider.api_key || '',
-          api_secret: fullProvider.api_secret || '',
-          post_url: fullProvider.post_url || '',
-          messaging_service_sid: fullProvider.messaging_service_sid || '',
-          phone_number: fullProvider.phone_number || '',
-          is_active: fullProvider.is_active,
-        });
+        // Fetch full provider details including api_key and api_secret using store
+        const fullProvider = await getSmsProvider(projectId!, provider.id.toString());
+        if (fullProvider) {
+          setEditingSmsProvider(fullProvider);
+          setSmsFormData({
+            name: fullProvider.name,
+            provider_type: fullProvider.provider_type,
+            api_key: fullProvider.api_key || '',
+            api_secret: fullProvider.api_secret || '',
+            post_url: fullProvider.post_url || '',
+            messaging_service_sid: fullProvider.messaging_service_sid || '',
+            phone_number: fullProvider.phone_number || '',
+            is_active: fullProvider.is_active,
+          });
+        } else {
+          throw new Error('Provider not found');
+        }
       } catch (error: any) {
         ToastUtils.error(error.message || 'Failed to load provider details');
         // Fallback to basic provider data if fetch fails
@@ -139,8 +156,12 @@ const SmsComsTab = () => {
         } else {
           updateData.post_url = smsFormData.post_url;
         }
-        await CommunicationsService.updateSmsProvider(projectId!, editingSmsProvider.id!.toString(), updateData);
-        ToastUtils.success('SMS provider updated successfully');
+        const result = await updateSmsProvider(projectId!, editingSmsProvider.id!.toString(), updateData);
+        if (result) {
+          ToastUtils.success('SMS provider updated successfully');
+        } else {
+          throw new Error('Failed to update provider');
+        }
       } else {
         const createData: CreateSmsProviderRequest = {
           name: smsFormData.name,
@@ -155,11 +176,14 @@ const SmsComsTab = () => {
         } else {
           createData.post_url = smsFormData.post_url;
         }
-        await CommunicationsService.createSmsProvider(projectId!, createData);
-        ToastUtils.success('SMS provider created successfully');
+        const result = await createSmsProvider(projectId!, createData);
+        if (result) {
+          ToastUtils.success('SMS provider created successfully');
+        } else {
+          throw new Error('Failed to create provider');
+        }
       }
       handleCloseSmsModal();
-      loadSmsProviders();
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to save SMS provider');
     }
@@ -170,9 +194,12 @@ const SmsComsTab = () => {
       return;
     }
     try {
-      await CommunicationsService.deleteSmsProvider(projectId!, providerId.toString());
-      ToastUtils.success('SMS provider deleted successfully');
-      loadSmsProviders();
+      const success = await deleteSmsProvider(projectId!, providerId.toString());
+      if (success) {
+        ToastUtils.success('SMS provider deleted successfully');
+      } else {
+        throw new Error('Failed to delete provider');
+      }
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to delete SMS provider');
     }
@@ -180,13 +207,16 @@ const SmsComsTab = () => {
 
   const handleToggleSmsActive = async (provider: SmsProvider) => {
     try {
-      await CommunicationsService.updateSmsProvider(
+      const result = await updateSmsProvider(
         projectId!,
         provider.id!.toString(),
         { is_active: !provider.is_active }
       );
-      ToastUtils.success(`Provider ${!provider.is_active ? 'activated' : 'deactivated'}`);
-      loadSmsProviders();
+      if (result) {
+        ToastUtils.success(`Provider ${!provider.is_active ? 'activated' : 'deactivated'}`);
+      } else {
+        throw new Error('Failed to toggle provider status');
+      }
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to toggle provider status');
     }
@@ -287,7 +317,7 @@ const SmsComsTab = () => {
     return extractVariables(templateFormData.content);
   }, [templateFormData.content]);
 
-  if (loading) {
+  if (smsProvidersLoading || templatesLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>

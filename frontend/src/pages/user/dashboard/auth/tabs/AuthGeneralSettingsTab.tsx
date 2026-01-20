@@ -1,19 +1,26 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Save, Mail, AlertCircle, CheckCircle } from 'lucide-react';
-import AuthSettingsService, { AuthSettings, EmailProvider, SmsProvider } from '../../../../../services/AuthSettingsService';
+import AuthSettingsService, { AuthSettings } from '../../../../../services/AuthSettingsService';
 import RolesService, { Role } from '../../../../../services/RolesService';
 import { AppButton } from '../../../../../components/ComponentsIndex';
+import useComProviderStore from '../../../../../stores/data/useComProviderStore';
 
 const AuthGeneralSettingsTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const [settings, setSettings] = useState<AuthSettings | null>(null);
-  const [emailProviders, setEmailProviders] = useState<EmailProvider[]>([]);
-  const [smsProviders, setSmsProviders] = useState<SmsProvider[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Use Zustand store for providers
+  const {
+    emailProviders,
+    smsProviders,
+    fetchEmailProviders,
+    fetchSmsProviders,
+  } = useComProviderStore();
 
   const fetchSettings = useCallback(async () => {
     if (!projectId) return;
@@ -27,27 +34,6 @@ const AuthGeneralSettingsTab = () => {
       setMessage({ type: 'error', text: error.message });
     } finally {
       setLoading(false);
-    }
-  }, [projectId]);
-
-  const fetchEmailProviders = useCallback(async () => {
-    if (!projectId) return;
-    
-    try {
-      const providers = await AuthSettingsService.getEmailProviders(projectId);
-      setEmailProviders(providers);
-    } catch (error) {
-      console.error('Error fetching email providers:', error);
-    }
-  }, [projectId]);
-
-  const fetchSmsProviders = useCallback(async () => {
-    if (!projectId) return;
-    try {
-      const providers = await AuthSettingsService.getSmsProviders(projectId);
-      setSmsProviders(providers);
-    } catch (error) {
-      console.error('Error fetching SMS providers:', error);
     }
   }, [projectId]);
 
@@ -65,8 +51,8 @@ const AuthGeneralSettingsTab = () => {
   useEffect(() => {
     if (projectId) {
       fetchSettings();
-      fetchEmailProviders();
-      fetchSmsProviders();
+      fetchEmailProviders(projectId);
+      fetchSmsProviders(projectId);
       fetchRoles();
     }
   }, [projectId, fetchSettings, fetchEmailProviders, fetchSmsProviders, fetchRoles]);
@@ -89,6 +75,7 @@ const AuthGeneralSettingsTab = () => {
         default_role_id: settings.default_role_id,
         email_provider_id: settings.email_provider_id,
         sms_provider_id: settings.sms_provider_id,
+        otp_length: settings.otp_length,
       });
       setMessage({ type: 'success', text: 'Settings saved successfully!' });
       setTimeout(() => setMessage(null), 3000);
@@ -311,6 +298,24 @@ const AuthGeneralSettingsTab = () => {
                   />
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
                 </label>
+              </div>
+
+              <div>
+                <label className="block font-medium text-dark-900 dark:text-white mb-2">
+                  OTP Code Length
+                </label>
+                <select
+                  value={settings.otp_length || 6}
+                  onChange={(e) => setSettings({ ...settings, otp_length: parseInt(e.target.value) })}
+                  className="w-full px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
+                >
+                  <option value={4}>4 digits</option>
+                  <option value={5}>5 digits</option>
+                  <option value={6}>6 digits</option>
+                </select>
+                <p className="text-sm text-dark-600 dark:text-dark-400 mt-1">
+                  Number of digits for OTP verification codes (4-6)
+                </p>
               </div>
             </div>
           </div>
