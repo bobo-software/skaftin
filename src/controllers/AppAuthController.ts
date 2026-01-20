@@ -43,6 +43,17 @@ class AppAuthController {
   }
 
   /**
+   * Generate OTP code with configurable length (4-6 digits)
+   */
+  private static generateOTP(length: number = 6): string {
+    // Ensure length is between 4 and 6
+    const otpLength = Math.min(6, Math.max(4, length));
+    const min = Math.pow(10, otpLength - 1);
+    const max = Math.pow(10, otpLength) - 1;
+    return crypto.randomInt(min, max + 1).toString();
+  }
+
+  /**
    * Register a new app user
    * POST /api/app-auth/auth/register (with x-api-key or x-access-token)
    * POST /api/app-auth/:projectId/auth/register (backward compatibility)
@@ -77,7 +88,8 @@ class AppAuthController {
       const settingsResult = await AppAuthController.pool.query(
         `SELECT registration_enabled, auth_enabled, email_provider_id,
                 send_registration_email, send_verification_email, 
-                send_welcome_email, require_email_verification
+                send_welcome_email, require_email_verification,
+                otp_length
          FROM skaftin_system_auth_settings WHERE project_id = $1`,
         [projectId]
       );
@@ -248,7 +260,7 @@ class AppAuthController {
           return ResponseUtils.error(res, 'Email provider not configured for this project', null, null, 500);
         }
 
-        const otp = crypto.randomInt(100000, 999999).toString();
+        const otp = AppAuthController.generateOTP(emailSettings.otp_length || 6);
         const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
         
         console.log(`📧 Sending OTP via email to ${email}...`);
@@ -284,7 +296,7 @@ class AppAuthController {
         }
       } else if (otp_method === 'sms') {
         // Send OTP via SMS
-        const otp = crypto.randomInt(100000, 999999).toString();
+        const otp = AppAuthController.generateOTP(emailSettings.otp_length || 6);
         const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
         
         console.log(`📱 Sending OTP via SMS to ${phone}...`);
@@ -1242,7 +1254,7 @@ class AppAuthController {
 
       // Check if password reset is enabled
       const settingsResult = await AppAuthController.pool.query(
-        `SELECT auth_enabled, enable_password_reset, email_provider_id
+        `SELECT auth_enabled, enable_password_reset, email_provider_id, otp_length
          FROM skaftin_system_auth_settings WHERE project_id = $1`,
         [projectId]
       );
@@ -1279,8 +1291,8 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Phone number not available for this account. Please use email method.', null, null, 400);
       }
 
-      // Generate OTP code
-      const otp = crypto.randomInt(100000, 999999).toString();
+      // Generate OTP code with configurable length
+      const otp = AppAuthController.generateOTP(emailSettings.otp_length || 6);
       const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
       // Invalidate any existing pending password reset OTPs for this user
@@ -1856,7 +1868,7 @@ class AppAuthController {
 
       // Get auth settings to check if OTP is required
       const settingsResult = await AppAuthController.pool.query(
-        `SELECT require_otp_for_password_change, email_provider_id, sms_provider_id
+        `SELECT require_otp_for_password_change, email_provider_id, sms_provider_id, otp_length
          FROM skaftin_system_auth_settings WHERE project_id = $1`,
         [projectId]
       );
@@ -1924,8 +1936,8 @@ class AppAuthController {
         return ResponseUtils.error(res, 'SMS provider not configured for this project', null, null, 500);
       }
 
-      // Generate OTP
-      const otp = crypto.randomInt(100000, 999999).toString();
+      // Generate OTP with configurable length
+      const otp = AppAuthController.generateOTP(settings.otp_length || 6);
       const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
       console.log(`   └─ Sending OTP via ${selectedOtpMethod}...`);
@@ -2279,7 +2291,7 @@ class AppAuthController {
 
       // Get auth settings to check if OTP is required
       const settingsResult = await AppAuthController.pool.query(
-        `SELECT require_otp_for_account_deletion, email_provider_id, sms_provider_id
+        `SELECT require_otp_for_account_deletion, email_provider_id, sms_provider_id, otp_length
          FROM skaftin_system_auth_settings WHERE project_id = $1`,
         [projectId]
       );
@@ -2359,8 +2371,8 @@ class AppAuthController {
         return ResponseUtils.error(res, 'SMS provider not configured for this project', null, null, 500);
       }
 
-      // Generate OTP
-      const otp = crypto.randomInt(100000, 999999).toString();
+      // Generate OTP with configurable length
+      const otp = AppAuthController.generateOTP(settings.otp_length || 6);
       const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
       console.log(`   └─ Sending OTP via ${selectedOtpMethod}...`);

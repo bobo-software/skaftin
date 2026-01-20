@@ -23,6 +23,7 @@ export interface AuthSettings {
   send_welcome_sms?: boolean;
   require_otp_for_password_change?: boolean;
   require_otp_for_account_deletion?: boolean;
+  otp_length?: number;
   settings_json: any;
   created_at: string;
   updated_at: string;
@@ -49,6 +50,7 @@ export interface UpdateAuthSettingsRequest {
   send_welcome_sms?: boolean;
   require_otp_for_password_change?: boolean;
   require_otp_for_account_deletion?: boolean;
+  otp_length?: number;
   settings_json?: any;
 }
 

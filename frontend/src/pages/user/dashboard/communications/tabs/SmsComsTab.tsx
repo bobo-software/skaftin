@@ -2,20 +2,33 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { MessageSquare, Plus, Edit2, Trash2, TestTube, Power, PowerOff, X, FileText, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import CommunicationsService, {
-  SmsProvider,
-  CreateSmsProviderRequest,
-  UpdateSmsProviderRequest,
   SmsTemplate,
   CreateSmsTemplateRequest,
   UpdateSmsTemplateRequest,
 } from '../../../../../services/CommunicationsService';
+import useComProviderStore, {
+  SmsProvider,
+  CreateSmsProviderRequest,
+  UpdateSmsProviderRequest,
+} from '../../../../../stores/data/useComProviderStore';
 import ToastUtils from '../../../../../utils/ToastUtils';
 
 const SmsComsTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
-  const [smsProviders, setSmsProviders] = useState<SmsProvider[]>([]);
+  
+  // Use Zustand store for SMS providers
+  const {
+    smsProviders,
+    smsProvidersLoading,
+    fetchSmsProviders,
+    getSmsProvider,
+    createSmsProvider,
+    updateSmsProvider,
+    deleteSmsProvider,
+  } = useComProviderStore();
+
   const [smsTemplates, setSmsTemplates] = useState<SmsTemplate[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
   const [showSmsModal, setShowSmsModal] = useState(false);
   const [editingSmsProvider, setEditingSmsProvider] = useState<SmsProvider | null>(null);
   const [showSmsTestModal, setShowSmsTestModal] = useState(false);
@@ -27,10 +40,12 @@ const SmsComsTab = () => {
   const [showApiSecret, setShowApiSecret] = useState(false);
   const [smsFormData, setSmsFormData] = useState({
     name: '',
-    provider_type: 'sa_mobile_sms' as 'mymobileapi' | 'sa_mobile_sms',
+    provider_type: 'sa_mobile_sms' as 'mymobileapi' | 'sa_mobile_sms' | 'twilio',
     api_key: '',
     api_secret: '',
     post_url: 'https://rest.mymobileapi.com/bulkmessages',
+    messaging_service_sid: '',
+    phone_number: '',
     is_active: true,
   });
   const [templateFormData, setTemplateFormData] = useState({
@@ -48,40 +63,46 @@ const SmsComsTab = () => {
   }, [projectId]);
 
   const loadSmsProviders = async () => {
+    if (!projectId) return;
     try {
-      setLoading(true);
-      const data = await CommunicationsService.listSmsProviders(projectId!);
-      setSmsProviders(data);
+      await fetchSmsProviders(projectId);
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to load SMS providers');
-    } finally {
-      setLoading(false);
     }
   };
 
   const loadSmsTemplates = async () => {
+    setTemplatesLoading(true);
     try {
       const data = await CommunicationsService.listSmsTemplates(projectId!);
       setSmsTemplates(data);
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to load SMS templates');
+    } finally {
+      setTemplatesLoading(false);
     }
   };
 
   const handleOpenSmsModal = async (provider?: SmsProvider) => {
     if (provider && provider.id) {
       try {
-        // Fetch full provider details including api_key and api_secret
-        const fullProvider = await CommunicationsService.getSmsProvider(projectId!, provider.id.toString());
-        setEditingSmsProvider(fullProvider);
-        setSmsFormData({
-          name: fullProvider.name,
-          provider_type: fullProvider.provider_type,
-          api_key: fullProvider.api_key || '',
-          api_secret: fullProvider.api_secret || '',
-          post_url: fullProvider.post_url,
-          is_active: fullProvider.is_active,
-        });
+        // Fetch full provider details including api_key and api_secret using store
+        const fullProvider = await getSmsProvider(projectId!, provider.id.toString());
+        if (fullProvider) {
+          setEditingSmsProvider(fullProvider);
+          setSmsFormData({
+            name: fullProvider.name,
+            provider_type: fullProvider.provider_type,
+            api_key: fullProvider.api_key || '',
+            api_secret: fullProvider.api_secret || '',
+            post_url: fullProvider.post_url || '',
+            messaging_service_sid: fullProvider.messaging_service_sid || '',
+            phone_number: fullProvider.phone_number || '',
+            is_active: fullProvider.is_active,
+          });
+        } else {
+          throw new Error('Provider not found');
+        }
       } catch (error: any) {
         ToastUtils.error(error.message || 'Failed to load provider details');
         // Fallback to basic provider data if fetch fails
@@ -91,7 +112,9 @@ const SmsComsTab = () => {
           provider_type: provider.provider_type,
           api_key: '',
           api_secret: '',
-          post_url: provider.post_url,
+          post_url: provider.post_url || '',
+          messaging_service_sid: provider.messaging_service_sid || '',
+          phone_number: provider.phone_number || '',
           is_active: provider.is_active,
         });
       }
@@ -103,6 +126,8 @@ const SmsComsTab = () => {
         api_key: '',
         api_secret: '',
         post_url: 'https://rest.mymobileapi.com/bulkmessages',
+        messaging_service_sid: '',
+        phone_number: '',
         is_active: true,
       });
     }
@@ -121,27 +146,44 @@ const SmsComsTab = () => {
         const updateData: UpdateSmsProviderRequest = {
           name: smsFormData.name,
           provider_type: smsFormData.provider_type,
-          post_url: smsFormData.post_url,
           is_active: smsFormData.is_active,
         };
         if (smsFormData.api_key) updateData.api_key = smsFormData.api_key;
         if (smsFormData.api_secret) updateData.api_secret = smsFormData.api_secret;
-        await CommunicationsService.updateSmsProvider(projectId!, editingSmsProvider.id!.toString(), updateData);
-        ToastUtils.success('SMS provider updated successfully');
+        if (smsFormData.provider_type === 'twilio') {
+          if (smsFormData.messaging_service_sid) updateData.messaging_service_sid = smsFormData.messaging_service_sid;
+          if (smsFormData.phone_number) updateData.phone_number = smsFormData.phone_number;
+        } else {
+          updateData.post_url = smsFormData.post_url;
+        }
+        const result = await updateSmsProvider(projectId!, editingSmsProvider.id!.toString(), updateData);
+        if (result) {
+          ToastUtils.success('SMS provider updated successfully');
+        } else {
+          throw new Error('Failed to update provider');
+        }
       } else {
         const createData: CreateSmsProviderRequest = {
           name: smsFormData.name,
           provider_type: smsFormData.provider_type,
           api_key: smsFormData.api_key,
           api_secret: smsFormData.api_secret,
-          post_url: smsFormData.post_url,
           is_active: smsFormData.is_active,
         };
-        await CommunicationsService.createSmsProvider(projectId!, createData);
-        ToastUtils.success('SMS provider created successfully');
+        if (smsFormData.provider_type === 'twilio') {
+          createData.messaging_service_sid = smsFormData.messaging_service_sid || undefined;
+          createData.phone_number = smsFormData.phone_number || undefined;
+        } else {
+          createData.post_url = smsFormData.post_url;
+        }
+        const result = await createSmsProvider(projectId!, createData);
+        if (result) {
+          ToastUtils.success('SMS provider created successfully');
+        } else {
+          throw new Error('Failed to create provider');
+        }
       }
       handleCloseSmsModal();
-      loadSmsProviders();
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to save SMS provider');
     }
@@ -152,9 +194,12 @@ const SmsComsTab = () => {
       return;
     }
     try {
-      await CommunicationsService.deleteSmsProvider(projectId!, providerId.toString());
-      ToastUtils.success('SMS provider deleted successfully');
-      loadSmsProviders();
+      const success = await deleteSmsProvider(projectId!, providerId.toString());
+      if (success) {
+        ToastUtils.success('SMS provider deleted successfully');
+      } else {
+        throw new Error('Failed to delete provider');
+      }
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to delete SMS provider');
     }
@@ -162,13 +207,16 @@ const SmsComsTab = () => {
 
   const handleToggleSmsActive = async (provider: SmsProvider) => {
     try {
-      await CommunicationsService.updateSmsProvider(
+      const result = await updateSmsProvider(
         projectId!,
         provider.id!.toString(),
         { is_active: !provider.is_active }
       );
-      ToastUtils.success(`Provider ${!provider.is_active ? 'activated' : 'deactivated'}`);
-      loadSmsProviders();
+      if (result) {
+        ToastUtils.success(`Provider ${!provider.is_active ? 'activated' : 'deactivated'}`);
+      } else {
+        throw new Error('Failed to toggle provider status');
+      }
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to toggle provider status');
     }
@@ -269,7 +317,7 @@ const SmsComsTab = () => {
     return extractVariables(templateFormData.content);
   }, [templateFormData.content]);
 
-  if (loading) {
+  if (smsProvidersLoading || templatesLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
@@ -502,14 +550,15 @@ const SmsComsTab = () => {
                 >
                   <option value="sa_mobile_sms">SA Mobile SMS</option>
                   <option value="mymobileapi">MyMobileAPI</option>
+                  <option value="twilio">Twilio</option>
                 </select>
               </div>
 
-              {/* API Key/Secret */}
+              {/* API Key/Secret (labels change based on provider) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                    API Key *
+                    {smsFormData.provider_type === 'twilio' ? 'Account SID *' : 'API Key *'}
                   </label>
                   <div className="relative">
                     <input
@@ -518,6 +567,7 @@ const SmsComsTab = () => {
                       onChange={(e) => setSmsFormData({ ...smsFormData, api_key: e.target.value })}
                       className="w-full px-4 py-2 pr-10 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
                       required={!editingSmsProvider}
+                      placeholder={smsFormData.provider_type === 'twilio' ? 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' : ''}
                     />
                     <button
                       type="button"
@@ -530,7 +580,7 @@ const SmsComsTab = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                    API Secret *
+                    {smsFormData.provider_type === 'twilio' ? 'Auth Token *' : 'API Secret *'}
                   </label>
                   <div className="relative">
                     <input
@@ -551,20 +601,58 @@ const SmsComsTab = () => {
                 </div>
               </div>
 
-              {/* POST URL */}
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  POST URL *
-                </label>
-                <input
-                  type="text"
-                  value={smsFormData.post_url}
-                  onChange={(e) => setSmsFormData({ ...smsFormData, post_url: e.target.value })}
-                  className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
-                  required
-                  placeholder="https://rest.mymobileapi.com/bulkmessages"
-                />
-              </div>
+              {/* Twilio-specific fields */}
+              {smsFormData.provider_type === 'twilio' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                      Messaging Service SID
+                    </label>
+                    <input
+                      type="text"
+                      value={smsFormData.messaging_service_sid}
+                      onChange={(e) => setSmsFormData({ ...smsFormData, messaging_service_sid: e.target.value })}
+                      className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
+                      placeholder="MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    />
+                    <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                      Optional if Phone Number is provided
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                      Phone Number
+                    </label>
+                    <input
+                      type="text"
+                      value={smsFormData.phone_number}
+                      onChange={(e) => setSmsFormData({ ...smsFormData, phone_number: e.target.value })}
+                      className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
+                      placeholder="+1234567890"
+                    />
+                    <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                      Your Twilio phone number (required if no Messaging Service SID)
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* POST URL - only for non-Twilio providers */}
+              {smsFormData.provider_type !== 'twilio' && (
+                <div>
+                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                    POST URL *
+                  </label>
+                  <input
+                    type="text"
+                    value={smsFormData.post_url}
+                    onChange={(e) => setSmsFormData({ ...smsFormData, post_url: e.target.value })}
+                    className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
+                    required
+                    placeholder="https://rest.mymobileapi.com/bulkmessages"
+                  />
+                </div>
+              )}
 
               {/* Active */}
               <div>

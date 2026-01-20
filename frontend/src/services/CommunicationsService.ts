@@ -91,10 +91,12 @@ export interface SmsProvider {
   id?: number;
   project_id: string;
   name: string;
-  provider_type: 'mymobileapi' | 'sa_mobile_sms';
+  provider_type: 'mymobileapi' | 'sa_mobile_sms' | 'twilio';
   api_key?: string;
   api_secret?: string;
-  post_url: string;
+  post_url?: string;
+  messaging_service_sid?: string;
+  phone_number?: string;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
@@ -102,19 +104,23 @@ export interface SmsProvider {
 
 export interface CreateSmsProviderRequest {
   name: string;
-  provider_type: 'mymobileapi' | 'sa_mobile_sms';
+  provider_type: 'mymobileapi' | 'sa_mobile_sms' | 'twilio';
   api_key: string;
   api_secret: string;
-  post_url: string;
+  post_url?: string;
+  messaging_service_sid?: string;
+  phone_number?: string;
   is_active?: boolean;
 }
 
 export interface UpdateSmsProviderRequest {
   name?: string;
-  provider_type?: 'mymobileapi' | 'sa_mobile_sms';
+  provider_type?: 'mymobileapi' | 'sa_mobile_sms' | 'twilio';
   api_key?: string;
   api_secret?: string;
   post_url?: string;
+  messaging_service_sid?: string;
+  phone_number?: string;
   is_active?: boolean;
 }
 

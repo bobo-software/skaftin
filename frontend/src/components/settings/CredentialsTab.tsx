@@ -182,6 +182,29 @@ const CredentialsTab = () => {
     }
   };
 
+  const selectAllPermissions = () => {
+    if (!availablePermissions) return;
+    const allPerms = Object.values(availablePermissions).flat();
+    const allSelected = allPerms.every((p) => formData.permissions.includes(p));
+    if (allSelected) {
+      setFormData((prev) => ({
+        ...prev,
+        permissions: [],
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        permissions: allPerms,
+      }));
+    }
+  };
+
+  const areAllPermissionsSelected = () => {
+    if (!availablePermissions) return false;
+    const allPerms = Object.values(availablePermissions).flat();
+    return allPerms.length > 0 && allPerms.every((p) => formData.permissions.includes(p));
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -525,9 +548,23 @@ const CredentialsTab = () => {
 
               {/* Permissions */}
               <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-3">
-                  Permissions * (Select at least one)
-                </label>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300">
+                    Permissions * (Select at least one)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={selectAllPermissions}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                      areAllPermissionsSelected()
+                        ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-900/50'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+                    }`}
+                  >
+                    <Shield className="w-4 h-4" />
+                    {areAllPermissionsSelected() ? 'Deselect All' : 'Select All (Admin)'}
+                  </button>
+                </div>
                 <div className="space-y-3 max-h-64 overflow-y-auto p-3 border border-dark-200 dark:border-dark-700 rounded-lg">
                   {availablePermissions && Object.entries(availablePermissions).map(([category, perms]) => (
                     <div key={category} className="space-y-2">

@@ -1234,6 +1234,13 @@ class AuthUsersController {
       const lastOtp = lastOtpResult.rows[0];
       const otpMethod = lastOtp.otp_method;
 
+      // Get auth settings for OTP length
+      const settingsResult = await AuthUsersController.pool.query(
+        `SELECT otp_length FROM skaftin_system_auth_settings WHERE project_id = $1`,
+        [projectId]
+      );
+      const otpLength = settingsResult.rows.length > 0 ? (settingsResult.rows[0].otp_length || 6) : 6;
+
       // Mark all pending OTPs as expired
       await AuthUsersController.pool.query(
         `UPDATE ${schemaName}.skaftin_system_otp_verifications
@@ -1242,8 +1249,10 @@ class AuthUsersController {
         [parseInt(userId)]
       );
 
-      // Generate new OTP
-      const otp = crypto.randomInt(100000, 999999).toString();
+      // Generate new OTP with configurable length
+      const min = Math.pow(10, otpLength - 1);
+      const max = Math.pow(10, otpLength) - 1;
+      const otp = crypto.randomInt(min, max + 1).toString();
       const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
       // Send OTP based on method

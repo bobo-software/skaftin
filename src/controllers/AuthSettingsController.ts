@@ -28,6 +28,7 @@ interface AuthSettings {
   send_welcome_sms?: boolean;
   require_otp_for_password_change?: boolean;
   require_otp_for_account_deletion?: boolean;
+  otp_length?: number;
   settings_json: any;
   created_at: Date;
   updated_at: Date;
@@ -54,6 +55,7 @@ interface UpdateAuthSettingsRequest {
   send_welcome_sms?: boolean;
   require_otp_for_password_change?: boolean;
   require_otp_for_account_deletion?: boolean;
+  otp_length?: number;
   settings_json?: any;
 }
 
@@ -225,6 +227,13 @@ class AuthSettingsController {
       if (updates.require_otp_for_account_deletion !== undefined) {
         updateFields.push(`require_otp_for_account_deletion = $${paramIndex++}`);
         values.push(updates.require_otp_for_account_deletion);
+      }
+
+      if (updates.otp_length !== undefined) {
+        // Validate OTP length is between 4 and 6
+        const otpLength = Math.min(6, Math.max(4, updates.otp_length));
+        updateFields.push(`otp_length = $${paramIndex++}`);
+        values.push(otpLength);
       }
 
       // Handle SMS notification settings (stored in settings_json for now)
@@ -1037,9 +1046,10 @@ Skaftin Platform - Email Testing Service
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
 
+      // Query from public.sms_providers (Communications module) where SMS providers are stored
       const providersResult = await AuthSettingsController.pool.query(
-        `SELECT id, name, provider_type, post_url, is_active
-         FROM skaftin_system_sms_providers
+        `SELECT id, name, provider_type, post_url, messaging_service_sid, phone_number, is_active
+         FROM public.sms_providers
          WHERE project_id = $1 AND is_active = true
          ORDER BY created_at ASC`,
         [projectId]
@@ -1087,10 +1097,10 @@ Skaftin Platform - Email Testing Service
       }
       const smsProviderId = settingsResult.rows[0].sms_provider_id;
 
-      // Fetch provider credentials
+      // Fetch provider credentials from public.sms_providers (Communications module)
       const providerQuery = `
-        SELECT provider_type, api_key, api_secret, post_url, is_active
-        FROM skaftin_system_sms_providers
+        SELECT provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, is_active
+        FROM public.sms_providers
         WHERE id = $1 AND project_id = $2 AND is_active = true
       `;
       const providerResult = await AuthSettingsController.pool.query(providerQuery, [smsProviderId, projectId]);
@@ -1099,20 +1109,43 @@ Skaftin Platform - Email Testing Service
       }
       const provider = providerResult.rows[0];
 
-      // Send test SMS
+      // Import the appropriate provider based on type
       const axios = require('axios');
-      const credentials = `${provider.api_key}:${provider.api_secret}`;
-      const base64Credentials = Buffer.from(credentials).toString('base64');
-      const headers = { Authorization: `Basic ${base64Credentials}`, 'Content-Type': 'application/json' };
-      const payload = {
-        messages: [
-          {
-            content: message || 'Test SMS from Skaftin auth settings',
-            destination: test_destination,
-          },
-        ],
-      };
-      await axios.post(provider.post_url, JSON.stringify(payload), { headers });
+      const testMessage = message || 'Test SMS from Skaftin auth settings';
+
+      if (provider.provider_type === 'twilio') {
+        // Twilio API
+        const { api_key: accountSid, api_secret: authToken, messaging_service_sid, phone_number } = provider;
+        
+        if (!messaging_service_sid && !phone_number) {
+          return ResponseUtils.error(res, 'Twilio requires either Messaging Service SID or Phone Number', null, null, 400);
+        }
+
+        const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+        const params = new URLSearchParams();
+        params.append('To', test_destination);
+        params.append('Body', testMessage);
+        
+        if (messaging_service_sid) {
+          params.append('MessagingServiceSid', messaging_service_sid);
+        } else if (phone_number) {
+          params.append('From', phone_number);
+        }
+
+        await axios.post(url, params.toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          auth: { username: accountSid, password: authToken },
+        });
+      } else {
+        // MyMobileAPI / SA Mobile SMS
+        const credentials = `${provider.api_key}:${provider.api_secret}`;
+        const base64Credentials = Buffer.from(credentials).toString('base64');
+        const headers = { Authorization: `Basic ${base64Credentials}`, 'Content-Type': 'application/json' };
+        const payload = {
+          messages: [{ content: testMessage, destination: test_destination }],
+        };
+        await axios.post(provider.post_url, JSON.stringify(payload), { headers });
+      }
 
       ResponseUtils.success(res, 'Test SMS sent successfully', {
         destination: test_destination,
@@ -1123,7 +1156,7 @@ Skaftin Platform - Email Testing Service
         res,
         'Failed to send test SMS',
         error,
-        error?.message || 'Unknown error occurred'
+        error?.response?.data?.message || error?.message || 'Unknown error occurred'
       );
     }
   }

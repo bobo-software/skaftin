@@ -3,6 +3,7 @@ import { WorkflowNode, NodeExecutionResult } from '../../../types/workflow.types
 import { BaseNodeExecutor } from './BaseNodeExecutor';
 import { BaseSmsProvider, SmsMessage } from '../../sms/BaseSmsProvider';
 import { MyMobileApiProvider } from '../../sms/MyMobileApiProvider';
+import { TwilioProvider } from '../../sms/TwilioProvider';
 
 /**
  * SmsNodeExecutor - Sends SMS messages using SMS templates
@@ -75,7 +76,8 @@ export class SmsNodeExecutor extends BaseNodeExecutor {
 
       // Get SMS provider from public schema
       const providerQuery = `
-        SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, is_active
+        SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, 
+               messaging_service_sid, phone_number, is_active
         FROM public.sms_providers
         WHERE id = $1 AND project_id = $2
       `;
@@ -98,6 +100,13 @@ export class SmsNodeExecutor extends BaseNodeExecutor {
           apiKey: providerRecord.api_key,
           apiSecret: providerRecord.api_secret,
           postUrl: providerRecord.post_url,
+        });
+      } else if (providerRecord.provider_type === 'twilio') {
+        provider = new TwilioProvider({
+          accountSid: providerRecord.api_key,
+          authToken: providerRecord.api_secret,
+          messagingServiceSid: providerRecord.messaging_service_sid,
+          phoneNumber: providerRecord.phone_number,
         });
       } else {
         return this.fail(`Unsupported SMS provider type: ${providerRecord.provider_type}`, Date.now() - startTime);

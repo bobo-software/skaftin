@@ -76,19 +76,21 @@ export function createCommunicationsTools(config: CommunicationsToolsConfig): To
     },
     {
       name: 'create_sms_provider',
-      description: 'Create a new SMS provider (SA Mobile SMS / MyMobileAPI)',
+      description: 'Create a new SMS provider (SA Mobile SMS / MyMobileAPI / Twilio)',
       inputSchema: {
         type: 'object',
         properties: {
           projectId: { type: 'string' },
           name: { type: 'string' },
-          provider_type: { type: 'string', enum: ['mymobileapi', 'sa_mobile_sms'] },
-          api_key: { type: 'string' },
-          api_secret: { type: 'string' },
-          post_url: { type: 'string' },
+          provider_type: { type: 'string', enum: ['mymobileapi', 'sa_mobile_sms', 'twilio'] },
+          api_key: { type: 'string', description: 'API Key for MyMobileAPI/SA Mobile SMS, or Account SID for Twilio' },
+          api_secret: { type: 'string', description: 'API Secret for MyMobileAPI/SA Mobile SMS, or Auth Token for Twilio' },
+          post_url: { type: 'string', description: 'POST URL for MyMobileAPI/SA Mobile SMS (not required for Twilio)' },
+          messaging_service_sid: { type: 'string', description: 'Twilio Messaging Service SID (optional, Twilio only)' },
+          phone_number: { type: 'string', description: 'Twilio From phone number (optional, Twilio only)' },
           is_active: { type: 'boolean' },
         },
-        required: ['projectId', 'name', 'provider_type', 'api_key', 'api_secret', 'post_url'],
+        required: ['projectId', 'name', 'provider_type', 'api_key', 'api_secret'],
       },
     },
     {
@@ -572,14 +574,14 @@ export async function handleCommunicationsTool(
     }
 
     case 'create_sms_provider': {
-      const { projectId, name, provider_type, api_key, api_secret, post_url, is_active } = args;
+      const { projectId, name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, is_active } = args;
       const query = `
         INSERT INTO public.sms_providers
-        (project_id, name, provider_type, api_key, api_secret, post_url, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, true))
-        RETURNING id, project_id, name, provider_type, post_url, is_active, created_at, updated_at
+        (project_id, name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, true))
+        RETURNING id, project_id, name, provider_type, post_url, messaging_service_sid, phone_number, is_active, created_at, updated_at
       `;
-      const result = await pool.query(query, [projectId, name, provider_type, api_key, api_secret, post_url, is_active]);
+      const result = await pool.query(query, [projectId, name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, is_active]);
       return {
         content: [{ type: 'text', text: JSON.stringify({ success: true, provider: result.rows[0] }, null, 2) }],
       };
@@ -587,7 +589,7 @@ export async function handleCommunicationsTool(
 
     case 'update_sms_provider': {
       const { projectId, providerId, ...updates } = args;
-      const allowed = ['name', 'provider_type', 'api_key', 'api_secret', 'post_url', 'is_active'];
+      const allowed = ['name', 'provider_type', 'api_key', 'api_secret', 'post_url', 'messaging_service_sid', 'phone_number', 'is_active'];
       const fields: string[] = [];
       const values: any[] = [];
       let idx = 1;
@@ -606,7 +608,7 @@ export async function handleCommunicationsTool(
         UPDATE public.sms_providers
         SET ${fields.join(', ')}
         WHERE id = $${idx++} AND project_id = $${idx++}
-        RETURNING id, project_id, name, provider_type, post_url, is_active, created_at, updated_at
+        RETURNING id, project_id, name, provider_type, post_url, messaging_service_sid, phone_number, is_active, created_at, updated_at
       `;
       const result = await pool.query(query, values);
       if (result.rows.length === 0) {
