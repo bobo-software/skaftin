@@ -893,6 +893,7 @@ export class DatabaseInitializer {
           id SERIAL PRIMARY KEY,
           project_id INTEGER NOT NULL UNIQUE REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           allow_duplicate_emails BOOLEAN DEFAULT false,
+          require_email BOOLEAN DEFAULT true,
           require_email_verification BOOLEAN DEFAULT false,
           require_phone_verification BOOLEAN DEFAULT false,
           enable_password_reset BOOLEAN DEFAULT true,
@@ -923,6 +924,14 @@ export class DatabaseInitializer {
       await this.db.execute(sql.raw(`
         DO $$
         BEGIN
+          -- Add require_email if missing (default true for backward compatibility)
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_auth_settings' AND column_name = 'require_email'
+          ) THEN
+            ALTER TABLE public.skaftin_system_auth_settings ADD COLUMN require_email BOOLEAN DEFAULT true;
+          END IF;
+          
           -- Add otp_length if missing
           IF NOT EXISTS (
             SELECT 1 FROM information_schema.columns 

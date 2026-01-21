@@ -70,26 +70,12 @@ class AppAuthController {
 
       const { name, last_name, email, password, phone, metadata, custom_field_1, custom_field_2, role_id, role_key, otp_method } = req.body;
 
-      if (!name || !email || !password) {
-        return ResponseUtils.error(res, 'Name, email, and password are required', null, null, 400);
-      }
-
-      // Validate otp_method if provided
-      if (otp_method && !['email', 'sms'].includes(otp_method)) {
-        return ResponseUtils.error(res, 'Invalid otp_method. Must be "email", "sms", or null', null, null, 400);
-      }
-
-      // If SMS OTP requested, phone number is required
-      if (otp_method === 'sms' && !phone) {
-        return ResponseUtils.error(res, 'Phone number is required for SMS OTP verification', null, null, 400);
-      }
-
-      // Check if registration is enabled and get email settings
+      // Check if registration is enabled and get settings
       const settingsResult = await AppAuthController.pool.query(
         `SELECT registration_enabled, auth_enabled, email_provider_id,
                 send_registration_email, send_verification_email, 
                 send_welcome_email, require_email_verification,
-                otp_length
+                require_email, otp_length
          FROM skaftin_system_auth_settings WHERE project_id = $1`,
         [projectId]
       );
@@ -103,15 +89,60 @@ class AppAuthController {
       }
 
       const emailSettings = settingsResult.rows[0];
+      const requireEmail = emailSettings.require_email !== false; // Default true for backward compatibility
 
-      // Check if email already exists in this project
-      const existingUser = await AppAuthController.pool.query(
-        `SELECT id FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
-        [email]
-      );
+      // Validate required fields based on settings
+      if (!name || !password) {
+        return ResponseUtils.error(res, 'Name and password are required', null, null, 400);
+      }
 
-      if (existingUser.rows.length > 0) {
-        return ResponseUtils.error(res, 'Email already registered', null, null, 409);
+      // Email validation based on require_email setting
+      if (requireEmail && !email) {
+        return ResponseUtils.error(res, 'Email is required', null, null, 400);
+      }
+
+      // If email is not required, phone must be provided
+      if (!requireEmail && !email && !phone) {
+        return ResponseUtils.error(res, 'Either email or phone is required when email is optional', null, null, 400);
+      }
+
+      // Validate otp_method if provided
+      if (otp_method && !['email', 'sms'].includes(otp_method)) {
+        return ResponseUtils.error(res, 'Invalid otp_method. Must be "email", "sms", or null', null, null, 400);
+      }
+
+      // If SMS OTP requested, phone number is required
+      if (otp_method === 'sms' && !phone) {
+        return ResponseUtils.error(res, 'Phone number is required for SMS OTP verification', null, null, 400);
+      }
+
+      // If email OTP requested but no email provided
+      if (otp_method === 'email' && !email) {
+        return ResponseUtils.error(res, 'Email is required for email OTP verification', null, null, 400);
+      }
+
+      // Check if email already exists in this project (only if email is provided)
+      if (email) {
+        const existingUser = await AppAuthController.pool.query(
+          `SELECT id FROM ${schemaName}.skaftin_system_users WHERE email = $1`,
+          [email]
+        );
+
+        if (existingUser.rows.length > 0) {
+          return ResponseUtils.error(res, 'Email already registered', null, null, 409);
+        }
+      }
+
+      // Check if phone already exists (if phone is provided and email is not required or not provided)
+      if (phone && !email) {
+        const existingPhoneUser = await AppAuthController.pool.query(
+          `SELECT id FROM ${schemaName}.skaftin_system_users WHERE phone = $1`,
+          [phone]
+        );
+
+        if (existingPhoneUser.rows.length > 0) {
+          return ResponseUtils.error(res, 'Phone number already registered', null, null, 409);
+        }
       }
 
       // Determine if user should be active immediately or wait for OTP verification
@@ -119,14 +150,24 @@ class AppAuthController {
       const isActive = !otp_method; // Active immediately if no OTP method specified
 
       // Create project-scoped email for SuperTokens (allows same email across projects)
-      const supertokensEmail = createProjectScopedEmail(email, projectId);
+      // For phone-only users (no email), generate a placeholder email using phone number
+      let supertokensEmail: string;
+      if (email) {
+        supertokensEmail = createProjectScopedEmail(email, projectId);
+      } else {
+        // Generate a placeholder email for phone-only users
+        // Format: phone_<phone>@project_<projectId>.skaftin.local
+        const sanitizedPhone = phone.replace(/[^0-9]/g, '');
+        supertokensEmail = `phone_${sanitizedPhone}@project_${projectId}.skaftin.local`;
+      }
 
       // Create SuperTokens user
       const signUpResponse = await EmailPassword.signUp("public", supertokensEmail, password);
 
       if (signUpResponse.status !== "OK") {
         if (signUpResponse.status === "EMAIL_ALREADY_EXISTS_ERROR") {
-          return ResponseUtils.error(res, 'Email already registered', null, null, 409);
+          const errorMsg = email ? 'Email already registered' : 'Phone number already registered';
+          return ResponseUtils.error(res, errorMsg, null, null, 409);
         }
         console.error('SuperTokens signup failed:', signUpResponse);
         return ResponseUtils.error(res, 'Failed to create user account', null, null, 500);
@@ -140,7 +181,7 @@ class AppAuthController {
          (supertokens_user_id, name, last_name, email, phone, metadata, custom_field_1, custom_field_2, is_active, email_verified)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false)
          RETURNING id, name, last_name, email, phone, custom_field_1, custom_field_2, is_active, created_at`,
-        [supertokensUserId, name, last_name || null, email, phone || null, JSON.stringify(metadata || {}), custom_field_1 || null, custom_field_2 || null, isActive]
+        [supertokensUserId, name, last_name || null, email || null, phone || null, JSON.stringify(metadata || {}), custom_field_1 || null, custom_field_2 || null, isActive]
       );
 
       const user = insertResult.rows[0];
@@ -215,7 +256,7 @@ class AppAuthController {
         }
       }
 
-      console.log(`✅ App user registered: ${email} (Project: ${projectId})`);
+      console.log(`✅ App user registered: ${email || phone} (Project: ${projectId})`);
 
       // Resolve organization context based on user's roles
       const { OrganizationContextResolver } = await import('../utils/OrganizationContextResolver');
@@ -332,8 +373,8 @@ class AppAuthController {
         }
       }
 
-      // Send welcome email if no OTP required and welcome email is enabled
-      if (!otp_method && emailSettings.send_welcome_email && emailSettings.email_provider_id) {
+      // Send welcome email if no OTP required, welcome email is enabled, and user has email
+      if (!otp_method && emailSettings.send_welcome_email && emailSettings.email_provider_id && email) {
         console.log(`📧 Sending welcome email to ${email}...`);
 
         const welcomeResult = await AppAuthController.emailService.sendWelcomeEmail(
@@ -483,9 +524,9 @@ class AppAuthController {
 
       const user = userResult.rows[0];
 
-      // Ensure user has an email (required for SuperTokens)
-      if (!user.email) {
-        return ResponseUtils.error(res, 'User account is missing email address', null, null, 500);
+      // Ensure user has either email or phone (for SuperTokens authentication)
+      if (!user.email && !user.phone) {
+        return ResponseUtils.error(res, 'User account is missing both email and phone', null, null, 500);
       }
 
       // Check if user is active
@@ -495,12 +536,13 @@ class AppAuthController {
         if (metadata.otp) {
           return ResponseUtils.error(
             res,
-            'Account pending verification. Please verify your email with the OTP code sent to you.',
+            'Account pending verification. Please verify your account with the OTP code sent to you.',
             null,
             {
               requires_otp: true,
               user_id: user.id,
               email: user.email,
+              phone: user.phone,
             },
             403
           );
@@ -511,7 +553,15 @@ class AppAuthController {
 
       // Get SuperTokens email (project-scoped)
       // Note: SuperTokens always uses email, even if user logged in with phone/custom field
-      const supertokensEmail = createProjectScopedEmail(user.email, projectId);
+      // For phone-only users, generate the same placeholder email used during registration
+      let supertokensEmail: string;
+      if (user.email) {
+        supertokensEmail = createProjectScopedEmail(user.email, projectId);
+      } else {
+        // Phone-only user - generate placeholder email
+        const sanitizedPhone = user.phone.replace(/[^0-9]/g, '');
+        supertokensEmail = `phone_${sanitizedPhone}@project_${projectId}.skaftin.local`;
+      }
 
       // Verify credentials with SuperTokens
       let signInResponse = await EmailPassword.signIn("public", supertokensEmail, password);
@@ -760,9 +810,9 @@ class AppAuthController {
 
       const user = userResult.rows[0];
 
-      // Ensure user has an email (required for SuperTokens)
-      if (!user.email) {
-        return ResponseUtils.error(res, 'User account is missing email address', null, null, 500);
+      // Ensure user has either email or phone (for SuperTokens authentication)
+      if (!user.email && !user.phone) {
+        return ResponseUtils.error(res, 'User account is missing both email and phone', null, null, 500);
       }
 
       // Check if user is active
@@ -772,12 +822,13 @@ class AppAuthController {
         if (metadata.otp) {
           return ResponseUtils.error(
             res,
-            'Account pending verification. Please verify your email with the OTP code sent to you.',
+            'Account pending verification. Please verify your account with the OTP code sent to you.',
             null,
             {
               requires_otp: true,
               user_id: user.id,
               email: user.email,
+              phone: user.phone,
             },
             403
           );
@@ -787,7 +838,15 @@ class AppAuthController {
       }
 
       // Get SuperTokens email (project-scoped)
-      const supertokensEmail = createProjectScopedEmail(user.email, projectId);
+      // For phone-only users, generate the same placeholder email used during registration
+      let supertokensEmail: string;
+      if (user.email) {
+        supertokensEmail = createProjectScopedEmail(user.email, projectId);
+      } else {
+        // Phone-only user - generate placeholder email
+        const sanitizedPhone = user.phone.replace(/[^0-9]/g, '');
+        supertokensEmail = `phone_${sanitizedPhone}@project_${projectId}.skaftin.local`;
+      }
 
       // Get or create SuperTokens user
       let supertokensUserId: string;
@@ -1289,13 +1348,21 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Account is inactive. Please contact support.', null, null, 403);
       }
 
-      // Ensure user has an email (required for SuperTokens)
-      if (!user.email) {
-        return ResponseUtils.error(res, 'User account is missing email address', null, null, 500);
+      // Ensure user has either email or phone (for SuperTokens authentication)
+      if (!user.email && !user.phone) {
+        return ResponseUtils.error(res, 'User account is missing both email and phone', null, null, 500);
       }
 
       // Get SuperTokens email (project-scoped)
-      const supertokensEmail = createProjectScopedEmail(user.email, projectId);
+      // For phone-only users, generate the same placeholder email used during registration
+      let supertokensEmail: string;
+      if (user.email) {
+        supertokensEmail = createProjectScopedEmail(user.email, projectId);
+      } else {
+        // Phone-only user - generate placeholder email
+        const sanitizedPhone = user.phone.replace(/[^0-9]/g, '');
+        supertokensEmail = `phone_${sanitizedPhone}@project_${projectId}.skaftin.local`;
+      }
 
       // Get or create SuperTokens user
       let supertokensUserId: string;

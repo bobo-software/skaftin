@@ -438,6 +438,10 @@ export function createAuthTools(config: AuthToolsConfig): Tool[] {
             type: 'boolean',
             description: 'Allow users with same email (multi-tenant)',
           },
+          require_email: {
+            type: 'boolean',
+            description: 'Require email for registration (when false, users can register with just phone number)',
+          },
           require_email_verification: {
             type: 'boolean',
             description: 'Require email verification',
@@ -1269,6 +1273,7 @@ export async function handleAuthTool(
     if (name === 'update_skaftin_system_auth_settings') {
       const {
         allow_duplicate_emails,
+        require_email,
         require_email_verification,
         enable_password_reset,
         registration_enabled,
@@ -1288,6 +1293,10 @@ export async function handleAuthTool(
       if (allow_duplicate_emails !== undefined) {
         updateFields.push(`allow_duplicate_emails = $${paramIndex++}`);
         values.push(allow_duplicate_emails);
+      }
+      if (require_email !== undefined) {
+        updateFields.push(`require_email = $${paramIndex++}`);
+        values.push(require_email);
       }
       if (require_email_verification !== undefined) {
         updateFields.push(`require_email_verification = $${paramIndex++}`);
