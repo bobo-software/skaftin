@@ -80,12 +80,131 @@ export class PaymentService {
   /**
    * Get the schema name for a project
    */
-  private async getProjectSchema(projectId: number): Promise<string | null> {
+  async getProjectSchema(projectId: number): Promise<string | null> {
     const result = await this.pool.query(
       'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
       [projectId]
     );
     return result.rows.length > 0 ? result.rows[0].schema_name : null;
+  }
+
+  /**
+   * Ensure payment tables exist in the project schema
+   * Creates them if they don't exist (for backward compatibility with existing projects)
+   */
+  private async ensurePaymentTablesExist(schemaName: string, projectId: number): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      // Check if payment_providers table exists
+      const tableCheck = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = $1 
+          AND table_name = 'skaftin_system_payment_providers'
+        );
+      `, [schemaName]);
+
+      if (!tableCheck.rows[0].exists) {
+        // Create payment_providers table
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_payment_providers (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('payfast', 'yoco', 'paystack', 'peach_payments', 'ozow', 'flutterwave')),
+            merchant_id VARCHAR(255),
+            merchant_key VARCHAR(255),
+            passphrase VARCHAR(255),
+            api_key TEXT,
+            api_secret TEXT,
+            public_key TEXT,
+            return_url VARCHAR(500),
+            cancel_url VARCHAR(500),
+            notify_url VARCHAR(500),
+            sandbox_mode BOOLEAN DEFAULT true,
+            is_active BOOLEAN DEFAULT true,
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(project_id, name)
+          );
+        `);
+
+        // Create indexes
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_payment_providers_project_id ON ${schemaName}.skaftin_system_payment_providers(project_id);
+        `);
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_payment_providers_is_active ON ${schemaName}.skaftin_system_payment_providers(is_active);
+        `);
+
+        console.log(`✅ Created skaftin_system_payment_providers table in schema: ${schemaName}`);
+      }
+
+      // Check if payment_transactions table exists
+      const transactionsTableCheck = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = $1 
+          AND table_name = 'skaftin_system_payment_transactions'
+        );
+      `, [schemaName]);
+
+      if (!transactionsTableCheck.rows[0].exists) {
+        // Create payment_transactions table
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_payment_transactions (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL,
+            provider_id INTEGER NOT NULL REFERENCES ${schemaName}.skaftin_system_payment_providers(id) ON DELETE RESTRICT,
+            transaction_id VARCHAR(100) NOT NULL UNIQUE,
+            external_payment_id VARCHAR(255),
+            amount DECIMAL(15, 2) NOT NULL,
+            currency VARCHAR(3) NOT NULL DEFAULT 'ZAR',
+            item_name VARCHAR(255) NOT NULL,
+            item_description TEXT,
+            customer_email VARCHAR(255),
+            customer_name VARCHAR(255),
+            customer_phone VARCHAR(50),
+            payment_type VARCHAR(20) NOT NULL DEFAULT 'once' CHECK (payment_type IN ('once', 'subscription')),
+            subscription_type VARCHAR(20) CHECK (subscription_type IN ('subscription', 'tokenization')),
+            frequency VARCHAR(20) CHECK (frequency IN ('monthly', 'quarterly', 'biannually', 'annual')),
+            cycles INTEGER,
+            return_url VARCHAR(500),
+            cancel_url VARCHAR(500),
+            payment_url TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'complete', 'failed', 'cancelled', 'refunded')),
+            status_message TEXT,
+            webhook_data JSONB,
+            metadata JSONB DEFAULT '{}',
+            paid_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+
+        // Create indexes for transactions
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_payment_transactions_project_id ON ${schemaName}.skaftin_system_payment_transactions(project_id);
+        `);
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_payment_transactions_provider_id ON ${schemaName}.skaftin_system_payment_transactions(provider_id);
+        `);
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_payment_transactions_transaction_id ON ${schemaName}.skaftin_system_payment_transactions(transaction_id);
+        `);
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON ${schemaName}.skaftin_system_payment_transactions(status);
+        `);
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_payment_transactions_customer_email ON ${schemaName}.skaftin_system_payment_transactions(customer_email);
+        `);
+
+        console.log(`✅ Created skaftin_system_payment_transactions table in schema: ${schemaName}`);
+      }
+    } finally {
+      client.release();
+    }
   }
 
   /**
@@ -118,6 +237,9 @@ export class PaymentService {
       throw new Error(`Project ${projectId} not found`);
     }
 
+    // Ensure payment tables exist (for backward compatibility)
+    await this.ensurePaymentTablesExist(schemaName, projectId);
+
     const client = await this.pool.connect();
     try {
       await client.query(`SET search_path TO ${schemaName}, public`);
@@ -145,6 +267,9 @@ export class PaymentService {
       throw new Error(`Project ${projectId} not found`);
     }
 
+    // Ensure payment tables exist (for backward compatibility)
+    await this.ensurePaymentTablesExist(schemaName, projectId);
+
     const client = await this.pool.connect();
     try {
       await client.query(`SET search_path TO ${schemaName}, public`);
@@ -168,6 +293,9 @@ export class PaymentService {
       throw new Error(`Project ${projectId} not found`);
     }
 
+    // Ensure payment tables exist (for backward compatibility)
+    await this.ensurePaymentTablesExist(schemaName, projectId);
+
     const client = await this.pool.connect();
     try {
       await client.query(`SET search_path TO ${schemaName}, public`);
@@ -190,6 +318,9 @@ export class PaymentService {
     if (!schemaName) {
       throw new Error(`Project ${projectId} not found`);
     }
+
+    // Ensure payment tables exist (for backward compatibility)
+    await this.ensurePaymentTablesExist(schemaName, projectId);
 
     const client = await this.pool.connect();
     try {
@@ -215,6 +346,9 @@ export class PaymentService {
     if (!schemaName) {
       throw new Error(`Project ${request.projectId} not found`);
     }
+
+    // Ensure payment tables exist (for backward compatibility)
+    await this.ensurePaymentTablesExist(schemaName, request.projectId);
 
     const client = await this.pool.connect();
     try {
@@ -265,6 +399,9 @@ export class PaymentService {
     if (!schemaName) {
       throw new Error(`Project ${projectId} not found`);
     }
+
+    // Ensure payment tables exist (for backward compatibility)
+    await this.ensurePaymentTablesExist(schemaName, projectId);
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -356,6 +493,9 @@ export class PaymentService {
       throw new Error(`Project ${projectId} not found`);
     }
 
+    // Ensure payment tables exist (for backward compatibility)
+    await this.ensurePaymentTablesExist(schemaName, projectId);
+
     const client = await this.pool.connect();
     try {
       await client.query(`SET search_path TO ${schemaName}, public`);
@@ -443,6 +583,17 @@ export class PaymentService {
       };
     }
 
+    // Ensure payment tables exist (for backward compatibility)
+    await this.ensurePaymentTablesExist(schemaName, projectId);
+
+    // Build return and cancel URLs if not provided
+    const backendUrl = process.env.BACKEND_URL || process.env.API_URL || 'http://localhost:4006';
+    const defaultReturnUrl = `${backendUrl}/api/payments/return/payfast/${projectId}`;
+    const defaultCancelUrl = `${backendUrl}/api/payments/cancel/payfast/${projectId}`;
+
+    const returnUrl = request.returnUrl || providerRecord.return_url || defaultReturnUrl;
+    const cancelUrl = request.cancelUrl || providerRecord.cancel_url || defaultCancelUrl;
+
     const client = await this.pool.connect();
     try {
       await client.query(`SET search_path TO ${schemaName}, public`);
@@ -459,6 +610,12 @@ export class PaymentService {
         RETURNING *
       `;
 
+      // Normalize payment_type: 'once_off' -> 'once' (to match database constraint)
+      let normalizedPaymentType = request.paymentType || 'once';
+      if (normalizedPaymentType === 'once_off') {
+        normalizedPaymentType = 'once';
+      }
+
       await client.query(insertQuery, [
         projectId,
         providerRecord.id,
@@ -470,17 +627,22 @@ export class PaymentService {
         request.customerEmail || null,
         request.customerName || null,
         request.customerPhone || null,
-        request.paymentType || 'once_off',
+        normalizedPaymentType,
         request.subscriptionType || null,
         request.frequency || null,
         request.cycles || null,
-        request.returnUrl || providerRecord.return_url,
-        request.cancelUrl || providerRecord.cancel_url,
+        returnUrl,
+        cancelUrl,
         JSON.stringify(request.metadata || {}),
       ]);
 
-      // Initiate payment with the provider
-      const result = await provider.initiatePayment(request, transactionId);
+      // Initiate payment with the provider (pass return/cancel URLs)
+      const paymentRequest = {
+        ...request,
+        returnUrl,
+        cancelUrl,
+      };
+      const result = await provider.initiatePayment(paymentRequest, transactionId);
 
       // Update transaction with payment URL
       if (result.success) {
@@ -517,6 +679,9 @@ export class PaymentService {
     if (!schemaName) {
       return { valid: false, error: `Project ${projectId} not found` };
     }
+
+    // Ensure payment tables exist (for backward compatibility)
+    await this.ensurePaymentTablesExist(schemaName, projectId);
 
     const client = await this.pool.connect();
     try {
@@ -578,6 +743,9 @@ export class PaymentService {
       throw new Error(`Project ${projectId} not found`);
     }
 
+    // Ensure payment tables exist (for backward compatibility)
+    await this.ensurePaymentTablesExist(schemaName, projectId);
+
     const client = await this.pool.connect();
     try {
       await client.query(`SET search_path TO ${schemaName}, public`);
@@ -603,6 +771,9 @@ export class PaymentService {
     if (!schemaName) {
       throw new Error(`Project ${projectId} not found`);
     }
+
+    // Ensure payment tables exist (for backward compatibility)
+    await this.ensurePaymentTablesExist(schemaName, projectId);
 
     const client = await this.pool.connect();
     try {

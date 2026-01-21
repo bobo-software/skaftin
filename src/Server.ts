@@ -185,7 +185,7 @@ import { createAdminAuthRouter } from './routers/AdminAuthRouter';
 import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import { createClientCommunicationsRouter } from './routers/ClientCommunicationsRouter';
 import { createInvitationsRouter } from './routers/InvitationsRouter';
-import { createPaymentRouter, createClientPaymentRouter, createPaymentWebhookRouter } from './routers/PaymentRouter';
+import { createPaymentRouter, createClientPaymentRouter, createPaymentWebhookRouter, createPaymentReturnRouter } from './routers/PaymentRouter';
 import { createCredentialsRouter } from './routers/CredentialsRouter';
 import { createAuthRouter } from './routers/AuthRouter';
 import { createAnalyticsRouter } from './routers/AnalyticsRouter';
@@ -290,6 +290,7 @@ const ClientCommunicationsRouter = createClientCommunicationsRouter(pool);
 const PaymentRouter = createPaymentRouter(pool);
 const ClientPaymentRouter = createClientPaymentRouter(pool);
 const PaymentWebhookRouter = createPaymentWebhookRouter(pool);
+const PaymentReturnRouter = createPaymentReturnRouter(pool);
 
 // Initialize Public Routers (for app-api-2 routes - API key only, no user auth)
 import { createPublicDatabaseRouter } from './routers/PublicDatabaseRouter';
@@ -335,6 +336,7 @@ app.use('/api/workflows', createWorkflowsRouter(pool));
 app.use('/api/backups', BackupRouter);
 app.use('/api/payments', PaymentRouter);
 app.use('/api/payments/webhook', PaymentWebhookRouter);
+app.use('/api/payments', PaymentReturnRouter);
 
 // ============================================================================
 // CLIENT-FACING ROUTES (/app-api/*) - API Key / App User JWT authentication

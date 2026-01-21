@@ -278,7 +278,7 @@ const PaymentProvidersTab = () => {
 
       // Find an active API key
       const apiKey = credentialsResponse.data.find(
-        (cred: any) => cred.type === 'api_key' && cred.is_active
+        (cred: any) => cred.credential_type === 'api_key' && cred.is_active
       );
 
       if (!apiKey) {
@@ -289,11 +289,11 @@ const PaymentProvidersTab = () => {
 
       // Now initiate the test payment using the client endpoint
       const backendUrl = window.location.origin.replace(':3005', ':4006');
-      const response = await fetch(`${backendUrl}/api/client/payments/initiate`, {
+      const response = await fetch(`${backendUrl}/app-api/payments/initiate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey.key_value,
+          'x-api-key': apiKey.token,
         },
         body: JSON.stringify({
           provider_id: testPaymentProvider?.id,
@@ -308,11 +308,11 @@ const PaymentProvidersTab = () => {
 
       const result = await response.json();
 
-      if (result.success && result.data?.payment_url) {
+      if (result.success && result.paymentUrl) {
         ToastUtils.success('Payment initiated! Opening payment page...');
         setShowTestPaymentModal(false);
         // Open payment URL in new tab
-        window.open(result.data.payment_url, '_blank');
+        window.open(result.paymentUrl, '_blank');
       } else {
         ToastUtils.error(result.error || 'Failed to initiate payment');
       }

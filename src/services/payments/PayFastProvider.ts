@@ -207,7 +207,11 @@ export class PayFastProvider implements BasePaymentProvider {
    */
   async initiatePayment(request: InitiatePaymentRequest, transactionId: string): Promise<InitiatePaymentResponse> {
     try {
-      if (!this.config.merchantId || !this.config.merchantKey) {
+      // Trim and validate merchant credentials
+      const merchantId = this.config.merchantId?.trim();
+      const merchantKey = this.config.merchantKey?.trim();
+
+      if (!merchantId || !merchantKey) {
         return {
           success: false,
           transactionId,
@@ -216,12 +220,15 @@ export class PayFastProvider implements BasePaymentProvider {
         };
       }
 
+      // Log merchant ID for debugging (first 4 chars only for security)
+      console.log(`[PayFast] Initiating payment - Merchant ID: ${merchantId.substring(0, 4)}... (sandbox: ${this.config.sandboxMode})`);
+
       // Build payment data in PayFast's required order
       const paymentData: Record<string, string> = {};
 
-      // Merchant details (required)
-      paymentData['merchant_id'] = this.config.merchantId;
-      paymentData['merchant_key'] = this.config.merchantKey;
+      // Merchant details (required) - ensure they're trimmed strings
+      paymentData['merchant_id'] = merchantId;
+      paymentData['merchant_key'] = merchantKey;
 
       // URLs
       paymentData['return_url'] = request.returnUrl || this.config.returnUrl || '';

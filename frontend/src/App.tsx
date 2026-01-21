@@ -11,6 +11,8 @@ import OrganizationSettingsPage from './pages/user/organizations/OrganizationSet
 import InviteAcceptPage from './pages/public/InviteAcceptPage';
 import InviteRegisterPage from './pages/public/InviteRegisterPage';
 import UserProfile from './pages/user/dashboard/settings/UserProfile';
+import PaymentReturnPage from './pages/payments/PaymentReturnPage';
+import PaymentCancelPage from './pages/payments/PaymentCancelPage';
 import { useAppStore } from './stores/StoresIndex';
 import { initSuperTokensFrontend, Session } from './config/supertokens';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -211,6 +213,14 @@ function App() {
               <UserProfile />
             </ProtectedRoute>
           } 
+        />
+        <Route 
+          path="/payments/return" 
+          element={<PaymentReturnPage />} 
+        />
+        <Route 
+          path="/payments/cancel" 
+          element={<PaymentCancelPage />} 
         />
       </Routes>
     </BrowserRouter>
