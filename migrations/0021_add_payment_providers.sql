@@ -1,0 +1,105 @@
+-- Migration: Add Payment Providers and Transactions tables
+-- Description: Creates tables for multi-tenant payment gateway support (PayFast, Yoco, Paystack, etc.)
+
+-- Payment Providers table - stores payment gateway credentials per project
+CREATE TABLE IF NOT EXISTS skaftin_system_payment_providers (
+  id SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('payfast', 'yoco', 'paystack', 'peach_payments', 'ozow', 'flutterwave')),
+  
+  -- PayFast specific credentials
+  merchant_id VARCHAR(255),
+  merchant_key VARCHAR(255),
+  passphrase TEXT,
+  
+  -- Generic credentials for other providers (Yoco, Paystack, etc.)
+  api_key TEXT,
+  api_secret TEXT,
+  public_key TEXT,
+  
+  -- Configuration URLs
+  return_url VARCHAR(500),
+  cancel_url VARCHAR(500),
+  notify_url VARCHAR(500),
+  
+  -- Settings
+  sandbox_mode BOOLEAN DEFAULT true,
+  is_active BOOLEAN DEFAULT true,
+  
+  -- Metadata
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  
+  UNIQUE(project_id, name)
+);
+
+-- Indexes for payment_providers
+CREATE INDEX IF NOT EXISTS idx_payment_providers_project_id ON skaftin_system_payment_providers(project_id);
+CREATE INDEX IF NOT EXISTS idx_payment_providers_provider_type ON skaftin_system_payment_providers(provider_type);
+CREATE INDEX IF NOT EXISTS idx_payment_providers_is_active ON skaftin_system_payment_providers(is_active);
+
+-- Payment Transactions table - tracks all payment transactions
+CREATE TABLE IF NOT EXISTS skaftin_system_payment_transactions (
+  id SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL,
+  provider_id INTEGER REFERENCES skaftin_system_payment_providers(id) ON DELETE SET NULL,
+  
+  -- Transaction identifiers
+  transaction_id VARCHAR(255) UNIQUE NOT NULL,           -- Our internal ID (UUID)
+  external_payment_id VARCHAR(255),                      -- Gateway's payment ID (pf_payment_id for PayFast)
+  
+  -- Payment details
+  amount DECIMAL(12,2) NOT NULL,
+  currency VARCHAR(3) DEFAULT 'ZAR',
+  item_name VARCHAR(255) NOT NULL,
+  item_description TEXT,
+  
+  -- Customer info (optional)
+  customer_email VARCHAR(255),
+  customer_name VARCHAR(255),
+  customer_phone VARCHAR(50),
+  
+  -- Subscription fields
+  payment_type VARCHAR(20) DEFAULT 'once_off' CHECK (payment_type IN ('once_off', 'subscription')),
+  subscription_type INTEGER,                             -- PayFast: 1=subscription, 2=tokenization
+  frequency INTEGER,                                     -- PayFast: 3=monthly, 4=quarterly, 5=biannual, 6=annual
+  cycles INTEGER DEFAULT 0,                              -- 0 = infinite
+  subscription_token VARCHAR(255),
+  
+  -- Status tracking
+  status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'complete', 'failed', 'cancelled', 'refunded')),
+  status_message TEXT,
+  
+  -- URLs for this specific transaction
+  payment_url TEXT,                                      -- The URL user was redirected to
+  return_url VARCHAR(500),
+  cancel_url VARCHAR(500),
+  
+  -- Metadata and webhook data
+  metadata JSONB DEFAULT '{}',                           -- Custom data from client
+  webhook_data JSONB,                                    -- Raw webhook payload from gateway
+  
+  -- Timestamps
+  paid_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for payment_transactions
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_project_id ON skaftin_system_payment_transactions(project_id);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_provider_id ON skaftin_system_payment_transactions(provider_id);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_transaction_id ON skaftin_system_payment_transactions(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_external_payment_id ON skaftin_system_payment_transactions(external_payment_id);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON skaftin_system_payment_transactions(status);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_payment_type ON skaftin_system_payment_transactions(payment_type);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_customer_email ON skaftin_system_payment_transactions(customer_email);
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_created_at ON skaftin_system_payment_transactions(created_at DESC);
+
+-- Add comments for documentation
+COMMENT ON TABLE skaftin_system_payment_providers IS 'Stores payment gateway configurations per project (PayFast, Yoco, Paystack, etc.)';
+COMMENT ON TABLE skaftin_system_payment_transactions IS 'Tracks all payment transactions with status history';
+COMMENT ON COLUMN skaftin_system_payment_providers.sandbox_mode IS 'When true, uses sandbox/test endpoints for the payment gateway';
+COMMENT ON COLUMN skaftin_system_payment_transactions.transaction_id IS 'Internal UUID generated by Skaftin';
+COMMENT ON COLUMN skaftin_system_payment_transactions.external_payment_id IS 'Payment ID from the gateway (e.g., pf_payment_id from PayFast)';
