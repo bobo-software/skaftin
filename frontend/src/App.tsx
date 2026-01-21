@@ -6,6 +6,8 @@ import LoginPage from './pages/LoginPage';
 import ProjectsOverviewPage from './pages/user/projects/ProjectsOverviewPage';
 import ProjectDashboardPage from './pages/user/dashboard/ProjectDashboardPage';
 import CreateOrganizationPage from './pages/user/organizations/CreateOrganizationPage';
+import SelectOrganizationPage from './pages/user/organizations/SelectOrganizationPage';
+import OrganizationSettingsPage from './pages/user/organizations/OrganizationSettingsPage';
 import InviteAcceptPage from './pages/public/InviteAcceptPage';
 import InviteRegisterPage from './pages/public/InviteRegisterPage';
 import UserProfile from './pages/user/dashboard/settings/UserProfile';
@@ -163,10 +165,26 @@ function App() {
         <Route path="/invite/:inviteCode" element={<InviteAcceptPage />} />
         <Route path="/invite/:inviteCode/register" element={<InviteRegisterPage />} />
         <Route 
+          path="/organizations/select" 
+          element={
+            <ProtectedRoute>
+              <SelectOrganizationPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
           path="/organizations/create" 
           element={
             <ProtectedRoute>
               <CreateOrganizationPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/organizations/settings" 
+          element={
+            <ProtectedRoute>
+              <OrganizationSettingsPage />
             </ProtectedRoute>
           } 
         />

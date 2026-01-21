@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, ChevronDown, Check, Plus } from 'lucide-react';
+import { Building2, ChevronDown, Check, Plus, Settings } from 'lucide-react';
 import { useOrganizationStore } from '../../stores/StoresIndex';
 import AppText from '../forms/AppText';
 
@@ -47,6 +47,11 @@ const OrganizationSwitcher = () => {
   const handleCreateOrganization = () => {
     setIsOpen(false);
     navigate('/organizations/create');
+  };
+
+  const handleOrganizationSettings = () => {
+    setIsOpen(false);
+    navigate('/organizations/settings');
   };
 
   if (!currentOrganization) {
@@ -147,8 +152,22 @@ const OrganizationSwitcher = () => {
             )}
           </div>
 
-          {/* Create New Organization */}
+          {/* Organization Settings */}
           <div className="border-t border-dark-200 dark:border-dark-700 py-1">
+            <button
+              onClick={handleOrganizationSettings}
+              className="w-full px-4 py-2.5 flex items-center space-x-3
+                       hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors
+                       text-dark-600 dark:text-dark-400"
+            >
+              <div className="w-8 h-8 rounded-lg bg-dark-100 dark:bg-dark-700
+                            flex items-center justify-center flex-shrink-0">
+                <Settings className="w-4 h-4" />
+              </div>
+              <span className="text-sm font-medium">Organization Settings</span>
+            </button>
+
+            {/* Create New Organization */}
             <button
               onClick={handleCreateOrganization}
               className="w-full px-4 py-2.5 flex items-center space-x-3

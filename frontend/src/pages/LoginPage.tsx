@@ -66,11 +66,19 @@ const LoginPage = () => {
           // Check if user has organizations
           const orgResult = await OrganizationService.getUserOrganizations();
           
-          if (orgResult.success && orgResult.organizations && orgResult.organizations.length > 0) {
-            // User has organizations, redirect to projects
-            navigate('/projects');
+          if (orgResult.success && orgResult.organizations) {
+            if (orgResult.organizations.length > 1) {
+              // User has multiple organizations, let them choose
+              navigate('/organizations/select');
+            } else if (orgResult.organizations.length === 1) {
+              // User has exactly one organization, go directly to projects
+              navigate('/projects');
+            } else {
+              // User doesn't have organizations, redirect to create organization
+              navigate('/organizations/create');
+            }
           } else {
-            // User doesn't have organizations, redirect to create organization
+            // Error fetching organizations or no organizations
             navigate('/organizations/create');
           }
         }
