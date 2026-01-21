@@ -1181,7 +1181,7 @@ export class DatabaseInitializer {
           expires_at TIMESTAMP NOT NULL,
           verified_at TIMESTAMP,
           attempts INTEGER DEFAULT 0,
-          purpose VARCHAR(20) NOT NULL DEFAULT 'registration' CHECK (purpose IN ('registration', 'password_reset', 'password_change', 'account_deletion')),
+          purpose VARCHAR(20) NOT NULL DEFAULT 'registration' CHECK (purpose IN ('registration', 'password_reset', 'password_change', 'account_deletion', 'otp_login')),
           metadata JSONB DEFAULT '{}',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

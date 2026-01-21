@@ -55,6 +55,22 @@ export function createAuthRouteDefinitions(isAdmin: boolean): RouteDefinition[] 
     },
     {
       method: 'post',
+      path: createPath('/auth/otp-login', isAdmin),
+      handler: AppAuthController.requestOTPLogin,
+      description: 'Request OTP for passwordless login (sends OTP to email or phone)',
+      requiresProject: true,
+      requiresAuth: false, // Public endpoint
+    },
+    {
+      method: 'post',
+      path: createPath('/auth/verify-otp-login', isAdmin),
+      handler: AppAuthController.verifyOTPLogin,
+      description: 'Verify OTP and complete passwordless login',
+      requiresProject: true,
+      requiresAuth: false, // Public endpoint
+    },
+    {
+      method: 'post',
       path: createPath('/auth/verify', isAdmin),
       handler: AppAuthController.verify,
       description: 'Verify app user JWT token',
