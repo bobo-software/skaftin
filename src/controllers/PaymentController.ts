@@ -420,8 +420,7 @@ export default class PaymentController {
       }
 
       const {
-        provider_id,
-        provider_name,
+        provider_id,      // Optional: If not provided, uses first active provider
         amount,
         item_name,
         item_description,
@@ -458,7 +457,6 @@ export default class PaymentController {
 
       const result = await this.paymentService.initiatePayment(projectId, {
         providerId: provider_id,
-        providerName: provider_name,
         amount,
         itemName: item_name,
         itemDescription: item_description,
@@ -666,134 +664,6 @@ export default class PaymentController {
     } catch (error: any) {
       console.error('Error processing webhook:', error);
       res.status(500).send('Internal server error');
-    }
-  };
-
-  // ============================================================================
-  // RETURN/CANCEL URL HANDLERS (Public routes - redirects to frontend)
-  // ============================================================================
-
-  /**
-   * Handle PayFast return URL (successful payment)
-   * GET /api/payments/return/payfast/:projectId
-   */
-  payfastReturn = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const projectId = parseInt(req.params.projectId, 10);
-
-      if (isNaN(projectId)) {
-        res.status(400).send('Invalid project ID');
-        return;
-      }
-
-      // Get transaction ID from query params (PayFast sends m_payment_id)
-      const transactionId = req.query.m_payment_id as string || req.query.custom_str2 as string;
-
-      if (!transactionId) {
-        console.error('PayFast return: Missing transaction ID');
-        // Redirect to frontend with error
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3005';
-        res.redirect(`${frontendUrl}/payments/return?error=missing_transaction_id&projectId=${projectId}`);
-        return;
-      }
-
-      // Update transaction status if needed (PayFast may send payment_status)
-      const paymentStatus = req.query.payment_status as string;
-      if (paymentStatus === 'COMPLETE') {
-        try {
-          const transaction = await this.paymentService.getTransaction(projectId, transactionId);
-          if (transaction && (transaction.status === 'pending' || transaction.status === 'processing')) {
-            // Update transaction to complete using PaymentService's pool access
-            const schemaName = await this.paymentService.getProjectSchema(projectId);
-            if (schemaName) {
-              const client = await this.pool.connect();
-              try {
-                await client.query(`SET search_path TO ${schemaName}, public`);
-                await client.query(
-                  `UPDATE skaftin_system_payment_transactions 
-                   SET status = 'complete', 
-                       external_payment_id = $1,
-                       paid_at = CURRENT_TIMESTAMP,
-                       updated_at = CURRENT_TIMESTAMP
-                   WHERE transaction_id = $2 AND project_id = $3`,
-                  [req.query.pf_payment_id as string || null, transactionId, projectId]
-                );
-                console.log(`✅ Updated transaction ${transactionId} to complete`);
-              } finally {
-                client.release();
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error updating transaction on return:', error);
-          // Continue with redirect even if update fails
-        }
-      }
-
-      // Redirect to frontend with transaction info
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3005';
-      const redirectUrl = `${frontendUrl}/payments/return?projectId=${projectId}&transactionId=${transactionId}&status=${paymentStatus || 'complete'}`;
-      res.redirect(redirectUrl);
-    } catch (error: any) {
-      console.error('Error processing PayFast return:', error);
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3005';
-      res.redirect(`${frontendUrl}/payments/return?error=processing_error`);
-    }
-  };
-
-  /**
-   * Handle PayFast cancel URL (user cancelled payment)
-   * GET /api/payments/cancel/payfast/:projectId
-   */
-  payfastCancel = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const projectId = parseInt(req.params.projectId, 10);
-
-      if (isNaN(projectId)) {
-        res.status(400).send('Invalid project ID');
-        return;
-      }
-
-      // Get transaction ID from query params
-      const transactionId = req.query.m_payment_id as string || req.query.custom_str2 as string;
-
-      if (transactionId) {
-        // Update transaction status to cancelled
-        try {
-          const schemaName = await this.paymentService.getProjectSchema(projectId);
-          if (schemaName) {
-            const client = await this.pool.connect();
-            try {
-              await client.query(`SET search_path TO ${schemaName}, public`);
-              await client.query(
-                `UPDATE skaftin_system_payment_transactions 
-                 SET status = 'cancelled', 
-                     status_message = 'Payment cancelled by user',
-                     updated_at = CURRENT_TIMESTAMP
-                 WHERE transaction_id = $1 AND project_id = $2 AND status IN ('pending', 'processing')`,
-                [transactionId, projectId]
-              );
-              console.log(`✅ Updated transaction ${transactionId} to cancelled`);
-            } finally {
-              client.release();
-            }
-          }
-        } catch (error) {
-          console.error('Error updating transaction on cancel:', error);
-          // Continue with redirect even if update fails
-        }
-      }
-
-      // Redirect to frontend with cancellation info
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3005';
-      const redirectUrl = transactionId
-        ? `${frontendUrl}/payments/cancel?projectId=${projectId}&transactionId=${transactionId}`
-        : `${frontendUrl}/payments/cancel?projectId=${projectId}`;
-      res.redirect(redirectUrl);
-    } catch (error: any) {
-      console.error('Error processing PayFast cancel:', error);
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3005';
-      res.redirect(`${frontendUrl}/payments/cancel?error=processing_error`);
     }
   };
 }

@@ -42,6 +42,7 @@ export enum ToolCategory {
   AUTH = 'auth',
   CREDENTIALS = 'credentials',
   BULK = 'bulk',
+  PAYMENTS = 'payments',
 }
 
 /**

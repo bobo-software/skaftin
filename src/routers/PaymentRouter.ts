@@ -118,20 +118,3 @@ export function createPaymentWebhookRouter(pool: Pool): Router {
 
   return router;
 }
-
-/**
- * Create the return/cancel router (Public - redirects to frontend)
- * Base path: /api/payments
- */
-export function createPaymentReturnRouter(pool: Pool): Router {
-  const router = express.Router();
-  const controller = new PaymentController(pool);
-
-  // PayFast return URL (successful payment)
-  router.get('/return/payfast/:projectId', controller.payfastReturn);
-
-  // PayFast cancel URL (user cancelled)
-  router.get('/cancel/payfast/:projectId', controller.payfastCancel);
-
-  return router;
-}

@@ -152,7 +152,7 @@ class AuthUsersController {
         WHERE table_schema = $1 
           AND table_name = 'skaftin_system_users'
       `, [schemaName]);
-      
+
       const availableColumns = new Set(columnsResult.rows.map((row: any) => row.column_name));
 
       // Build query with filters
@@ -181,7 +181,7 @@ class AuthUsersController {
           FROM ${schemaName}.skaftin_system_roles
           WHERE id = $1
         `, [parseInt(role_id as string)]);
-        
+
         if (roleResult.rows.length > 0 && roleResult.rows[0].organisation_lookup_table) {
           roleOrgLookup = {
             fieldName: roleResult.rows[0].organisation_field_name,
@@ -189,7 +189,7 @@ class AuthUsersController {
             lookupField: roleResult.rows[0].organisation_lookup_field || roleResult.rows[0].organisation_field_name
           };
         }
-        
+
         whereConditions.push(`EXISTS (
           SELECT 1 FROM ${schemaName}.skaftin_system_user_roles ur 
           WHERE ur.app_user_id = u.id AND ur.role_id = $${paramIndex}
@@ -202,20 +202,20 @@ class AuthUsersController {
       // Supports both direct columns, metadata fields, and organization lookup tables
       for (const [key, value] of Object.entries(flattenedFilters)) {
         if (!value || value === '') continue; // Skip empty values
-        
+
         const filterValue = value as string;
         const isMetadataField = key.startsWith('metadata.') || key.includes('.');
-        
+
         // Check if this filter matches the role's organization field and use lookup table if configured
         const isOrgField = roleOrgLookup && key === roleOrgLookup.fieldName;
         const isOrgMetadataField = roleOrgLookup && key === `metadata.${roleOrgLookup.fieldName}`;
-        
+
         if (isOrgField || isOrgMetadataField) {
           // Use organization lookup table instead of metadata
           const lookupTable = roleOrgLookup!.lookupTable;
           const lookupField = roleOrgLookup!.lookupField || roleOrgLookup!.fieldName;
           const numericValue = isNaN(Number(filterValue)) ? null : Number(filterValue);
-          
+
           if (numericValue !== null && !isNaN(numericValue)) {
             // Numeric comparison for lookup table
             whereConditions.push(`EXISTS (
@@ -242,18 +242,18 @@ class AuthUsersController {
           // Metadata field: metadata.field_name or metadata.field.subfield
           const metadataPath = key.replace(/^metadata\./, ''); // Remove 'metadata.' prefix if present
           const pathParts = metadataPath.split('.');
-          
+
           // Build JSONB path: metadata->>'field'->>'subfield' etc.
           let jsonbPath = 'u.metadata';
           for (let i = 0; i < pathParts.length - 1; i++) {
             jsonbPath += `->'${pathParts[i]}'`;
           }
           jsonbPath += `->>'${pathParts[pathParts.length - 1]}'`;
-          
+
           // JSONB comparison - handle both numeric and string values
           // JSONB can store numbers as numbers or as strings, so we need to handle both
           const numericValue = isNaN(Number(filterValue)) ? null : Number(filterValue);
-          
+
           if (numericValue !== null && !isNaN(numericValue)) {
             // For numeric values, compare as text first (handles string storage)
             // Then try numeric comparison - use ->> to get text, then cast to numeric
@@ -288,7 +288,7 @@ class AuthUsersController {
           // Column doesn't exist - assume it's a metadata field
           // Check metadata.field_name
           const numericValue = isNaN(Number(filterValue)) ? null : Number(filterValue);
-          
+
           if (numericValue !== null && !isNaN(numericValue)) {
             // Numeric comparison - JSONB can store numbers as numbers or strings
             // Use ->> to get text, then cast to numeric (works for both types)
@@ -531,9 +531,9 @@ class AuthUsersController {
 
       const user = userResult.rows[0];
 
-      if (!user.email) {
-        return ResponseUtils.error(res, 'User email is required for password reset', null, null, 400);
-      }
+      // if (!user.email) {
+      //   return ResponseUtils.error(res, 'User email is required for password reset', null, null, 400);
+      // }
 
       // Hash the password for database storage
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -845,13 +845,13 @@ class AuthUsersController {
       if (updates.metadata !== undefined) {
         // Sanitize metadata
         const sanitizedMetadata = AuthUtils.sanitizeMetadata(updates.metadata);
-        
+
         // Merge with existing metadata instead of replacing it entirely (deep merge for nested objects)
         const currentUserResult = await AuthUsersController.pool.query(
           `SELECT metadata FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
           [parseInt(userId)]
         );
-        
+
         let mergedMetadata = sanitizedMetadata;
         if (currentUserResult.rows.length > 0 && currentUserResult.rows[0].metadata) {
           // Deep merge existing metadata with new metadata (new values override existing ones)
@@ -860,7 +860,7 @@ class AuthUsersController {
             sanitizedMetadata
           );
         }
-        
+
         updateFields.push(`metadata = $${paramIndex++}`);
         values.push(JSON.stringify(mergedMetadata));
       }
@@ -1537,11 +1537,11 @@ class AuthUsersController {
             let inSingleQuote = false;
             let inDoubleQuote = false;
             let commentIndex = -1;
-            
+
             for (let i = 0; i < line.length - 1; i++) {
               const char = line[i];
               const nextChar = line[i + 1];
-              
+
               // Handle single quotes
               if (char === "'" && !inDoubleQuote) {
                 // Check for escaped single quote ('')
@@ -1551,19 +1551,19 @@ class AuthUsersController {
                 }
                 inSingleQuote = !inSingleQuote;
               }
-              
+
               // Handle double quotes
               if (char === '"' && !inSingleQuote) {
                 inDoubleQuote = !inDoubleQuote;
               }
-              
+
               // Found -- comment delimiter, but only if not inside quotes
               if (char === '-' && nextChar === '-' && !inSingleQuote && !inDoubleQuote) {
                 commentIndex = i;
                 break;
               }
             }
-            
+
             if (commentIndex !== -1) {
               return line.substring(0, commentIndex);
             }

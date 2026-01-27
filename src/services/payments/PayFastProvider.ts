@@ -207,11 +207,7 @@ export class PayFastProvider implements BasePaymentProvider {
    */
   async initiatePayment(request: InitiatePaymentRequest, transactionId: string): Promise<InitiatePaymentResponse> {
     try {
-      // Trim and validate merchant credentials
-      const merchantId = this.config.merchantId?.trim();
-      const merchantKey = this.config.merchantKey?.trim();
-
-      if (!merchantId || !merchantKey) {
+      if (!this.config.merchantId || !this.config.merchantKey) {
         return {
           success: false,
           transactionId,
@@ -220,20 +216,50 @@ export class PayFastProvider implements BasePaymentProvider {
         };
       }
 
-      // Log merchant ID for debugging (first 4 chars only for security)
-      console.log(`[PayFast] Initiating payment - Merchant ID: ${merchantId.substring(0, 4)}... (sandbox: ${this.config.sandboxMode})`);
-
       // Build payment data in PayFast's required order
       const paymentData: Record<string, string> = {};
 
-      // Merchant details (required) - ensure they're trimmed strings
-      paymentData['merchant_id'] = merchantId;
-      paymentData['merchant_key'] = merchantKey;
+      // Merchant details (required)
+      paymentData['merchant_id'] = this.config.merchantId;
+      paymentData['merchant_key'] = this.config.merchantKey;
 
-      // URLs
-      paymentData['return_url'] = request.returnUrl || this.config.returnUrl || '';
-      paymentData['cancel_url'] = request.cancelUrl || this.config.cancelUrl || '';
-      paymentData['notify_url'] = request.notifyUrl || this.config.notifyUrl || '';
+      // URLs - PayFast requires HTTP/HTTPS URLs, not custom schemes
+      const returnUrl = request.returnUrl || this.config.returnUrl || '';
+      const cancelUrl = request.cancelUrl || this.config.cancelUrl || '';
+      const notifyUrl = request.notifyUrl || this.config.notifyUrl || '';
+
+      // Validate return_url and cancel_url are HTTP/HTTPS (required by PayFast)
+      if (returnUrl && !returnUrl.match(/^https?:\/\//i)) {
+        return {
+          success: false,
+          transactionId,
+          paymentUrl: '',
+          error: 'return_url must be a valid HTTP or HTTPS URL. Custom URL schemes (e.g., phandapay://) are not supported by PayFast. Use a web URL that redirects to your app, or use Universal Links/App Links.',
+        };
+      }
+
+      if (cancelUrl && !cancelUrl.match(/^https?:\/\//i)) {
+        return {
+          success: false,
+          transactionId,
+          paymentUrl: '',
+          error: 'cancel_url must be a valid HTTP or HTTPS URL. Custom URL schemes (e.g., phandapay://) are not supported by PayFast. Use a web URL that redirects to your app, or use Universal Links/App Links.',
+        };
+      }
+
+      // Validate notify_url if provided
+      if (notifyUrl && !notifyUrl.match(/^https?:\/\//i)) {
+        return {
+          success: false,
+          transactionId,
+          paymentUrl: '',
+          error: 'notify_url must be a valid HTTP or HTTPS URL.',
+        };
+      }
+
+      paymentData['return_url'] = returnUrl;
+      paymentData['cancel_url'] = cancelUrl;
+      paymentData['notify_url'] = notifyUrl;
 
       // Customer details (optional but recommended)
       if (request.customerName) {
