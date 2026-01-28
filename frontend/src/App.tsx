@@ -29,15 +29,15 @@ function App() {
     const checkSession = async () => {
       try {
         setLoading(true);
-        
+
         const sessionExists = await Session.doesSessionExist();
-        
+
         if (sessionExists) {
           const apiUrl = import.meta.env.VITE_API_URL || '';
           const response = await fetch(`${apiUrl}/api/users/me`, {
             credentials: 'include',
           });
-          
+
           if (response.ok) {
             const data = await response.json();
             if (data.success && data.data) {
@@ -64,11 +64,11 @@ function App() {
   // This ensures tokens are refreshed before they expire, even if user is inactive
   useEffect(() => {
     let refreshInterval: NodeJS.Timeout | null = null;
-    
+
     const refreshSession = async () => {
       try {
         const sessionExists = await Session.doesSessionExist();
-        
+
         if (sessionExists) {
           // Use SuperTokens' built-in refresh method
           // This automatically handles token refresh via cookies
@@ -115,7 +115,7 @@ function App() {
     if (user) {
       // Refresh session immediately to ensure it's fresh
       refreshSession();
-      
+
       // Set up interval to refresh every 30 minutes (1800000ms)
       // Access tokens now last 24 hours, so refreshing every 30 min keeps them fresh
       // This ensures sessions stay active even during idle periods
@@ -166,61 +166,61 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/invite/:inviteCode" element={<InviteAcceptPage />} />
         <Route path="/invite/:inviteCode/register" element={<InviteRegisterPage />} />
-        <Route 
-          path="/organizations/select" 
+        <Route
+          path="/organizations/select"
           element={
             <ProtectedRoute>
               <SelectOrganizationPage />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="/organizations/create" 
+        <Route
+          path="/organizations/create"
           element={
             <ProtectedRoute>
               <CreateOrganizationPage />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="/organizations/settings" 
+        <Route
+          path="/organizations/settings"
           element={
             <ProtectedRoute>
               <OrganizationSettingsPage />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="/projects" 
+        <Route
+          path="/projects"
           element={
             <ProtectedRoute>
               <ProjectsOverviewPage />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="/projects/:projectId/*" 
+        <Route
+          path="/projects/:projectId/*"
           element={
             <ProtectedRoute>
               <ProjectDashboardPage />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="/profile" 
+        <Route
+          path="/profile"
           element={
             <ProtectedRoute>
               <UserProfile />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="/payments/return" 
-          element={<PaymentReturnPage />} 
+        <Route
+          path="/payments/return"
+          element={<PaymentReturnPage />}
         />
-        <Route 
-          path="/payments/cancel" 
-          element={<PaymentCancelPage />} 
+        <Route
+          path="/payments/cancel"
+          element={<PaymentCancelPage />}
         />
       </Routes>
     </BrowserRouter>

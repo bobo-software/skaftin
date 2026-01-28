@@ -125,7 +125,7 @@ app.use(
     allowedHeaders: [
       "content-type",
       "x-api-key",
-      "x-access-token", 
+      "x-access-token",
       "x-project-id",
       "authorization",
       ...supertokens.getAllCORSHeaders()
@@ -343,13 +343,13 @@ app.use('/api/payments/webhook', PaymentWebhookRouter);
 // This allows SuperTokens SDK to call /app-api/auth/session/refresh
 app.use('/app-api/auth', (req, res, next) => {
   // Only handle SuperTokens routes (session, signin, signup, etc.)
-  if (req.path.startsWith('/session/') || 
-      req.path === '/signin' || 
-      req.path === '/signup' ||
-      req.path === '/signout' ||
-      req.path.startsWith('/user/') ||
-      req.path === '/emailpassword/signin' ||
-      req.path === '/emailpassword/signup') {
+  if (req.path.startsWith('/session/') ||
+    req.path === '/signin' ||
+    req.path === '/signup' ||
+    req.path === '/signout' ||
+    req.path.startsWith('/user/') ||
+    req.path === '/emailpassword/signin' ||
+    req.path === '/emailpassword/signup') {
     // Proxy to SuperTokens middleware
     return supertokensMiddleware()(req, res, next);
   }
@@ -427,7 +427,7 @@ const startServer = async () => {
   console.log('🗑️  Initializing account deletion service...');
   const accountDeletionService = new AccountDeletionService(pool);
   const cron = require('node-cron');
-  
+
   // Schedule daily deletion processing at 2 AM
   cron.schedule('0 2 * * *', async () => {
     console.log('🗑️  [CRON] Running scheduled account deletion processing...');

@@ -25,14 +25,25 @@ Currently supported payment gateways:
 
 ## Authentication
 
-All payment endpoints require API Key authentication:
+All payment endpoints require API Key authentication. You can use either `x-api-key` (lowercase) or `X-API-Key` (uppercase) header:
 
 ```typescript
 headers: {
   'Content-Type': 'application/json',
-  'X-API-Key': 'your-api-key'
+  'x-api-key': 'your-api-key'  // Recommended: lowercase
+  // OR
+  'X-API-Key': 'your-api-key'   // Also supported
 }
 ```
+
+**Getting an API Key:**
+1. Navigate to your project in the Skaftin dashboard
+2. Go to the "API Credentials" section
+3. Create a new API Key credential
+4. Copy the token value (starts with `sk_`)
+5. Use this token as your API key in requests
+
+**Note:** The API key must be active (`is_active: true`) and have the required permissions. The system automatically extracts the project ID from the API key, so you don't need to include it in the request.
 
 ## Quick Start
 
@@ -62,8 +73,8 @@ const handlePayment = async () => {
     customer_email: 'user@example.com'
   });
   
-  if (result.success) {
-    window.location.href = result.payment_url;
+  if (result.success && result.paymentUrl) {
+    window.location.href = result.paymentUrl;
   }
 };
 ```
@@ -136,14 +147,14 @@ export const PaymentButton: React.FC<PaymentButtonProps> = ({
         }
       );
 
-      if (response.data.success) {
+      if (response.data.success && response.data.paymentUrl) {
         // Store transaction ID for verification
-        localStorage.setItem('pending_transaction', response.data.transaction_id);
+        localStorage.setItem('pending_transaction', response.data.transactionId);
         
         // Redirect to payment gateway
-        window.location.href = response.data.payment_url;
+        window.location.href = response.data.paymentUrl;
         
-        onSuccess?.(response.data.transaction_id);
+        onSuccess?.(response.data.transactionId);
       } else {
         throw new Error(response.data.error || 'Payment initiation failed');
       }
@@ -202,7 +213,7 @@ export const PaymentSuccess: React.FC = () => {
       const response = await axios.get(
         `${API_BASE_URL}/payments/transaction/${txId}`,
         {
-          headers: { 'X-API-Key': API_KEY }
+          headers: { 'x-api-key': API_KEY }  // Use lowercase header name
         }
       );
 
@@ -361,8 +372,8 @@ export const PaymentWebView: React.FC<PaymentWebViewProps> = ({
         }
       );
 
-      if (response.data.success) {
-        setPaymentUrl(response.data.payment_url);
+      if (response.data.success && response.data.paymentUrl) {
+        setPaymentUrl(response.data.paymentUrl);
       } else {
         onError(response.data.error || 'Failed to initiate payment');
       }
@@ -428,7 +439,7 @@ export const PaymentWebView: React.FC<PaymentWebViewProps> = ({
       const response = await axios.get(
         `${API_BASE_URL}/payments/transaction/${transactionId}`,
         {
-          headers: { 'X-API-Key': API_KEY }
+          headers: { 'x-api-key': API_KEY }  // Use lowercase header name
         }
       );
 
@@ -594,7 +605,7 @@ export const initiatePaymentWithInAppBrowser = async (
       {
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': API_KEY
+          'x-api-key': API_KEY  // Use lowercase header name
         }
       }
     );
@@ -603,11 +614,11 @@ export const initiatePaymentWithInAppBrowser = async (
       throw new Error(response.data.error || 'Payment initiation failed');
     }
 
-    const { payment_url, transaction_id } = response.data;
+    const { paymentUrl, transactionId } = response.data;
 
     // 2. Open payment URL in InAppBrowser
     if (await InAppBrowser.isAvailable()) {
-      const result = await InAppBrowser.open(payment_url, {
+      const result = await InAppBrowser.open(paymentUrl, {
         // iOS options
         dismissButtonStyle: 'close',
         preferredBarTintColor: '#453AA4',
@@ -641,11 +652,11 @@ export const initiatePaymentWithInAppBrowser = async (
         Alert.alert('Payment Cancelled', 'You cancelled the payment.');
       } else if (result.type === 'dismiss') {
         // Browser was dismissed - check payment status
-        await checkPaymentStatus(transaction_id);
+        await checkPaymentStatus(transactionId);
       }
     } else {
       // Fallback to system browser
-      await Linking.openURL(payment_url);
+      await Linking.openURL(paymentUrl);
     }
   } catch (error: any) {
     Alert.alert('Error', error.message || 'Failed to initiate payment');
@@ -657,7 +668,7 @@ const checkPaymentStatus = async (transactionId: string) => {
     const response = await axios.get(
       `${API_BASE_URL}/payments/transaction/${transactionId}`,
       {
-        headers: { 'X-API-Key': API_KEY }
+        headers: { 'x-api-key': API_KEY }  // Use lowercase header name
       }
     );
 
@@ -773,7 +784,7 @@ export const App: React.FC = () => {
       const response = await axios.get(
         `${API_BASE_URL}/payments/transaction/${transactionId}`,
         {
-          headers: { 'X-API-Key': API_KEY }
+          headers: { 'x-api-key': API_KEY }  // Use lowercase header name
         }
       );
 
@@ -849,12 +860,14 @@ interface InitiatePaymentRequest {
 ```typescript
 interface InitiatePaymentResponse {
   success: boolean;
-  transaction_id: string;  // Your reference ID (UUID)
-  payment_url: string;     // Redirect user here to complete payment
-  payment_data?: object;   // Raw data sent to gateway
-  error?: string;
+  transactionId: string;    // Your reference ID (UUID) - camelCase
+  paymentUrl: string;      // Redirect user here to complete payment - camelCase
+  paymentData?: object;    // Raw data sent to gateway (optional)
+  error?: string;          // Error message if success is false
 }
 ```
+
+**Important:** The response uses camelCase (`paymentUrl`, `transactionId`), not snake_case. Make sure your code checks `result.paymentUrl` (not `result.payment_url` or `result.data.payment_url`).
 
 **Examples:**
 
@@ -883,12 +896,12 @@ const initiatePayment = async (providerId?: number) => {
 
   const result = await response.json();
   
-  if (result.success) {
-    // Store transaction_id for later status checks
-    localStorage.setItem('pending_transaction', result.transaction_id);
+  if (result.success && result.paymentUrl) {
+    // Store transactionId for later status checks
+    localStorage.setItem('pending_transaction', result.transactionId);
     
     // Redirect to payment page
-    window.location.href = result.payment_url;
+    window.location.href = result.paymentUrl;
   } else {
     console.error('Payment failed:', result.error);
   }
@@ -939,13 +952,13 @@ const initiatePayment = async (providerId?: number) => {
 
   const result = await response.json();
   
-  if (result.success) {
-    // Option 1: Open in system browser
-    await Linking.openURL(result.payment_url);
-    
-    // Option 2: Open in in-app browser (recommended)
-    if (await InAppBrowser.isAvailable()) {
-      await InAppBrowser.open(result.payment_url, {
+      if (result.success && result.paymentUrl) {
+        // Option 1: Open in system browser
+        await Linking.openURL(result.paymentUrl);
+        
+        // Option 2: Open in in-app browser (recommended)
+        if (await InAppBrowser.isAvailable()) {
+          await InAppBrowser.open(result.paymentUrl, {
         dismissButtonStyle: 'close',
         preferredBarTintColor: '#453AA4',
         preferredControlTintColor: 'white',
@@ -1539,9 +1552,12 @@ Always test with sandbox/test mode enabled:
 | "Payment provider is not active" | Provider disabled | Activate provider in dashboard |
 | "Missing merchant_id or merchant_key" | Incomplete credentials | Update provider credentials |
 | "Invalid amount" | Amount <= 0 | Ensure amount is positive |
-| "Transaction not found" | Invalid transaction ID | Check transaction_id value |
+| "Transaction not found" | Invalid transaction ID | Check transactionId value |
 | "Invalid API key" | Wrong or expired API key | Check API key in credentials section |
+| "No active API key found" | No active API key credential | Create an API key in API Credentials section |
 | "Network error" | Connection failed | Check internet connection, retry |
+| 404 Not Found on `/api/client/payments/initiate` | Wrong endpoint path | Use `/app-api/payments/initiate` instead |
+| "Failed to initiate payment" (but response is successful) | Wrong response field name | Use `result.paymentUrl` (camelCase), not `result.data.payment_url` |
 
 ### React Native Specific Issues
 
@@ -1583,16 +1599,50 @@ Always test with sandbox/test mode enabled:
    ```typescript
    console.log('API Key:', API_KEY); // Should not be empty
    ```
+   
+   **Getting API Key from Credentials API:**
+   ```typescript
+   // Fetch credentials for your project
+   const credentialsResponse = await fetch(`/api/credentials/${projectId}/credentials`, {
+     headers: { 'Authorization': `Bearer ${yourAuthToken}` }
+   });
+   const credentials = await credentialsResponse.json();
+   
+   // Find an active API key
+   const apiKey = credentials.data.find(
+     (cred: any) => cred.credential_type === 'api_key' && cred.is_active
+   );
+   
+   // Use apiKey.token (not apiKey.key_value)
+   const API_KEY = apiKey?.token;
+   ```
 
 2. **Check Network Request:**
    ```typescript
    // Add logging
-   console.log('Request URL:', `${API_BASE_URL}/payments/initiate`);
+   console.log('Request URL:', `${API_BASE_URL}/app-api/payments/initiate`);
    console.log('Request Body:', paymentData);
    console.log('Response:', response.data);
    ```
+   
+   **Important:** Make sure you're using the correct endpoint:
+   - ✅ Correct: `/app-api/payments/initiate`
+   - ❌ Wrong: `/api/client/payments/initiate`
 
-3. **Check Provider Configuration:**
+3. **Check Response Structure:**
+   ```typescript
+   // Correct response handling
+   if (result.success && result.paymentUrl) {  // camelCase, top-level
+     window.location.href = result.paymentUrl;
+   }
+   
+   // Common mistakes:
+   // ❌ result.data.payment_url  (wrong - not nested, wrong case)
+   // ❌ result.payment_url        (wrong - should be camelCase)
+   // ✅ result.paymentUrl         (correct)
+   ```
+
+4. **Check Provider Configuration:**
    - Verify provider is active in Skaftin dashboard
    - Check provider credentials are correct
    - Ensure provider is in sandbox mode for testing
@@ -1663,7 +1713,7 @@ export const paymentService = {
         cancel_url: `${window.location.origin}/payment/cancel`
       },
       {
-        headers: { 'X-API-Key': API_KEY }
+        headers: { 'x-api-key': API_KEY }  // Use lowercase header name
       }
     );
     return response.data;
@@ -1673,7 +1723,7 @@ export const paymentService = {
     const response = await axios.get(
       `${API_BASE_URL}/payments/transaction/${transactionId}`,
       {
-        headers: { 'X-API-Key': API_KEY }
+        headers: { 'x-api-key': API_KEY }  // Use lowercase header name
       }
     );
     return response.data;
@@ -1684,7 +1734,7 @@ export const paymentService = {
       `${API_BASE_URL}/payments/subscription/cancel`,
       { transaction_id: transactionId },
       {
-        headers: { 'X-API-Key': API_KEY }
+        headers: { 'x-api-key': API_KEY }  // Use lowercase header name
       }
     );
     return response.data;
@@ -1721,9 +1771,9 @@ export const PaymentButton: React.FC<PaymentButtonProps> = ({
         payment_type: 'once_off'
       });
 
-      if (result.success) {
-        localStorage.setItem('pending_transaction', result.transaction_id);
-        window.location.href = result.payment_url;
+      if (result.success && result.paymentUrl) {
+        localStorage.setItem('pending_transaction', result.transactionId);
+        window.location.href = result.paymentUrl;
       }
     } catch (error) {
       console.error('Payment error:', error);
@@ -1760,7 +1810,7 @@ export const paymentService = {
           cancel_url: 'https://yourapp.com/payment/cancel'
         },
       {
-        headers: { 'X-API-Key': API_KEY }
+        headers: { 'x-api-key': API_KEY }  // Use lowercase header name
       }
     );
     return response.data;
@@ -1770,7 +1820,7 @@ export const paymentService = {
     const response = await axios.get(
       `${API_BASE_URL}/payments/transaction/${transactionId}`,
       {
-        headers: { 'X-API-Key': API_KEY }
+        headers: { 'x-api-key': API_KEY }  // Use lowercase header name
       }
     );
     return response.data;
@@ -1800,8 +1850,8 @@ export const PaymentScreen: React.FC = () => {
         cancel_url: 'https://yourapp.com/payment/cancel'
       });
 
-      if (result.success) {
-        setPaymentUrl(result.payment_url);
+      if (result.success && result.paymentUrl) {
+        setPaymentUrl(result.paymentUrl);
         setShowWebView(true);
       } else {
         Alert.alert('Error', result.error || 'Failed to initiate payment');
