@@ -63,7 +63,7 @@ const OrganizationMembersTab = ({ organization, organizationDetails }: Organizat
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!addMemberData.userId.trim()) {
       ToastUtils.error('User ID is required');
       return;
@@ -72,10 +72,10 @@ const OrganizationMembersTab = ({ organization, organizationDetails }: Organizat
     setAddMemberLoading(true);
     try {
       await addMember(organization.id, {
-        userId: addMemberData.userId.trim(),
+        user_id: addMemberData.userId.trim(),
         role: addMemberData.role,
       });
-      
+
       ToastUtils.success('Member added successfully');
       setShowAddMember(false);
       setAddMemberData({ userId: '', role: 'member' });
@@ -100,10 +100,10 @@ const OrganizationMembersTab = ({ organization, organizationDetails }: Organizat
   };
 
   const handleRemoveMember = async (memberId: number, memberName?: string) => {
-    const confirmMessage = memberName 
+    const confirmMessage = memberName
       ? `Are you sure you want to remove ${memberName} from this organization?`
       : 'Are you sure you want to remove this member?';
-    
+
     if (!confirm(confirmMessage)) return;
 
     try {
@@ -131,7 +131,7 @@ const OrganizationMembersTab = ({ organization, organizationDetails }: Organizat
             Manage who has access to this organization
           </p>
         </div>
-        
+
         {isOwner && (
           <button
             onClick={() => setShowAddMember(!showAddMember)}
@@ -181,7 +181,7 @@ const OrganizationMembersTab = ({ organization, organizationDetails }: Organizat
                 </select>
               </div>
             </div>
-            
+
             <div className="flex justify-end gap-2">
               <button
                 type="button"
@@ -245,7 +245,7 @@ const OrganizationMembersTab = ({ organization, organizationDetails }: Organizat
           <div className="divide-y divide-dark-200 dark:divide-dark-700">
             {members.map((member) => {
               const isCurrentUserOwner = member.user_id === organization.owner_id;
-              
+
               return (
                 <div
                   key={member.id}

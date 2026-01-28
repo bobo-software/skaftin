@@ -10,6 +10,10 @@ import { OrganisationFilterRequest } from '../middleware/organisationFilterMiddl
 import { AnalyticsService } from '../services/AnalyticsService';
 import { normalizeQuery } from '../utils/SqlUtils';
 import { AuthUtils } from '../utils/AuthUtils';
+import bcrypt from 'bcrypt';
+import EmailPassword from 'supertokens-node/recipe/emailpassword';
+import { convertToRecipeUserId } from 'supertokens-node';
+import { createProjectScopedEmail } from '../middleware/appUserSuperTokensMiddleware';
 
 // Extended request type that can have projectId from middleware or params
 type DatabaseRequest = (SuperTokensAuthenticatedRequest | HybridAuthRequest | OrganisationFilterRequest) & {
@@ -1014,6 +1018,155 @@ class DatabaseController {
         }
       }
       ResponseUtils.error(res, 'Failed to update user', error);
+    }
+  }
+
+  /**
+   * Change user password
+   * POST /app-api/database/users/change_password
+   * Payload: { where: { user_id: 531 }, current_password: "old", new_password: "new" }
+   */
+  static async changePassword(req: DatabaseRequest, res: Response) {
+    let client: any = null;
+    try {
+      const projectId = DatabaseController.getProjectId(req);
+      if (!projectId) {
+        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
+      }
+
+      const { where, current_password, new_password } = req.body;
+
+      if (!where) {
+        return ResponseUtils.error(res, 'where clause is required in request body', null, null, 400);
+      }
+
+      if (!current_password || !new_password) {
+        return ResponseUtils.error(res, 'current_password and new_password are required', null, null, 400);
+      }
+
+      // Extract user ID from where clause (support user_id or id)
+      const userId = where.user_id || where.id;
+      if (!userId) {
+        return ResponseUtils.error(res, 'where clause must contain user_id or id', null, null, 400);
+      }
+
+      // Validate new password strength
+      const passwordValidation = AuthUtils.isValidPassword(new_password);
+      if (!passwordValidation.valid) {
+        return ResponseUtils.error(res, passwordValidation.message || 'Invalid password', null, null, 400);
+      }
+
+      // Prevent using the same password
+      if (current_password === new_password) {
+        return ResponseUtils.error(res, 'New password must be different from current password', null, null, 400);
+      }
+
+      client = await DatabaseController.getProjectClient(projectId);
+      
+      if (!client) {
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Get schema name
+      const projectIdInt = parseInt(projectId, 10);
+      const schemaResult = await client.query(
+        'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
+        [projectIdInt]
+      );
+      if (schemaResult.rows.length === 0) {
+        client.release();
+        return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+      const schemaName = schemaResult.rows[0].schema_name;
+
+      // Get user with password, email, and supertokens_user_id
+      const userResult = await client.query(
+        `SELECT id, password, email, phone, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+        [parseInt(userId)]
+      );
+
+      if (userResult.rows.length === 0) {
+        client.release();
+        return ResponseUtils.error(res, 'User not found', null, null, 404);
+      }
+
+      const user = userResult.rows[0];
+      let isCurrentPasswordValid = false;
+
+      // Verify current password - check database first, then SuperTokens
+      if (user.password) {
+        // Password stored in database
+        isCurrentPasswordValid = await bcrypt.compare(current_password, user.password);
+      } else if (user.supertokens_user_id && user.email) {
+        // Password stored in SuperTokens - verify via SuperTokens
+        const supertokensEmail = createProjectScopedEmail(user.email, projectIdInt);
+        try {
+          const signInResponse = await EmailPassword.signIn("public", supertokensEmail, current_password);
+          isCurrentPasswordValid = signInResponse.status === "OK";
+        } catch (error) {
+          isCurrentPasswordValid = false;
+        }
+      } else {
+        // No password set anywhere - allow setting password for first time
+        // But still require current_password to be provided (could be empty string or any value)
+        // Actually, if no password exists, we should allow setting it without verification
+        // But the user is providing current_password, so maybe they expect verification
+        // Let's be safe and require they have some form of authentication
+        client.release();
+        return ResponseUtils.error(res, 'User does not have a password set. Please set initial password using a different method.', null, null, 400);
+      }
+
+      if (!isCurrentPasswordValid) {
+        client.release();
+        return ResponseUtils.error(res, 'Current password is incorrect', null, null, 401);
+      }
+
+      // Hash new password for database storage
+      const hashedNewPassword = await bcrypt.hash(new_password, 10);
+
+      // Update password in database
+      await client.query(
+        `UPDATE ${schemaName}.skaftin_system_users 
+         SET password = $1, updated_at = CURRENT_TIMESTAMP 
+         WHERE id = $2`,
+        [hashedNewPassword, parseInt(userId)]
+      );
+
+      // Also update password in SuperTokens if user has SuperTokens account
+      if (user.supertokens_user_id && user.email) {
+        try {
+          const supertokensEmail = createProjectScopedEmail(user.email, projectIdInt);
+          const recipeUserId = convertToRecipeUserId(user.supertokens_user_id);
+          const updateResponse = await EmailPassword.updateEmailOrPassword({
+            recipeUserId: recipeUserId,
+            password: new_password,
+          });
+          
+          if (updateResponse.status !== 'OK') {
+            console.warn(`Failed to update SuperTokens password for user ${userId}, but database password was updated`);
+          }
+        } catch (error) {
+          console.warn(`Error updating SuperTokens password for user ${userId}:`, error);
+          // Don't fail the request if SuperTokens update fails - database password is already updated
+        }
+      }
+
+      client.release();
+      client = null;
+
+      ResponseUtils.success(res, 'Password changed successfully', {
+        message: 'Password has been changed successfully',
+      });
+    } catch (error) {
+      console.error('Error changing password:', error);
+      if (client) {
+        try {
+          client.release();
+        } catch (releaseError) {
+          console.error('Error releasing client:', releaseError);
+        }
+      }
+      ResponseUtils.error(res, 'Failed to change password', error);
     }
   }
 
