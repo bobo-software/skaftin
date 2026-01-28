@@ -4,6 +4,7 @@ export interface AuthSettings {
   id: number;
   project_id: number;
   allow_duplicate_emails: boolean;
+  require_email: boolean;
   require_email_verification: boolean;
   require_phone_verification: boolean;
   enable_password_reset: boolean;
@@ -31,6 +32,7 @@ export interface AuthSettings {
 
 export interface UpdateAuthSettingsRequest {
   allow_duplicate_emails?: boolean;
+  require_email?: boolean;
   require_email_verification?: boolean;
   require_phone_verification?: boolean;
   enable_password_reset?: boolean;

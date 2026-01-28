@@ -893,6 +893,7 @@ export class DatabaseInitializer {
           id SERIAL PRIMARY KEY,
           project_id INTEGER NOT NULL UNIQUE REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           allow_duplicate_emails BOOLEAN DEFAULT false,
+          require_email BOOLEAN DEFAULT true,
           require_email_verification BOOLEAN DEFAULT false,
           require_phone_verification BOOLEAN DEFAULT false,
           enable_password_reset BOOLEAN DEFAULT true,
@@ -923,6 +924,14 @@ export class DatabaseInitializer {
       await this.db.execute(sql.raw(`
         DO $$
         BEGIN
+          -- Add require_email if missing (default true for backward compatibility)
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'skaftin_system_auth_settings' AND column_name = 'require_email'
+          ) THEN
+            ALTER TABLE public.skaftin_system_auth_settings ADD COLUMN require_email BOOLEAN DEFAULT true;
+          END IF;
+          
           -- Add otp_length if missing
           IF NOT EXISTS (
             SELECT 1 FROM information_schema.columns 
@@ -1181,7 +1190,7 @@ export class DatabaseInitializer {
           expires_at TIMESTAMP NOT NULL,
           verified_at TIMESTAMP,
           attempts INTEGER DEFAULT 0,
-          purpose VARCHAR(20) NOT NULL DEFAULT 'registration' CHECK (purpose IN ('registration', 'password_reset', 'password_change', 'account_deletion')),
+          purpose VARCHAR(20) NOT NULL DEFAULT 'registration' CHECK (purpose IN ('registration', 'password_reset', 'password_change', 'account_deletion', 'otp_login')),
           metadata JSONB DEFAULT '{}',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -1327,6 +1336,92 @@ export class DatabaseInitializer {
       `));
 
       console.log(`✅ skaftin_system_user_custom_fields table created in schema: ${schemaName}`);
+
+      // Create skaftin_system_payment_providers table in project schema
+      await this.db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_payment_providers (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('payfast', 'yoco', 'paystack', 'peach_payments', 'ozow', 'flutterwave')),
+          merchant_id VARCHAR(255),
+          merchant_key VARCHAR(255),
+          passphrase VARCHAR(255),
+          api_key TEXT,
+          api_secret TEXT,
+          public_key TEXT,
+          return_url VARCHAR(500),
+          cancel_url VARCHAR(500),
+          notify_url VARCHAR(500),
+          sandbox_mode BOOLEAN DEFAULT true,
+          is_active BOOLEAN DEFAULT true,
+          metadata JSONB DEFAULT '{}',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(project_id, name)
+        );
+      `));
+
+      // Create indexes for skaftin_system_payment_providers
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_payment_providers_project_id ON ${schemaName}.skaftin_system_payment_providers(project_id);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_payment_providers_is_active ON ${schemaName}.skaftin_system_payment_providers(is_active);
+      `));
+
+      console.log(`✅ skaftin_system_payment_providers table created in schema: ${schemaName}`);
+
+      // Create skaftin_system_payment_transactions table in project schema
+      await this.db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_payment_transactions (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL,
+          provider_id INTEGER NOT NULL REFERENCES ${schemaName}.skaftin_system_payment_providers(id) ON DELETE RESTRICT,
+          transaction_id VARCHAR(100) NOT NULL UNIQUE,
+          external_payment_id VARCHAR(255),
+          amount DECIMAL(15, 2) NOT NULL,
+          currency VARCHAR(3) NOT NULL DEFAULT 'ZAR',
+          item_name VARCHAR(255) NOT NULL,
+          item_description TEXT,
+          customer_email VARCHAR(255),
+          customer_name VARCHAR(255),
+          customer_phone VARCHAR(50),
+          payment_type VARCHAR(20) NOT NULL DEFAULT 'once' CHECK (payment_type IN ('once', 'subscription')),
+          subscription_type VARCHAR(20) CHECK (subscription_type IN ('subscription', 'tokenization')),
+          frequency VARCHAR(20) CHECK (frequency IN ('monthly', 'quarterly', 'biannually', 'annual')),
+          cycles INTEGER,
+          return_url VARCHAR(500),
+          cancel_url VARCHAR(500),
+          payment_url TEXT,
+          status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'complete', 'failed', 'cancelled', 'refunded')),
+          status_message TEXT,
+          webhook_data JSONB,
+          metadata JSONB DEFAULT '{}',
+          paid_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `));
+
+      // Create indexes for skaftin_system_payment_transactions
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_payment_transactions_project_id ON ${schemaName}.skaftin_system_payment_transactions(project_id);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_payment_transactions_provider_id ON ${schemaName}.skaftin_system_payment_transactions(provider_id);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_payment_transactions_transaction_id ON ${schemaName}.skaftin_system_payment_transactions(transaction_id);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON ${schemaName}.skaftin_system_payment_transactions(status);
+      `));
+      await this.db.execute(sql.raw(`
+        CREATE INDEX IF NOT EXISTS idx_payment_transactions_customer_email ON ${schemaName}.skaftin_system_payment_transactions(customer_email);
+      `));
+
+      console.log(`✅ skaftin_system_payment_transactions table created in schema: ${schemaName}`);
 
       // Update auth_settings with default role
       const defaultRoleResult = await this.db.execute(sql.raw(`

@@ -1,4 +1,4 @@
-import { useAppStore, useProjectStore } from "../../../stores/StoresIndex";
+import { useAppStore, useProjectStore, useOrganizationStore } from "../../../stores/StoresIndex";
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import ProjectCreationLoadingPage from "./ProjectCreationLoadingPage";
@@ -25,6 +25,12 @@ fetchProjects,
 createProject,
 clearError 
 } = useProjectStore();
+const { currentOrganization, fetchOrganizations } = useOrganizationStore();
+
+// Filter projects by current organization
+const filteredProjects = currentOrganization
+  ? projects.filter(project => project.organization_id === currentOrganization.id)
+  : projects;
 
 // State variables
 const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -61,7 +67,9 @@ const loadUserProjects = useCallback(async () => {
 useEffect(() => {
   loadUserProjects();
   loadDashboardStats();
-}, [loadUserProjects, loadDashboardStats]);
+  // Load organizations if not already loaded
+  fetchOrganizations();
+}, [loadUserProjects, loadDashboardStats, fetchOrganizations]);
 
 const handleCreateProject = () => {
 setIsCreateModalOpen(true);
@@ -290,7 +298,7 @@ return (
   )}
 
   {/* Quick Actions */}
-  {projects.length > 0 && (
+  {filteredProjects.length > 0 && (
     <div className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6 mb-8">
       <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">Quick Actions</h3>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -302,9 +310,9 @@ return (
         >
           Create New Project
         </AppButton>
-        {projects.length > 0 && (
+        {filteredProjects.length > 0 && (
           <AppButton
-            onClick={() => navigate(`/projects/${projects[0].id}/analytics`)}
+            onClick={() => navigate(`/projects/${filteredProjects[0].id}/analytics`)}
             variant="secondary"
             className="w-full justify-start"
             icon={<BarChart3 className="w-4 h-4" />}
@@ -312,9 +320,9 @@ return (
             View Analytics
           </AppButton>
         )}
-        {projects.length > 0 && (
+        {filteredProjects.length > 0 && (
           <AppButton
-            onClick={() => navigate(`/projects/${projects[0].id}/database`)}
+            onClick={() => navigate(`/projects/${filteredProjects[0].id}/database`)}
             variant="secondary"
             className="w-full justify-start"
             icon={<Code className="w-4 h-4" />}
@@ -327,7 +335,7 @@ return (
   )}
 
   {/* Projects Grid */}
-  {projects.length === 0 ? (
+  {filteredProjects.length === 0 ? (
     <div className="text-center py-16">
       <div className="inline-flex items-center justify-center w-20 h-20 bg-dark-100 dark:bg-dark-800 rounded-2xl mb-6">
         <FolderOpen className="w-10 h-10 text-dark-400 dark:text-dark-500" />
@@ -336,7 +344,9 @@ return (
         No Projects Yet
       </h3>
       <p className="text-dark-600 dark:text-dark-300 mb-8 max-w-md mx-auto">
-        Create your first project to start building your database and storage solution.
+        {currentOrganization 
+          ? `Create your first project in ${currentOrganization.name} to start building your database and storage solution.`
+          : 'Create your first project to start building your database and storage solution.'}
       </p>
       <AppButton
         onClick={handleCreateProject}
@@ -348,7 +358,7 @@ return (
     </div>
   ) : (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {projects.map((project) => (
+      {filteredProjects.map((project) => (
         <div
           key={project.id}
           className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6 hover:shadow-xl transition-all duration-200 cursor-pointer group"

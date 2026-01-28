@@ -8,6 +8,7 @@ import { communicationsToolModule } from '../tools/communicationsTools';
 import { authToolModule } from '../tools/authTools';
 import { credentialsToolModule } from '../tools/credentialsTools';
 import { bulkToolModule } from '../tools/bulkTools';
+import { paymentToolModule } from '../tools/paymentTools';
 
 /**
  * Central registry for MCP tools
@@ -29,6 +30,7 @@ export class ToolRegistry {
     this.registerModule(authToolModule);
     this.registerModule(credentialsToolModule);
     this.registerModule(bulkToolModule);
+    this.registerModule(paymentToolModule);
   }
 
   /**

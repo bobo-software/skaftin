@@ -125,7 +125,7 @@ app.use(
     allowedHeaders: [
       "content-type",
       "x-api-key",
-      "x-access-token", 
+      "x-access-token",
       "x-project-id",
       "authorization",
       ...supertokens.getAllCORSHeaders()
@@ -185,6 +185,7 @@ import { createAdminAuthRouter } from './routers/AdminAuthRouter';
 import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import { createClientCommunicationsRouter } from './routers/ClientCommunicationsRouter';
 import { createInvitationsRouter } from './routers/InvitationsRouter';
+import { createPaymentRouter, createClientPaymentRouter, createPaymentWebhookRouter } from './routers/PaymentRouter';
 import { createCredentialsRouter } from './routers/CredentialsRouter';
 import { createAuthRouter } from './routers/AuthRouter';
 import { createAnalyticsRouter } from './routers/AnalyticsRouter';
@@ -222,6 +223,7 @@ app.get('/', (req: Request, res: Response) => {
         projects: '/api/projects',
         files: '/api/files',
         communications: '/api/communications',
+        payments: '/api/payments',
         invitations: '/api/invitations',
         credentials: '/api/credentials',
         analytics: '/api/analytics',
@@ -236,6 +238,7 @@ app.get('/', (req: Request, res: Response) => {
         storage: '/app-api/storage',
         database: '/app-api/database',
         communications: '/app-api/communications',
+        payments: '/app-api/payments',
         mcp: '/app-api/mcp',
       },
       // Public API Routes (API Key / Access Token only, GET & POST, no user auth required)
@@ -283,6 +286,11 @@ const AuthManagementRouter = createAuthRouter(pool);
 // Initialize Client Communications Router (for app-api routes)
 const ClientCommunicationsRouter = createClientCommunicationsRouter(pool);
 
+// Initialize Payment Routers
+const PaymentRouter = createPaymentRouter(pool);
+const ClientPaymentRouter = createClientPaymentRouter(pool);
+const PaymentWebhookRouter = createPaymentWebhookRouter(pool);
+
 // Initialize Public Routers (for app-api-2 routes - API key only, no user auth)
 import { createPublicDatabaseRouter } from './routers/PublicDatabaseRouter';
 import { createPublicStorageRouter } from './routers/PublicStorageRouter';
@@ -325,6 +333,8 @@ app.use('/api/storage', createAdminStorageRouter(pool, s3Client));
 app.use('/api/auth', createAdminAuthRouter(pool));
 app.use('/api/workflows', createWorkflowsRouter(pool));
 app.use('/api/backups', BackupRouter);
+app.use('/api/payments', PaymentRouter);
+app.use('/api/payments/webhook', PaymentWebhookRouter);
 
 // ============================================================================
 // CLIENT-FACING ROUTES (/app-api/*) - API Key / App User JWT authentication
@@ -333,13 +343,13 @@ app.use('/api/backups', BackupRouter);
 // This allows SuperTokens SDK to call /app-api/auth/session/refresh
 app.use('/app-api/auth', (req, res, next) => {
   // Only handle SuperTokens routes (session, signin, signup, etc.)
-  if (req.path.startsWith('/session/') || 
-      req.path === '/signin' || 
-      req.path === '/signup' ||
-      req.path === '/signout' ||
-      req.path.startsWith('/user/') ||
-      req.path === '/emailpassword/signin' ||
-      req.path === '/emailpassword/signup') {
+  if (req.path.startsWith('/session/') ||
+    req.path === '/signin' ||
+    req.path === '/signup' ||
+    req.path === '/signout' ||
+    req.path.startsWith('/user/') ||
+    req.path === '/emailpassword/signin' ||
+    req.path === '/emailpassword/signup') {
     // Proxy to SuperTokens middleware
     return supertokensMiddleware()(req, res, next);
   }
@@ -354,6 +364,8 @@ app.use('/app-api/storage', createStorageRouter(pool));
 app.use('/app-api/database', createDatabaseRouter(pool));
 // Communications operations (supports both API key and SuperTokens via hybrid auth)
 app.use('/app-api/communications', ClientCommunicationsRouter);
+// Payment operations (supports both API key and SuperTokens via hybrid auth)
+app.use('/app-api/payments', ClientPaymentRouter);
 // Client MCP operations (restricted tool set, MCP keys/API keys only)
 app.use('/app-api/mcp', ClientMCPRouter);
 
@@ -415,7 +427,7 @@ const startServer = async () => {
   console.log('🗑️  Initializing account deletion service...');
   const accountDeletionService = new AccountDeletionService(pool);
   const cron = require('node-cron');
-  
+
   // Schedule daily deletion processing at 2 AM
   cron.schedule('0 2 * * *', async () => {
     console.log('🗑️  [CRON] Running scheduled account deletion processing...');

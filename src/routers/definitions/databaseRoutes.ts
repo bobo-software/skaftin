@@ -306,6 +306,14 @@ export function createDatabaseRouteDefinitions(): RouteDefinition[] {
       requiresAuth: true,
     },
     {
+      method: 'post',
+      path: '/users/change_password',
+      handler: DatabaseController.changePassword,
+      description: 'Change user password',
+      requiresProject: true,
+      requiresAuth: true,
+    },
+    {
       method: 'delete',
       path: '/users/delete',
       handler: DatabaseController.deleteUser,

@@ -9,6 +9,7 @@ interface AuthSettings {
   id: number;
   project_id: number;
   allow_duplicate_emails: boolean;
+  require_email: boolean;
   require_email_verification: boolean;
   require_phone_verification: boolean;
   enable_password_reset: boolean;
@@ -36,6 +37,7 @@ interface AuthSettings {
 
 interface UpdateAuthSettingsRequest {
   allow_duplicate_emails?: boolean;
+  require_email?: boolean;
   require_email_verification?: boolean;
   require_phone_verification?: boolean;
   enable_password_reset?: boolean;
@@ -152,6 +154,11 @@ class AuthSettingsController {
       if (updates.allow_duplicate_emails !== undefined) {
         updateFields.push(`allow_duplicate_emails = $${paramIndex++}`);
         values.push(updates.allow_duplicate_emails);
+      }
+
+      if (updates.require_email !== undefined) {
+        updateFields.push(`require_email = $${paramIndex++}`);
+        values.push(updates.require_email);
       }
 
       if (updates.require_email_verification !== undefined) {

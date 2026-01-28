@@ -250,6 +250,27 @@ const ApiRoutes = {
     CREATE_SCHEDULE: (projectId: string) => `/api/backups/${projectId}/schedules`,
     UPDATE_SCHEDULE: (projectId: string, scheduleId: number) => `/api/backups/${projectId}/schedules/${scheduleId}`,
     DELETE_SCHEDULE: (projectId: string, scheduleId: number) => `/api/backups/${projectId}/schedules/${scheduleId}`,
+  },
+  
+  // Payment routes - Admin API (SuperTokens authentication)
+  PAYMENTS: {
+    // Provider management
+    LIST_PROVIDERS: (projectId: string) => `/api/payments/${projectId}/providers`,
+    GET_PROVIDER: (projectId: string, providerId: string) => `/api/payments/${projectId}/providers/${providerId}`,
+    CREATE_PROVIDER: (projectId: string) => `/api/payments/${projectId}/providers`,
+    UPDATE_PROVIDER: (projectId: string, providerId: string) => `/api/payments/${projectId}/providers/${providerId}`,
+    DELETE_PROVIDER: (projectId: string, providerId: string) => `/api/payments/${projectId}/providers/${providerId}`,
+    TEST_PROVIDER: (projectId: string, providerId: string) => `/api/payments/${projectId}/providers/${providerId}/test`,
+    // Transactions
+    LIST_TRANSACTIONS: (projectId: string) => `/api/payments/${projectId}/transactions`,
+    GET_TRANSACTION: (projectId: string, transactionId: string) => `/api/payments/${projectId}/transactions/${transactionId}`,
+  },
+  
+  // App API Payment routes - Client API (API keys, project ID auto-extracted)
+  APP_API_PAYMENTS: {
+    INITIATE: () => '/app-api/payments/initiate',
+    GET_TRANSACTION: (transactionId: string) => `/app-api/payments/transaction/${transactionId}`,
+    CANCEL_SUBSCRIPTION: () => '/app-api/payments/subscription/cancel',
   }
 }
 

@@ -438,6 +438,10 @@ export function createAuthTools(config: AuthToolsConfig): Tool[] {
             type: 'boolean',
             description: 'Allow users with same email (multi-tenant)',
           },
+          require_email: {
+            type: 'boolean',
+            description: 'Require email for registration (when false, users can register with just phone number)',
+          },
           require_email_verification: {
             type: 'boolean',
             description: 'Require email verification',
@@ -715,6 +719,16 @@ export async function handleAuthTool(
         };
       }
 
+      // Check available columns in the users table
+      const columnsResult = await pool.query(
+        `SELECT column_name 
+         FROM information_schema.columns 
+         WHERE table_schema = $1 
+           AND table_name = 'skaftin_system_users'`,
+        [schemaName]
+      );
+      const availableColumns = new Set(columnsResult.rows.map((row: any) => row.column_name));
+
       const updateFields: string[] = [];
       const values: any[] = [];
       let paramIndex = 1;
@@ -724,8 +738,12 @@ export async function handleAuthTool(
         values.push(name);
       }
       if (last_name !== undefined) {
-        updateFields.push(`last_name = $${paramIndex++}`);
-        values.push(last_name);
+        // Only update last_name if the column exists
+        if (availableColumns.has('last_name')) {
+          updateFields.push(`last_name = $${paramIndex++}`);
+          values.push(last_name);
+        }
+        // Silently skip if column doesn't exist (migration may not have run)
       }
       if (email !== undefined) {
         updateFields.push(`email = $${paramIndex++}`);
@@ -1269,6 +1287,7 @@ export async function handleAuthTool(
     if (name === 'update_skaftin_system_auth_settings') {
       const {
         allow_duplicate_emails,
+        require_email,
         require_email_verification,
         enable_password_reset,
         registration_enabled,
@@ -1288,6 +1307,10 @@ export async function handleAuthTool(
       if (allow_duplicate_emails !== undefined) {
         updateFields.push(`allow_duplicate_emails = $${paramIndex++}`);
         values.push(allow_duplicate_emails);
+      }
+      if (require_email !== undefined) {
+        updateFields.push(`require_email = $${paramIndex++}`);
+        values.push(require_email);
       }
       if (require_email_verification !== undefined) {
         updateFields.push(`require_email_verification = $${paramIndex++}`);
