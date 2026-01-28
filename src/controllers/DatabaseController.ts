@@ -33,22 +33,22 @@ class DatabaseController {
    */
   private static async getProjectClient(projectId: string) {
     const client = await DatabaseController.pool.connect();
-    
+
     try {
       const projectIdInt = parseInt(projectId, 10);
       const result = await client.query(
         'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
         [projectIdInt]
       );
-      
+
       if (result.rows.length === 0) {
         client.release();
         return null;
       }
-      
+
       const schemaName = result.rows[0].schema_name;
       await client.query(`SET search_path TO ${schemaName}, public`);
-      
+
       return client;
     } catch (error) {
       client.release();
@@ -99,12 +99,12 @@ class DatabaseController {
       if (!projectId) {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
-      
+
       // Check if we should include system tables (for foreign key creation)
       const includeSystemTables = req.query.includeSystemTables === 'true';
-      
+
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -118,12 +118,12 @@ class DatabaseController {
         WHERE table_schema = current_schema()
           AND table_type = 'BASE TABLE'
       `;
-      
+
       // Filter out system tables unless explicitly requested
       if (!includeSystemTables) {
         query += ` AND table_name NOT LIKE 'skaftin_system_%'`;
       }
-      
+
       query += ` ORDER BY table_name`;
 
       const result = await client.query(query);
@@ -148,7 +148,7 @@ class DatabaseController {
       }
       const { tableName } = req.params;
       client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -225,7 +225,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -236,17 +236,17 @@ class DatabaseController {
 
       for (const column of columns) {
         let colDef = `"${column.name}" ${column.type}`;
-        
+
         if (column.primaryKey || (!column.nullable && column.type !== 'SERIAL' && column.type !== 'BIGSERIAL')) {
           colDef += ' NOT NULL';
         }
-        
+
         if (column.defaultValue !== undefined && column.defaultValue !== null && column.defaultValue !== '') {
           if (column.type !== 'SERIAL' && column.type !== 'BIGSERIAL') {
             // PostgreSQL functions (NOW, CURRENT_TIMESTAMP, etc.) should not be quoted
             const postgresqlFunctions = ['CURRENT_TIMESTAMP', 'NOW()', 'CURRENT_DATE', 'CURRENT_TIME', 'LOCALTIMESTAMP', 'LOCALTIME'];
             const isFunction = postgresqlFunctions.some(func => String(column.defaultValue).toUpperCase().includes(func));
-            
+
             if (column.type.includes('INT') || column.type === 'BOOLEAN' || isFunction) {
               colDef += ` DEFAULT ${column.defaultValue}`;
             } else {
@@ -255,20 +255,20 @@ class DatabaseController {
             }
           }
         }
-        
+
         columnDefinitions.push(colDef);
-        
+
         if (column.primaryKey) {
           primaryKeyColumns.push(`"${column.name}"`);
         }
       }
 
       let createTableSQL = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n  ${columnDefinitions.join(',\n  ')}`;
-      
+
       if (primaryKeyColumns.length > 0) {
         createTableSQL += `,\n  PRIMARY KEY (${primaryKeyColumns.join(', ')})`;
       }
-      
+
       createTableSQL += '\n)';
 
       await client.query(createTableSQL);
@@ -303,7 +303,7 @@ class DatabaseController {
       const normalizedQuery = normalizeQuery(query);
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -322,7 +322,7 @@ class DatabaseController {
         // Extract table name if possible (simple regex, may not catch all cases)
         const tableMatch = normalizedQuery.match(/(?:FROM|INTO|UPDATE|DELETE\s+FROM)\s+["']?(\w+)["']?/i);
         const tableName = tableMatch ? tableMatch[1] : undefined;
-        
+
         // Get user ID if available
         const userId = (req as any).session?.getUserId?.() || (req as any).user?.userId || undefined;
         const apiKeyId = (req as any).apiKeyId || undefined;
@@ -367,7 +367,7 @@ class DatabaseController {
       const { columns, where, limit, offset = 0, orderBy = 'id', orderDirection = 'ASC' } = req.body;
 
       client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -395,7 +395,7 @@ class DatabaseController {
       if (req.organisationFilter && 'appUser' in req) {
         const orgFilter = req.organisationFilter;
         const columnExists = await DatabaseController.columnExists(client, tableName, orgFilter.field);
-        
+
         if (columnExists) {
           if (hasWhereClause) {
             query += ` AND "${orgFilter.field}" = $${values.length + 1}`;
@@ -460,7 +460,7 @@ class DatabaseController {
       const { where = {}, limit, offset, columns, orderBy = 'created_at', orderDirection = 'ASC' } = req.body;
 
       client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -484,7 +484,7 @@ class DatabaseController {
         WHERE table_schema = $1 
           AND table_name = 'skaftin_system_users'
       `, [schemaName]);
-      
+
       const availableColumns = new Set(columnsResult.rows.map((row: any) => row.column_name));
 
       // Build SELECT clause (exclude password by default)
@@ -521,7 +521,7 @@ class DatabaseController {
         ) FILTER (WHERE r.id IS NOT NULL), 
         '[]'::json
       ) as roles`;
-      
+
       selectClause += rolesAggregation;
 
       // Build WHERE clause
@@ -552,17 +552,17 @@ class DatabaseController {
           // Metadata field: metadata.field_name or metadata.field.subfield
           const metadataPath = key.replace(/^metadata\./, ''); // Remove 'metadata.' prefix if present
           const pathParts = metadataPath.split('.');
-          
+
           // Build JSONB path: metadata->>'field'->>'subfield' etc.
           let jsonbPath = 'u.metadata';
           for (let i = 0; i < pathParts.length - 1; i++) {
             jsonbPath += `->'${pathParts[i]}'`;
           }
           jsonbPath += `->>'${pathParts[pathParts.length - 1]}'`;
-          
+
           // JSONB comparison - handle both numeric and string values
           const numericValue = isNaN(Number(filterValue)) ? null : Number(filterValue);
-          
+
           if (numericValue !== null && !isNaN(numericValue)) {
             // For numeric values, compare as text first (handles string storage)
             // Then try numeric comparison
@@ -685,7 +685,7 @@ class DatabaseController {
       }
 
       client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -773,7 +773,7 @@ class DatabaseController {
           AND column_name != 'password'
           AND column_name != 'pwd'
       `, [schemaName]);
-      
+
       const columns = columnsResult.rows.map((row: any) => `u."${row.column_name}"`).join(', ');
 
       const userWithRoles = await client.query(
@@ -840,7 +840,7 @@ class DatabaseController {
       }
 
       client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -868,6 +868,16 @@ class DatabaseController {
         return ResponseUtils.error(res, 'User not found', null, null, 404);
       }
 
+      // Check available columns in the users table
+      const columnsResult = await client.query(
+        `SELECT column_name 
+         FROM information_schema.columns 
+         WHERE table_schema = $1 
+           AND table_name = 'skaftin_system_users'`,
+        [schemaName]
+      );
+      const availableColumns = new Set(columnsResult.rows.map((row: any) => row.column_name));
+
       // Build update query dynamically
       const updateFields: string[] = [];
       const values: any[] = [];
@@ -879,8 +889,14 @@ class DatabaseController {
       }
 
       if (data.last_name !== undefined) {
-        updateFields.push(`last_name = $${paramIndex++}`);
-        values.push(data.last_name);
+        // Only update last_name if the column exists
+        if (availableColumns.has('last_name')) {
+          updateFields.push(`last_name = $${paramIndex++}`);
+          values.push(data.last_name);
+        } else {
+          // Silently skip if column doesn't exist (migration may not have run)
+          console.warn(`last_name column does not exist in ${schemaName}.skaftin_system_users, skipping update`);
+        }
       }
 
       if (data.email !== undefined) {
@@ -896,14 +912,14 @@ class DatabaseController {
       if (data.metadata !== undefined) {
         // Sanitize metadata
         const sanitizedMetadata = AuthUtils.sanitizeMetadata(data.metadata);
-        
+
         // Merge with existing metadata instead of replacing it entirely (deep merge for nested objects)
         // Get current metadata first
         const currentUserResult = await client.query(
           `SELECT metadata FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
           [parseInt(userId)]
         );
-        
+
         let mergedMetadata = sanitizedMetadata;
         if (currentUserResult.rows.length > 0 && currentUserResult.rows[0].metadata) {
           // Deep merge existing metadata with new metadata (new values override existing ones)
@@ -912,7 +928,7 @@ class DatabaseController {
             sanitizedMetadata
           );
         }
-        
+
         updateFields.push(`metadata = $${paramIndex++}`);
         values.push(JSON.stringify(mergedMetadata));
       }
@@ -949,7 +965,7 @@ class DatabaseController {
       await client.query(updateQuery, values);
 
       // Fetch the user with roles (excluding password)
-      const columnsResult = await client.query(`
+      const userColumnsResult = await client.query(`
         SELECT column_name 
         FROM information_schema.columns 
         WHERE table_schema = $1 
@@ -957,8 +973,8 @@ class DatabaseController {
           AND column_name != 'password'
           AND column_name != 'pwd'
       `, [schemaName]);
-      
-      const columns = columnsResult.rows.map((row: any) => `u."${row.column_name}"`).join(', ');
+
+      const columns = userColumnsResult.rows.map((row: any) => `u."${row.column_name}"`).join(', ');
 
       const userWithRoles = await client.query(
         `
@@ -1059,7 +1075,7 @@ class DatabaseController {
         let client: any = null;
         try {
           client = await DatabaseController.getProjectClient(projectId);
-          
+
           if (!client) {
             return ResponseUtils.error(res, 'Project not found', null, null, 404);
           }
@@ -1118,7 +1134,7 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
       const { tableName } = req.params;
-      
+
       // Parse query parameters
       const limitParam = req.query.limit;
       const offsetParam = req.query.offset;
@@ -1138,7 +1154,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1178,7 +1194,7 @@ class DatabaseController {
       if (req.organisationFilter && 'appUser' in req) {
         const orgFilter = req.organisationFilter;
         const columnExists = await DatabaseController.columnExists(client, tableName, orgFilter.field);
-        
+
         if (columnExists) {
           if (hasWhereClause) {
             query += ` AND "${orgFilter.field}" = $${values.length + 1}`;
@@ -1232,7 +1248,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1244,12 +1260,12 @@ class DatabaseController {
       console.log('  └─ Has organisationFilter:', !!req.organisationFilter);
       console.log('  └─ Has appUser:', !!(req as any).appUser);
       console.log('  └─ Organisation filter:', req.organisationFilter);
-      
+
       if (req.organisationFilter) {
         const orgFilter = req.organisationFilter;
         // Check if the column exists in the table before adding it
         const columnExists = await DatabaseController.columnExists(client, tableName, orgFilter.field);
-        
+
         if (columnExists) {
           // Only add if the field doesn't already exist in the data
           if (!data[orgFilter.field]) {
@@ -1303,7 +1319,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1375,7 +1391,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1392,7 +1408,7 @@ class DatabaseController {
       if (req.organisationFilter && 'appUser' in req && !req.appUser?.is_admin) {
         const orgFilter = req.organisationFilter;
         const columnExists = await DatabaseController.columnExists(client, tableName, orgFilter.field);
-        
+
         if (columnExists) {
           whereClause += ` AND "${orgFilter.field}" = $${setValues.length + whereValues.length + 1}`;
           whereValues.push(orgFilter.value);
@@ -1403,13 +1419,13 @@ class DatabaseController {
 
       const query = `UPDATE "${tableName}" SET ${setClause} WHERE ${whereClause} RETURNING *`;
       const allValues = [...setValues, ...whereValues];
-      
+
       // Log the query for debugging
       console.log(`[UPDATE] Executing query: ${query}`);
       console.log(`[UPDATE] With values:`, allValues);
       console.log(`[UPDATE] Set columns:`, setColumns);
       console.log(`[UPDATE] Where clause:`, whereClause);
-      
+
       const result = await client.query(query, allValues);
 
       client.release();
@@ -1418,14 +1434,14 @@ class DatabaseController {
       if (result.rowCount === 0) {
         console.warn(`[UPDATE] No rows updated for table ${tableName} with where clause:`, whereClause);
         return ResponseUtils.error(
-          res, 
-          'No rows were updated. The specified row may not exist or may not match the where clause.', 
+          res,
+          'No rows were updated. The specified row may not exist or may not match the where clause.',
           { updatedCount: 0, whereClause, whereValues },
           null,
           404
         );
       }
-      
+
       console.log(`[UPDATE] Successfully updated ${result.rowCount} row(s) in ${tableName}`);
       console.log(`[UPDATE] Updated rows:`, result.rows);
 
@@ -1435,25 +1451,25 @@ class DatabaseController {
       ResponseUtils.success(res, `${result.rowCount} row(s) updated successfully`, result.rows);
     } catch (error: any) {
       console.error('Error updating data:', error);
-      
+
       // Make sure client is released even on error
       // (It should already be released, but just in case)
-      
+
       // Check for foreign key constraint violation
       if (error.code === '23503') {
         return ResponseUtils.error(
-          res, 
-          'Cannot update row: Foreign key constraint violation.', 
-          { 
+          res,
+          'Cannot update row: Foreign key constraint violation.',
+          {
             errorCode: error.code,
             constraint: error.constraint,
-            detail: error.detail 
+            detail: error.detail
           },
           null,
           409
         );
       }
-      
+
       ResponseUtils.error(res, 'Failed to update data', error);
     }
   }
@@ -1483,7 +1499,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1496,7 +1512,7 @@ class DatabaseController {
       if (req.organisationFilter && 'appUser' in req && !req.appUser?.is_admin) {
         const orgFilter = req.organisationFilter;
         const columnExists = await DatabaseController.columnExists(client, tableName, orgFilter.field);
-        
+
         if (columnExists) {
           whereClause += ` AND "${orgFilter.field}" = $${whereValues.length + 1}`;
           whereValues.push(orgFilter.value);
@@ -1506,11 +1522,11 @@ class DatabaseController {
       }
 
       const query = `DELETE FROM "${tableName}" WHERE ${whereClause} RETURNING *`;
-      
+
       // Log the query for debugging
       console.log(`[DELETE] Executing query: ${query}`);
       console.log(`[DELETE] With values:`, whereValues);
-      
+
       const result = await client.query(query, whereValues);
 
       client.release();
@@ -1519,53 +1535,53 @@ class DatabaseController {
       if (result.rowCount === 0) {
         console.warn(`[DELETE] No rows deleted for table ${tableName} with where clause:`, whereClause);
         return ResponseUtils.error(
-          res, 
-          'No rows were deleted. The specified row may not exist, may be protected by foreign key constraints, or may not match the where clause.', 
+          res,
+          'No rows were deleted. The specified row may not exist, may be protected by foreign key constraints, or may not match the where clause.',
           { deletedCount: 0, whereClause, whereValues },
           null,
           404
         );
       }
-      
+
       console.log(`[DELETE] Successfully deleted ${result.rowCount} row(s) from ${tableName}`);
-      
+
       // Emit WebSocket event
       emitDatabaseChange(projectId, tableName, 'delete', { count: result.rowCount });
 
       ResponseUtils.success(res, `${result.rowCount} row(s) deleted successfully`, { deletedCount: result.rowCount });
     } catch (error: any) {
       console.error('Error deleting data:', error);
-      
+
       // Check for foreign key constraint violation
       if (error.code === '23503') {
         return ResponseUtils.error(
-          res, 
-          'Cannot delete row: It is referenced by other tables through foreign key constraints. Please delete or update the referencing rows first.', 
-          { 
+          res,
+          'Cannot delete row: It is referenced by other tables through foreign key constraints. Please delete or update the referencing rows first.',
+          {
             errorCode: error.code,
             constraint: error.constraint,
-            detail: error.detail 
+            detail: error.detail
           },
           null,
           409
         );
       }
-      
+
       // Check for other PostgreSQL constraint violations
       if (error.code && error.code.startsWith('23')) {
         return ResponseUtils.error(
-          res, 
-          `Database constraint violation: ${error.message || 'Cannot delete this row'}`, 
-          { 
+          res,
+          `Database constraint violation: ${error.message || 'Cannot delete this row'}`,
+          {
             errorCode: error.code,
             constraint: error.constraint,
-            detail: error.detail 
+            detail: error.detail
           },
           null,
           409
         );
       }
-      
+
       ResponseUtils.error(res, 'Failed to delete data', error);
     }
   }
@@ -1592,16 +1608,16 @@ class DatabaseController {
       const tableNameRegex = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
       if (!tableNameRegex.test(newTableName)) {
         return ResponseUtils.error(
-          res, 
-          'Table name must start with a letter or underscore and contain only letters, numbers, and underscores', 
-          null, 
-          null, 
+          res,
+          'Table name must start with a letter or underscore and contain only letters, numbers, and underscores',
+          null,
+          null,
           400
         );
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1626,9 +1642,9 @@ class DatabaseController {
       // Emit WebSocket event
       emitDatabaseChange(projectId, newTableName, 'rename_table', { oldName: tableName, newName: newTableName });
 
-      ResponseUtils.success(res, `Table renamed from "${tableName}" to "${newTableName}" successfully`, { 
-        oldName: tableName, 
-        newName: newTableName 
+      ResponseUtils.success(res, `Table renamed from "${tableName}" to "${newTableName}" successfully`, {
+        oldName: tableName,
+        newName: newTableName
       });
     } catch (error) {
       console.error('Error renaming table:', error);
@@ -1650,7 +1666,7 @@ class DatabaseController {
       const { tableName } = req.params;
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1685,22 +1701,22 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
       let alterSQL = `ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${columnType}`;
-      
+
       if (!nullable) {
         alterSQL += ' NOT NULL';
       }
-      
+
       if (defaultValue !== undefined && defaultValue !== null && defaultValue !== '') {
         // PostgreSQL functions (NOW, CURRENT_TIMESTAMP, etc.) should not be quoted
         const postgresqlFunctions = ['CURRENT_TIMESTAMP', 'NOW()', 'CURRENT_DATE', 'CURRENT_TIME', 'LOCALTIMESTAMP', 'LOCALTIME'];
         const isFunction = postgresqlFunctions.some(func => defaultValue.toUpperCase().includes(func));
-        
+
         if (isFunction) {
           alterSQL += ` DEFAULT ${defaultValue}`;
         } else {
@@ -1735,7 +1751,7 @@ class DatabaseController {
       const { newName, newType, nullable, defaultValue } = req.body;
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1757,7 +1773,7 @@ class DatabaseController {
           // PostgreSQL functions (NOW, CURRENT_TIMESTAMP, etc.) should not be quoted
           const postgresqlFunctions = ['CURRENT_TIMESTAMP', 'NOW()', 'CURRENT_DATE', 'CURRENT_TIME', 'LOCALTIMESTAMP', 'LOCALTIME'];
           const isFunction = postgresqlFunctions.some(func => String(defaultValue).toUpperCase().includes(func));
-          
+
           if (isFunction) {
             await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${columnName}" SET DEFAULT ${defaultValue}`);
           } else {
@@ -1795,7 +1811,7 @@ class DatabaseController {
       const { tableName, columnName } = req.params;
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1825,7 +1841,7 @@ class DatabaseController {
       const { tableName } = req.params;
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1879,7 +1895,7 @@ class DatabaseController {
       const { tableName } = req.params;
 
       client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1947,7 +1963,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1995,7 +2011,7 @@ class DatabaseController {
       const { tableName, constraintName } = req.params;
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -2014,14 +2030,14 @@ class DatabaseController {
 
       if (constraintCheck.rows.length > 0) {
         const constraint = constraintCheck.rows[0];
-        
+
         // Check if it's a NOT NULL constraint
-        if (constraint.constraint_type === 'CHECK' && 
-            constraint.check_clause && 
-            constraint.check_clause.includes('IS NOT NULL')) {
+        if (constraint.constraint_type === 'CHECK' &&
+          constraint.check_clause &&
+          constraint.check_clause.includes('IS NOT NULL')) {
           client.release();
           return ResponseUtils.error(
-            res, 
+            res,
             'Cannot drop NOT NULL constraint directly. Please edit the column and change it to nullable instead.',
             null,
             null,
@@ -2058,7 +2074,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -2072,7 +2088,7 @@ class DatabaseController {
       `);
 
       client.release();
-      
+
       // Emit WebSocket event
       emitDatabaseChange(projectId, tableName, 'create_constraint', {
         constraintName: finalConstraintName,
@@ -2087,11 +2103,11 @@ class DatabaseController {
       }, 201);
     } catch (error: any) {
       console.error('Error creating unique constraint:', error);
-      
+
       if (error.message?.includes('already exists')) {
         return ResponseUtils.error(res, 'A constraint with this name already exists', error, null, 409);
       }
-      
+
       ResponseUtils.error(res, 'Failed to create unique constraint', error);
     }
   }
@@ -2114,7 +2130,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -2151,7 +2167,7 @@ class DatabaseController {
       `);
 
       client.release();
-      
+
       // Emit WebSocket event
       emitDatabaseChange(projectId, tableName, 'create_constraint', {
         constraintName: finalConstraintName,
@@ -2166,15 +2182,15 @@ class DatabaseController {
       }, 201);
     } catch (error: any) {
       console.error('Error creating primary key constraint:', error);
-      
+
       if (error.message?.includes('already exists')) {
         return ResponseUtils.error(res, 'A constraint with this name already exists', error, null, 409);
       }
-      
+
       if (error.message?.includes('contains null values')) {
         return ResponseUtils.error(res, 'Cannot create primary key on column(s) containing NULL values', error, null, 400);
       }
-      
+
       ResponseUtils.error(res, 'Failed to create primary key constraint', error);
     }
   }
@@ -2197,7 +2213,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -2211,7 +2227,7 @@ class DatabaseController {
       `);
 
       client.release();
-      
+
       // Emit WebSocket event
       emitDatabaseChange(projectId, tableName, 'create_constraint', {
         constraintName: finalConstraintName,
@@ -2226,11 +2242,11 @@ class DatabaseController {
       }, 201);
     } catch (error: any) {
       console.error('Error creating check constraint:', error);
-      
+
       if (error.message?.includes('already exists')) {
         return ResponseUtils.error(res, 'A constraint with this name already exists', error, null, 409);
       }
-      
+
       ResponseUtils.error(res, 'Failed to create check constraint', error);
     }
   }
@@ -2246,7 +2262,7 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -2268,7 +2284,7 @@ class DatabaseController {
               SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
             ) as extension_exists
           `);
-          
+
           if (!extensionCheck.rows[0].extension_exists) {
             client.release();
             return ResponseUtils.error(
@@ -2318,7 +2334,7 @@ class DatabaseController {
       ResponseUtils.success(res, 'Cron jobs fetched successfully', result.rows);
     } catch (error: any) {
       console.error('Error fetching cron jobs:', error);
-      
+
       // Check if error is due to missing cron schema
       if (error.message && error.message.includes('relation "cron.job" does not exist')) {
         return ResponseUtils.error(
@@ -2332,7 +2348,7 @@ class DatabaseController {
           400
         );
       }
-      
+
       ResponseUtils.error(res, 'Failed to fetch cron jobs', error);
     }
   }
@@ -2370,7 +2386,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -2392,7 +2408,7 @@ class DatabaseController {
               SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
             ) as extension_exists
           `);
-          
+
           if (!extensionCheck.rows[0].extension_exists) {
             client.release();
             return ResponseUtils.error(
@@ -2450,7 +2466,7 @@ class DatabaseController {
       }, 201);
     } catch (error: any) {
       console.error('Error creating cron job:', error);
-      
+
       // Check for specific pg_cron errors
       if (error.message && error.message.includes('cron.schedule')) {
         return ResponseUtils.error(
@@ -2464,7 +2480,7 @@ class DatabaseController {
           400
         );
       }
-      
+
       ResponseUtils.error(res, 'Failed to create cron job', error);
     }
   }
@@ -2483,7 +2499,7 @@ class DatabaseController {
       const { schedule, command, jobName } = req.body;
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -2544,7 +2560,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -2609,7 +2625,7 @@ class DatabaseController {
       ResponseUtils.success(res, 'Cron job deleted successfully', { jobId });
     } catch (error: any) {
       console.error('Error deleting cron job:', error);
-      
+
       // Handle specific pg_cron errors
       if (error.message && error.message.includes('could not find valid entry')) {
         return ResponseUtils.error(
@@ -2623,7 +2639,7 @@ class DatabaseController {
           404
         );
       }
-      
+
       ResponseUtils.error(res, 'Failed to delete cron job', error);
     }
   }
@@ -2642,7 +2658,7 @@ class DatabaseController {
       const { limit = 50 } = req.query;
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -2691,7 +2707,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -2729,7 +2745,7 @@ class DatabaseController {
       }
 
       const client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -2779,11 +2795,11 @@ class DatabaseController {
             let inSingleQuote = false;
             let inDoubleQuote = false;
             let commentIndex = -1;
-            
+
             for (let i = 0; i < line.length - 1; i++) {
               const char = line[i];
               const nextChar = line[i + 1];
-              
+
               // Handle single quotes
               if (char === "'" && !inDoubleQuote) {
                 // Check for escaped single quote ('')
@@ -2793,19 +2809,19 @@ class DatabaseController {
                 }
                 inSingleQuote = !inSingleQuote;
               }
-              
+
               // Handle double quotes
               if (char === '"' && !inSingleQuote) {
                 inDoubleQuote = !inDoubleQuote;
               }
-              
+
               // Found -- comment delimiter, but only if not inside quotes
               if (char === '-' && nextChar === '-' && !inSingleQuote && !inDoubleQuote) {
                 commentIndex = i;
                 break;
               }
             }
-            
+
             if (commentIndex !== -1) {
               return line.substring(0, commentIndex);
             }
@@ -2907,17 +2923,17 @@ class DatabaseController {
         for (let i = 0; i < statements.length; i++) {
           const statement = statements[i];
           const savepointName = `sp_${i}`;
-          
+
           try {
             // Create a savepoint for this statement
             await client.query(`SAVEPOINT ${savepointName}`);
-            
+
             try {
               await client.query(statement);
               // Release savepoint on success
               await client.query(`RELEASE SAVEPOINT ${savepointName}`);
               successCount++;
-              
+
               // Log progress for every 10 statements
               if ((i + 1) % 10 === 0) {
                 console.log(`✅ Executed ${i + 1}/${statements.length} statements`);
@@ -2956,10 +2972,10 @@ class DatabaseController {
         client.release();
 
         // Emit WebSocket event
-        emitDatabaseChange(projectId, 'database', 'import_dump', { 
-          successCount, 
+        emitDatabaseChange(projectId, 'database', 'import_dump', {
+          successCount,
           errorCount,
-          dropExisting 
+          dropExisting
         });
 
         const responseData: any = {
@@ -3094,13 +3110,13 @@ class DatabaseController {
           if (columnsResult.rows.length > 0) {
             sqlContent += `\n-- Table: ${tableName}\n`;
             sqlContent += `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
-            
+
             const columnDefs = columnsResult.rows.map(col => {
               let def = `  "${col.column_name}" `;
-              
+
               // Check if this is a serial/auto-increment column
               const isSerial = col.column_default && col.column_default.includes('nextval(');
-              
+
               // Handle data types
               if (isSerial) {
                 // Convert to SERIAL type instead of integer with nextval
@@ -3120,7 +3136,7 @@ class DatabaseController {
               } else {
                 def += col.data_type;
               }
-              
+
               // Add length/precision ONLY for specific types that need it
               if (!isSerial) {
                 if (col.character_maximum_length && (col.data_type === 'character varying' || col.data_type === 'character')) {
@@ -3134,20 +3150,20 @@ class DatabaseController {
                 }
               }
               // Note: integer, bigint, smallint, etc. don't take precision in PostgreSQL
-              
+
               // Add constraints
               if (col.is_nullable === 'NO') {
                 def += ' NOT NULL';
               }
-              
+
               // Add default value only if not a serial column
               if (col.column_default && !isSerial) {
                 def += ` DEFAULT ${col.column_default}`;
               }
-              
+
               return def;
             });
-            
+
             // Add PRIMARY KEY constraint if there are primary key columns
             if (primaryKeyColumns.length > 0) {
               sqlContent += columnDefs.join(',\n');
@@ -3155,17 +3171,17 @@ class DatabaseController {
             } else {
               sqlContent += columnDefs.join(',\n');
             }
-            
+
             sqlContent += '\n);\n\n';
 
             // Get table data as INSERT statements (skip if schemaOnly)
             if (!schemaOnly) {
               const dataResult = await client.query(`SELECT * FROM "${schemaName}"."${tableName}"`);
-              
+
               if (dataResult.rows.length > 0) {
                 const columns = dataResult.fields.map(f => f.name);
                 sqlContent += `-- Data for table: ${tableName}\n`;
-                
+
                 for (const row of dataResult.rows) {
                   const values = columns.map(col => {
                     const value = row[col];
@@ -3174,7 +3190,7 @@ class DatabaseController {
                       // Check if string contains special characters that need escape string syntax
                       // Include single quotes, backslashes, newlines, tabs, and control characters
                       const hasSpecialChars = /['\\\n\r\t\x00-\x1F]/.test(value);
-                      
+
                       if (hasSpecialChars) {
                         // Use PostgreSQL escape string syntax E''
                         // Escape in the correct order: backslashes first, then single quotes
@@ -3238,7 +3254,7 @@ class DatabaseController {
             const fksToExport = skipSystemTableForeignKeys
               ? fkResult.rows.filter((fk: any) => !fk.foreign_table_name.startsWith('skaftin_system_'))
               : fkResult.rows;
-            
+
             // Collect foreign keys to add at the end (after all tables are created)
             for (const fk of fksToExport) {
               const localColumns = fk.column_names.split(', ').map((col: string) => `"${col.trim()}"`).join(', ');
@@ -3278,20 +3294,20 @@ class DatabaseController {
                 )
               `;
               const tableExists = await client.query(tableExistsQuery, [schemaName, tableName]);
-              
+
               if (!tableExists.rows[0].exists) {
                 sqlContent += `-- Table ${tableName} does not exist, skipping\n\n`;
                 continue;
               }
 
               const dataResult = await client.query(`SELECT * FROM "${schemaName}"."${tableName}"`);
-              
+
               if (dataResult.rows.length > 0) {
                 sqlContent += `-- Data for ${tableName}\n`;
                 sqlContent += `DELETE FROM "${tableName}";\n`;
 
                 const columns = dataResult.fields.map(f => f.name);
-                
+
                 for (const row of dataResult.rows) {
                   const values = columns.map(col => {
                     const value = row[col];
@@ -3300,7 +3316,7 @@ class DatabaseController {
                       // Check if string contains special characters that need escape string syntax
                       // Include single quotes, backslashes, newlines, tabs, and control characters
                       const hasSpecialChars = /['\\\n\r\t\x00-\x1F]/.test(value);
-                      
+
                       if (hasSpecialChars) {
                         // Use PostgreSQL escape string syntax E''
                         // Escape in the correct order: backslashes first, then single quotes
@@ -3331,7 +3347,7 @@ class DatabaseController {
                     }
                     return String(value);
                   });
-                  
+
                   sqlContent += `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')});\n`;
                 }
                 sqlContent += '\n';
@@ -3348,7 +3364,7 @@ class DatabaseController {
           sqlContent += `\n-- ============================================\n`;
           sqlContent += `-- Foreign Key Constraints\n`;
           sqlContent += `-- ============================================\n\n`;
-          
+
           // Group foreign keys by table for better organization
           const fksByTable = foreignKeysToAdd.reduce((acc, fk) => {
             if (!acc[fk.tableName]) {

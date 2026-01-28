@@ -803,6 +803,16 @@ class AuthUsersController {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
 
+      // Check available columns in the users table
+      const columnsResult = await AuthUsersController.pool.query(
+        `SELECT column_name 
+         FROM information_schema.columns 
+         WHERE table_schema = $1 
+           AND table_name = 'skaftin_system_users'`,
+        [schemaName]
+      );
+      const availableColumns = new Set(columnsResult.rows.map((row: any) => row.column_name));
+
       // Build update query dynamically
       const updateFields: string[] = [];
       const values: any[] = [];
@@ -814,8 +824,14 @@ class AuthUsersController {
       }
 
       if (updates.last_name !== undefined) {
-        updateFields.push(`last_name = $${paramIndex++}`);
-        values.push(updates.last_name);
+        // Only update last_name if the column exists
+        if (availableColumns.has('last_name')) {
+          updateFields.push(`last_name = $${paramIndex++}`);
+          values.push(updates.last_name);
+        } else {
+          // Silently skip if column doesn't exist (migration may not have run)
+          console.warn(`last_name column does not exist in ${schemaName}.skaftin_system_users, skipping update`);
+        }
       }
 
       if (updates.email !== undefined) {

@@ -719,6 +719,16 @@ export async function handleAuthTool(
         };
       }
 
+      // Check available columns in the users table
+      const columnsResult = await pool.query(
+        `SELECT column_name 
+         FROM information_schema.columns 
+         WHERE table_schema = $1 
+           AND table_name = 'skaftin_system_users'`,
+        [schemaName]
+      );
+      const availableColumns = new Set(columnsResult.rows.map((row: any) => row.column_name));
+
       const updateFields: string[] = [];
       const values: any[] = [];
       let paramIndex = 1;
@@ -728,8 +738,12 @@ export async function handleAuthTool(
         values.push(name);
       }
       if (last_name !== undefined) {
-        updateFields.push(`last_name = $${paramIndex++}`);
-        values.push(last_name);
+        // Only update last_name if the column exists
+        if (availableColumns.has('last_name')) {
+          updateFields.push(`last_name = $${paramIndex++}`);
+          values.push(last_name);
+        }
+        // Silently skip if column doesn't exist (migration may not have run)
       }
       if (email !== undefined) {
         updateFields.push(`email = $${paramIndex++}`);
