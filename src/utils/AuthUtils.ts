@@ -37,7 +37,7 @@ export class AuthUtils {
     try {
       // 1. Find user in SuperTokens
       const superTokensUsers = await listUsersByAccountInfo('public', { email });
-      
+
       if (superTokensUsers.length > 0) {
         for (const user of superTokensUsers) {
           try {
@@ -58,7 +58,7 @@ export class AuthUtils {
           'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectId]
         );
-        
+
         if (schemaResult.rows.length > 0) {
           const schemaName = schemaResult.rows[0].schema_name;
           const deleteResult = await this.deleteUserFromProjectSchema(pool, schemaName, email);
@@ -191,7 +191,7 @@ export class AuthUtils {
       if (createInSuperTokens && userData.email) {
         try {
           const signUpResponse = await EmailPassword.signUp('public', userData.email, userData.password);
-          
+
           if (signUpResponse.status === 'OK') {
             superTokensUserId = signUpResponse.user.id;
           } else if (signUpResponse.status === 'EMAIL_ALREADY_EXISTS_ERROR') {
@@ -465,12 +465,12 @@ export class AuthUtils {
     if (password.length < 8) {
       return { valid: false, message: 'Password must be at least 8 characters long' };
     }
-    
+
     // Check for at least one number
     if (!/\d/.test(password)) {
       return { valid: false, message: 'Password must contain at least one number' };
     }
-    
+
     // Check for at least one letter
     if (!/[a-zA-Z]/.test(password)) {
       return { valid: false, message: 'Password must contain at least one letter' };

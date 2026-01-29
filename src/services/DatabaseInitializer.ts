@@ -306,9 +306,9 @@ export class DatabaseInitializer {
         SELECT data_type FROM information_schema.columns 
         WHERE table_schema='public' AND table_name='skaftin_system_projects' AND column_name='user_id'
       `);
-      
+
       const currentType = (columnCheck.rows[0] as any)?.data_type;
-      
+
       if (currentType === 'integer') {
         // Migrate existing user_id column from INTEGER to VARCHAR
         await this.db.execute(sql`
@@ -321,7 +321,7 @@ export class DatabaseInitializer {
             RAISE NOTICE 'Successfully migrated user_id to VARCHAR(255)';
           END $$;
         `);
-        
+
         console.log('✅ user_id column migrated to VARCHAR(255)');
       }
     } catch (err: any) {
@@ -919,7 +919,7 @@ export class DatabaseInitializer {
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
-      
+
       // Migration: Add missing columns if they don't exist (for existing databases)
       await this.db.execute(sql.raw(`
         DO $$
@@ -1901,7 +1901,7 @@ export class DatabaseInitializer {
 
       for (const project of projectsResult.rows) {
         const schemaName = project.schema_name;
-        
+
         // Add organisation_field_name if it doesn't exist
         await this.db.execute(sql.raw(`
           DO $$
@@ -1949,16 +1949,16 @@ export class DatabaseInitializer {
   async migrateEmailColumnToNullable(): Promise<void> {
     try {
       console.log('🔧 Migrating email column to nullable for all project schemas...');
-      
+
       // Get all project schemas
       const projectsResult = await this.pool.query(
         'SELECT id, name, schema_name FROM skaftin_system_projects WHERE schema_name IS NOT NULL'
       );
-      
+
       let migratedCount = 0;
       for (const project of projectsResult.rows) {
         const schemaName = project.schema_name;
-        
+
         try {
           // Check if email column exists and is NOT NULL, then make it nullable
           const checkResult = await this.pool.query(`
@@ -1968,7 +1968,7 @@ export class DatabaseInitializer {
             AND table_name = 'skaftin_system_users' 
             AND column_name = 'email'
           `, [schemaName]);
-          
+
           if (checkResult.rows.length > 0 && checkResult.rows[0].is_nullable === 'NO') {
             await this.pool.query(`
               ALTER TABLE ${schemaName}.skaftin_system_users 
@@ -1984,7 +1984,7 @@ export class DatabaseInitializer {
           }
         }
       }
-      
+
       if (migratedCount > 0) {
         console.log(`✅ Migrated ${migratedCount} project schema(s)`);
       } else {
@@ -2003,7 +2003,7 @@ export class DatabaseInitializer {
   async initializeAllTables(): Promise<void> {
     // First, ensure all necessary schemas exist
     await this.initializeSchemas();
-    
+
     // Then initialize all tables
     await this.initializeUsersTable();
     await this.initializeOrganizationsTable();
@@ -2021,10 +2021,10 @@ export class DatabaseInitializer {
     await this.initializeAnalyticsTables();
     await this.initializeWorkflowTables();
     await this.initializeBackupSchedulesTable();
-    
+
     // Migrate organization context fields to existing projects
     await this.migrateOrganizationContextToRoles();
-    
+
     // Migrate email column to nullable for all existing project schemas
     await this.migrateEmailColumnToNullable();
   }
