@@ -95,6 +95,60 @@ class DatabaseController {
   }
 
   /**
+   * Get column names that are auto-increment (SERIAL / nextval default).
+   * These should be omitted from INSERT so the DB generates values.
+   */
+  private static async getAutoIncrementColumns(client: any, tableName: string): Promise<string[]> {
+    try {
+      const result = await client.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = $1
+          AND column_default IS NOT NULL
+          AND column_default::text LIKE 'nextval(%'
+      `, [tableName]);
+      return result.rows.map((row: any) => row.column_name);
+    } catch (error) {
+      console.error(`Error getting auto-increment columns for table ${tableName}:`, error);
+      return [];
+    }
+  }
+
+  /** Safe identifier for use in raw SQL (table/column names from our context). */
+  private static safeIdent(name: string): string {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+      return '';
+    }
+    return `"${name.replace(/"/g, '""')}"`;
+  }
+
+  /**
+   * Sync SERIAL/sequence for auto-increment columns to MAX(column).
+   * Call after bulk insert (e.g. CSV import) so the next single insert gets MAX+1 and doesn't duplicate.
+   */
+  private static async syncSequencesToMax(client: any, tableName: string): Promise<void> {
+    const autoIncrementColumns = await DatabaseController.getAutoIncrementColumns(client, tableName);
+    const safeTable = DatabaseController.safeIdent(tableName);
+    if (!safeTable) return;
+
+    for (const col of autoIncrementColumns) {
+      const safeCol = DatabaseController.safeIdent(col);
+      if (!safeCol) continue;
+      try {
+        await client.query(`
+          SELECT setval(
+            pg_get_serial_sequence($1::text, $2::text),
+            COALESCE((SELECT MAX(${safeCol}) FROM ${safeTable}), 1)
+          )
+        `, [tableName, col]);
+      } catch (err) {
+        console.warn(`[syncSequencesToMax] Could not sync sequence for ${tableName}.${col}:`, err);
+      }
+    }
+  }
+
+  /**
    * List all tables in a project
    */
   static async listTables(req: DatabaseRequest, res: Response) {
@@ -1062,7 +1116,7 @@ class DatabaseController {
       }
 
       client = await DatabaseController.getProjectClient(projectId);
-      
+
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
@@ -1141,7 +1195,7 @@ class DatabaseController {
             recipeUserId: recipeUserId,
             password: new_password,
           });
-          
+
           if (updateResponse.status !== 'OK') {
             console.warn(`Failed to update SuperTokens password for user ${userId}, but database password was updated`);
           }
@@ -1434,8 +1488,20 @@ class DatabaseController {
         console.log('  └─ ⚠️  No organization filter found, skipping automatic addition');
       }
 
-      const columns = Object.keys(data);
-      const values = Object.values(data);
+      // Omit auto-increment columns (SERIAL / nextval) so the DB generates values
+      const autoIncrementColumns = await DatabaseController.getAutoIncrementColumns(client, tableName);
+      const insertData = { ...data };
+      for (const col of autoIncrementColumns) {
+        if (col in insertData) {
+          delete insertData[col];
+        }
+      }
+
+      // Sync sequences to MAX(id) so nextval doesn't duplicate (e.g. after CSV import with explicit ids)
+      await DatabaseController.syncSequencesToMax(client, tableName);
+
+      const columns = Object.keys(insertData);
+      const values = Object.values(insertData);
       const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
 
       const query = `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders}) RETURNING *`;
@@ -1486,6 +1552,9 @@ class DatabaseController {
         }
       }
 
+      // Omit auto-increment columns (SERIAL / nextval) so the DB generates values
+      const autoIncrementColumns = await DatabaseController.getAutoIncrementColumns(client, tableName);
+
       const insertedRows = [];
 
       for (const data of dataArray) {
@@ -1498,14 +1567,25 @@ class DatabaseController {
           }
         }
 
-        const columns = Object.keys(data);
-        const values = Object.values(data);
+        // Strip auto-increment columns so DB generates values
+        const rowData = { ...data };
+        for (const col of autoIncrementColumns) {
+          if (col in rowData) {
+            delete rowData[col];
+          }
+        }
+
+        const columns = Object.keys(rowData);
+        const values = Object.values(rowData);
         const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
 
         const query = `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders}) RETURNING *`;
         const result = await client.query(query, values);
         insertedRows.push(result.rows[0]);
       }
+
+      // Sync sequences to MAX(id) so future inserts don't duplicate (e.g. after CSV import)
+      await DatabaseController.syncSequencesToMax(client, tableName);
 
       client.release();
 
@@ -1608,15 +1688,27 @@ class DatabaseController {
       // Make sure client is released even on error
       // (It should already be released, but just in case)
 
-      // Check for foreign key constraint violation
+      // Check for foreign key constraint violation (23503 = foreign_key_violation)
       if (error.code === '23503') {
+        // Parse detail e.g. "Key (driver_id)=(989) is not present in table \"drivers\"."
+        const detail = error.detail || '';
+        const keyMatch = detail.match(/Key \((.+)\)=\((.+)\)/);
+        const tableMatch = detail.match(/table "([^"]+)"/);
+        const refTable = tableMatch ? tableMatch[1] : 'referenced table';
+        const refColumn = keyMatch ? keyMatch[1] : 'column';
+        const refValue = keyMatch ? keyMatch[2] : 'value';
+        const hint =
+          `The value ${refValue} for ${refColumn} does not exist in the "${refTable}" table. ` +
+          `Each project has its own schema: ensure the row exists in this project's "${refTable}" table. ` +
+          `If you use app-api, the project is taken from your API key or JWT—confirm you're using the same project where the row was created.`;
         return ResponseUtils.error(
           res,
-          'Cannot update row: Foreign key constraint violation.',
+          `Cannot update row: Foreign key constraint violation. ${hint}`,
           {
             errorCode: error.code,
             constraint: error.constraint,
-            detail: error.detail
+            detail: error.detail,
+            hint
           },
           null,
           409
