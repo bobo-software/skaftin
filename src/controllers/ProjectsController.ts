@@ -21,6 +21,15 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
+/** Strip encryption key from project before sending to client; add field_encryption_key_set indicator */
+function sanitizeProjectForResponse(project: Record<string, unknown>): Record<string, unknown> {
+  const { field_encryption_key, ...rest } = project;
+  return {
+    ...rest,
+    field_encryption_key_set: Boolean(field_encryption_key && String(field_encryption_key).trim() !== ''),
+  };
+}
+
 class ProjectsController {
   private static pool: Pool;
 
@@ -110,16 +119,17 @@ class ProjectsController {
 
       // Combine and deduplicate projects by ID
       const projectMap = new Map();
-      
+
       [...orgProjects, ...(memberProjects.rows as any[])].forEach((project) => {
         if (!projectMap.has(project.id)) {
           projectMap.set(project.id, project);
         }
       });
 
-      const results = Array.from(projectMap.values());
+      const results = Array.from(projectMap.values()) as Record<string, unknown>[];
+      const sanitized = results.map((p) => sanitizeProjectForResponse(p));
 
-      ResponseUtils.success(res, 'Projects fetched successfully', results);
+      ResponseUtils.success(res, 'Projects fetched successfully', sanitized);
     } catch (error) {
       console.error('Error fetching projects:', error);
       ResponseUtils.error(res, 'Failed to fetch projects', error);
@@ -199,7 +209,7 @@ class ProjectsController {
           // Get file count from all buckets for this project
           const client = await ProjectsController.pool.connect();
           let buckets: { bucket_name: string }[] = [];
-          
+
           try {
             // Get all buckets for the project
             const bucketsResult = await client.query(
@@ -219,7 +229,7 @@ class ProjectsController {
               });
               const response = await s3Client.send(command);
               let bucketFileCount = response.KeyCount || (response.Contents?.length || 0);
-              
+
               if (response.IsTruncated) {
                 let continuationToken = response.NextContinuationToken;
                 while (continuationToken) {
@@ -291,12 +301,12 @@ class ProjectsController {
 
       // Check if user has access to this project through organization membership
       const access = await ProjectsController.checkProjectAccess(projectId, req.user.userId);
-      
+
       if (!access.hasAccess) {
         return res.status(403).json({ success: false, message: 'You do not have access to this project' });
       }
 
-      ResponseUtils.success(res, 'Project fetched successfully', result[0]);
+      ResponseUtils.success(res, 'Project fetched successfully', sanitizeProjectForResponse(result[0] as unknown as Record<string, unknown>));
     } catch (error) {
       console.error('Error fetching project:', error);
       ResponseUtils.error(res, 'Failed to fetch project', error);
@@ -313,7 +323,7 @@ class ProjectsController {
     try {
       const { id } = req.params;
       const projectId = parseInt(id);
-      
+
       // Get project
       const projectResult = await db
         .select()
@@ -326,7 +336,7 @@ class ProjectsController {
 
       // Check if user has access to this project
       const access = await ProjectsController.checkProjectAccess(projectId, req.user.userId);
-      
+
       if (!access.hasAccess) {
         return res.status(403).json({ success: false, message: 'You do not have access to this project' });
       }
@@ -359,7 +369,7 @@ class ProjectsController {
       try {
         const client = await ProjectsController.pool.connect();
         let buckets: { bucket_name: string }[] = [];
-        
+
         try {
           // Get all buckets for the project
           const bucketsResult = await client.query(
@@ -379,7 +389,7 @@ class ProjectsController {
             });
             const response = await s3Client.send(command);
             let bucketFileCount = response.KeyCount || (response.Contents?.length || 0);
-            
+
             // If there are more files, count all of them
             if (response.IsTruncated) {
               let continuationToken = response.NextContinuationToken;
@@ -393,7 +403,7 @@ class ProjectsController {
                 continuationToken = nextResponse.NextContinuationToken;
               }
             }
-            
+
             fileCount += bucketFileCount;
           } catch (error: any) {
             if (error.name !== 'NoSuchBucket') {
@@ -553,7 +563,7 @@ class ProjectsController {
     try {
       const { id } = req.params;
       const projectId = parseInt(id);
-      const { name, description } = req.body;
+      const { name, description, field_encryption_key } = req.body;
 
       // Get existing project
       const existing = await db
@@ -567,7 +577,7 @@ class ProjectsController {
 
       // Check if user has access and permission (admin or dev can update)
       const access = await ProjectsController.checkProjectAccess(projectId, req.user.userId);
-      
+
       if (!access.hasAccess) {
         return res.status(403).json({ success: false, message: 'You do not have access to this project' });
       }
@@ -589,16 +599,21 @@ class ProjectsController {
         updateData.description = description?.trim() || null;
       }
 
+      if (field_encryption_key !== undefined) {
+        updateData.field_encryption_key = field_encryption_key === '' || field_encryption_key === null ? null : String(field_encryption_key);
+      }
+
       const result = await db
         .update(projects)
         .set(updateData)
         .where(eq(projects.id, parseInt(id)))
         .returning();
 
-      // Emit WebSocket event
-      emitProjectEvent(result[0].id.toString(), 'project_updated', result[0]);
+      const project = result[0] as unknown as Record<string, unknown>;
+      // Emit WebSocket event (sanitized)
+      emitProjectEvent(project.id as string, 'project_updated', sanitizeProjectForResponse(project));
 
-      ResponseUtils.success(res, 'Project updated successfully', result[0]);
+      ResponseUtils.success(res, 'Project updated successfully', sanitizeProjectForResponse(project));
     } catch (error) {
       console.error('Error updating project:', error);
       ResponseUtils.error(res, 'Failed to update project', error);
@@ -628,7 +643,7 @@ class ProjectsController {
 
       // Check if user has access and permission (only admin can delete)
       const access = await ProjectsController.checkProjectAccess(projectId, req.user.userId);
-      
+
       if (!access.hasAccess) {
         return res.status(403).json({ success: false, message: 'You do not have access to this project' });
       }
@@ -682,7 +697,7 @@ class ProjectsController {
 
       // Check if user has access and permission (admin or dev can reset)
       const access = await ProjectsController.checkProjectAccess(projectId, req.user.userId);
-      
+
       if (!access.hasAccess) {
         return res.status(403).json({ success: false, message: 'You do not have access to this project' });
       }
@@ -705,7 +720,7 @@ class ProjectsController {
         const client = await ProjectsController.pool.connect();
         try {
           await client.query(`SET search_path TO ${schemaName}, public`);
-          
+
           // Get all tables in the schema
           const tablesResult = await client.query(`
             SELECT table_name 
@@ -742,7 +757,7 @@ class ProjectsController {
       try {
         const client = await ProjectsController.pool.connect();
         let buckets: { bucket_name: string }[] = [];
-        
+
         try {
           // Get all buckets for the project
           const bucketsResult = await client.query(
@@ -758,13 +773,13 @@ class ProjectsController {
           console.log(`📦 No buckets found for project ${projectId}`);
         } else {
           console.log(`📦 Found ${buckets.length} bucket(s) to clear`);
-          
+
           // Clear each bucket
           for (const bucket of buckets) {
             const bucketName = bucket.bucket_name;
             try {
               console.log(`🗑️  Clearing bucket ${bucketName}`);
-              
+
               // List all objects in the bucket
               let continuationToken: string | undefined;
               let hasMore = true;
@@ -776,7 +791,7 @@ class ProjectsController {
                 });
 
                 const listResponse = await s3Client.send(listCommand);
-                
+
                 if (listResponse.Contents && listResponse.Contents.length > 0) {
                   // Delete objects in batches
                   const deleteCommand = new DeleteObjectsCommand({
@@ -790,7 +805,7 @@ class ProjectsController {
                   const deleteResponse = await s3Client.send(deleteCommand);
                   const deletedCount = deleteResponse.Deleted?.length || 0;
                   deletedFiles += deletedCount;
-                  
+
                   console.log(`  ✓ Deleted ${deletedCount} files from bucket ${bucketName}`);
 
                   if (deleteResponse.Errors && deleteResponse.Errors.length > 0) {

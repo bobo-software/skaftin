@@ -3,6 +3,8 @@ import { GraphQLError } from 'graphql';
 import { GraphQLScalarType, Kind, ValueNode } from 'graphql';
 import { emitDatabaseChange } from '../utils/websocketEmitter';
 import { normalizeQuery } from '../utils/SqlUtils';
+import { getProjectFieldEncryptionKey, getEncryptionKeyError } from '../utils/ProjectEncryptionKey';
+import { encryptFieldsInData, decryptFieldsInRows, decryptFieldsInRow } from '../utils/FieldEncryption';
 
 // Custom JSON scalar
 const JSONScalar: GraphQLScalarType = new GraphQLScalarType({
@@ -61,23 +63,23 @@ const DateTimeScalar: GraphQLScalarType = new GraphQLScalarType({
  */
 async function getProjectClient(pool: Pool, projectId: number) {
   const client = await pool.connect();
-  
+
   try {
     const result = await client.query(
       'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
       [projectId]
     );
-    
+
     if (result.rows.length === 0) {
       client.release();
       throw new GraphQLError('Project not found', {
         extensions: { code: 'PROJECT_NOT_FOUND' }
       });
     }
-    
+
     const schemaName = result.rows[0].schema_name;
     await client.query(`SET search_path TO ${schemaName}, public`);
-    
+
     return client;
   } catch (error) {
     client.release();
@@ -99,7 +101,7 @@ export const createResolvers = (pool: Pool) => ({
      */
     tables: async (_: any, { projectId }: { projectId: number }) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         const result = await client.query(`
           SELECT 
@@ -129,7 +131,7 @@ export const createResolvers = (pool: Pool) => ({
      */
     tableSchema: async (_: any, { projectId, tableName }: { projectId: number; tableName: string }) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         const result = await client.query(`
           SELECT
@@ -188,27 +190,38 @@ export const createResolvers = (pool: Pool) => ({
      */
     queryTable: async (
       _: any,
-      { 
-        projectId, 
-        tableName, 
-        columns, 
-        where, 
-        limit = 100, 
+      {
+        projectId,
+        tableName,
+        columns,
+        where,
+        limit = 100,
         offset = 0,
-        orderBy 
-      }: { 
-        projectId: number; 
-        tableName: string; 
-        columns?: string[]; 
-        where?: any; 
-        limit?: number; 
+        orderBy,
+        decrypt: decryptFields,
+      }: {
+        projectId: number;
+        tableName: string;
+        columns?: string[];
+        where?: any;
+        limit?: number;
         offset?: number;
         orderBy?: Array<{ field: string; direction: string }>;
+        decrypt?: string[];
       }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
+        let encryptionKey: string | null = null;
+        if (decryptFields && decryptFields.length > 0) {
+          encryptionKey = await getProjectFieldEncryptionKey(pool, projectId);
+          if (!encryptionKey) {
+            client.release();
+            throw new GraphQLError(getEncryptionKeyError(), { extensions: { code: 'BAD_USER_INPUT' } });
+          }
+        }
+
         let selectClause = '*';
         if (columns && columns.length > 0) {
           selectClause = columns.map((col: string) => `"${col}"`).join(', ');
@@ -244,16 +257,27 @@ export const createResolvers = (pool: Pool) => ({
         const result = await client.query(query, values);
         const executionTime = Date.now() - startTime;
 
+        let rows = result.rows;
+        if (encryptionKey && decryptFields && decryptFields.length > 0) {
+          try {
+            rows = decryptFieldsInRows(rows as Record<string, unknown>[], decryptFields, encryptionKey) as typeof result.rows;
+          } catch (decryptError) {
+            client.release();
+            throw new GraphQLError((decryptError as Error).message, { extensions: { code: 'BAD_USER_INPUT' } });
+          }
+        }
+
         client.release();
 
         return {
-          rows: result.rows.map(row => ({ data: row })),
+          rows: rows.map((row: any) => ({ data: row })),
           rowCount: result.rowCount || 0,
           columns: result.fields?.map(f => f.name) || [],
           executionTime,
         };
       } catch (error) {
         client.release();
+        if (error instanceof GraphQLError) throw error;
         console.error('Error querying table:', error);
         throw new GraphQLError('Failed to query table', {
           extensions: { code: 'DATABASE_ERROR', originalError: error }
@@ -269,11 +293,11 @@ export const createResolvers = (pool: Pool) => ({
       { projectId, query, parameters = [] }: { projectId: number; query: string; parameters?: any[] }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         // Normalize query from MySQL to PostgreSQL syntax
         const normalizedQuery = normalizeQuery(query);
-        
+
         const startTime = Date.now();
         const result = await client.query(normalizedQuery, parameters);
         const executionTime = Date.now() - startTime;
@@ -300,7 +324,7 @@ export const createResolvers = (pool: Pool) => ({
      */
     tableConstraints: async (_: any, { projectId, tableName }: { projectId: number; tableName: string }) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         const result = await client.query(`
           SELECT
@@ -346,7 +370,7 @@ export const createResolvers = (pool: Pool) => ({
      */
     tableForeignKeys: async (_: any, { projectId, tableName }: { projectId: number; tableName: string }) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         const result = await client.query(`
           SELECT
@@ -393,7 +417,7 @@ export const createResolvers = (pool: Pool) => ({
       { projectId, input }: { projectId: number; input: any }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         const { tableName, columns } = input;
 
@@ -409,16 +433,16 @@ export const createResolvers = (pool: Pool) => ({
 
         for (const column of columns) {
           let colDef = `"${column.name}" ${column.type}`;
-          
+
           if (column.primaryKey || (!column.nullable && column.type !== 'SERIAL' && column.type !== 'BIGSERIAL')) {
             colDef += ' NOT NULL';
           }
-          
+
           if (column.defaultValue !== undefined && column.defaultValue !== null && column.defaultValue !== '') {
             if (column.type !== 'SERIAL' && column.type !== 'BIGSERIAL') {
               const postgresqlFunctions = ['CURRENT_TIMESTAMP', 'NOW()', 'CURRENT_DATE', 'CURRENT_TIME', 'LOCALTIMESTAMP', 'LOCALTIME'];
               const isFunction = postgresqlFunctions.some(func => String(column.defaultValue).toUpperCase().includes(func));
-              
+
               if (column.type.includes('INT') || column.type === 'BOOLEAN' || isFunction) {
                 colDef += ` DEFAULT ${column.defaultValue}`;
               } else {
@@ -427,20 +451,20 @@ export const createResolvers = (pool: Pool) => ({
               }
             }
           }
-          
+
           columnDefinitions.push(colDef);
-          
+
           if (column.primaryKey) {
             primaryKeyColumns.push(`"${column.name}"`);
           }
         }
 
         let createTableSQL = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n  ${columnDefinitions.join(',\n  ')}`;
-        
+
         if (primaryKeyColumns.length > 0) {
           createTableSQL += `,\n  PRIMARY KEY (${primaryKeyColumns.join(', ')})`;
         }
-        
+
         createTableSQL += '\n)';
 
         await client.query(createTableSQL);
@@ -468,15 +492,24 @@ export const createResolvers = (pool: Pool) => ({
      */
     insertData: async (
       _: any,
-      { projectId, tableName, data }: { projectId: number; tableName: string; data: any }
+      { projectId, tableName, data, encrypt: encryptFields, decrypt: decryptFields }: { projectId: number; tableName: string; data: any; encrypt?: string[]; decrypt?: string[] }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         if (!data) {
           throw new GraphQLError('Data is required', {
             extensions: { code: 'BAD_USER_INPUT' }
           });
+        }
+
+        if (encryptFields && encryptFields.length > 0) {
+          const key = await getProjectFieldEncryptionKey(pool, projectId);
+          if (!key) {
+            client.release();
+            throw new GraphQLError(getEncryptionKeyError(), { extensions: { code: 'BAD_USER_INPUT' } });
+          }
+          encryptFieldsInData(data, encryptFields, key);
         }
 
         const columns = Object.keys(data);
@@ -485,6 +518,16 @@ export const createResolvers = (pool: Pool) => ({
 
         const query = `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders}) RETURNING *`;
         const result = await client.query(query, values);
+        let row = result.rows[0];
+
+        if (decryptFields && decryptFields.length > 0) {
+          const key = await getProjectFieldEncryptionKey(pool, projectId);
+          if (!key) {
+            client.release();
+            throw new GraphQLError(getEncryptionKeyError(), { extensions: { code: 'BAD_USER_INPUT' } });
+          }
+          row = decryptFieldsInRow(row as Record<string, unknown>, decryptFields, key) as typeof row;
+        }
 
         client.release();
 
@@ -494,11 +537,12 @@ export const createResolvers = (pool: Pool) => ({
         return {
           success: true,
           message: 'Data inserted successfully',
-          data: result.rows[0],
+          data: row,
           rowCount: 1,
         };
       } catch (error) {
         client.release();
+        if (error instanceof GraphQLError) throw error;
         console.error('Error inserting data:', error);
         throw new GraphQLError('Failed to insert data', {
           extensions: { code: 'DATABASE_ERROR', originalError: error }
@@ -511,15 +555,26 @@ export const createResolvers = (pool: Pool) => ({
      */
     bulkInsertData: async (
       _: any,
-      { projectId, tableName, dataArray }: { projectId: number; tableName: string; dataArray: any[] }
+      { projectId, tableName, dataArray, encrypt: encryptFields }: { projectId: number; tableName: string; dataArray: any[]; encrypt?: string[] }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         if (!dataArray || !Array.isArray(dataArray) || dataArray.length === 0) {
           throw new GraphQLError('Data array is required', {
             extensions: { code: 'BAD_USER_INPUT' }
           });
+        }
+
+        if (encryptFields && encryptFields.length > 0) {
+          const key = await getProjectFieldEncryptionKey(pool, projectId);
+          if (!key) {
+            client.release();
+            throw new GraphQLError(getEncryptionKeyError(), { extensions: { code: 'BAD_USER_INPUT' } });
+          }
+          for (const data of dataArray) {
+            encryptFieldsInData(data, encryptFields, key);
+          }
         }
 
         const insertedRows = [];
@@ -547,6 +602,7 @@ export const createResolvers = (pool: Pool) => ({
         };
       } catch (error) {
         client.release();
+        if (error instanceof GraphQLError) throw error;
         console.error('Error bulk inserting data:', error);
         throw new GraphQLError('Failed to bulk insert data', {
           extensions: { code: 'DATABASE_ERROR', originalError: error }
@@ -559,15 +615,24 @@ export const createResolvers = (pool: Pool) => ({
      */
     updateData: async (
       _: any,
-      { projectId, tableName, data, where }: { projectId: number; tableName: string; data: any; where: any }
+      { projectId, tableName, data, where, encrypt: encryptFields }: { projectId: number; tableName: string; data: any; where: any; encrypt?: string[] }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         if (!data || !where) {
           throw new GraphQLError('Data and where clause are required', {
             extensions: { code: 'BAD_USER_INPUT' }
           });
+        }
+
+        if (encryptFields && encryptFields.length > 0) {
+          const key = await getProjectFieldEncryptionKey(pool, projectId);
+          if (!key) {
+            client.release();
+            throw new GraphQLError(getEncryptionKeyError(), { extensions: { code: 'BAD_USER_INPUT' } });
+          }
+          encryptFieldsInData(data, encryptFields, key);
         }
 
         // Check if where clause is empty (no keys)
@@ -601,6 +666,7 @@ export const createResolvers = (pool: Pool) => ({
         };
       } catch (error) {
         client.release();
+        if (error instanceof GraphQLError) throw error;
         console.error('Error updating data:', error);
         throw new GraphQLError('Failed to update data', {
           extensions: { code: 'DATABASE_ERROR', originalError: error }
@@ -616,7 +682,7 @@ export const createResolvers = (pool: Pool) => ({
       { projectId, tableName, where }: { projectId: number; tableName: string; where: any }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         if (!where) {
           throw new GraphQLError('Where clause is required', {
@@ -666,7 +732,7 @@ export const createResolvers = (pool: Pool) => ({
       { projectId, tableName }: { projectId: number; tableName: string }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         await client.query(`DROP TABLE IF EXISTS "${tableName}"`);
         client.release();
@@ -695,7 +761,7 @@ export const createResolvers = (pool: Pool) => ({
       { projectId, tableName, newTableName }: { projectId: number; tableName: string; newTableName: string }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         if (!newTableName || !newTableName.trim()) {
           throw new GraphQLError('New table name is required', {
@@ -755,7 +821,7 @@ export const createResolvers = (pool: Pool) => ({
       { projectId, tableName, input }: { projectId: number; tableName: string; input: any }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         const { columnName, columnType, nullable = true, defaultValue } = input;
 
@@ -766,15 +832,15 @@ export const createResolvers = (pool: Pool) => ({
         }
 
         let alterSQL = `ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${columnType}`;
-        
+
         if (!nullable) {
           alterSQL += ' NOT NULL';
         }
-        
+
         if (defaultValue !== undefined && defaultValue !== null && defaultValue !== '') {
           const postgresqlFunctions = ['CURRENT_TIMESTAMP', 'NOW()', 'CURRENT_DATE', 'CURRENT_TIME', 'LOCALTIMESTAMP', 'LOCALTIME'];
           const isFunction = postgresqlFunctions.some(func => defaultValue.toUpperCase().includes(func));
-          
+
           if (isFunction) {
             alterSQL += ` DEFAULT ${defaultValue}`;
           } else {
@@ -811,7 +877,7 @@ export const createResolvers = (pool: Pool) => ({
       { projectId, tableName, columnName }: { projectId: number; tableName: string; columnName: string }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         await client.query(`ALTER TABLE "${tableName}" DROP COLUMN IF EXISTS "${columnName}"`);
         client.release();
@@ -840,7 +906,7 @@ export const createResolvers = (pool: Pool) => ({
       { projectId, tableName, input }: { projectId: number; tableName: string; input: any }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         const { columnName, referencedTable, referencedColumn, onDelete = 'RESTRICT', onUpdate = 'RESTRICT' } = input;
 
@@ -903,7 +969,7 @@ export const createResolvers = (pool: Pool) => ({
       { projectId, tableName, constraintName }: { projectId: number; tableName: string; constraintName: string }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         await client.query(`ALTER TABLE "${tableName}" DROP CONSTRAINT IF EXISTS "${constraintName}"`);
         client.release();
@@ -929,7 +995,7 @@ export const createResolvers = (pool: Pool) => ({
       { projectId, tableName, columnName, constraintName }: { projectId: number; tableName: string; columnName: string; constraintName?: string }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         if (!columnName) {
           throw new GraphQLError('Column name is required', {
@@ -945,7 +1011,7 @@ export const createResolvers = (pool: Pool) => ({
         `);
 
         client.release();
-        
+
         // Emit WebSocket event
         emitDatabaseChange(String(projectId), tableName, 'create_constraint', {
           constraintName: finalConstraintName,
@@ -979,7 +1045,7 @@ export const createResolvers = (pool: Pool) => ({
       { projectId, query, parameters = [] }: { projectId: number; query: string; parameters?: any[] }
     ) => {
       const client = await getProjectClient(pool, projectId);
-      
+
       try {
         const result = await client.query(query, parameters);
         client.release();

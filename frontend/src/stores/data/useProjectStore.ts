@@ -9,6 +9,7 @@ interface Project {
   description?: string;
   organization_id?: number;
   schema_name: string;
+  field_encryption_key_set?: boolean;
   created_at: string;
   updated_at: string;
   user_id: string;
@@ -66,6 +67,7 @@ const useProjectStore = create<ProjectStoreType>()(
                 description: p.description,
                 organization_id: p.organization_id,
                 schema_name: p.schema_name,
+                field_encryption_key_set: p.field_encryption_key_set,
                 created_at: p.created_at,
                 updated_at: p.updated_at,
                 user_id: p.user_id.toString(),
@@ -92,9 +94,9 @@ const useProjectStore = create<ProjectStoreType>()(
         set({ loading: true, error: null });
         try {
           const token = localStorage.getItem('skaftin-token') || '';
-          const response = await RequestUtils.post( 
-            ApiRoutes.PROJECTS.CREATE, 
-            token, 
+          const response = await RequestUtils.post(
+            ApiRoutes.PROJECTS.CREATE,
+            token,
             { name, description, organization_id }
           );
 
@@ -147,25 +149,25 @@ const useProjectStore = create<ProjectStoreType>()(
 
           if (response.success) {
             const updatedProject = response.data;
-            
+
             set(state => ({
               projects: state.projects.map(p =>
                 p.id === projectId
                   ? {
-                      ...p,
-                      ...updatedProject,
-                      id: updatedProject.id.toString(),
-                      user_id: updatedProject.user_id.toString(),
-                    }
-                  : p
-              ),
-              currentProject: state.currentProject?.id === projectId
-                ? {
-                    ...state.currentProject,
+                    ...p,
                     ...updatedProject,
                     id: updatedProject.id.toString(),
                     user_id: updatedProject.user_id.toString(),
                   }
+                  : p
+              ),
+              currentProject: state.currentProject?.id === projectId
+                ? {
+                  ...state.currentProject,
+                  ...updatedProject,
+                  id: updatedProject.id.toString(),
+                  user_id: updatedProject.user_id.toString(),
+                }
                 : state.currentProject,
               loading: false
             }));
@@ -271,6 +273,7 @@ const useProjectStore = create<ProjectStoreType>()(
               name: projectData.name,
               description: projectData.description,
               schema_name: projectData.schema_name,
+              field_encryption_key_set: projectData.field_encryption_key_set,
               created_at: projectData.created_at,
               updated_at: projectData.updated_at,
               user_id: projectData.user_id.toString(),

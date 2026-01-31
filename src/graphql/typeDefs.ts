@@ -131,6 +131,7 @@ export const typeDefs = `#graphql
       limit: Int
       offset: Int
       orderBy: [OrderByInput!]
+      decrypt: [String!]
     ): QueryResult!
 
     # Execute raw SQL query
@@ -160,6 +161,8 @@ export const typeDefs = `#graphql
       projectId: Int!
       tableName: String!
       data: JSON!
+      encrypt: [String!]
+      decrypt: [String!]
     ): MutationResult!
 
     # Bulk insert data
@@ -167,6 +170,7 @@ export const typeDefs = `#graphql
       projectId: Int!
       tableName: String!
       dataArray: [JSON!]!
+      encrypt: [String!]
     ): MutationResult!
 
     # Update data in a table
@@ -175,6 +179,7 @@ export const typeDefs = `#graphql
       tableName: String!
       data: JSON!
       where: JSON!
+      encrypt: [String!]
     ): MutationResult!
 
     # Delete data from a table

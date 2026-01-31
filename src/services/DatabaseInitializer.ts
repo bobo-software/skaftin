@@ -289,6 +289,7 @@ export class DatabaseInitializer {
           name VARCHAR(255) NOT NULL,
           description TEXT,
           schema_name VARCHAR(255) NOT NULL UNIQUE,
+          field_encryption_key TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -345,6 +346,24 @@ export class DatabaseInitializer {
     } catch (err: any) {
       if (err.code !== '42710') {
         console.error('❌ Projects organization_id migration error:', err.message);
+      }
+    }
+
+    try {
+      // Add field_encryption_key column if it doesn't exist (for payload-driven field encryption)
+      await this.db.execute(sql`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                        WHERE table_schema='public' AND table_name='skaftin_system_projects' AND column_name='field_encryption_key') THEN
+            ALTER TABLE public.skaftin_system_projects ADD COLUMN field_encryption_key TEXT;
+            COMMENT ON COLUMN public.skaftin_system_projects.field_encryption_key IS 'Optional per-project key for encrypting/decrypting specified fields in user data (insert/update/select). Not returned in project API responses.';
+          END IF;
+        END $$;
+      `);
+    } catch (err: any) {
+      if (err.code !== '42710') {
+        console.error('❌ Projects field_encryption_key migration error:', err.message);
       }
     }
 
