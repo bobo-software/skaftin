@@ -1058,6 +1058,143 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Migrate payment provider types to include fnb_pay (all schemas that have the table).
+   * Ensures live DBs get updated on startup (equivalent to migration 0025).
+   */
+  async migratePaymentProviderTypes(): Promise<void> {
+    try {
+      await this.db.execute(sql.raw(`
+        DO $$
+        DECLARE
+          r RECORD;
+          constraint_name TEXT;
+        BEGIN
+          FOR r IN
+            SELECT table_schema
+            FROM information_schema.tables
+            WHERE table_name = 'skaftin_system_payment_providers'
+          LOOP
+            SELECT c.conname INTO constraint_name
+            FROM pg_constraint c
+            JOIN pg_class t ON c.conrelid = t.oid
+            JOIN pg_namespace n ON t.relnamespace = n.oid
+            WHERE t.relname = 'skaftin_system_payment_providers'
+              AND n.nspname = r.table_schema
+              AND c.contype = 'c'
+              AND pg_get_constraintdef(c.oid) LIKE '%provider_type%';
+
+            EXECUTE format('ALTER TABLE %I.skaftin_system_payment_providers DROP CONSTRAINT IF EXISTS skaftin_system_payment_providers_provider_type_check', r.table_schema);
+            IF constraint_name IS NOT NULL AND constraint_name != 'skaftin_system_payment_providers_provider_type_check' THEN
+              EXECUTE format('ALTER TABLE %I.skaftin_system_payment_providers DROP CONSTRAINT IF EXISTS %I', r.table_schema, constraint_name);
+            END IF;
+
+            EXECUTE format(
+              'ALTER TABLE %I.skaftin_system_payment_providers ADD CONSTRAINT skaftin_system_payment_providers_provider_type_check CHECK (provider_type IN (''payfast'', ''fnb_pay''))',
+              r.table_schema
+            );
+          END LOOP;
+        END $$;
+      `));
+      console.log('✅ Payment provider types migrated (fnb_pay)');
+    } catch (err: any) {
+      console.warn('⚠️ migratePaymentProviderTypes:', err.message);
+    }
+  }
+
+  /**
+   * Migrate payment_type constraint: once -> once_off (all schemas that have the table).
+   * Ensures live DBs get updated on startup (equivalent to migration 0026).
+   */
+  async migratePaymentTypeConstraint(): Promise<void> {
+    try {
+      await this.db.execute(sql.raw(`
+        DO $$
+        DECLARE
+          r RECORD;
+          constraint_name TEXT;
+        BEGIN
+          FOR r IN
+            SELECT table_schema
+            FROM information_schema.tables
+            WHERE table_name = 'skaftin_system_payment_transactions'
+          LOOP
+            SELECT c.conname INTO constraint_name
+            FROM pg_constraint c
+            JOIN pg_class t ON c.conrelid = t.oid
+            JOIN pg_namespace n ON t.relnamespace = n.oid
+            WHERE t.relname = 'skaftin_system_payment_transactions'
+              AND n.nspname = r.table_schema
+              AND c.contype = 'c'
+              AND pg_get_constraintdef(c.oid) LIKE '%payment_type%';
+
+            EXECUTE format('ALTER TABLE %I.skaftin_system_payment_transactions DROP CONSTRAINT IF EXISTS skaftin_system_payment_transactions_payment_type_check', r.table_schema);
+            IF constraint_name IS NOT NULL AND constraint_name != 'skaftin_system_payment_transactions_payment_type_check' THEN
+              EXECUTE format('ALTER TABLE %I.skaftin_system_payment_transactions DROP CONSTRAINT IF EXISTS %I', r.table_schema, constraint_name);
+            END IF;
+
+            EXECUTE format(
+              'UPDATE %I.skaftin_system_payment_transactions SET payment_type = ''once_off'' WHERE payment_type = ''once''',
+              r.table_schema
+            );
+
+            EXECUTE format(
+              'ALTER TABLE %I.skaftin_system_payment_transactions ADD CONSTRAINT skaftin_system_payment_transactions_payment_type_check CHECK (payment_type IN (''once_off'', ''subscription''))',
+              r.table_schema
+            );
+          END LOOP;
+        END $$;
+      `));
+      console.log('✅ Payment type constraint migrated (once_off)');
+    } catch (err: any) {
+      console.warn('⚠️ migratePaymentTypeConstraint:', err.message);
+    }
+  }
+
+  /**
+   * Migrate provider_id FK to ON DELETE SET NULL and nullable (all schemas that have the table).
+   * Ensures live DBs get updated on startup (equivalent to migration 0027).
+   */
+  async migratePaymentTransactionsProviderFk(): Promise<void> {
+    try {
+      await this.db.execute(sql.raw(`
+        DO $$
+        DECLARE
+          r RECORD;
+          fk_name TEXT;
+        BEGIN
+          FOR r IN
+            SELECT table_schema
+            FROM information_schema.tables
+            WHERE table_name = 'skaftin_system_payment_transactions'
+          LOOP
+            SELECT c.conname INTO fk_name
+            FROM pg_constraint c
+            JOIN pg_class t ON c.conrelid = t.oid
+            JOIN pg_namespace n ON t.relnamespace = n.oid
+            WHERE t.relname = 'skaftin_system_payment_transactions'
+              AND n.nspname = r.table_schema
+              AND c.contype = 'f'
+              AND pg_get_constraintdef(c.oid) LIKE '%provider_id%';
+
+            IF fk_name IS NOT NULL THEN
+              EXECUTE format('ALTER TABLE %I.skaftin_system_payment_transactions DROP CONSTRAINT IF EXISTS %I', r.table_schema, fk_name);
+              EXECUTE format('ALTER TABLE %I.skaftin_system_payment_transactions ALTER COLUMN provider_id DROP NOT NULL', r.table_schema);
+              EXECUTE format(
+                'ALTER TABLE %I.skaftin_system_payment_transactions ADD CONSTRAINT skaftin_system_payment_transactions_provider_id_fkey '
+                || 'FOREIGN KEY (provider_id) REFERENCES %I.skaftin_system_payment_providers(id) ON DELETE SET NULL',
+                r.table_schema, r.table_schema
+              );
+            END IF;
+          END LOOP;
+        END $$;
+      `));
+      console.log('✅ Payment transactions provider_id FK migrated (ON DELETE SET NULL)');
+    } catch (err: any) {
+      console.warn('⚠️ migratePaymentTransactionsProviderFk:', err.message);
+    }
+  }
+
+  /**
    * Initialize auth tables for a specific project schema
    * Creates skaftin_system_users, skaftin_system_roles, skaftin_system_user_roles, and skaftin_system_user_custom_fields tables
    */
@@ -2083,6 +2220,12 @@ export class DatabaseInitializer {
     await this.initializeApiCredentialsTable();
     await this.initializeAuthSettingsTable();
     await this.initializeFnbPaymentsTable();
+
+    // Apply payment-related migrations to all existing schemas (live DB update)
+    await this.migratePaymentProviderTypes();
+    await this.migratePaymentTypeConstraint();
+    await this.migratePaymentTransactionsProviderFk();
+
     await this.initializeAnalyticsTables();
     await this.initializeWorkflowTables();
     await this.initializeBackupSchedulesTable();
