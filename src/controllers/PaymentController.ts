@@ -13,15 +13,117 @@ import { Pool } from 'pg';
 import { PaymentService, CreateProviderRequest, UpdateProviderRequest } from '../services/payments/PaymentService';
 import { HybridAuthRequest } from '../middleware/hybridAuthMiddleware';
 import { PaymentProviderType, WebhookPayload } from '../services/payments/BasePaymentProvider';
+import { FNBService } from '../services/payments/FNBService';
+import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
 
 export default class PaymentController {
   private pool: Pool;
   private paymentService: PaymentService;
+  private fnbService: FNBService;
 
   constructor(pool: Pool) {
     this.pool = pool;
     this.paymentService = new PaymentService(pool);
+    this.fnbService = new FNBService(pool);
   }
+
+  // ============================================================================
+  // FNB PAYMENT (SuperTokens session - uses payment provider credentials)
+  // ============================================================================
+
+  /**
+   * Handle FNB payment initiation
+   * POST /api/payments/handle_fnb_payment
+   * Body: { project_id, description, amount, provider_id? }
+   * Uses credentials from the FNB payment provider for the project.
+   */
+  handleFnbPayment = async (req: SuperTokensAuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: 'Authentication required',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const { project_id, provider_id, description, amount } = req.body;
+
+      const projectId = parseInt(String(project_id), 10);
+      if (isNaN(projectId) || projectId <= 0) {
+        res.status(400).json({
+          success: false,
+          message: 'project_id (positive integer) is required',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      // Look up FNB provider for the project
+      let provider: { metadata?: Record<string, unknown>; return_url?: string; provider_type?: string } | null;
+      if (provider_id != null) {
+        provider = await this.paymentService.getProvider(projectId, parseInt(String(provider_id), 10));
+      } else {
+        provider = await this.paymentService.getProviderByType(projectId, 'fnb_pay');
+      }
+
+      if (!provider || provider.provider_type !== 'fnb_pay') {
+        res.status(400).json({
+          success: false,
+          message: 'No active FNB payment provider found for this project. Add an FNB provider in the dashboard.',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const meta = provider.metadata || {};
+      const baseUrl = String(meta.fnb_base_url || '').trim();
+      const apiKey3d = String(meta.fnb_api_key_3d || '').trim();
+      const apiInst3d = String(meta.fnb_api_inst_3d || '').trim();
+      const secretKey = String(meta.fnb_secret_key || '').trim() || undefined;
+      const returnUrl = String(provider.return_url || '').trim();
+
+      const providerConfig = {
+        baseUrl,
+        apiKey3d,
+        apiInst3d,
+        secretKey,
+        returnUrl,
+      };
+
+      const result = await this.fnbService.initiatePayment(userId, description, amount, providerConfig);
+
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          message: 'Redirect to complete payment',
+          data: { url: result.url, reference: result.reference },
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const statusCode =
+        result.code === 'DUPLICATE' ? 409 :
+        result.code === 'VALIDATION_ERROR' ? 400 :
+        500;
+
+      res.status(statusCode).json({
+        success: false,
+        message: result.error,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error('Error handling FNB payment:', error);
+      res.status(500).json({
+        success: false,
+        message: error?.message ?? 'Server error',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
 
   // ============================================================================
   // PROVIDER MANAGEMENT (Admin routes - SuperTokens auth)
@@ -131,7 +233,7 @@ export default class PaymentController {
         return;
       }
 
-      const validTypes: PaymentProviderType[] = ['payfast', 'yoco', 'paystack', 'peach_payments', 'ozow', 'flutterwave'];
+      const validTypes: PaymentProviderType[] = ['payfast', 'fnb_pay'];
       if (!validTypes.includes(provider_type)) {
         res.status(400).json({
           success: false,
@@ -652,7 +754,7 @@ export default class PaymentController {
         return;
       }
 
-      const validTypes: PaymentProviderType[] = ['yoco', 'paystack', 'peach_payments', 'ozow', 'flutterwave'];
+      const validTypes: PaymentProviderType[] = ['fnb_pay'];
       if (!validTypes.includes(providerType as PaymentProviderType)) {
         res.status(400).send('Invalid provider type');
         return;

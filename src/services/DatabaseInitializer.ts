@@ -1013,6 +1013,51 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Initialize FNB payments table (platform-level, user-centric)
+   * Used by handle_fnb_payment endpoint for FNB 3D Secure flow
+   */
+  async initializeFnbPaymentsTable(): Promise<void> {
+    try {
+      await this.db.execute(sql`
+        CREATE TABLE IF NOT EXISTS public.fnb_payments (
+          id SERIAL PRIMARY KEY,
+          user_id VARCHAR(255) NOT NULL,
+          reference VARCHAR(255) UNIQUE NOT NULL,
+          status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'Busy', 'paid', 'failed')),
+          price DECIMAL(12,2) NOT NULL,
+          gateway VARCHAR(50) DEFAULT 'fnb_pay',
+          signature TEXT,
+          payload TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_fnb_payments_user_id ON public.fnb_payments(user_id);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_fnb_payments_reference ON public.fnb_payments(reference);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_fnb_payments_status ON public.fnb_payments(status);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_fnb_payments_created_at ON public.fnb_payments(created_at DESC);
+      `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_fnb_payments_user_created ON public.fnb_payments(user_id, created_at DESC);
+      `);
+
+      console.log('✅ FNB payments table initialized');
+    } catch (err: any) {
+      if (err.code !== '23505' && err.code !== '42P07') {
+        console.error('❌ FNB payments table creation error:', err.message);
+      }
+    }
+  }
+
+  /**
    * Initialize auth tables for a specific project schema
    * Creates skaftin_system_users, skaftin_system_roles, skaftin_system_user_roles, and skaftin_system_user_custom_fields tables
    */
@@ -1362,7 +1407,7 @@ export class DatabaseInitializer {
           id SERIAL PRIMARY KEY,
           project_id INTEGER NOT NULL,
           name VARCHAR(255) NOT NULL,
-          provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('payfast', 'yoco', 'paystack', 'peach_payments', 'ozow', 'flutterwave')),
+          provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('payfast', 'fnb_pay')),
           merchant_id VARCHAR(255),
           merchant_key VARCHAR(255),
           passphrase VARCHAR(255),
@@ -1396,7 +1441,7 @@ export class DatabaseInitializer {
         CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_payment_transactions (
           id SERIAL PRIMARY KEY,
           project_id INTEGER NOT NULL,
-          provider_id INTEGER NOT NULL REFERENCES ${schemaName}.skaftin_system_payment_providers(id) ON DELETE RESTRICT,
+          provider_id INTEGER REFERENCES ${schemaName}.skaftin_system_payment_providers(id) ON DELETE SET NULL,
           transaction_id VARCHAR(100) NOT NULL UNIQUE,
           external_payment_id VARCHAR(255),
           amount DECIMAL(15, 2) NOT NULL,
@@ -1406,7 +1451,7 @@ export class DatabaseInitializer {
           customer_email VARCHAR(255),
           customer_name VARCHAR(255),
           customer_phone VARCHAR(50),
-          payment_type VARCHAR(20) NOT NULL DEFAULT 'once' CHECK (payment_type IN ('once', 'subscription')),
+          payment_type VARCHAR(20) NOT NULL DEFAULT 'once_off' CHECK (payment_type IN ('once_off', 'subscription')),
           subscription_type VARCHAR(20) CHECK (subscription_type IN ('subscription', 'tokenization')),
           frequency VARCHAR(20) CHECK (frequency IN ('monthly', 'quarterly', 'biannually', 'annual')),
           cycles INTEGER,
@@ -2037,6 +2082,7 @@ export class DatabaseInitializer {
     await this.initializeProjectInvitationsTable();
     await this.initializeApiCredentialsTable();
     await this.initializeAuthSettingsTable();
+    await this.initializeFnbPaymentsTable();
     await this.initializeAnalyticsTables();
     await this.initializeWorkflowTables();
     await this.initializeBackupSchedulesTable();

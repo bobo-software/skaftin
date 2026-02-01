@@ -44,7 +44,7 @@ export function createPaymentTools(config: PaymentToolsConfig): Tool[] {
           name: { type: 'string', description: 'Provider name (e.g., "PayFast Production")' },
           provider_type: { 
             type: 'string', 
-            enum: ['payfast', 'yoco', 'paystack', 'peach_payments', 'ozow', 'flutterwave'],
+            enum: ['payfast', 'fnb_pay'],
             description: 'Payment gateway type'
           },
           merchant_id: { type: 'string', description: 'PayFast merchant ID' },

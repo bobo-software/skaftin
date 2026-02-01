@@ -8,7 +8,10 @@
     "start": "node dist/Server.js",
     "dev": "nodemon src/Server.ts",
     "dev:backend": "nodemon src/Server.ts",
-    "dev:frontend": "cd frontend && npm run dev"
+    "dev:frontend": "cd frontend && npm run dev",
+    "migrate:0025": "npx ts-node scripts/run-migration-0025.ts",
+    "migrate:0026": "npx ts-node scripts/run-migration-0026.ts",
+    "migrate:0027": "npx ts-node scripts/run-migration-0027.ts"
   },
   "keywords": [],
   "author": "",

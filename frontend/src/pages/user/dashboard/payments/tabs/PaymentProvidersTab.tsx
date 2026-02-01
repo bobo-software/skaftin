@@ -8,6 +8,7 @@ import usePaymentProviderStore, {
   PaymentProvider,
   PaymentProviderType,
   getProviderDisplayName,
+  CreatePaymentProviderRequest,
 } from '../../../../../stores/data/usePaymentProviderStore';
 import ToastUtils from '../../../../../utils/ToastUtils';
 import RequestUtils from '../../../../../utils/RequestUtils';
@@ -27,6 +28,13 @@ interface PaymentProviderFormData {
   notify_url: string;
   sandbox_mode: boolean;
   is_active: boolean;
+  // FNB fields (stored in metadata)
+  fnb_base_url: string;
+  fnb_api_key: string;
+  fnb_api_inst: string;
+  fnb_api_key_3d: string;
+  fnb_api_inst_3d: string;
+  fnb_secret_key: string;
 }
 
 interface TestPaymentFormData {
@@ -38,13 +46,15 @@ interface TestPaymentFormData {
   payment_type: 'once_off' | 'subscription';
 }
 
+// FNB-specific test form - just description and amount with defaults
+interface FnbTestPaymentFormData {
+  description: string;
+  amount: string;
+}
+
 const PROVIDER_TYPES: { value: PaymentProviderType; label: string; description: string }[] = [
   { value: 'payfast', label: 'PayFast', description: 'South African payment gateway' },
-  { value: 'yoco', label: 'Yoco', description: 'Card payments (Coming Soon)' },
-  { value: 'paystack', label: 'Paystack', description: 'African payments (Coming Soon)' },
-  { value: 'peach_payments', label: 'Peach Payments', description: 'Enterprise payments (Coming Soon)' },
-  { value: 'ozow', label: 'Ozow', description: 'Instant EFT (Coming Soon)' },
-  { value: 'flutterwave', label: 'Flutterwave', description: 'Pan-African payments (Coming Soon)' },
+  { value: 'fnb_pay', label: 'FNB Payment', description: 'FNB 3D Secure card payments' },
 ];
 
 const PaymentProvidersTab = () => {
@@ -78,6 +88,12 @@ const PaymentProvidersTab = () => {
     notify_url: '',
     sandbox_mode: true,
     is_active: true,
+    fnb_base_url: '',
+    fnb_api_key: '',
+    fnb_api_inst: '',
+    fnb_api_key_3d: '',
+    fnb_api_inst_3d: '',
+    fnb_secret_key: '',
   });
 
   // Test Payment Modal State
@@ -92,6 +108,10 @@ const PaymentProvidersTab = () => {
     customer_name: '',
     payment_type: 'once_off',
   });
+  const [fnbTestFormData, setFnbTestFormData] = useState<FnbTestPaymentFormData>({
+    description: 'Test Payment - FNB',
+    amount: '10.00',
+  });
 
   useEffect(() => {
     if (projectId) {
@@ -102,6 +122,7 @@ const PaymentProvidersTab = () => {
   const handleOpenModal = (provider?: PaymentProvider) => {
     if (provider) {
       setEditingProvider(provider);
+      const meta = provider.metadata || {};
       setFormData({
         name: provider.name,
         provider_type: provider.provider_type,
@@ -116,6 +137,12 @@ const PaymentProvidersTab = () => {
         notify_url: provider.notify_url || '',
         sandbox_mode: provider.sandbox_mode,
         is_active: provider.is_active,
+        fnb_base_url: meta.fnb_base_url || '',
+        fnb_api_key: meta.fnb_api_key || '',
+        fnb_api_inst: meta.fnb_api_inst || '',
+        fnb_api_key_3d: meta.fnb_api_key_3d || '',
+        fnb_api_inst_3d: meta.fnb_api_inst_3d || '',
+        fnb_secret_key: meta.fnb_secret_key || '',
       });
     } else {
       setEditingProvider(null);
@@ -133,6 +160,12 @@ const PaymentProvidersTab = () => {
         notify_url: '',
         sandbox_mode: true,
         is_active: true,
+        fnb_base_url: '',
+        fnb_api_key: '',
+        fnb_api_inst: '',
+        fnb_api_key_3d: '',
+        fnb_api_inst_3d: '',
+        fnb_secret_key: '',
       });
     }
     setShowModal(true);
@@ -148,7 +181,7 @@ const PaymentProvidersTab = () => {
 
     try {
       if (editingProvider) {
-        const updateData = {
+        const updateData: Record<string, any> = {
           name: formData.name,
           return_url: formData.return_url || undefined,
           cancel_url: formData.cancel_url || undefined,
@@ -162,6 +195,16 @@ const PaymentProvidersTab = () => {
           api_secret: formData.api_secret || undefined,
           public_key: formData.public_key || undefined,
         };
+        if (formData.provider_type === 'fnb_pay') {
+          updateData.metadata = {
+            fnb_base_url: formData.fnb_base_url || undefined,
+            fnb_api_key: formData.fnb_api_key || undefined,
+            fnb_api_inst: formData.fnb_api_inst || undefined,
+            fnb_api_key_3d: formData.fnb_api_key_3d || undefined,
+            fnb_api_inst_3d: formData.fnb_api_inst_3d || undefined,
+            fnb_secret_key: formData.fnb_secret_key || undefined,
+          };
+        }
 
         const result = await updateProvider(
           projectId!,
@@ -175,7 +218,7 @@ const PaymentProvidersTab = () => {
           ToastUtils.error('Failed to update payment provider');
         }
       } else {
-        const createData = {
+        const createData: CreatePaymentProviderRequest = {
           name: formData.name,
           provider_type: formData.provider_type,
           merchant_id: formData.merchant_id || undefined,
@@ -189,6 +232,16 @@ const PaymentProvidersTab = () => {
           notify_url: formData.notify_url || undefined,
           sandbox_mode: formData.sandbox_mode,
           is_active: formData.is_active,
+          ...(formData.provider_type === 'fnb_pay' && {
+            metadata: {
+              fnb_base_url: formData.fnb_base_url || undefined,
+              fnb_api_key: formData.fnb_api_key || undefined,
+              fnb_api_inst: formData.fnb_api_inst || undefined,
+              fnb_api_key_3d: formData.fnb_api_key_3d || undefined,
+              fnb_api_inst_3d: formData.fnb_api_inst_3d || undefined,
+              fnb_secret_key: formData.fnb_secret_key || undefined,
+            },
+          }),
         };
 
         const result = await createProvider(projectId!, createData);
@@ -247,23 +300,31 @@ const PaymentProvidersTab = () => {
 
   const openTestPaymentModal = (provider: PaymentProvider) => {
     setTestPaymentProvider(provider);
-    setTestPaymentFormData({
-      amount: '10.00',
-      item_name: 'Test Payment',
-      item_description: `Testing ${provider.name} integration`,
-      customer_email: '',
-      customer_name: '',
-      payment_type: 'once_off',
-    });
+    if (provider.provider_type === 'fnb_pay') {
+      setFnbTestFormData({
+        description: 'Test Payment - FNB',
+        amount: '10.00',
+      });
+    } else {
+      setTestPaymentFormData({
+        amount: '10.00',
+        item_name: 'Test Payment',
+        item_description: `Testing ${provider.name} integration`,
+        customer_email: '',
+        customer_name: '',
+        payment_type: 'once_off',
+      });
+    }
     setShowTestPaymentModal(true);
   };
 
-  const handleTestPayment = async (e: React.FormEvent) => {
+  const handleFnbTestPayment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!testPaymentProvider) return;
     setTestPaymentLoading(true);
 
     try {
-      // First, get an API key for this project
+      // FNB project provider: use /app-api/payments/initiate with provider_id
       const token = localStorage.getItem('skaftin-token') || '';
       const credentialsResponse = await RequestUtils.get(
         ApiRoutes.CREDENTIALS.LIST(projectId!),
@@ -276,7 +337,6 @@ const PaymentProvidersTab = () => {
         return;
       }
 
-      // Find an active API key
       const apiKey = credentialsResponse.data.find(
         (cred: any) => cred.credential_type === 'api_key' && cred.is_active
       );
@@ -287,7 +347,69 @@ const PaymentProvidersTab = () => {
         return;
       }
 
-      // Now initiate the test payment using the client endpoint
+      const backendUrl = window.location.origin.replace(':3005', ':4006');
+      const response = await fetch(`${backendUrl}/app-api/payments/initiate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey.token,
+        },
+        body: JSON.stringify({
+          provider_id: testPaymentProvider.id,
+          amount: parseFloat(fnbTestFormData.amount),
+          item_name: fnbTestFormData.description,
+          payment_type: 'once_off',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success && result.paymentUrl) {
+        ToastUtils.success('FNB payment initiated! Opening payment page...');
+        setShowTestPaymentModal(false);
+        window.open(result.paymentUrl, '_blank');
+      } else {
+        ToastUtils.error(result.error || 'Failed to initiate FNB payment');
+      }
+    } catch (error: any) {
+      console.error('FNB test payment error:', error);
+      ToastUtils.error(error.message || 'Failed to initiate FNB test payment');
+    } finally {
+      setTestPaymentLoading(false);
+    }
+  };
+
+  const handleTestPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (testPaymentProvider?.provider_type === 'fnb_pay') {
+      return handleFnbTestPayment(e);
+    }
+
+    setTestPaymentLoading(true);
+
+    try {
+      const token = localStorage.getItem('skaftin-token') || '';
+      const credentialsResponse = await RequestUtils.get(
+        ApiRoutes.CREDENTIALS.LIST(projectId!),
+        token
+      );
+
+      if (!credentialsResponse.success || !credentialsResponse.data?.length) {
+        ToastUtils.error('No API credentials found. Please create an API key first in the API Credentials section.');
+        setTestPaymentLoading(false);
+        return;
+      }
+
+      const apiKey = credentialsResponse.data.find(
+        (cred: any) => cred.credential_type === 'api_key' && cred.is_active
+      );
+
+      if (!apiKey) {
+        ToastUtils.error('No active API key found. Please create one in the API Credentials section.');
+        setTestPaymentLoading(false);
+        return;
+      }
+
       const backendUrl = window.location.origin.replace(':3005', ':4006');
       const response = await fetch(`${backendUrl}/app-api/payments/initiate`, {
         method: 'POST',
@@ -311,7 +433,6 @@ const PaymentProvidersTab = () => {
       if (result.success && result.paymentUrl) {
         ToastUtils.success('Payment initiated! Opening payment page...');
         setShowTestPaymentModal(false);
-        // Open payment URL in new tab
         window.open(result.paymentUrl, '_blank');
       } else {
         ToastUtils.error(result.error || 'Failed to initiate payment');
@@ -371,6 +492,90 @@ const PaymentProvidersTab = () => {
         </p>
       </div>
     </>
+  );
+
+  const renderFnbFields = () => (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+          FNB Base URL (FNB_BASE_URL) *
+        </label>
+        <input
+          type="url"
+          value={formData.fnb_base_url}
+          onChange={(e) => setFormData({ ...formData, fnb_base_url: e.target.value })}
+          className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+          placeholder="https://sandbox.ms.fnb.co.za"
+          required={!editingProvider}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+            API Key (FNB_API_KEY, MOTO)
+          </label>
+          <input
+            type="password"
+            value={formData.fnb_api_key}
+            onChange={(e) => setFormData({ ...formData, fnb_api_key: e.target.value })}
+            className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+            placeholder={editingProvider ? '(unchanged)' : ''}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+            API Inst (FNB_API_INST, MOTO)
+          </label>
+          <input
+            type="password"
+            value={formData.fnb_api_inst}
+            onChange={(e) => setFormData({ ...formData, fnb_api_inst: e.target.value })}
+            className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+            placeholder={editingProvider ? '(unchanged)' : ''}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+            API Key 3D (FNB_API_KEY_3D) *
+          </label>
+          <input
+            type="password"
+            value={formData.fnb_api_key_3d}
+            onChange={(e) => setFormData({ ...formData, fnb_api_key_3d: e.target.value })}
+            className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+            placeholder={editingProvider ? '(unchanged)' : ''}
+            required={!editingProvider}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+            Inst 3D (FNB_API_INST_3D) *
+          </label>
+          <input
+            type="password"
+            value={formData.fnb_api_inst_3d}
+            onChange={(e) => setFormData({ ...formData, fnb_api_inst_3d: e.target.value })}
+            className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+            placeholder={editingProvider ? '(unchanged)' : ''}
+            required={!editingProvider}
+          />
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+          Secret Key (FNB_SECRET_KEY)
+        </label>
+        <input
+          type="password"
+          value={formData.fnb_secret_key}
+          onChange={(e) => setFormData({ ...formData, fnb_secret_key: e.target.value })}
+          className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+          placeholder={editingProvider ? '(unchanged)' : ''}
+        />
+      </div>
+    </div>
   );
 
   const renderGenericFields = () => (
@@ -647,8 +852,8 @@ const PaymentProvidersTab = () => {
                     disabled={!!editingProvider}
                   >
                     {PROVIDER_TYPES.map((type) => (
-                      <option key={type.value} value={type.value} disabled={type.value !== 'payfast'}>
-                        {type.label} {type.value !== 'payfast' && '(Coming Soon)'}
+                      <option key={type.value} value={type.value}>
+                        {type.label}
                       </option>
                     ))}
                   </select>
@@ -656,7 +861,7 @@ const PaymentProvidersTab = () => {
               </div>
 
               {/* Provider-specific fields */}
-              {formData.provider_type === 'payfast' ? renderPayFastFields() : renderGenericFields()}
+              {formData.provider_type === 'payfast' ? renderPayFastFields() : formData.provider_type === 'fnb_pay' ? renderFnbFields() : null}
 
               {/* URL Configuration */}
               <div className="pt-4 border-t border-dark-200 dark:border-dark-700">
@@ -765,7 +970,7 @@ const PaymentProvidersTab = () => {
             <div className="flex items-center justify-between p-4 border-b border-dark-200 dark:border-dark-700">
               <div>
                 <h2 className="text-lg font-semibold text-dark-900 dark:text-white">
-                  Test Payment
+                  {testPaymentProvider.provider_type === 'fnb_pay' ? 'Test FNB Payment' : 'Test Payment'}
                 </h2>
                 <p className="text-sm text-dark-500 dark:text-dark-400">
                   Testing with <span className="font-medium text-primary-600 dark:text-primary-400">{testPaymentProvider.name}</span>
@@ -788,94 +993,132 @@ const PaymentProvidersTab = () => {
             </div>
 
             <form onSubmit={handleTestPayment} className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
-                  Amount (ZAR) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="1"
-                  value={testPaymentFormData.amount}
-                  onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, amount: e.target.value })}
-                  className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
-                  placeholder="10.00"
-                  required
-                />
-              </div>
+              {testPaymentProvider.provider_type === 'fnb_pay' ? (
+                <>
+                  {/* FNB-specific: just description and amount */}
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                      Description *
+                    </label>
+                    <input
+                      type="text"
+                      value={fnbTestFormData.description}
+                      onChange={(e) => setFnbTestFormData({ ...fnbTestFormData, description: e.target.value })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                      placeholder="Test Payment - FNB"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                      Amount (ZAR) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={fnbTestFormData.amount}
+                      onChange={(e) => setFnbTestFormData({ ...fnbTestFormData, amount: e.target.value })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                      placeholder="10.00"
+                      required
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                      Amount (ZAR) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      value={testPaymentFormData.amount}
+                      onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, amount: e.target.value })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                      placeholder="10.00"
+                      required
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
-                  Item Name *
-                </label>
-                <input
-                  type="text"
-                  value={testPaymentFormData.item_name}
-                  onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, item_name: e.target.value })}
-                  className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
-                  placeholder="Test Product"
-                  required
-                />
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                      Item Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={testPaymentFormData.item_name}
+                      onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, item_name: e.target.value })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                      placeholder="Test Product"
+                      required
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
-                  Description
-                </label>
-                <input
-                  type="text"
-                  value={testPaymentFormData.item_description}
-                  onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, item_description: e.target.value })}
-                  className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
-                  placeholder="Testing payment integration"
-                />
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                      Description
+                    </label>
+                    <input
+                      type="text"
+                      value={testPaymentFormData.item_description}
+                      onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, item_description: e.target.value })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                      placeholder="Testing payment integration"
+                    />
+                  </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
-                    Customer Email
-                  </label>
-                  <input
-                    type="email"
-                    value={testPaymentFormData.customer_email}
-                    onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, customer_email: e.target.value })}
-                    className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
-                    placeholder="test@example.com"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
-                    Customer Name
-                  </label>
-                  <input
-                    type="text"
-                    value={testPaymentFormData.customer_name}
-                    onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, customer_name: e.target.value })}
-                    className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
-                    placeholder="John Doe"
-                  />
-                </div>
-              </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                        Customer Email
+                      </label>
+                      <input
+                        type="email"
+                        value={testPaymentFormData.customer_email}
+                        onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, customer_email: e.target.value })}
+                        className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                        placeholder="test@example.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                        Customer Name
+                      </label>
+                      <input
+                        type="text"
+                        value={testPaymentFormData.customer_name}
+                        onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, customer_name: e.target.value })}
+                        className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                        placeholder="John Doe"
+                      />
+                    </div>
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
-                  Payment Type
-                </label>
-                <select
-                  value={testPaymentFormData.payment_type}
-                  onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, payment_type: e.target.value as 'once_off' | 'subscription' })}
-                  className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
-                >
-                  <option value="once_off">Once-off Payment</option>
-                  <option value="subscription">Subscription</option>
-                </select>
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                      Payment Type
+                    </label>
+                    <select
+                      value={testPaymentFormData.payment_type}
+                      onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, payment_type: e.target.value as 'once_off' | 'subscription' })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                    >
+                      <option value="once_off">Once-off Payment</option>
+                      <option value="subscription">Subscription</option>
+                    </select>
+                  </div>
+                </>
+              )}
 
               {/* Info Box */}
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
                 <p className="text-sm text-blue-700 dark:text-blue-300">
-                  The {getProviderDisplayName(testPaymentProvider.provider_type)} payment page will open in a new tab.
+                  {testPaymentProvider.provider_type === 'fnb_pay'
+                    ? 'You will be redirected to FNB\'s hosted payment page to complete the test.'
+                    : `The ${getProviderDisplayName(testPaymentProvider.provider_type)} payment page will open in a new tab.`}
                   {testPaymentProvider.sandbox_mode && ' This is a sandbox/test transaction.'}
                 </p>
               </div>
@@ -905,7 +1148,7 @@ const PaymentProvidersTab = () => {
                   ) : (
                     <>
                       <Play className="w-4 h-4" />
-                      Start Test Payment
+                      {testPaymentProvider.provider_type === 'fnb_pay' ? 'Test FNB Payment' : 'Start Test Payment'}
                     </>
                   )}
                 </button>

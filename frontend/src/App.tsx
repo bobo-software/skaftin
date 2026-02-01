@@ -13,6 +13,7 @@ import InviteRegisterPage from './pages/public/InviteRegisterPage';
 import UserProfile from './pages/user/dashboard/settings/UserProfile';
 import PaymentReturnPage from './pages/payments/PaymentReturnPage';
 import PaymentCancelPage from './pages/payments/PaymentCancelPage';
+import FNBThankYouPage from './pages/payments/FNBThankYouPage';
 import { useAppStore } from './stores/StoresIndex';
 import { initSuperTokensFrontend, Session } from './config/supertokens';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -221,6 +222,10 @@ function App() {
         <Route
           path="/payments/cancel"
           element={<PaymentCancelPage />}
+        />
+        <Route
+          path="/thankyou/:reference"
+          element={<FNBThankYouPage />}
         />
       </Routes>
     </BrowserRouter>

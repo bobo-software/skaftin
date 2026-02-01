@@ -5,7 +5,7 @@ import ApiRoutes from '../constants/ApiRoutes';
 // TYPES
 // ============================================================================
 
-export type PaymentProviderType = 'payfast' | 'yoco' | 'paystack' | 'peach_payments' | 'ozow' | 'flutterwave';
+export type PaymentProviderType = 'payfast' | 'fnb_pay';
 export type PaymentType = 'once_off' | 'subscription';
 export type TransactionStatus = 'pending' | 'processing' | 'complete' | 'failed' | 'cancelled' | 'refunded';
 
@@ -119,10 +119,18 @@ export interface InitiatePaymentRequest {
 
 export interface InitiatePaymentResponse {
   success: boolean;
-  transaction_id: string;
-  payment_url: string;
-  payment_data?: Record<string, any>;
+  transactionId: string;
+  paymentUrl: string;
+  paymentData?: Record<string, any>;
   error?: string;
+}
+
+/** FNB payment initiation success response */
+export interface FNBInitiatePaymentSuccessResponse {
+  success: true;
+  transactionId: string;
+  paymentUrl: string;
+  paymentData: { reference: string };
 }
 
 // ============================================================================
@@ -334,11 +342,7 @@ class PaymentService {
   getProviderDisplayName(providerType: PaymentProviderType): string {
     const names: Record<PaymentProviderType, string> = {
       payfast: 'PayFast',
-      yoco: 'Yoco',
-      paystack: 'Paystack',
-      peach_payments: 'Peach Payments',
-      ozow: 'Ozow',
-      flutterwave: 'Flutterwave',
+      fnb_pay: 'FNB Payment',
     };
     return names[providerType] || providerType;
   }

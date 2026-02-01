@@ -25,7 +25,7 @@ export interface PaymentProviderConfig {
   metadata?: Record<string, any>;
 }
 
-export type PaymentProviderType = 'payfast' | 'yoco' | 'paystack' | 'peach_payments' | 'ozow' | 'flutterwave';
+export type PaymentProviderType = 'payfast' | 'fnb_pay';
 
 export interface InitiatePaymentRequest {
   amount: number;
@@ -54,6 +54,16 @@ export interface InitiatePaymentResponse {
   paymentUrl: string;           // URL to redirect user to
   paymentData?: Record<string, any>;  // Raw data sent to gateway
   error?: string;
+}
+
+/** FNB payment initiation success response (e.g. from /app-api/payments/initiate) */
+export interface FNBInitiatePaymentSuccessResponse {
+  success: true;
+  transactionId: string;
+  paymentUrl: string;
+  paymentData: {
+    reference: string;
+  };
 }
 
 export interface WebhookPayload {
