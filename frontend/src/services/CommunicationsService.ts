@@ -277,7 +277,11 @@ class CommunicationsService {
         testEmail ? { test_email: testEmail } : {}
       );
 
-      return response.success;
+      if (!response.success) {
+        throw new Error(response.message || response.error || 'Connection test failed');
+      }
+
+      return true;
     } catch (error: any) {
       console.error('Error testing email connection:', error);
       throw new Error(error.message || 'Connection test failed');
