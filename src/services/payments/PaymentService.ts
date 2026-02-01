@@ -21,6 +21,7 @@ import {
   PingResponse,
 } from './BasePaymentProvider';
 import { PayFastProvider } from './PayFastProvider';
+import { FNBProvider } from './FNBProvider';
 
 export interface CreateProviderRequest {
   projectId: number;
@@ -94,11 +95,8 @@ export class PaymentService {
     switch (config.providerType) {
       case 'payfast':
         return new PayFastProvider(config);
-      // Add more providers here as they're implemented
-      // case 'yoco':
-      //   return new YocoProvider(config);
-      // case 'paystack':
-      //   return new PaystackProvider(config);
+      case 'fnb_pay':
+        return new FNBProvider(config);
       default:
         throw new Error(`Unsupported payment provider type: ${config.providerType}`);
     }

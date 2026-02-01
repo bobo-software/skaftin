@@ -14,6 +14,8 @@ import bcrypt from 'bcrypt';
 import EmailPassword from 'supertokens-node/recipe/emailpassword';
 import { convertToRecipeUserId } from 'supertokens-node';
 import { createProjectScopedEmail } from '../middleware/appUserSuperTokensMiddleware';
+import { getProjectFieldEncryptionKey, getEncryptionKeyError } from '../utils/ProjectEncryptionKey';
+import { encryptFieldsInData, decryptFieldsInRows, decryptFieldsInRow } from '../utils/FieldEncryption';
 
 // Extended request type that can have projectId from middleware or params
 type DatabaseRequest = (SuperTokensAuthenticatedRequest | HybridAuthRequest | OrganisationFilterRequest) & {
@@ -422,12 +424,23 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
       const { tableName } = req.params;
-      const { columns, where, limit, offset = 0, orderBy = 'id', orderDirection = 'ASC' } = req.body;
+      const { columns, where, limit, offset = 0, orderBy = 'id', orderDirection = 'ASC', decrypt: decryptFields } = req.body;
 
       client = await DatabaseController.getProjectClient(projectId);
 
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Field decryption: if decrypt requested, load project key once (we'll decrypt after query)
+      let encryptionKey: string | null = null;
+      if (decryptFields && Array.isArray(decryptFields) && decryptFields.length > 0) {
+        encryptionKey = await getProjectFieldEncryptionKey(DatabaseController.pool, parseInt(projectId, 10));
+        if (!encryptionKey) {
+          client.release();
+          client = null;
+          return ResponseUtils.error(res, getEncryptionKeyError(), null, null, 400);
+        }
       }
 
       let selectClause = '*';
@@ -485,10 +498,23 @@ class DatabaseController {
       }
 
       const result = await client.query(query, values);
+      let rows = result.rows;
+
+      // Decrypt listed fields in each row if requested
+      if (encryptionKey && decryptFields && Array.isArray(decryptFields) && decryptFields.length > 0) {
+        try {
+          rows = decryptFieldsInRows(rows as Record<string, unknown>[], decryptFields, encryptionKey) as typeof result.rows;
+        } catch (decryptError) {
+          client.release();
+          client = null;
+          return ResponseUtils.error(res, (decryptError as Error).message, null, null, 400);
+        }
+      }
+
       client.release();
       client = null;
 
-      ResponseUtils.success(res, 'Data fetched successfully', result.rows);
+      ResponseUtils.success(res, 'Data fetched successfully', rows);
     } catch (error) {
       console.error('Error selecting data:', error);
       if (client) {
@@ -1347,6 +1373,7 @@ class DatabaseController {
       const offsetParam = req.query.offset;
       const columnsParam = req.query.columns;
       const whereParam = req.query.where;
+      const decryptParam = req.query.decrypt;
 
       // Parse limit and offset (defaults: limit=100, offset=0)
       const limit = limitParam ? parseInt(limitParam as string, 10) : 100;
@@ -1364,6 +1391,20 @@ class DatabaseController {
 
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Parse decrypt (comma-separated list of field names)
+      let decryptFields: string[] = [];
+      let encryptionKey: string | null = null;
+      if (decryptParam && typeof decryptParam === 'string') {
+        decryptFields = decryptParam.split(',').map((c: string) => c.trim()).filter((c: string) => c.length > 0);
+        if (decryptFields.length > 0) {
+          encryptionKey = await getProjectFieldEncryptionKey(DatabaseController.pool, parseInt(projectId, 10));
+          if (!encryptionKey) {
+            client.release();
+            return ResponseUtils.error(res, getEncryptionKeyError(), null, null, 400);
+          }
+        }
       }
 
       // Parse columns (comma-separated string)
@@ -1427,9 +1468,21 @@ class DatabaseController {
       }
 
       const result = await client.query(query, values);
+      let rows = result.rows;
+
+      // Decrypt listed fields if decrypt query param was provided
+      if (decryptFields.length > 0 && encryptionKey) {
+        try {
+          rows = decryptFieldsInRows(rows as Record<string, unknown>[], decryptFields, encryptionKey) as typeof result.rows;
+        } catch (decryptError) {
+          client.release();
+          return ResponseUtils.error(res, (decryptError as Error).message, null, null, 400);
+        }
+      }
+
       client.release();
 
-      ResponseUtils.success(res, 'Data fetched successfully', result.rows);
+      ResponseUtils.success(res, 'Data fetched successfully', rows);
     } catch (error) {
       console.error('Error selecting data:', error);
       ResponseUtils.error(res, 'Failed to select data', error);
@@ -1448,7 +1501,7 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
       const { tableName } = req.params;
-      const { data } = req.body;
+      const { data, encrypt: encryptFields, decrypt: decryptFields } = req.body;
 
       if (!data) {
         return ResponseUtils.error(res, 'Data is required', null, null, 400);
@@ -1458,6 +1511,16 @@ class DatabaseController {
 
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Field encryption: if encrypt requested, load project key and encrypt listed fields
+      if (encryptFields && Array.isArray(encryptFields) && encryptFields.length > 0) {
+        const key = await getProjectFieldEncryptionKey(DatabaseController.pool, parseInt(projectId, 10));
+        if (!key) {
+          client.release();
+          return ResponseUtils.error(res, getEncryptionKeyError(), null, null, 400);
+        }
+        encryptFieldsInData(data, encryptFields, key);
       }
 
       // Apply organization filter for app users (client-side requests)
@@ -1506,13 +1569,24 @@ class DatabaseController {
 
       const query = `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders}) RETURNING *`;
       const result = await client.query(query, values);
+      let row = result.rows[0];
+
+      // Optionally decrypt listed fields in returned row
+      if (decryptFields && Array.isArray(decryptFields) && decryptFields.length > 0) {
+        const key = await getProjectFieldEncryptionKey(DatabaseController.pool, parseInt(projectId, 10));
+        if (!key) {
+          client.release();
+          return ResponseUtils.error(res, getEncryptionKeyError(), null, null, 400);
+        }
+        row = decryptFieldsInRow(row as Record<string, unknown>, decryptFields, key) as typeof row;
+      }
 
       client.release();
 
       // Emit WebSocket event
       emitDatabaseChange(projectId, tableName, 'insert', result.rows[0]);
 
-      ResponseUtils.success(res, 'Data inserted successfully', result.rows[0], 201);
+      ResponseUtils.success(res, 'Data inserted successfully', row, 201);
     } catch (error) {
       console.error('Error inserting data:', error);
       ResponseUtils.error(res, 'Failed to insert data', error);
@@ -1531,7 +1605,7 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
       const { tableName } = req.params;
-      const { dataArray } = req.body;
+      const { dataArray, encrypt: encryptFields } = req.body;
 
       if (!dataArray || !Array.isArray(dataArray) || dataArray.length === 0) {
         return ResponseUtils.error(res, 'Data array is required', null, null, 400);
@@ -1541,6 +1615,18 @@ class DatabaseController {
 
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Field encryption: if encrypt requested, load project key and encrypt listed fields in each row
+      if (encryptFields && Array.isArray(encryptFields) && encryptFields.length > 0) {
+        const key = await getProjectFieldEncryptionKey(DatabaseController.pool, parseInt(projectId, 10));
+        if (!key) {
+          client.release();
+          return ResponseUtils.error(res, getEncryptionKeyError(), null, null, 400);
+        }
+        for (const data of dataArray) {
+          encryptFieldsInData(data, encryptFields, key);
+        }
       }
 
       // Check if organization filter column exists (only check once for all rows)
@@ -1611,7 +1697,7 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
       }
       const { tableName } = req.params;
-      const { data, where } = req.body;
+      const { data, where, encrypt: encryptFields } = req.body;
 
       if (!data || !where) {
         return ResponseUtils.error(res, 'Data and where clause are required', null, null, 400);
@@ -1627,6 +1713,16 @@ class DatabaseController {
 
       if (!client) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
+      }
+
+      // Field encryption: if encrypt requested, load project key and encrypt listed fields in data
+      if (encryptFields && Array.isArray(encryptFields) && encryptFields.length > 0) {
+        const key = await getProjectFieldEncryptionKey(DatabaseController.pool, parseInt(projectId, 10));
+        if (!key) {
+          client.release();
+          return ResponseUtils.error(res, getEncryptionKeyError(), null, null, 400);
+        }
+        encryptFieldsInData(data, encryptFields, key);
       }
 
       const setColumns = Object.keys(data);

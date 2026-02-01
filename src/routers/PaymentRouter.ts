@@ -34,8 +34,16 @@ export function createPaymentRouter(pool: Pool): Router {
   // Add debug middleware
   router.use(debugMiddleware);
 
-  // Auth middleware for admin routes
+  // Auth middleware for admin routes (requires project)
   const authMiddleware = [...authenticateAndAttachUser, verifyProjectAccess];
+
+  // SuperTokens session only (no project) - for FNB user-centric payments
+  const sessionOnlyAuth = authenticateAndAttachUser;
+
+  // ============================================================================
+  // FNB PAYMENT (SuperTokens session only - user-centric)
+  // ============================================================================
+  router.post('/handle_fnb_payment', sessionOnlyAuth, controller.handleFnbPayment);
 
   // ============================================================================
   // PROVIDER MANAGEMENT

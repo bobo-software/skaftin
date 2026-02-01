@@ -2,6 +2,8 @@ import { Pool, PoolClient } from 'pg';
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { ToolModule, ToolCategory, MCPToolsConfig, MCPToolResult, ToolExecutionContext } from '../registry/types';
 import { normalizeQuery } from '../../utils/SqlUtils';
+import { getProjectFieldEncryptionKey, getEncryptionKeyError } from '../../utils/ProjectEncryptionKey';
+import { encryptFieldsInData, decryptFieldsInRows, decryptFieldsInRow } from '../../utils/FieldEncryption';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -23,12 +25,12 @@ function splitSqlStatements(sql: string): string[] {
   let dollarTag = '';
   let inLineComment = false;
   let inBlockComment = false;
-  
+
   for (let i = 0; i < sql.length; i++) {
     const char = sql[i];
     const nextChar = sql[i + 1] || '';
     const prevChar = i > 0 ? sql[i - 1] : '';
-    
+
     // Handle block comments
     if (!inSingleQuote && !inDoubleQuote && !inDollarQuote && char === '/' && nextChar === '*') {
       inBlockComment = true;
@@ -46,7 +48,7 @@ function splitSqlStatements(sql: string): string[] {
       currentStatement += char;
       continue;
     }
-    
+
     // Handle line comments
     if (!inSingleQuote && !inDoubleQuote && !inDollarQuote && char === '-' && nextChar === '-') {
       inLineComment = true;
@@ -61,7 +63,7 @@ function splitSqlStatements(sql: string): string[] {
       currentStatement += char;
       continue;
     }
-    
+
     // Handle dollar-quoted strings
     if (!inSingleQuote && !inDoubleQuote && char === '$') {
       const match = sql.substring(i).match(/^\$([^$]*)\$/);
@@ -80,17 +82,17 @@ function splitSqlStatements(sql: string): string[] {
         continue;
       }
     }
-    
+
     // Handle single quotes
     if (!inDoubleQuote && !inDollarQuote && char === "'" && prevChar !== '\\') {
       inSingleQuote = !inSingleQuote;
     }
-    
+
     // Handle double quotes
     if (!inSingleQuote && !inDollarQuote && char === '"' && prevChar !== '\\') {
       inDoubleQuote = !inDoubleQuote;
     }
-    
+
     // Only treat semicolon as statement separator outside of quotes/comments
     if (!inSingleQuote && !inDoubleQuote && !inDollarQuote && char === ';') {
       const trimmed = currentStatement.trim();
@@ -100,16 +102,16 @@ function splitSqlStatements(sql: string): string[] {
       currentStatement = '';
       continue;
     }
-    
+
     currentStatement += char;
   }
-  
+
   // Add remaining statement
   const trimmed = currentStatement.trim();
   if (trimmed) {
     statements.push(trimmed);
   }
-  
+
   return statements.filter(s => s.length > 0);
 }
 
@@ -120,19 +122,19 @@ function applyConflictStrategy(statement: string, strategy: 'fail' | 'skip' | 'u
   if (strategy === 'fail') {
     return statement;
   }
-  
+
   // Match INSERT statements
   const insertRegex = /INSERT\s+INTO\s+(\S+)\s*(\([^)]+\))?\s*VALUES\s*([^;]+)/i;
   const match = statement.match(insertRegex);
-  
+
   if (!match) {
     return statement; // Not an INSERT statement, return as-is
   }
-  
+
   const tableName = match[1];
   const columns = match[2] || '';
   const values = match[3];
-  
+
   if (strategy === 'skip') {
     return `${statement} ON CONFLICT DO NOTHING`;
   } else if (strategy === 'update') {
@@ -145,7 +147,7 @@ function applyConflictStrategy(statement: string, strategy: 'fail' | 'skip' | 'u
     // Fallback: update all columns
     return `${statement} ON CONFLICT DO UPDATE SET ${columns}`;
   }
-  
+
   return statement;
 }
 
@@ -155,30 +157,30 @@ function applyConflictStrategy(statement: string, strategy: 'fail' | 'skip' | 'u
 async function getProjectClient(pool: Pool, projectId: string): Promise<PoolClient | null> {
   try {
     const client = await pool.connect();
-    
+
     // Get project schema name - convert projectId to integer if it's a string
     const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
-    
+
     if (isNaN(projectIdInt)) {
       client.release();
       return null;
     }
-    
+
     const projectResult = await client.query(
       'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
       [projectIdInt]
     );
-    
+
     if (projectResult.rows.length === 0) {
       client.release();
       return null;
     }
-    
+
     const schemaName = projectResult.rows[0].schema_name;
-    
+
     // Set search path to project schema
     await client.query(`SET search_path TO ${schemaName}, public`);
-    
+
     return client;
   } catch (error) {
     console.error('Error getting project client:', error);
@@ -560,6 +562,8 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           projectId: { type: 'string', description: 'Project ID' },
           tableName: { type: 'string', description: 'Name of the table' },
           data: { type: 'object', description: 'Data to insert as key-value pairs' },
+          encrypt: { type: 'array', items: { type: 'string' }, description: 'Field names to encrypt before storing' },
+          decrypt: { type: 'array', items: { type: 'string' }, description: 'Field names to decrypt in returned row' },
         },
         required: ['tableName', 'data'],
       },
@@ -573,6 +577,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           projectId: { type: 'string', description: 'Project ID' },
           tableName: { type: 'string', description: 'Name of the table' },
           dataArray: { type: 'array', description: 'Array of data objects to insert' },
+          encrypt: { type: 'array', items: { type: 'string' }, description: 'Field names to encrypt before storing' },
         },
         required: ['tableName', 'dataArray'],
       },
@@ -587,6 +592,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           tableName: { type: 'string', description: 'Name of the table' },
           data: { type: 'object', description: 'Data to update as key-value pairs' },
           where: { type: 'object', description: 'WHERE condition as key-value pairs' },
+          encrypt: { type: 'array', items: { type: 'string' }, description: 'Field names to encrypt before storing' },
         },
         required: ['tableName', 'data', 'where'],
       },
@@ -616,6 +622,7 @@ export function createDatabaseTools(config: DatabaseToolsConfig): Tool[] {
           where: { type: 'object', description: 'WHERE condition as key-value pairs (optional)' },
           limit: { type: 'number', description: 'Maximum number of rows to return (optional)' },
           offset: { type: 'number', description: 'Number of rows to skip (optional)' },
+          decrypt: { type: 'array', items: { type: 'string' }, description: 'Field names to decrypt in returned rows' },
         },
         required: ['tableName'],
       },
@@ -780,7 +787,7 @@ export async function handleDatabaseTool(
       // Basic implementation - search in pg_catalog and information_schema
       const { query, category, limit = 10 } = args;
       const client = await pool.connect();
-      
+
       try {
         let searchQuery = '';
         if (category === 'tables') {
@@ -824,7 +831,7 @@ export async function handleDatabaseTool(
             LIMIT $2
           `;
         }
-        
+
         const result = await client.query(searchQuery, [`%${query}%`, limit]);
         return { content: [{ type: 'text', text: JSON.stringify(result.rows, null, 2) }] };
       } finally {
@@ -834,51 +841,51 @@ export async function handleDatabaseTool(
 
     case 'list_tables': {
       const { projectId, schema, includeMetadata = false } = args;
-      
+
       const client = await pool.connect();
-      
+
       try {
         // Get project info - convert projectId to integer if it's a string
         const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
-        
+
         if (isNaN(projectIdInt)) {
-          return { 
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ 
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
                 error: 'Invalid project ID',
                 hint: `The provided project ID "${projectId}" is not a valid number.`
-              }, null, 2) 
+              }, null, 2)
             }],
-            isError: true 
+            isError: true
           };
         }
-        
+
         const projectResult = await client.query(
           'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectIdInt]
         );
-        
+
         if (projectResult.rows.length === 0) {
           console.error(`Project not found for ID: ${projectIdInt} (original: ${projectId})`);
-          return { 
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ 
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
                 error: 'Project not found',
                 hint: `No project exists with ID ${projectIdInt}. Verify the project ID or check if you have access to this project.`
-              }, null, 2) 
+              }, null, 2)
             }],
-            isError: true 
+            isError: true
           };
         }
-        
+
         const projectSchemaName = projectResult.rows[0].schema_name;
         const schemaName = schema || projectSchemaName;
-        
+
         // If no specific schema requested, search both project schema and public schema
         const schemasToSearch = schema ? [schemaName] : [projectSchemaName, 'public'];
-        
+
         if (includeMetadata) {
           // Get detailed table information from both schemas
           const result = await client.query(`
@@ -903,7 +910,7 @@ export async function handleDatabaseTool(
             GROUP BY t.table_name, t.table_schema
             ORDER BY t.table_schema, t.table_name
           `, [schemasToSearch]);
-          
+
           return { content: [{ type: 'text', text: JSON.stringify(result.rows, null, 2) }] };
         } else {
           const result = await client.query(`
@@ -914,7 +921,7 @@ export async function handleDatabaseTool(
               AND table_name NOT LIKE 'skaftin_system_%'
             ORDER BY table_schema, table_name
           `, [schemasToSearch]);
-          
+
           return { content: [{ type: 'text', text: JSON.stringify(result.rows, null, 2) }] };
         }
       } finally {
@@ -925,7 +932,7 @@ export async function handleDatabaseTool(
     case 'list_extensions': {
       const { projectId, installed = false } = args;
       const client = await pool.connect();
-      
+
       try {
         let query = '';
         if (installed) {
@@ -941,7 +948,7 @@ export async function handleDatabaseTool(
             ORDER BY name
           `;
         }
-        
+
         const result = await client.query(query);
         return { content: [{ type: 'text', text: JSON.stringify(result.rows, null, 2) }] };
       } finally {
@@ -951,7 +958,7 @@ export async function handleDatabaseTool(
 
     case 'list_migrations': {
       const { projectId, limit = 50, status } = args;
-      
+
       const client = await getProjectClient(pool, projectId);
       if (!client) {
         return {
@@ -959,7 +966,7 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         // Check if migrations table exists
         const tableCheck = await client.query(`
@@ -969,57 +976,57 @@ export async function handleDatabaseTool(
             AND table_name = 'schema_migrations'
           ) as table_exists
         `);
-        
+
         if (!tableCheck.rows[0].table_exists) {
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ 
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
                 success: true,
                 message: 'No migrations table found. Migration tracking is not set up for this project.',
                 hint: 'Migrations are tracked in a schema_migrations table. If you have migrations, ensure the table exists.',
                 data: [],
                 migrations_table_exists: false
-              }, null, 2) 
+              }, null, 2)
             }]
           };
         }
-        
+
         // Query migrations table
         let query = 'SELECT * FROM schema_migrations ORDER BY version DESC';
         const params: any[] = [];
-        
+
         if (status) {
           query += ' WHERE status = $1';
           params.push(status);
         }
-        
+
         query += ` LIMIT $${params.length + 1}`;
         params.push(limit);
-        
+
         const result = await client.query(query, params);
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
               success: true,
               message: result.rows.length === 0 ? 'No migrations found' : 'Migrations fetched successfully',
               data: result.rows,
               count: result.rows.length,
               migrations_table_exists: true
-            }, null, 2) 
+            }, null, 2)
           }]
         };
       } catch (error: any) {
         console.error('Error listing migrations:', error);
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
               error: error.message,
               hint: 'Error querying migrations. Ensure the schema_migrations table exists and is accessible.'
-            }, null, 2) 
+            }, null, 2)
           }],
           isError: true
         };
@@ -1029,13 +1036,13 @@ export async function handleDatabaseTool(
     }
 
     case 'apply_migration': {
-      const { 
-        projectId, 
-        migrationFile, 
+      const {
+        projectId,
+        migrationFile,
         rollback = false,
         options = {}
       } = args;
-      
+
       const {
         batchSize = 0,
         conflictStrategy = 'fail',
@@ -1043,55 +1050,55 @@ export async function handleDatabaseTool(
         continueOnError = false,
         dryRun = false
       } = options;
-      
+
       const startTime = Date.now();
       const client = await pool.connect();
-      
+
       try {
         // Get project schema
         const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
-        
+
         if (isNaN(projectIdInt)) {
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ error: 'Invalid project ID' }, null, 2) 
+            content: [{
+              type: 'text',
+              text: JSON.stringify({ error: 'Invalid project ID' }, null, 2)
             }],
-            isError: true 
+            isError: true
           };
         }
-        
+
         const projectResult = await client.query(
           'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectIdInt]
         );
-        
+
         if (projectResult.rows.length === 0) {
-          return { 
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ error: 'Project not found' }, null, 2) 
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({ error: 'Project not found' }, null, 2)
             }],
-            isError: true 
+            isError: true
           };
         }
-        
+
         const schemaName = projectResult.rows[0].schema_name;
-        
+
         // Set search path
         await client.query(`SET search_path TO ${schemaName}, public`);
-        
+
         // Read migration file or use provided SQL
         let sql: string;
-        const isFilePath = !migrationFile.includes('\n') && 
-                          !migrationFile.trim().toUpperCase().startsWith('CREATE') && 
-                          !migrationFile.trim().toUpperCase().startsWith('ALTER') &&
-                          !migrationFile.trim().toUpperCase().startsWith('INSERT') &&
-                          !migrationFile.trim().toUpperCase().startsWith('UPDATE') &&
-                          !migrationFile.trim().toUpperCase().startsWith('DELETE') &&
-                          !migrationFile.trim().toUpperCase().startsWith('SELECT') &&
-                          (migrationFile.includes('/') || migrationFile.includes('\\') || migrationFile.endsWith('.sql'));
-        
+        const isFilePath = !migrationFile.includes('\n') &&
+          !migrationFile.trim().toUpperCase().startsWith('CREATE') &&
+          !migrationFile.trim().toUpperCase().startsWith('ALTER') &&
+          !migrationFile.trim().toUpperCase().startsWith('INSERT') &&
+          !migrationFile.trim().toUpperCase().startsWith('UPDATE') &&
+          !migrationFile.trim().toUpperCase().startsWith('DELETE') &&
+          !migrationFile.trim().toUpperCase().startsWith('SELECT') &&
+          (migrationFile.includes('/') || migrationFile.includes('\\') || migrationFile.endsWith('.sql'));
+
         if (isFilePath) {
           try {
             // Try relative to workspace root, then absolute path
@@ -1104,12 +1111,12 @@ export async function handleDatabaseTool(
             sql = await fs.readFile(filePath, 'utf-8');
           } catch (fileError: any) {
             return {
-              content: [{ 
-                type: 'text', 
-                text: JSON.stringify({ 
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
                   error: `Failed to read migration file: ${fileError.message}`,
                   hint: 'Ensure the file path is correct and accessible.'
-                }, null, 2) 
+                }, null, 2)
               }],
               isError: true
             };
@@ -1117,7 +1124,7 @@ export async function handleDatabaseTool(
         } else {
           sql = migrationFile;
         }
-        
+
         // Dry run: just return what would be executed
         if (dryRun) {
           const statements = splitSqlStatements(sql);
@@ -1139,37 +1146,37 @@ export async function handleDatabaseTool(
             }]
           };
         }
-        
+
         // Split SQL into statements
         let statements = splitSqlStatements(sql);
-        
+
         // Apply conflict strategy if needed
         if (conflictStrategy !== 'fail') {
           statements = statements.map(stmt => applyConflictStrategy(stmt, conflictStrategy));
         }
-        
+
         // Track execution results
         let statementsExecuted = 0;
         let totalRowsAffected = 0;
         let conflicts = 0;
         const errors: Array<{ statementIndex: number; error: string; statement?: string }> = [];
-        
+
         // Execute statements
         if (useTransaction) {
           await client.query('BEGIN');
         }
-        
+
         try {
           // Batch processing
           if (batchSize > 0 && statements.length > batchSize) {
             // Process in batches
             for (let i = 0; i < statements.length; i += batchSize) {
               const batch = statements.slice(i, i + batchSize);
-              
+
               for (let j = 0; j < batch.length; j++) {
                 const statementIndex = i + j + 1;
                 const statement = batch[j];
-                
+
                 try {
                   const result = await client.query(statement);
                   statementsExecuted++;
@@ -1186,13 +1193,13 @@ export async function handleDatabaseTool(
                       continue;
                     }
                   }
-                  
+
                   errors.push({
                     statementIndex,
                     error: error.message,
                     statement: statement.substring(0, 200)
                   });
-                  
+
                   if (!continueOnError) {
                     throw error;
                   }
@@ -1203,7 +1210,7 @@ export async function handleDatabaseTool(
             // Execute all statements sequentially
             for (let i = 0; i < statements.length; i++) {
               const statement = statements[i];
-              
+
               try {
                 const result = await client.query(statement);
                 statementsExecuted++;
@@ -1220,26 +1227,26 @@ export async function handleDatabaseTool(
                     continue;
                   }
                 }
-                
+
                 errors.push({
                   statementIndex: i + 1,
                   error: error.message,
                   statement: statement.substring(0, 200)
                 });
-                
+
                 if (!continueOnError) {
                   throw error;
                 }
               }
             }
           }
-          
+
           if (useTransaction) {
             await client.query('COMMIT');
           }
-          
+
           const executionTime = ((Date.now() - startTime) / 1000).toFixed(2) + 's';
-          
+
           return {
             content: [{
               type: 'text',
@@ -1269,9 +1276,9 @@ export async function handleDatabaseTool(
               // Ignore rollback errors
             }
           }
-          
+
           const executionTime = ((Date.now() - startTime) / 1000).toFixed(2) + 's';
-          
+
           return {
             content: [{
               type: 'text',
@@ -1297,50 +1304,50 @@ export async function handleDatabaseTool(
 
     case 'execute_sql': {
       const { projectId, query, parameters = [], readonly = true } = args;
-      
+
       // Validate query for readonly mode
       if (readonly) {
         const trimmedQuery = query.trim().toUpperCase();
         if (!trimmedQuery.startsWith('SELECT') && !trimmedQuery.startsWith('WITH')) {
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ 
-                error: 'Only SELECT queries are allowed in readonly mode' 
-              }, null, 2) 
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                error: 'Only SELECT queries are allowed in readonly mode'
+              }, null, 2)
             }],
             isError: true
           };
         }
       }
-      
+
       const client = await pool.connect();
-      
+
       try {
         // Get project schema if provided
         if (projectId) {
           const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
-          
+
           if (!isNaN(projectIdInt)) {
             const projectResult = await client.query(
               'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
               [projectIdInt]
             );
-            
+
             if (projectResult.rows.length > 0) {
               const schemaName = projectResult.rows[0].schema_name;
               await client.query(`SET search_path TO ${schemaName}, public`);
             }
           }
         }
-        
+
         // Normalize query from MySQL to PostgreSQL syntax
         const normalizedQuery = normalizeQuery(query);
         const result = await client.query(normalizedQuery, parameters);
-        
-        return { 
-          content: [{ 
-            type: 'text', 
+
+        return {
+          content: [{
+            type: 'text',
             text: JSON.stringify({
               rows: result.rows,
               rowCount: result.rowCount,
@@ -1348,8 +1355,8 @@ export async function handleDatabaseTool(
                 name: f.name,
                 dataTypeID: f.dataTypeID,
               })),
-            }, null, 2) 
-          }] 
+            }, null, 2)
+          }]
         };
       } finally {
         client.release();
@@ -1358,51 +1365,51 @@ export async function handleDatabaseTool(
 
     case 'get_logs': {
       // Placeholder - would need logging table
-      return { 
-        content: [{ 
-          type: 'text', 
-          text: JSON.stringify({ 
-            message: 'Logging system not yet implemented' 
-          }, null, 2) 
-        }] 
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            message: 'Logging system not yet implemented'
+          }, null, 2)
+        }]
       };
     }
 
     case 'get_advisors': {
       const { projectId, type } = args;
       const client = await pool.connect();
-      
+
       try {
         const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
-        
+
         if (isNaN(projectIdInt)) {
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ error: 'Invalid project ID' }, null, 2) 
+            content: [{
+              type: 'text',
+              text: JSON.stringify({ error: 'Invalid project ID' }, null, 2)
             }],
             isError: true
           };
         }
-        
+
         const projectResult = await client.query(
           'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectIdInt]
         );
-        
+
         if (projectResult.rows.length === 0) {
-          return { 
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ error: 'Project not found' }, null, 2) 
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({ error: 'Project not found' }, null, 2)
             }],
-            isError: true 
+            isError: true
           };
         }
-        
+
         const schemaName = projectResult.rows[0].schema_name;
         const recommendations: any[] = [];
-        
+
         if (type === 'performance' || !type) {
           // Check for missing indexes on foreign keys
           const indexCheck = await client.query(`
@@ -1422,7 +1429,7 @@ export async function handleDatabaseTool(
               AND tc.table_schema = $1
               AND pi.indexname IS NULL
           `, [schemaName]);
-          
+
           if (indexCheck.rows.length > 0) {
             recommendations.push({
               type: 'performance',
@@ -1432,12 +1439,12 @@ export async function handleDatabaseTool(
             });
           }
         }
-        
-        return { 
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ recommendations }, null, 2) 
-          }] 
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ recommendations }, null, 2)
+          }]
         };
       } finally {
         client.release();
@@ -1447,37 +1454,37 @@ export async function handleDatabaseTool(
     case 'generate_typescript_types': {
       const { projectId, schema, outputFormat = 'interface' } = args;
       const client = await pool.connect();
-      
+
       try {
         const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
-        
+
         if (isNaN(projectIdInt)) {
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ error: 'Invalid project ID' }, null, 2) 
+            content: [{
+              type: 'text',
+              text: JSON.stringify({ error: 'Invalid project ID' }, null, 2)
             }],
             isError: true
           };
         }
-        
+
         const projectResult = await client.query(
           'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectIdInt]
         );
-        
+
         if (projectResult.rows.length === 0) {
-          return { 
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ error: 'Project not found' }, null, 2) 
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({ error: 'Project not found' }, null, 2)
             }],
-            isError: true 
+            isError: true
           };
         }
-        
+
         const schemaName = schema || projectResult.rows[0].schema_name;
-        
+
         // Get all tables with columns
         const result = await client.query(`
           SELECT 
@@ -1498,7 +1505,7 @@ export async function handleDatabaseTool(
           GROUP BY t.table_name
           ORDER BY t.table_name
         `, [schemaName]);
-        
+
         // Generate TypeScript types
         const typeMap: Record<string, string> = {
           'integer': 'number',
@@ -1519,17 +1526,17 @@ export async function handleDatabaseTool(
           'json': 'any',
           'jsonb': 'any',
         };
-        
+
         const types = result.rows.map((table: any) => {
-          const interfaceName = table.table_name.charAt(0).toUpperCase() + 
-                               table.table_name.slice(1).replace(/_([a-z])/g, (_match: string, c: string) => c.toUpperCase());
-          
+          const interfaceName = table.table_name.charAt(0).toUpperCase() +
+            table.table_name.slice(1).replace(/_([a-z])/g, (_match: string, c: string) => c.toUpperCase());
+
           const props = table.columns.map((col: any) => {
             const tsType = typeMap[col.type] || 'string';
             const nullable = col.nullable ? ' | null' : '';
             return `  ${col.name}: ${tsType}${nullable};`;
           }).join('\n');
-          
+
           if (outputFormat === 'type') {
             return `type ${interfaceName} = {\n${props}\n};`;
           } else if (outputFormat === 'class') {
@@ -1538,12 +1545,12 @@ export async function handleDatabaseTool(
             return `interface ${interfaceName} {\n${props}\n}`;
           }
         }).join('\n\n');
-        
-        return { 
-          content: [{ 
-            type: 'text', 
-            text: types 
-          }] 
+
+        return {
+          content: [{
+            type: 'text',
+            text: types
+          }]
         };
       } finally {
         client.release();
@@ -1553,25 +1560,25 @@ export async function handleDatabaseTool(
     case 'create_schema': {
       const { projectId, schemaName, description } = args;
       const client = await pool.connect();
-      
+
       try {
         await client.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName}`);
-        
+
         if (description) {
           await client.query(
             `COMMENT ON SCHEMA ${schemaName} IS $1`,
             [description]
           );
         }
-        
-        return { 
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
-              message: `Schema ${schemaName} created successfully` 
-            }, null, 2) 
-          }] 
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Schema ${schemaName} created successfully`
+            }, null, 2)
+          }]
         };
       } finally {
         client.release();
@@ -1580,32 +1587,32 @@ export async function handleDatabaseTool(
 
     case 'get_table_schema': {
       const { projectId, tableName } = args;
-      
+
       if (!tableName) {
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ error: 'Table name is required' }, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ error: 'Table name is required' }, null, 2)
           }],
           isError: true
         };
       }
-      
+
       const client = await getProjectClient(pool, projectId);
-      
+
       if (!client) {
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
               error: 'Project not found or failed to get client',
               hint: `No project exists with ID ${projectId} or failed to establish database connection. Verify the project ID or check if you have access to this project.`
-            }, null, 2) 
+            }, null, 2)
           }],
           isError: true
         };
       }
-      
+
       try {
         // Get project schema name
         const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
@@ -1613,19 +1620,19 @@ export async function handleDatabaseTool(
           'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
           [projectIdInt]
         );
-        
+
         if (projectResult.rows.length === 0) {
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ error: 'Project not found' }, null, 2) 
+            content: [{
+              type: 'text',
+              text: JSON.stringify({ error: 'Project not found' }, null, 2)
             }],
             isError: true
           };
         }
-        
+
         const projectSchemaName = projectResult.rows[0].schema_name;
-        
+
         // Search in both project schema and public schema
         const result = await client.query(`
           SELECT 
@@ -1643,7 +1650,7 @@ export async function handleDatabaseTool(
             CASE WHEN table_schema = $1 THEN 1 ELSE 2 END,
             ordinal_position
         `, [projectSchemaName, tableName]);
-        
+
         if (result.rows.length === 0) {
           // Check if table exists in any schema
           const tableCheck = await client.query(`
@@ -1653,37 +1660,37 @@ export async function handleDatabaseTool(
               AND table_type = 'BASE TABLE'
             ORDER BY table_schema
           `, [tableName]);
-          
+
           if (tableCheck.rows.length > 0) {
             const schemas = tableCheck.rows.map((r: any) => r.table_schema).join(', ');
             return {
-              content: [{ 
-                type: 'text', 
-                text: JSON.stringify({ 
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
                   error: `Table "${tableName}" not found in project schema (${projectSchemaName}) or public schema`,
                   hint: `Table exists in schema(s): ${schemas}. Use schema-qualified name like "${tableCheck.rows[0].table_schema}.${tableName}" or create the table in the project schema.`,
                   found_in_schemas: tableCheck.rows.map((r: any) => r.table_schema)
-                }, null, 2) 
+                }, null, 2)
               }],
               isError: true
             };
           }
-          
+
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ 
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
                 error: `Table "${tableName}" not found`,
                 hint: `Table not found in project schema (${projectSchemaName}) or public schema. Check the table name or create it first.`
-              }, null, 2) 
+              }, null, 2)
             }],
             isError: true
           };
         }
-        
+
         // Use the schema from the first result (prefer project schema)
         const tableSchema = result.rows[0].table_schema;
-        
+
         // Get primary key information (use schema-qualified name)
         const pkResult = await client.query(`
           SELECT 
@@ -1693,9 +1700,9 @@ export async function handleDatabaseTool(
           WHERE i.indrelid = $1::regclass
             AND i.indisprimary = true
         `, [`${tableSchema}.${tableName}`]);
-        
+
         const primaryKeys = new Set(pkResult.rows.map((row: any) => row.column_name));
-        
+
         // Format columns
         const columns = result.rows.map((row: any) => ({
           column_name: row.column_name,
@@ -1706,26 +1713,26 @@ export async function handleDatabaseTool(
           ordinal_position: row.ordinal_position,
           is_primary_key: primaryKeys.has(row.column_name)
         }));
-        
+
         return {
-          content: [{ 
-            type: 'text', 
+          content: [{
+            type: 'text',
             text: JSON.stringify({
               table_name: tableName,
               table_schema: tableSchema,
               columns: columns
-            }, null, 2) 
-          }] 
+            }, null, 2)
+          }]
         };
       } catch (error: any) {
         console.error('Error getting table schema:', error);
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
               error: error.message || 'Failed to get table schema',
               details: error.code || 'UNKNOWN_ERROR'
-            }, null, 2) 
+            }, null, 2)
           }],
           isError: true
         };
@@ -1736,51 +1743,51 @@ export async function handleDatabaseTool(
 
     case 'create_table': {
       const { projectId, tableName, columns } = args;
-      
+
       if (!tableName) {
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ error: 'Table name is required' }, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ error: 'Table name is required' }, null, 2)
           }],
           isError: true
         };
       }
-      
+
       if (!columns || !Array.isArray(columns) || columns.length === 0) {
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ error: 'Columns array is required and must not be empty' }, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ error: 'Columns array is required and must not be empty' }, null, 2)
           }],
           isError: true
         };
       }
-      
+
       const client = await getProjectClient(pool, projectId);
-      
+
       if (!client) {
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
               error: 'Project not found or failed to get client',
               hint: `No project exists with ID ${projectId} or failed to establish database connection. Verify the project ID or check if you have access to this project.`
-            }, null, 2) 
+            }, null, 2)
           }],
           isError: true
         };
       }
-      
+
       try {
         // Build CREATE TABLE statement
 
         // Validate table name (PostgreSQL identifier rules)
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tableName)) {
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ error: 'Invalid table name. Must start with a letter or underscore and contain only alphanumeric characters and underscores' }, null, 2) 
+            content: [{
+              type: 'text',
+              text: JSON.stringify({ error: 'Invalid table name. Must start with a letter or underscore and contain only alphanumeric characters and underscores' }, null, 2)
             }],
             isError: true
           };
@@ -1793,9 +1800,9 @@ export async function handleDatabaseTool(
         for (const column of columns) {
           if (!column.name || !column.type) {
             return {
-              content: [{ 
-                type: 'text', 
-                text: JSON.stringify({ error: 'Each column must have a name and type' }, null, 2) 
+              content: [{
+                type: 'text',
+                text: JSON.stringify({ error: 'Each column must have a name and type' }, null, 2)
               }],
               isError: true
             };
@@ -1804,9 +1811,9 @@ export async function handleDatabaseTool(
           // Validate column name
           if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(column.name)) {
             return {
-              content: [{ 
-                type: 'text', 
-                text: JSON.stringify({ error: `Invalid column name: ${column.name}` }, null, 2) 
+              content: [{
+                type: 'text',
+                text: JSON.stringify({ error: `Invalid column name: ${column.name}` }, null, 2)
               }],
               isError: true
             };
@@ -1826,8 +1833,8 @@ export async function handleDatabaseTool(
             if (column.type !== 'SERIAL' && column.type !== 'BIGSERIAL') {
               // Try to determine if it's a number or string
               const defaultValue = column.defaultValue;
-              if (column.type.includes('INT') || column.type === 'DECIMAL' || column.type === 'NUMERIC' || 
-                  column.type === 'REAL' || column.type === 'DOUBLE PRECISION' || column.type === 'BOOLEAN') {
+              if (column.type.includes('INT') || column.type === 'DECIMAL' || column.type === 'NUMERIC' ||
+                column.type === 'REAL' || column.type === 'DOUBLE PRECISION' || column.type === 'BOOLEAN') {
                 // For numeric types, use value as-is (but validate it's a number for boolean/int)
                 if (column.type === 'BOOLEAN') {
                   colDef += ` DEFAULT ${defaultValue === 'true' || defaultValue === true ? 'TRUE' : 'FALSE'}`;
@@ -1852,12 +1859,12 @@ export async function handleDatabaseTool(
 
         // Build CREATE TABLE statement
         let createTableSQL = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n  ${columnDefinitions.join(',\n  ')}`;
-        
+
         // Add primary key constraint if any columns are marked as primary key
         if (primaryKeyColumns.length > 0) {
           createTableSQL += `,\n  PRIMARY KEY (${primaryKeyColumns.join(', ')})`;
         }
-        
+
         createTableSQL += '\n)';
 
         // Execute CREATE TABLE statement
@@ -1868,25 +1875,25 @@ export async function handleDatabaseTool(
         emitDatabaseChange(projectId, tableName, 'create_table', { tableName, columns: columns.length });
 
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
               success: true,
               message: `Table ${tableName} created successfully`,
               tableName,
               columns: columns.length
-            }, null, 2) 
-          }] 
+            }, null, 2)
+          }]
         };
       } catch (error: any) {
         console.error('Error creating table:', error);
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
               error: error.message || 'Failed to create table',
               details: error.code || 'UNKNOWN_ERROR'
-            }, null, 2) 
+            }, null, 2)
           }],
           isError: true
         };
@@ -1898,31 +1905,31 @@ export async function handleDatabaseTool(
     case 'delete_schema': {
       const { projectId, schemaName, force = false } = args;
       const client = await pool.connect();
-      
+
       try {
         if (force) {
           await client.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
         } else {
           await client.query(`DROP SCHEMA IF EXISTS ${schemaName} RESTRICT`);
         }
-        
-        return { 
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
-              message: `Schema ${schemaName} deleted successfully` 
-            }, null, 2) 
-          }] 
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Schema ${schemaName} deleted successfully`
+            }, null, 2)
+          }]
         };
       } catch (error: any) {
         if (error.code === '2BP01') {
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ 
-                error: 'Schema has dependencies. Use force=true to delete anyway.' 
-              }, null, 2) 
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                error: 'Schema has dependencies. Use force=true to delete anyway.'
+              }, null, 2)
             }],
             isError: true
           };
@@ -1934,7 +1941,7 @@ export async function handleDatabaseTool(
     }
 
     case 'insert_data': {
-      const { projectId, tableName, data } = args;
+      const { projectId, tableName, data, encrypt: encryptFields, decrypt: decryptFields } = args;
       const client = await getProjectClient(pool, projectId);
       if (!client) {
         return {
@@ -1942,23 +1949,49 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
+        const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+        if (encryptFields && Array.isArray(encryptFields) && encryptFields.length > 0) {
+          const key = await getProjectFieldEncryptionKey(pool, projectIdInt);
+          if (!key) {
+            client.release();
+            return {
+              content: [{ type: 'text', text: JSON.stringify({ error: getEncryptionKeyError() }, null, 2) }],
+              isError: true
+            };
+          }
+          encryptFieldsInData(data, encryptFields, key);
+        }
+
         const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
         const columns = Object.keys(data);
         const values = Object.values(data);
         const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-        
+
         const query = `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders}) RETURNING *`;
         const result = await client.query(query, values);
-        
+        let row = result.rows[0];
+
+        if (decryptFields && Array.isArray(decryptFields) && decryptFields.length > 0) {
+          const key = await getProjectFieldEncryptionKey(pool, projectIdInt);
+          if (!key) {
+            client.release();
+            return {
+              content: [{ type: 'text', text: JSON.stringify({ error: getEncryptionKeyError() }, null, 2) }],
+              isError: true
+            };
+          }
+          row = decryptFieldsInRow(row as Record<string, unknown>, decryptFields, key) as typeof row;
+        }
+
         // Emit WebSocket event
         emitDatabaseChange(projectId, tableName, 'insert', result.rows[0]);
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ success: true, message: 'Data inserted successfully', data: result.rows[0] }, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ success: true, message: 'Data inserted successfully', data: row }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -1973,7 +2006,7 @@ export async function handleDatabaseTool(
     }
 
     case 'bulk_insert_data': {
-      const { projectId, tableName, dataArray } = args;
+      const { projectId, tableName, dataArray, encrypt: encryptFields } = args;
       const client = await getProjectClient(pool, projectId);
       if (!client) {
         return {
@@ -1981,28 +2014,43 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
+        const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+        if (encryptFields && Array.isArray(encryptFields) && encryptFields.length > 0) {
+          const key = await getProjectFieldEncryptionKey(pool, projectIdInt);
+          if (!key) {
+            client.release();
+            return {
+              content: [{ type: 'text', text: JSON.stringify({ error: getEncryptionKeyError() }, null, 2) }],
+              isError: true
+            };
+          }
+          for (const data of dataArray) {
+            encryptFieldsInData(data, encryptFields, key);
+          }
+        }
+
         const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
         const insertedRows = [];
-        
+
         for (const data of dataArray) {
           const columns = Object.keys(data);
           const values = Object.values(data);
           const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-          
+
           const query = `INSERT INTO "${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders}) RETURNING *`;
           const result = await client.query(query, values);
           insertedRows.push(result.rows[0]);
         }
-        
+
         // Emit WebSocket event
         emitDatabaseChange(projectId, tableName, 'insert', { count: insertedRows.length });
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ success: true, message: `${insertedRows.length} rows inserted successfully`, data: insertedRows }, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ success: true, message: `${insertedRows.length} rows inserted successfully`, data: insertedRows }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2017,7 +2065,7 @@ export async function handleDatabaseTool(
     }
 
     case 'update_data': {
-      const { projectId, tableName, data, where } = args;
+      const { projectId, tableName, data, where, encrypt: encryptFields } = args;
       const client = await getProjectClient(pool, projectId);
       if (!client) {
         return {
@@ -2025,10 +2073,23 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
+        const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+        if (encryptFields && Array.isArray(encryptFields) && encryptFields.length > 0) {
+          const key = await getProjectFieldEncryptionKey(pool, projectIdInt);
+          if (!key) {
+            client.release();
+            return {
+              content: [{ type: 'text', text: JSON.stringify({ error: getEncryptionKeyError() }, null, 2) }],
+              isError: true
+            };
+          }
+          encryptFieldsInData(data, encryptFields, key);
+        }
+
         const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
-        
+
         // Check if where clause is empty (no keys)
         const whereColumns = Object.keys(where);
         if (whereColumns.length === 0) {
@@ -2037,24 +2098,24 @@ export async function handleDatabaseTool(
             isError: true
           };
         }
-        
+
         const setColumns = Object.keys(data);
         const setValues = Object.values(data);
         const setClause = setColumns.map((col, i) => `"${col}" = $${i + 1}`).join(', ');
-        
+
         const whereValues = Object.values(where);
         const whereClause = whereColumns.map((col, i) => `"${col}" = $${setValues.length + i + 1}`).join(' AND ');
-        
+
         const query = `UPDATE "${tableName}" SET ${setClause} WHERE ${whereClause} RETURNING *`;
         const result = await client.query(query, [...setValues, ...whereValues]);
-        
+
         // Emit WebSocket event
         emitDatabaseChange(projectId, tableName, 'update', result.rows);
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ success: true, message: `${result.rowCount} row(s) updated successfully`, data: result.rows }, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ success: true, message: `${result.rowCount} row(s) updated successfully`, data: result.rows }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2077,10 +2138,10 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
-        
+
         // Check if where clause is empty (no keys)
         const whereColumns = Object.keys(where);
         if (whereColumns.length === 0) {
@@ -2089,20 +2150,20 @@ export async function handleDatabaseTool(
             isError: true
           };
         }
-        
+
         const whereValues = Object.values(where);
         const whereClause = whereColumns.map((col, i) => `"${col}" = $${i + 1}`).join(' AND ');
-        
+
         const query = `DELETE FROM "${tableName}" WHERE ${whereClause} RETURNING *`;
         const result = await client.query(query, whereValues);
-        
+
         // Emit WebSocket event
         emitDatabaseChange(projectId, tableName, 'delete', { count: result.rowCount, deletedRows: result.rows });
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ success: true, message: `${result.rowCount} row(s) deleted successfully` }, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ success: true, message: `${result.rowCount} row(s) deleted successfully` }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2117,7 +2178,7 @@ export async function handleDatabaseTool(
     }
 
     case 'select_data': {
-      const { projectId, tableName, columns, where, limit, offset } = args;
+      const { projectId, tableName, columns, where, limit, offset, decrypt: decryptFields } = args;
       const client = await getProjectClient(pool, projectId);
       if (!client) {
         return {
@@ -2125,16 +2186,29 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
+        const projectIdInt = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+        let encryptionKey: string | null = null;
+        if (decryptFields && Array.isArray(decryptFields) && decryptFields.length > 0) {
+          encryptionKey = await getProjectFieldEncryptionKey(pool, projectIdInt);
+          if (!encryptionKey) {
+            client.release();
+            return {
+              content: [{ type: 'text', text: JSON.stringify({ error: getEncryptionKeyError() }, null, 2) }],
+              isError: true
+            };
+          }
+        }
+
         let selectClause = '*';
         if (columns && columns.length > 0) {
           selectClause = columns.map((col: string) => `"${col}"`).join(', ');
         }
-        
+
         let query = `SELECT ${selectClause} FROM "${tableName}"`;
         const values: any[] = [];
-        
+
         if (where && Object.keys(where).length > 0) {
           const whereColumns = Object.keys(where);
           const whereValues = Object.values(where);
@@ -2142,23 +2216,36 @@ export async function handleDatabaseTool(
           query += ` WHERE ${whereClause}`;
           values.push(...whereValues);
         }
-        
+
         if (limit) {
           query += ` LIMIT $${values.length + 1}`;
           values.push(limit);
         }
-        
+
         if (offset) {
           query += ` OFFSET $${values.length + 1}`;
           values.push(offset);
         }
-        
+
         const result = await client.query(query, values);
-        
+        let rows = result.rows;
+
+        if (encryptionKey && decryptFields && Array.isArray(decryptFields) && decryptFields.length > 0) {
+          try {
+            rows = decryptFieldsInRows(rows as Record<string, unknown>[], decryptFields, encryptionKey) as typeof result.rows;
+          } catch (decryptError: any) {
+            client.release();
+            return {
+              content: [{ type: 'text', text: JSON.stringify({ error: decryptError.message }, null, 2) }],
+              isError: true
+            };
+          }
+        }
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify(result.rows, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify(rows, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2181,18 +2268,18 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
         await client.query(`DROP TABLE IF EXISTS "${tableName}"`);
-        
+
         // Emit WebSocket event
         emitDatabaseChange(projectId, tableName, 'drop_table', { tableName });
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ success: true, message: `Table ${tableName} dropped successfully` }, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ success: true, message: `Table ${tableName} dropped successfully` }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2208,38 +2295,38 @@ export async function handleDatabaseTool(
 
     case 'create_foreign_key': {
       const { projectId, tableName, columnName, referencedTable, referencedColumn, onDelete = 'RESTRICT', onUpdate = 'RESTRICT' } = args;
-      
+
       if (!tableName || !columnName || !referencedTable || !referencedColumn) {
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
               error: 'Missing required parameters',
               hint: 'tableName, columnName, referencedTable, and referencedColumn are all required.'
-            }, null, 2) 
+            }, null, 2)
           }],
           isError: true
         };
       }
-      
+
       const client = await getProjectClient(pool, projectId);
       if (!client) {
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
               error: 'Project not found',
               hint: `No project exists with ID ${projectId} or failed to establish database connection. Verify the project ID or check if you have access to this project.`
-            }, null, 2) 
+            }, null, 2)
           }],
           isError: true
         };
       }
-      
+
       try {
         // Generate constraint name
         const constraintName = `fk_${tableName}_${columnName}_${referencedTable}_${referencedColumn}`.toLowerCase();
-        
+
         // Create foreign key constraint
         const sql = `
           ALTER TABLE "${tableName}"
@@ -2249,14 +2336,14 @@ export async function handleDatabaseTool(
           ON DELETE ${onDelete}
           ON UPDATE ${onUpdate}
         `;
-        
+
         await client.query(sql);
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
               message: `Foreign key constraint created successfully`,
               constraintName,
               details: {
@@ -2266,7 +2353,7 @@ export async function handleDatabaseTool(
                 onDelete,
                 onUpdate
               }
-            }, null, 2) 
+            }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2289,7 +2376,7 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         const result = await client.query(`
           SELECT
@@ -2318,14 +2405,14 @@ export async function handleDatabaseTool(
             AND tc.table_name = $1
           ORDER BY tc.constraint_type, tc.constraint_name
         `, [tableName]);
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
-              data: result.rows 
-            }, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              data: result.rows
+            }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2348,17 +2435,17 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         await client.query(`ALTER TABLE "${tableName}" DROP CONSTRAINT IF EXISTS "${constraintName}"`);
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
-              message: `Constraint ${constraintName} dropped successfully` 
-            }, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: `Constraint ${constraintName} dropped successfully`
+            }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2381,7 +2468,7 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         const result = await client.query(`
           SELECT
@@ -2406,14 +2493,14 @@ export async function handleDatabaseTool(
             AND tc.constraint_type = 'FOREIGN KEY'
           ORDER BY tc.constraint_name
         `, [tableName]);
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
-              data: result.rows 
-            }, null, 2) 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              data: result.rows
+            }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2436,7 +2523,7 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         // Check if pg_cron extension is installed
         const extensionCheck = await client.query(`
@@ -2444,22 +2531,22 @@ export async function handleDatabaseTool(
             SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
           ) as extension_exists
         `);
-        
+
         if (!extensionCheck.rows[0].extension_exists) {
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ 
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
                 success: true,
                 message: 'No cron jobs found. pg_cron extension is not installed.',
                 hint: 'To use cron jobs, install the pg_cron extension: CREATE EXTENSION IF NOT EXISTS pg_cron;',
                 data: [],
                 extension_installed: false
-              }, null, 2) 
+              }, null, 2)
             }]
           };
         }
-        
+
         const result = await client.query(`
           SELECT 
             jobid,
@@ -2474,37 +2561,37 @@ export async function handleDatabaseTool(
           FROM cron.job
           ORDER BY jobid DESC
         `);
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
               message: result.rows.length === 0 ? 'No cron jobs found' : 'Cron jobs fetched successfully',
               data: result.rows,
               extension_installed: true
-            }, null, 2) 
+            }, null, 2)
           }]
         };
       } catch (error: any) {
         console.error('Error listing cron jobs:', error);
-        
+
         // Check if error is due to missing extension
         if (error.message && error.message.includes('relation "cron.job" does not exist')) {
           return {
-            content: [{ 
-              type: 'text', 
-              text: JSON.stringify({ 
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
                 success: true,
                 message: 'No cron jobs found. pg_cron extension is not installed.',
                 hint: 'To use cron jobs, install the pg_cron extension: CREATE EXTENSION IF NOT EXISTS pg_cron;',
                 data: [],
                 extension_installed: false
-              }, null, 2) 
+              }, null, 2)
             }]
           };
         }
-        
+
         return {
           content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
           isError: true
@@ -2523,28 +2610,28 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         // Get current schema to set search path in cron job
         const schemaResult = await client.query('SELECT current_schema()');
         const currentSchema = schemaResult.rows[0].current_schema;
-        
+
         // Prefix command with search path
         const fullCommand = `SET search_path TO ${currentSchema}, public; ${command}`;
-        
+
         const result = await client.query(`
           SELECT cron.schedule($1, $2, $3) as jobid
         `, [jobName, schedule, fullCommand]);
-        
+
         // Emit WebSocket event
         const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
         emitDatabaseChange(projectId, 'cron', 'create_cron_job', { jobName, schedule });
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
               message: 'Cron job created successfully',
               data: {
                 jobid: result.rows[0].jobid,
@@ -2552,7 +2639,7 @@ export async function handleDatabaseTool(
                 schedule,
                 command: fullCommand
               }
-            }, null, 2) 
+            }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2575,19 +2662,19 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         // Get current schema for command update
         const schemaResult = await client.query('SELECT current_schema()');
         const currentSchema = schemaResult.rows[0].current_schema;
-        
+
         // Update schedule if provided
         if (schedule) {
           await client.query(`
             UPDATE cron.job SET schedule = $1 WHERE jobid = $2
           `, [schedule, jobId]);
         }
-        
+
         // Update command if provided
         if (command) {
           const fullCommand = `SET search_path TO ${currentSchema}, public; ${command}`;
@@ -2595,26 +2682,26 @@ export async function handleDatabaseTool(
             UPDATE cron.job SET command = $1 WHERE jobid = $2
           `, [fullCommand, jobId]);
         }
-        
+
         // Update job name if provided
         if (jobName) {
           await client.query(`
             UPDATE cron.job SET jobname = $1 WHERE jobid = $2
           `, [jobName, jobId]);
         }
-        
+
         // Emit WebSocket event
         const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
         emitDatabaseChange(projectId, 'cron', 'update_cron_job', { jobId, schedule, command, jobName });
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
               message: 'Cron job updated successfully',
               data: { jobId, schedule, command, jobName }
-            }, null, 2) 
+            }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2637,22 +2724,22 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         await client.query(`SELECT cron.unschedule($1)`, [jobId]);
-        
+
         // Emit WebSocket event
         const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
         emitDatabaseChange(projectId, 'cron', 'delete_cron_job', { jobId });
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
               message: 'Cron job deleted successfully',
               data: { jobId }
-            }, null, 2) 
+            }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2675,24 +2762,24 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         await client.query(`
           UPDATE cron.job SET active = $1 WHERE jobid = $2
         `, [active, jobId]);
-        
+
         // Emit WebSocket event
         const { emitDatabaseChange } = await import('../../utils/websocketEmitter');
         emitDatabaseChange(projectId, 'cron', 'toggle_cron_job', { jobId, active });
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
               message: `Cron job ${active ? 'activated' : 'deactivated'} successfully`,
               data: { jobId, active }
-            }, null, 2) 
+            }, null, 2)
           }]
         };
       } catch (error: any) {
@@ -2715,7 +2802,7 @@ export async function handleDatabaseTool(
           isError: true
         };
       }
-      
+
       try {
         const result = await client.query(`
           SELECT 
@@ -2734,15 +2821,15 @@ export async function handleDatabaseTool(
           ORDER BY start_time DESC
           LIMIT $2
         `, [jobId, limit]);
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: JSON.stringify({ 
-              success: true, 
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
               message: 'Cron job history fetched successfully',
-              data: result.rows 
-            }, null, 2) 
+              data: result.rows
+            }, null, 2)
           }]
         };
       } catch (error: any) {

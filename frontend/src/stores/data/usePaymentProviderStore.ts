@@ -5,7 +5,7 @@ import ApiRoutes from '../../constants/ApiRoutes';
 
 // ---------- Types ----------
 
-export type PaymentProviderType = 'payfast' | 'yoco' | 'paystack' | 'peach_payments' | 'ozow' | 'flutterwave';
+export type PaymentProviderType = 'payfast' | 'fnb_pay';
 export type PaymentType = 'once_off' | 'subscription';
 export type TransactionStatus = 'pending' | 'processing' | 'complete' | 'failed' | 'cancelled' | 'refunded';
 
@@ -416,11 +416,7 @@ const usePaymentProviderStore = create<PaymentProviderStore>()(
 export const getProviderDisplayName = (providerType: PaymentProviderType): string => {
   const names: Record<PaymentProviderType, string> = {
     payfast: 'PayFast',
-    yoco: 'Yoco',
-    paystack: 'Paystack',
-    peach_payments: 'Peach Payments',
-    ozow: 'Ozow',
-    flutterwave: 'Flutterwave',
+    fnb_pay: 'FNB Payment',
   };
   return names[providerType] || providerType;
 };

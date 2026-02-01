@@ -214,6 +214,18 @@ DELETE /app-api/database/tables/old_products
 
 ---
 
+## Field encryption
+
+You can encrypt sensitive fields (e.g. card numbers, expiry) at rest. The project must have a **field encryption key** set in the project Settings (Field encryption). Then use `encrypt` on write and `decrypt` on read.
+
+- **Write:** Include `encrypt: ["field_a", "field_b"]` in insert/update payloads. Those fields in `data` are encrypted before being stored.
+- **Read:** Include `decrypt: ["field_a", "field_b"]` in select payloads (or `decrypt` query param for GET). Those fields in the returned rows are decrypted.
+- **Error:** If you use `encrypt` or `decrypt` and the project has no encryption key set, the API returns **400** with message: `No encryption key / secret found`.
+
+Only fields present in `data` and listed in `encrypt` are encrypted; only fields listed in `decrypt` are decrypted in the response. Applies to **user database** (project tables) only, not system tables.
+
+---
+
 ## Data Operations (CRUD)
 
 ### 6. Select Data (GET)
@@ -231,15 +243,23 @@ Authorization: Bearer <jwt-token>
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | columns | string | Comma-separated column names (default: *) |
+| where | string | JSON object for WHERE clause, e.g. `{"status":"active"}` |
 | limit | number | Maximum rows to return |
 | offset | number | Number of rows to skip |
 | orderBy | string | Column to sort by |
-| orderDir | string | Sort direction: "ASC" or "DESC" |
+| orderDirection | string | Sort direction: "ASC" or "DESC" |
+| decrypt | string | Comma-separated field names to decrypt in the response (requires project field encryption key) |
 
 **Example:**
 ```
-GET /app-api/database/tables/customers/select?columns=id,name,email&limit=10&orderBy=created_at&orderDir=DESC
+GET /app-api/database/tables/customers/select?columns=id,name,email&limit=10&orderBy=created_at&orderDirection=DESC
 ```
+
+**Example with decryption:**
+```
+GET /app-api/database/tables/payments/select?decrypt=user_card_number,user_card_expiry
+```
+Returns rows with `user_card_number` and `user_card_expiry` decrypted. If no encryption key is set for the project, returns 400 with `No encryption key / secret found`.
 
 **Response:**
 ```json
@@ -277,11 +297,11 @@ Authorization: Bearer <jwt-token>
     "is_active": true,
     "role": "customer"
   },
-  "whereRaw": "created_at > '2024-01-01'",
   "orderBy": "created_at",
-  "orderDir": "DESC",
+  "orderDirection": "DESC",
   "limit": 50,
-  "offset": 0
+  "offset": 0,
+  "decrypt": ["user_card_number", "user_card_expiry"]
 }
 ```
 
@@ -289,11 +309,11 @@ Authorization: Bearer <jwt-token>
 |-------|------|-------------|
 | columns | array | Columns to select (default: all) |
 | where | object | Key-value pairs for WHERE clause |
-| whereRaw | string | Raw SQL WHERE condition |
 | orderBy | string | Column to sort by |
-| orderDir | string | Sort direction: "ASC" or "DESC" |
+| orderDirection | string | Sort direction: "ASC" or "DESC" |
 | limit | number | Maximum rows to return |
 | offset | number | Number of rows to skip |
+| decrypt | array | Field names to decrypt in each row (requires project field encryption key). If key not set, returns 400 with `No encryption key / secret found`. |
 
 **Response:**
 ```json
@@ -328,10 +348,20 @@ Authorization: Bearer <jwt-token>
     "name": "New Product",
     "price": 29.99,
     "description": "A great product",
-    "stock": 100
-  }
+    "stock": 100,
+    "user_card_number": "4111111111111111",
+    "user_card_expiry": "12/28"
+  },
+  "encrypt": ["user_card_number", "user_card_expiry"],
+  "decrypt": ["user_card_number", "user_card_expiry"]
 }
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| data | object | Key-value pairs for the row (required) |
+| encrypt | array | Field names to encrypt before storing. Those fields in `data` are encrypted at rest. Requires project field encryption key; if not set, returns 400 with `No encryption key / secret found`. |
+| decrypt | array | Field names to decrypt in the returned row. Optional; if present and key not set, returns 400. |
 
 **Response:**
 ```json
@@ -366,7 +396,7 @@ Authorization: Bearer <jwt-token>
 **Request Body:**
 ```json
 {
-  "data": [
+  "dataArray": [
     {
       "name": "Product A",
       "price": 19.99,
@@ -382,9 +412,15 @@ Authorization: Bearer <jwt-token>
       "price": 9.99,
       "stock": 100
     }
-  ]
+  ],
+  "encrypt": ["user_card_number", "user_card_expiry"]
 }
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| dataArray | array | Array of row objects (required) |
+| encrypt | array | Field names to encrypt before storing. Applied to each row. Requires project field encryption key; if not set, returns 400 with `No encryption key / secret found`. |
 
 **Response:**
 ```json
@@ -417,19 +453,21 @@ Authorization: Bearer <jwt-token>
 {
   "data": {
     "price": 24.99,
-    "stock": 75
+    "stock": 75,
+    "user_card_expiry": "06/29"
   },
   "where": {
     "id": 15
-  }
+  },
+  "encrypt": ["user_card_expiry"]
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | data | object | Key-value pairs of columns to update |
-| where | object | Conditions to match rows |
-| whereRaw | string | Raw SQL WHERE condition |
+| where | object | Conditions to match rows (required) |
+| encrypt | array | Field names to encrypt before storing. Those fields in `data` are encrypted at rest. Requires project field encryption key; if not set, returns 400 with `No encryption key / secret found`. |
 
 **Response:**
 ```json
