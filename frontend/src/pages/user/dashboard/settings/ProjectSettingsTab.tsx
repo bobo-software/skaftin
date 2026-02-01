@@ -282,6 +282,9 @@ const ProjectSettingsTab = () => {
                 <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
                   Used when you pass encrypt/decrypt in database insert/update/select payloads. Leave empty to keep current key.
                 </p>
+                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                  Create the key yourself: use a long random string, a password manager, or run <code className="px-1 py-0.5 rounded bg-dark-200 dark:bg-dark-600 font-mono text-[11px]">openssl rand -base64 32</code> in a terminal. Store it securely — if you lose it, encrypted data cannot be decrypted.
+                </p>
                 <div className="flex gap-2 mt-2">
                   <button
                     type="button"
