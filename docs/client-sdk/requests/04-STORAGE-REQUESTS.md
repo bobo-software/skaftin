@@ -200,15 +200,16 @@ Authorization: Bearer <jwt-token>
 
 ### 5. Upload File (Multipart Form)
 
-Upload a file using multipart form data.
+Upload a file using multipart form data (bucket is in the URL).
 
 **Endpoint:** `POST /app-api/storage/:bucketName/upload-multipart`
 
 **Headers:**
 ```
-Content-Type: multipart/form-data
 Authorization: Bearer <jwt-token>
 ```
+
+**Note:** Do not set `Content-Type` for multipart requests; the client (e.g. cURL with `-F`, or fetch with `FormData`) sets `multipart/form-data; boundary=...` automatically.
 
 **Form Data:**
 | Field | Type | Description |
@@ -230,22 +231,23 @@ curl -X POST "http://localhost:4006/app-api/storage/uploads/upload-multipart" \
 
 ### 6. Upload File (Form with Bucket)
 
-Upload a file with bucket and path in form data.
+Upload a file with bucket and path in form data. Use this when the bucket and path are not in the URL (e.g. dynamic bucket/path from the client).
 
 **Endpoint:** `POST /app-api/storage/files`
 
 **Headers:**
 ```
-Content-Type: multipart/form-data
 Authorization: Bearer <jwt-token>
 ```
 
+**Important:** For multipart uploads, do **not** set `Content-Type` yourself. Let the client set it automatically to `multipart/form-data; boundary=...` (e.g. when using `FormData` with `fetch`, or cURL’s `-F`). Setting `Content-Type: application/json` or omitting the boundary will cause the request to fail.
+
 **Form Data:**
-| Field | Type | Description |
-|-------|------|-------------|
-| file | File | The file to upload |
-| bucket | string | Target bucket name |
-| path | string | File path in bucket |
+| Field | Type   | Required | Description           |
+|-------|--------|----------|-----------------------|
+| file  | File   | Yes      | The file to upload    |
+| bucket| string | Yes      | Target bucket name    |
+| path  | string | Yes      | Full path in bucket (e.g. `vendors/12/logo.png`) |
 
 **cURL Example:**
 ```bash
@@ -254,6 +256,36 @@ curl -X POST "http://localhost:4006/app-api/storage/files" \
   -F "file=@/path/to/local/image.png" \
   -F "bucket=images" \
   -F "path=avatars/user-123.png"
+```
+
+**JavaScript (fetch + FormData) example:**
+```javascript
+const formData = new FormData();
+formData.append('file', file);        // File from input or Blob
+formData.append('bucket', 'images');
+formData.append('path', 'vendors/12/logo.png');
+
+// Do NOT set Content-Type header – browser sets multipart/form-data with boundary
+const response = await fetch('/app-api/storage/files', {
+  method: 'POST',
+  headers: { 'Authorization': `Bearer ${token}` },
+  body: formData,
+});
+```
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "message": "File uploaded successfully",
+  "data": {
+    "filePath": "vendors/12/logo.png",
+    "originalName": "Pasted image.png",
+    "size": 24576,
+    "contentType": "image/png",
+    "bucket": "images"
+  }
+}
 ```
 
 ---
@@ -295,14 +327,28 @@ Authorization: Bearer <jwt-token>
 ```
 
 **Query Parameters:**
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| bucket | string | Bucket name |
-| path | string | File path in bucket |
+| Parameter | Type   | Description |
+|-----------|--------|-------------|
+| bucket    | string | Bucket name |
+| path      | string | File path in bucket (URL-encoded if needed) |
+| returnUrl | string | If `true`, returns JSON `{ "url": "<signed-url>" }` instead of redirecting |
 
-**Example:**
+**Example (redirect to signed URL):**
 ```
 GET /app-api/storage/files/download?bucket=documents&path=reports/monthly-jan.pdf
+```
+
+**Example (get signed URL in response):**
+```
+GET /app-api/storage/files/download?bucket=documents&path=reports/monthly-jan.pdf&returnUrl=true
+```
+**Response when returnUrl=true:**
+```json
+{
+  "success": true,
+  "message": "Download URL generated",
+  "data": { "url": "https://minio.example.com/..." }
+}
 ```
 
 ---

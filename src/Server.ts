@@ -150,6 +150,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   if (contentType.includes('multipart/form-data')) {
     return next();
   }
+  // Skip JSON for POST /app-api/storage/files so multer can parse form-data
+  // (some clients or proxies omit Content-Type for FormData)
+  if (req.method === 'POST' && req.path === '/app-api/storage/files') {
+    return next();
+  }
   // Apply JSON parser for other content types
   jsonParser(req, res, next);
 });
@@ -158,6 +163,10 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const contentType = req.headers['content-type'] || '';
   // Skip body parsing for multipart/form-data (handled by multer)
   if (contentType.includes('multipart/form-data')) {
+    return next();
+  }
+  // Skip urlencoded for POST /app-api/storage/files (same as above)
+  if (req.method === 'POST' && req.path === '/app-api/storage/files') {
     return next();
   }
   // Apply urlencoded parser for other content types
