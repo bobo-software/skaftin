@@ -502,12 +502,19 @@ class StorageController {
     try {
       const projectId = StorageController.getProjectId(req);
 
-      // Get bucket and path from form data
-      const bucketName = req.body.bucket;
-      const filePath = req.body.path;
+      // Get bucket and path from form data (multer populates req.body for multipart)
+      const body = req.body ?? {};
+      const bucketName = body.bucket;
+      const filePath = body.path;
 
       if (!bucketName) {
-        return ResponseUtils.error(res, 'Bucket name is required in form data', null, null, 400);
+        return ResponseUtils.error(
+          res,
+          'Bucket name is required in form data. Send the request as multipart/form-data and do not set Content-Type manually (let the client set multipart/form-data with boundary).',
+          null,
+          null,
+          400
+        );
       }
 
       if (!filePath) {
