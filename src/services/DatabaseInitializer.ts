@@ -1058,6 +1058,129 @@ export class DatabaseInitializer {
   }
 
   /**
+   * Ensure payment provider and payment transaction tables exist in every project schema.
+   * Projects created before these tables were added to initializeProjectAuthTables never got them.
+   * Call this on startup so existing projects can use payment providers.
+   */
+  async ensureProjectPaymentTablesForAllProjects(): Promise<void> {
+    try {
+      const projectsResult = await this.pool.query(
+        'SELECT id, schema_name FROM skaftin_system_projects WHERE schema_name IS NOT NULL'
+      );
+
+      for (const project of projectsResult.rows) {
+        const schemaName = project.schema_name as string;
+
+        // Skip if schema doesn't exist (e.g. not yet created)
+        const schemaCheck = await this.pool.query(
+          `SELECT 1 FROM information_schema.schemata WHERE schema_name = $1`,
+          [schemaName]
+        );
+        if (schemaCheck.rows.length === 0) continue;
+
+        // Create skaftin_system_payment_providers if it doesn't exist
+        const providersExist = await this.pool.query(
+          `SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = 'skaftin_system_payment_providers'`,
+          [schemaName]
+        );
+
+        if (providersExist.rows.length === 0) {
+          await this.db.execute(sql.raw(`
+            CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_payment_providers (
+              id SERIAL PRIMARY KEY,
+              project_id INTEGER NOT NULL,
+              name VARCHAR(255) NOT NULL,
+              provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('payfast', 'fnb_pay')),
+              merchant_id VARCHAR(255),
+              merchant_key VARCHAR(255),
+              passphrase VARCHAR(255),
+              api_key TEXT,
+              api_secret TEXT,
+              public_key TEXT,
+              return_url VARCHAR(500),
+              cancel_url VARCHAR(500),
+              notify_url VARCHAR(500),
+              sandbox_mode BOOLEAN DEFAULT true,
+              is_active BOOLEAN DEFAULT true,
+              metadata JSONB DEFAULT '{}',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(project_id, name)
+            );
+          `));
+          await this.db.execute(sql.raw(`
+            CREATE INDEX IF NOT EXISTS idx_payment_providers_project_id ON ${schemaName}.skaftin_system_payment_providers(project_id);
+          `));
+          await this.db.execute(sql.raw(`
+            CREATE INDEX IF NOT EXISTS idx_payment_providers_is_active ON ${schemaName}.skaftin_system_payment_providers(is_active);
+          `));
+          console.log(`✅ skaftin_system_payment_providers created in schema: ${schemaName}`);
+        }
+
+        // Create skaftin_system_payment_transactions if it doesn't exist (depends on providers)
+        const transactionsExist = await this.pool.query(
+          `SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = 'skaftin_system_payment_transactions'`,
+          [schemaName]
+        );
+
+        if (transactionsExist.rows.length === 0) {
+          await this.db.execute(sql.raw(`
+            CREATE TABLE IF NOT EXISTS ${schemaName}.skaftin_system_payment_transactions (
+              id SERIAL PRIMARY KEY,
+              project_id INTEGER NOT NULL,
+              provider_id INTEGER REFERENCES ${schemaName}.skaftin_system_payment_providers(id) ON DELETE SET NULL,
+              transaction_id VARCHAR(100) NOT NULL UNIQUE,
+              external_payment_id VARCHAR(255),
+              amount DECIMAL(15, 2) NOT NULL,
+              currency VARCHAR(3) NOT NULL DEFAULT 'ZAR',
+              item_name VARCHAR(255) NOT NULL,
+              item_description TEXT,
+              customer_email VARCHAR(255),
+              customer_name VARCHAR(255),
+              customer_phone VARCHAR(50),
+              payment_type VARCHAR(20) NOT NULL DEFAULT 'once_off' CHECK (payment_type IN ('once_off', 'subscription')),
+              subscription_type VARCHAR(20) CHECK (subscription_type IN ('subscription', 'tokenization')),
+              frequency VARCHAR(20) CHECK (frequency IN ('monthly', 'quarterly', 'biannually', 'annual')),
+              cycles INTEGER,
+              return_url VARCHAR(500),
+              cancel_url VARCHAR(500),
+              payment_url TEXT,
+              status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'complete', 'failed', 'cancelled', 'refunded')),
+              status_message TEXT,
+              webhook_data JSONB,
+              metadata JSONB DEFAULT '{}',
+              paid_at TIMESTAMP,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+          `));
+          await this.db.execute(sql.raw(`
+            CREATE INDEX IF NOT EXISTS idx_payment_transactions_project_id ON ${schemaName}.skaftin_system_payment_transactions(project_id);
+          `));
+          await this.db.execute(sql.raw(`
+            CREATE INDEX IF NOT EXISTS idx_payment_transactions_provider_id ON ${schemaName}.skaftin_system_payment_transactions(provider_id);
+          `));
+          await this.db.execute(sql.raw(`
+            CREATE INDEX IF NOT EXISTS idx_payment_transactions_transaction_id ON ${schemaName}.skaftin_system_payment_transactions(transaction_id);
+          `));
+          await this.db.execute(sql.raw(`
+            CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON ${schemaName}.skaftin_system_payment_transactions(status);
+          `));
+          await this.db.execute(sql.raw(`
+            CREATE INDEX IF NOT EXISTS idx_payment_transactions_customer_email ON ${schemaName}.skaftin_system_payment_transactions(customer_email);
+          `));
+          console.log(`✅ skaftin_system_payment_transactions created in schema: ${schemaName}`);
+        }
+      }
+
+      console.log('✅ Project payment tables ensured for all projects');
+    } catch (err: any) {
+      console.error('❌ ensureProjectPaymentTablesForAllProjects:', err.message);
+      // Don't throw - allow server to continue
+    }
+  }
+
+  /**
    * Migrate payment provider types to include fnb_pay (all schemas that have the table).
    * Ensures live DBs get updated on startup (equivalent to migration 0025).
    */
@@ -2220,6 +2343,9 @@ export class DatabaseInitializer {
     await this.initializeApiCredentialsTable();
     await this.initializeAuthSettingsTable();
     await this.initializeFnbPaymentsTable();
+
+    // Ensure payment provider/transaction tables exist in every project schema (for projects created before they were added)
+    await this.ensureProjectPaymentTablesForAllProjects();
 
     // Apply payment-related migrations to all existing schemas (live DB update)
     await this.migratePaymentProviderTypes();
