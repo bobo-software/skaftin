@@ -129,7 +129,7 @@ class AppAuthController {
         );
 
         if (existingUser.rows.length > 0) {
-          return ResponseUtils.error(res, 'Email already registered', null, null, 409);
+          return ResponseUtils.error(res, '❌ Email already registered', null, null, 409);
         }
       }
 
@@ -142,7 +142,7 @@ class AppAuthController {
 
         if (existingPhoneUser.rows.length > 0) {
           console.log(`📱 Phone number already registered: ${JSON.stringify(existingPhoneUser.rows[0])}`);
-          return ResponseUtils.error(res, 'Phone number already registered', null, null, 409);
+          return ResponseUtils.error(res, '❌ Phone number already registered', null, null, 409);
         }
       }
 
