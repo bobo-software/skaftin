@@ -1,4 +1,5 @@
 import { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand, CreateBucketCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
+import { setBucketPublicRead } from '../../utils/s3BucketPolicy';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { Pool } from 'pg';
@@ -599,6 +600,12 @@ export async function handleStorageTool(
               });
               await s3Client.send(createCommand);
               console.log(`Created MinIO bucket: ${bucketName}`);
+              try {
+                await setBucketPublicRead(s3Client, bucketName);
+                console.log(`Set public read policy on bucket: ${bucketName}`);
+              } catch (policyErr: any) {
+                console.warn(`Could not set public read policy on ${bucketName}:`, policyErr.message);
+              }
             } else {
               // Some other error occurred
               throw headError;
@@ -608,6 +615,9 @@ export async function handleStorageTool(
           // If bucket already exists in MinIO, that's okay
           if (minioError.name === 'BucketAlreadyOwnedByYou' || minioError.name === 'BucketAlreadyExists') {
             console.log(`Bucket ${bucketName} already exists in MinIO`);
+            try {
+              await setBucketPublicRead(s3Client, bucketName);
+            } catch (_) {}
           } else {
             return {
               content: [{ 

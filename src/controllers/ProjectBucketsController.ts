@@ -16,6 +16,7 @@ import {
   CreateBucketCommand,
   HeadBucketCommand,
 } from '@aws-sdk/client-s3';
+import { setBucketPublicRead } from '../utils/s3BucketPolicy';
 
 // Initialize S3 client for MinIO
 const s3Client = new S3Client({
@@ -219,6 +220,14 @@ class ProjectBucketsController {
           console.error('Error creating MinIO bucket:', minioError);
           return ResponseUtils.error(res, `Failed to create bucket in storage: ${minioError.message}`, minioError);
         }
+      }
+
+      // Set bucket policy to public read so objects remain accessible
+      try {
+        await setBucketPublicRead(s3Client, bucketName.trim());
+        console.log(`Set public read policy on bucket: ${bucketName.trim()}`);
+      } catch (policyError: any) {
+        console.warn(`Could not set public read policy on bucket ${bucketName.trim()}:`, policyError.message);
       }
 
       // Create bucket record in database

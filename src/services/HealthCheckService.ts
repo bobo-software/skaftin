@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { S3Client, HeadBucketCommand, ListObjectsV2Command, CreateBucketCommand } from '@aws-sdk/client-s3';
+import { setBucketPublicRead } from '../utils/s3BucketPolicy';
 
 interface HealthStatus {
   status: 'healthy' | 'unhealthy' | 'warning' | 'pending';
@@ -78,7 +79,12 @@ export class HealthCheckService {
         if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
           await this.s3Client.send(new CreateBucketCommand({ Bucket: this.bucketName }));
           console.log(`✅ Created MinIO bucket: ${this.bucketName}`);
-          
+          try {
+            await setBucketPublicRead(this.s3Client, this.bucketName);
+            console.log(`✅ Set public read policy on bucket: ${this.bucketName}`);
+          } catch (policyErr: any) {
+            console.warn(`Could not set public read policy on ${this.bucketName}:`, policyErr.message);
+          }
           return {
             status: 'warning',
             message: 'Bucket was created',
