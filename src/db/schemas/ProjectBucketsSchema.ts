@@ -11,6 +11,7 @@ export const project_buckets = pgTable('skaftin_system_project_buckets', {
   project_id: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   bucket_name: varchar('bucket_name', { length: 255 }).notNull().unique(),
   description: text('description'),
+  access_policy: varchar('access_policy', { length: 20 }).notNull().default('public'), // 'private' or 'public'
   created_at: timestamp('created_at').defaultNow(),
   updated_at: timestamp('updated_at').defaultNow(),
 });

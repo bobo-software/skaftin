@@ -153,8 +153,19 @@ export interface ProjectBucket {
   project_id: number;
   bucket_name: string;
   description: string | null;
+  access_policy: 'private' | 'public';
   created_at: Date;
   updated_at: Date;
+  fileCount?: number;
+  totalSize?: number;
+  stats?: {
+    fileCount: number;
+    totalSize: number;
+    largestFile?: { key: string; size: number } | null;
+    oldestFile?: { key: string; lastModified: Date } | null;
+    newestFile?: { key: string; lastModified: Date } | null;
+  };
+  actualPolicy?: 'private' | 'public';
 }
 
 export interface CreateProjectDto {

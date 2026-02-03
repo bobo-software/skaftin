@@ -413,8 +413,10 @@ export class DatabaseInitializer {
           project_id INTEGER NOT NULL REFERENCES public.skaftin_system_projects(id) ON DELETE CASCADE,
           bucket_name VARCHAR(255) NOT NULL UNIQUE,
           description TEXT,
+          access_policy VARCHAR(20) NOT NULL DEFAULT 'public',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT check_access_policy CHECK (access_policy IN ('private', 'public'))
         );
       `);
     } catch (err: any) {
@@ -432,6 +434,48 @@ export class DatabaseInitializer {
       await this.db.execute(sql`
         CREATE INDEX IF NOT EXISTS idx_skaftin_system_project_buckets_bucket_name ON public.skaftin_system_project_buckets(bucket_name);
       `);
+      await this.db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_skaftin_system_project_buckets_access_policy ON public.skaftin_system_project_buckets(access_policy);
+      `);
+      
+      // Add access_policy column if it doesn't exist (for existing tables)
+      try {
+        await this.db.execute(sql.raw(`
+          DO $$
+          BEGIN
+            -- Add access_policy column if it doesn't exist
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns 
+              WHERE table_schema = 'public' 
+              AND table_name = 'skaftin_system_project_buckets' 
+              AND column_name = 'access_policy'
+            ) THEN
+              ALTER TABLE public.skaftin_system_project_buckets
+              ADD COLUMN access_policy VARCHAR(20) NOT NULL DEFAULT 'public';
+            END IF;
+            
+            -- Drop constraint if it exists (to recreate it)
+            IF EXISTS (
+              SELECT 1 FROM information_schema.table_constraints 
+              WHERE table_schema = 'public' 
+              AND table_name = 'skaftin_system_project_buckets' 
+              AND constraint_name = 'check_access_policy'
+            ) THEN
+              ALTER TABLE public.skaftin_system_project_buckets
+              DROP CONSTRAINT check_access_policy;
+            END IF;
+            
+            -- Add constraint
+            ALTER TABLE public.skaftin_system_project_buckets
+            ADD CONSTRAINT check_access_policy CHECK (access_policy IN ('private', 'public'));
+          END $$;
+        `));
+      } catch (err: any) {
+        // Column or constraint might already exist, that's okay
+        if (err.code !== '42701' && err.code !== '42P16' && err.code !== '23505') {
+          console.warn('⚠️ Could not add access_policy column/constraint:', err.message);
+        }
+      }
     } catch (err: any) {
       // Ignore if index already exists
       if (err.code !== '42P07') {

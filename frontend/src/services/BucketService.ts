@@ -26,14 +26,15 @@ class BucketService {
   static async createBucket(
     projectId: string,
     bucketName: string,
-    description?: string
+    description?: string,
+    accessPolicy: 'private' | 'public' = 'private'
   ): Promise<any> {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.post(
         ApiRoutes.PROJECT_BUCKETS.CREATE(projectId),
         token,
-        { bucketName, description }
+        { bucketName, description, accessPolicy }
       );
       
       return result;
@@ -50,14 +51,15 @@ class BucketService {
     projectId: string,
     bucketId: number,
     bucketName?: string,
-    description?: string
+    description?: string,
+    accessPolicy?: 'private' | 'public'
   ): Promise<any> {
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.put(
         ApiRoutes.PROJECT_BUCKETS.UPDATE(projectId, bucketId),
         token,
-        { bucketName, description }
+        { bucketName, description, accessPolicy }
       );
       
       return result;
@@ -85,6 +87,83 @@ class BucketService {
     } catch (error) {
       console.error('Error deleting bucket:', error);
       return { success: false, error: 'Failed to delete bucket' };
+    }
+  }
+
+  /**
+   * Get a single bucket by ID
+   */
+  static async getBucket(projectId: string, bucketId: number): Promise<any> {
+    try {
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.get(
+        ApiRoutes.PROJECT_BUCKETS.GET(projectId, bucketId),
+        token
+      );
+      
+      return result;
+    } catch (error) {
+      console.error('Error getting bucket:', error);
+      return { success: false, error: 'Failed to get bucket' };
+    }
+  }
+
+  /**
+   * Get bucket access policy
+   */
+  static async getBucketPolicy(projectId: string, bucketId: number): Promise<any> {
+    try {
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.get(
+        ApiRoutes.PROJECT_BUCKETS.GET_POLICY(projectId, bucketId),
+        token
+      );
+      
+      return result;
+    } catch (error) {
+      console.error('Error getting bucket policy:', error);
+      return { success: false, error: 'Failed to get bucket policy' };
+    }
+  }
+
+  /**
+   * Set bucket access policy
+   */
+  static async setBucketPolicy(
+    projectId: string,
+    bucketId: number,
+    accessPolicy: 'private' | 'public'
+  ): Promise<any> {
+    try {
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.put(
+        ApiRoutes.PROJECT_BUCKETS.SET_POLICY(projectId, bucketId),
+        token,
+        { accessPolicy }
+      );
+      
+      return result;
+    } catch (error) {
+      console.error('Error setting bucket policy:', error);
+      return { success: false, error: 'Failed to set bucket policy' };
+    }
+  }
+
+  /**
+   * Get bucket statistics
+   */
+  static async getBucketStats(projectId: string, bucketId: number): Promise<any> {
+    try {
+      const token = localStorage.getItem('skaftin-token') || '';
+      const result = await RequestUtils.get(
+        ApiRoutes.PROJECT_BUCKETS.GET_STATS(projectId, bucketId),
+        token
+      );
+      
+      return result;
+    } catch (error) {
+      console.error('Error getting bucket stats:', error);
+      return { success: false, error: 'Failed to get bucket statistics' };
     }
   }
 }

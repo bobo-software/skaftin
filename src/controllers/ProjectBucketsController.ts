@@ -16,7 +16,12 @@ import {
   CreateBucketCommand,
   HeadBucketCommand,
 } from '@aws-sdk/client-s3';
-import { setBucketPublicRead } from '../utils/s3BucketPolicy';
+import { 
+  setBucketPublicRead, 
+  setBucketAccessPolicy, 
+  getBucketPolicy,
+  BucketAccessPolicy 
+} from '../utils/s3BucketPolicy';
 
 // Initialize S3 client for MinIO
 const s3Client = new S3Client({
@@ -154,7 +159,9 @@ class ProjectBucketsController {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       const userId = req.user.userId;
-      const { bucketName, description } = req.body;
+      // Support both camelCase and snake_case
+      const { bucketName, description, accessPolicy, access_policy } = req.body;
+      const policy = accessPolicy || access_policy || 'public';
 
       if (isNaN(projectId)) {
         return ResponseUtils.error(res, 'Invalid project ID', null, null, 400);
@@ -176,6 +183,17 @@ class ProjectBucketsController {
         );
       }
 
+      // Validate access policy
+      if (policy && policy !== 'private' && policy !== 'public') {
+        return ResponseUtils.error(
+          res,
+          'Access policy must be either "private" or "public"',
+          null,
+          null,
+          400
+        );
+      }
+
       // Check project access
       const access = await ProjectBucketsController.checkProjectAccess(projectId, userId);
       if (!access.hasAccess) {
@@ -183,10 +201,25 @@ class ProjectBucketsController {
       }
 
       // Check if bucket name already exists
-      const existingBucket = await db
-        .select()
-        .from(project_buckets)
-        .where(eq(project_buckets.bucket_name, bucketName.trim()));
+      // Use raw SQL to avoid Drizzle schema issues if column doesn't exist yet
+      let existingBucket: any[] = [];
+      try {
+        existingBucket = await db
+          .select()
+          .from(project_buckets)
+          .where(eq(project_buckets.bucket_name, bucketName.trim()));
+      } catch (drizzleError: any) {
+        // If column doesn't exist, use raw query
+        if (drizzleError.message?.includes('access_policy')) {
+          const rawResult = await ProjectBucketsController.pool.query(
+            'SELECT id FROM skaftin_system_project_buckets WHERE bucket_name = $1',
+            [bucketName.trim()]
+          );
+          existingBucket = rawResult.rows;
+        } else {
+          throw drizzleError;
+        }
+      }
 
       if (existingBucket.length > 0) {
         return ResponseUtils.error(res, 'Bucket name already exists', null, null, 409);
@@ -222,25 +255,46 @@ class ProjectBucketsController {
         }
       }
 
-      // Set bucket policy to public read so objects remain accessible
+      // Set bucket access policy
+      const finalPolicy: BucketAccessPolicy = policy === 'public' ? 'public' : 'private';
       try {
-        await setBucketPublicRead(s3Client, bucketName.trim());
-        console.log(`Set public read policy on bucket: ${bucketName.trim()}`);
+        await setBucketAccessPolicy(s3Client, bucketName.trim(), finalPolicy);
+        console.log(`Set ${finalPolicy} access policy on bucket: ${bucketName.trim()}`);
       } catch (policyError: any) {
-        console.warn(`Could not set public read policy on bucket ${bucketName.trim()}:`, policyError.message);
+        console.warn(`Could not set access policy on bucket ${bucketName.trim()}:`, policyError.message);
       }
 
       // Create bucket record in database
-      const result = await db
-        .insert(project_buckets)
-        .values({
-          project_id: projectId,
-          bucket_name: bucketName.trim(),
-          description: description?.trim() || null,
-        })
-        .returning();
+      // Use raw SQL to handle case where access_policy column doesn't exist yet
+      let result;
+      try {
+        // Try with access_policy column first
+        const insertResult = await ProjectBucketsController.pool.query(
+          `INSERT INTO skaftin_system_project_buckets (project_id, bucket_name, description, access_policy)
+           VALUES ($1, $2, $3, $4)
+           RETURNING *`,
+          [projectId, bucketName.trim(), description?.trim() || null, finalPolicy]
+        );
+        result = insertResult.rows;
+      } catch (dbError: any) {
+        // If column doesn't exist, insert without it (backward compatibility)
+        if (dbError.message?.includes('access_policy') || dbError.code === '42703') {
+          console.warn('access_policy column not found, inserting without it. Please run migration.');
+          const insertResult = await ProjectBucketsController.pool.query(
+            `INSERT INTO skaftin_system_project_buckets (project_id, bucket_name, description)
+             VALUES ($1, $2, $3)
+             RETURNING *`,
+            [projectId, bucketName.trim(), description?.trim() || null]
+          );
+          result = insertResult.rows;
+        } else {
+          throw dbError;
+        }
+      }
 
-      ResponseUtils.success(res, 'Bucket created successfully', result[0], 201);
+      // Format result to match expected structure
+      const bucketResult = Array.isArray(result) ? result[0] : result;
+      ResponseUtils.success(res, 'Bucket created successfully', bucketResult, 201);
     } catch (error: any) {
       console.error('Error creating bucket:', error);
       
@@ -254,10 +308,10 @@ class ProjectBucketsController {
   }
 
   /**
-   * Update a bucket
-   * PUT /api/projects/:projectId/buckets/:bucketId
+   * Get a single bucket by ID
+   * GET /api/projects/:projectId/buckets/:bucketId
    */
-  static async updateBucket(req: SuperTokensAuthenticatedRequest, res: Response) {
+  static async getBucket(req: SuperTokensAuthenticatedRequest, res: Response) {
     if (!req.user || !req.user.userId) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
@@ -266,7 +320,6 @@ class ProjectBucketsController {
       const projectId = parseInt(req.params.projectId, 10);
       const bucketId = parseInt(req.params.bucketId, 10);
       const userId = req.user.userId;
-      const { bucketName, description } = req.body;
 
       if (isNaN(projectId) || isNaN(bucketId)) {
         return ResponseUtils.error(res, 'Invalid project ID or bucket ID', null, null, 400);
@@ -291,6 +344,329 @@ class ProjectBucketsController {
 
       if (bucket.length === 0) {
         return ResponseUtils.error(res, 'Bucket not found', null, null, 404);
+      }
+
+      // Get bucket statistics
+      let stats = {
+        fileCount: 0,
+        totalSize: 0,
+      };
+
+      try {
+        const listCommand = new ListObjectsV2Command({
+          Bucket: bucket[0].bucket_name,
+          MaxKeys: 1000,
+        });
+        const objects = await s3Client.send(listCommand);
+        stats = {
+          fileCount: objects.KeyCount || 0,
+          totalSize: objects.Contents?.reduce((sum, obj) => sum + (obj.Size || 0), 0) || 0,
+        };
+      } catch (error) {
+        // Bucket might not exist in MinIO yet
+      }
+
+      // Get actual policy from MinIO
+      let actualPolicy: BucketAccessPolicy = 'private';
+      try {
+        actualPolicy = await getBucketPolicy(s3Client, bucket[0].bucket_name);
+      } catch (error) {
+        // Policy might not be set
+      }
+
+      ResponseUtils.success(res, 'Bucket retrieved successfully', {
+        ...bucket[0],
+        stats,
+        actualPolicy,
+      });
+    } catch (error) {
+      console.error('Error getting bucket:', error);
+      ResponseUtils.error(res, 'Failed to get bucket', error);
+    }
+  }
+
+  /**
+   * Get bucket access policy
+   * GET /api/projects/:projectId/buckets/:bucketId/policy
+   */
+  static async getBucketPolicy(req: SuperTokensAuthenticatedRequest, res: Response) {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      const bucketId = parseInt(req.params.bucketId, 10);
+      const userId = req.user.userId;
+
+      if (isNaN(projectId) || isNaN(bucketId)) {
+        return ResponseUtils.error(res, 'Invalid project ID or bucket ID', null, null, 400);
+      }
+
+      // Check project access
+      const access = await ProjectBucketsController.checkProjectAccess(projectId, userId);
+      if (!access.hasAccess) {
+        return ResponseUtils.error(res, 'Project not found or access denied', null, null, 403);
+      }
+
+      // Get the bucket
+      const bucket = await db
+        .select()
+        .from(project_buckets)
+        .where(
+          and(
+            eq(project_buckets.id, bucketId),
+            eq(project_buckets.project_id, projectId)
+          )
+        );
+
+      if (bucket.length === 0) {
+        return ResponseUtils.error(res, 'Bucket not found', null, null, 404);
+      }
+
+      // Get actual policy from MinIO
+      const actualPolicy = await getBucketPolicy(s3Client, bucket[0].bucket_name);
+
+      ResponseUtils.success(res, 'Bucket policy retrieved successfully', {
+        bucketId,
+        bucketName: bucket[0].bucket_name,
+        storedPolicy: bucket[0].access_policy,
+        actualPolicy,
+      });
+    } catch (error) {
+      console.error('Error getting bucket policy:', error);
+      ResponseUtils.error(res, 'Failed to get bucket policy', error);
+    }
+  }
+
+  /**
+   * Set bucket access policy
+   * PUT /api/projects/:projectId/buckets/:bucketId/policy
+   */
+  static async setBucketPolicy(req: SuperTokensAuthenticatedRequest, res: Response) {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      const bucketId = parseInt(req.params.bucketId, 10);
+      const userId = req.user.userId;
+      const { accessPolicy } = req.body;
+
+      if (isNaN(projectId) || isNaN(bucketId)) {
+        return ResponseUtils.error(res, 'Invalid project ID or bucket ID', null, null, 400);
+      }
+
+      if (!accessPolicy || (accessPolicy !== 'private' && accessPolicy !== 'public')) {
+        return ResponseUtils.error(
+          res,
+          'Access policy must be either "private" or "public"',
+          null,
+          null,
+          400
+        );
+      }
+
+      // Check project access
+      const access = await ProjectBucketsController.checkProjectAccess(projectId, userId);
+      if (!access.hasAccess) {
+        return ResponseUtils.error(res, 'Project not found or access denied', null, null, 403);
+      }
+
+      // Get the bucket
+      const bucket = await db
+        .select()
+        .from(project_buckets)
+        .where(
+          and(
+            eq(project_buckets.id, bucketId),
+            eq(project_buckets.project_id, projectId)
+          )
+        );
+
+      if (bucket.length === 0) {
+        return ResponseUtils.error(res, 'Bucket not found', null, null, 404);
+      }
+
+      // Update MinIO policy
+      await setBucketAccessPolicy(s3Client, bucket[0].bucket_name, accessPolicy as BucketAccessPolicy);
+
+      // Update database
+      const result = await db
+        .update(project_buckets)
+        .set({
+          access_policy: accessPolicy,
+          updated_at: new Date(),
+        })
+        .where(
+          and(
+            eq(project_buckets.id, bucketId),
+            eq(project_buckets.project_id, projectId)
+          )
+        )
+        .returning();
+
+      ResponseUtils.success(res, 'Bucket policy updated successfully', {
+        ...result[0],
+        actualPolicy: accessPolicy,
+      });
+    } catch (error) {
+      console.error('Error setting bucket policy:', error);
+      ResponseUtils.error(res, 'Failed to set bucket policy', error);
+    }
+  }
+
+  /**
+   * Get bucket statistics
+   * GET /api/projects/:projectId/buckets/:bucketId/stats
+   */
+  static async getBucketStats(req: SuperTokensAuthenticatedRequest, res: Response) {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      const bucketId = parseInt(req.params.bucketId, 10);
+      const userId = req.user.userId;
+
+      if (isNaN(projectId) || isNaN(bucketId)) {
+        return ResponseUtils.error(res, 'Invalid project ID or bucket ID', null, null, 400);
+      }
+
+      // Check project access
+      const access = await ProjectBucketsController.checkProjectAccess(projectId, userId);
+      if (!access.hasAccess) {
+        return ResponseUtils.error(res, 'Project not found or access denied', null, null, 403);
+      }
+
+      // Get the bucket
+      const bucket = await db
+        .select()
+        .from(project_buckets)
+        .where(
+          and(
+            eq(project_buckets.id, bucketId),
+            eq(project_buckets.project_id, projectId)
+          )
+        );
+
+      if (bucket.length === 0) {
+        return ResponseUtils.error(res, 'Bucket not found', null, null, 404);
+      }
+
+      // Get bucket statistics from MinIO
+      let stats = {
+        fileCount: 0,
+        totalSize: 0,
+        largestFile: null as { key: string; size: number } | null,
+        oldestFile: null as { key: string; lastModified: Date } | null,
+        newestFile: null as { key: string; lastModified: Date } | null,
+      };
+
+      try {
+        const listCommand = new ListObjectsV2Command({
+          Bucket: bucket[0].bucket_name,
+          MaxKeys: 1000,
+        });
+        const objects = await s3Client.send(listCommand);
+
+        if (objects.Contents && objects.Contents.length > 0) {
+          stats.fileCount = objects.KeyCount || 0;
+          stats.totalSize = objects.Contents.reduce((sum, obj) => sum + (obj.Size || 0), 0);
+
+          // Find largest file
+          const largest = objects.Contents.reduce((max, obj) => 
+            (obj.Size || 0) > (max.Size || 0) ? obj : max
+          );
+          stats.largestFile = {
+            key: largest.Key || '',
+            size: largest.Size || 0,
+          };
+
+          // Find oldest and newest files
+          const sortedByDate = [...objects.Contents].sort((a, b) => 
+            (a.LastModified?.getTime() || 0) - (b.LastModified?.getTime() || 0)
+          );
+          if (sortedByDate.length > 0) {
+            stats.oldestFile = {
+              key: sortedByDate[0].Key || '',
+              lastModified: sortedByDate[0].LastModified || new Date(),
+            };
+            stats.newestFile = {
+              key: sortedByDate[sortedByDate.length - 1].Key || '',
+              lastModified: sortedByDate[sortedByDate.length - 1].LastModified || new Date(),
+            };
+          }
+        }
+      } catch (error) {
+        // Bucket might not exist in MinIO yet
+        console.warn('Error getting bucket stats:', error);
+      }
+
+      ResponseUtils.success(res, 'Bucket statistics retrieved successfully', {
+        bucketId,
+        bucketName: bucket[0].bucket_name,
+        ...stats,
+      });
+    } catch (error) {
+      console.error('Error getting bucket stats:', error);
+      ResponseUtils.error(res, 'Failed to get bucket statistics', error);
+    }
+  }
+
+  /**
+   * Update a bucket
+   * PUT /api/projects/:projectId/buckets/:bucketId
+   */
+  static async updateBucket(req: SuperTokensAuthenticatedRequest, res: Response) {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      const bucketId = parseInt(req.params.bucketId, 10);
+      const userId = req.user.userId;
+      const { bucketName, description, accessPolicy } = req.body;
+
+      if (isNaN(projectId) || isNaN(bucketId)) {
+        return ResponseUtils.error(res, 'Invalid project ID or bucket ID', null, null, 400);
+      }
+
+      // Check project access
+      const access = await ProjectBucketsController.checkProjectAccess(projectId, userId);
+      if (!access.hasAccess) {
+        return ResponseUtils.error(res, 'Project not found or access denied', null, null, 403);
+      }
+
+      // Get the bucket
+      const bucket = await db
+        .select()
+        .from(project_buckets)
+        .where(
+          and(
+            eq(project_buckets.id, bucketId),
+            eq(project_buckets.project_id, projectId)
+          )
+        );
+
+      if (bucket.length === 0) {
+        return ResponseUtils.error(res, 'Bucket not found', null, null, 404);
+      }
+
+      // Validate access policy if provided
+      if (accessPolicy !== undefined) {
+        if (accessPolicy !== 'private' && accessPolicy !== 'public') {
+          return ResponseUtils.error(
+            res,
+            'Access policy must be either "private" or "public"',
+            null,
+            null,
+            400
+          );
+        }
       }
 
       // Prepare update data
@@ -326,6 +702,16 @@ class ProjectBucketsController {
       }
       if (description !== undefined) {
         updateData.description = description?.trim() || null;
+      }
+      if (accessPolicy !== undefined) {
+        updateData.access_policy = accessPolicy;
+        // Update MinIO policy if changed
+        try {
+          await setBucketAccessPolicy(s3Client, bucket[0].bucket_name, accessPolicy as BucketAccessPolicy);
+          console.log(`Updated access policy to ${accessPolicy} for bucket: ${bucket[0].bucket_name}`);
+        } catch (policyError: any) {
+          console.warn(`Could not update access policy:`, policyError.message);
+        }
       }
       updateData.updated_at = new Date();
 

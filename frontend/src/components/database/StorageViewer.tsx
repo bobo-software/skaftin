@@ -14,7 +14,11 @@ import {
   FolderMinus,
   ChevronDown,
   Plus,
-  X
+  X,
+  Settings,
+  BarChart3,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import { AppButton, AppInput, DeleteConfirmModal } from '../ComponentsIndex';
 import StorageService from '../../services/StorageService';
@@ -60,7 +64,18 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
   const [showCreateBucketModal, setShowCreateBucketModal] = useState(false);
   const [newBucketName, setNewBucketName] = useState('');
   const [newBucketDescription, setNewBucketDescription] = useState('');
+  const [newBucketAccessPolicy, setNewBucketAccessPolicy] = useState<'private' | 'public'>('public');
   const [isCreatingBucket, setIsCreatingBucket] = useState(false);
+  const [showBucketSettingsModal, setShowBucketSettingsModal] = useState(false);
+  const [selectedBucketForSettings, setSelectedBucketForSettings] = useState<ProjectBucket | null>(null);
+  const [bucketStats, setBucketStats] = useState<any>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+  const [showEditBucketModal, setShowEditBucketModal] = useState(false);
+  const [showDeleteBucketModal, setShowDeleteBucketModal] = useState(false);
+  const [editBucketName, setEditBucketName] = useState('');
+  const [editBucketDescription, setEditBucketDescription] = useState('');
+  const [editBucketAccessPolicy, setEditBucketAccessPolicy] = useState<'private' | 'public'>('public');
+  const [isUpdatingBucket, setIsUpdatingBucket] = useState(false);
 
   // Load buckets
   const loadBuckets = useCallback(async () => {
@@ -440,13 +455,15 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
       const result = await BucketService.createBucket(
         projectId,
         newBucketName.trim(),
-        newBucketDescription.trim() || undefined
+        newBucketDescription.trim() || undefined,
+        newBucketAccessPolicy
       );
       
       if (result.success) {
         ToastUtils.success('Bucket created successfully');
         setNewBucketName('');
         setNewBucketDescription('');
+        setNewBucketAccessPolicy('public');
         setShowCreateBucketModal(false);
         await loadBuckets();
         // Auto-select the newly created bucket
@@ -462,6 +479,108 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
       ToastUtils.error('Error creating bucket');
     } finally {
       setIsCreatingBucket(false);
+    }
+  };
+
+  const loadBucketStats = async (bucketId: number) => {
+    setLoadingStats(true);
+    try {
+      const result = await BucketService.getBucketStats(projectId, bucketId);
+      if (result.success && result.data) {
+        setBucketStats(result.data);
+      }
+    } catch (error) {
+      console.error('Error loading bucket stats:', error);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  const handleUpdateBucket = async () => {
+    if (!selectedBucketForSettings) return;
+    if (!editBucketName.trim()) {
+      ToastUtils.error('Bucket name is required');
+      return;
+    }
+
+    setIsUpdatingBucket(true);
+    try {
+      const result = await BucketService.updateBucket(
+        projectId,
+        selectedBucketForSettings.id,
+        editBucketName.trim(),
+        editBucketDescription.trim() || undefined,
+        editBucketAccessPolicy
+      );
+      
+      if (result.success) {
+        ToastUtils.success('Bucket updated successfully');
+        setShowEditBucketModal(false);
+        await loadBuckets();
+        // Update selected bucket if it was renamed
+        if (editBucketName !== selectedBucketForSettings.bucket_name) {
+          setSelectedBucket(editBucketName);
+        }
+        onStorageChange?.();
+      } else {
+        ToastUtils.error(result.message || 'Failed to update bucket');
+      }
+    } catch (error) {
+      console.error('Error updating bucket:', error);
+      ToastUtils.error('Error updating bucket');
+    } finally {
+      setIsUpdatingBucket(false);
+    }
+  };
+
+  const handleDeleteBucket = async () => {
+    if (!selectedBucketForSettings) return;
+    
+    setIsUpdatingBucket(true);
+    try {
+      const result = await BucketService.deleteBucket(projectId, selectedBucketForSettings.id, false);
+      
+      if (result.success) {
+        ToastUtils.success('Bucket deleted successfully');
+        setShowDeleteBucketModal(false);
+        setShowBucketSettingsModal(false);
+        setSelectedBucket(null);
+        await loadBuckets();
+        onStorageChange?.();
+      } else {
+        ToastUtils.error(result.message || 'Failed to delete bucket');
+      }
+    } catch (error) {
+      console.error('Error deleting bucket:', error);
+      ToastUtils.error('Error deleting bucket');
+    } finally {
+      setIsUpdatingBucket(false);
+    }
+  };
+
+  const handlePolicyChange = async (newPolicy: 'private' | 'public') => {
+    if (!selectedBucketForSettings) return;
+    
+    try {
+      const result = await BucketService.setBucketPolicy(projectId, selectedBucketForSettings.id, newPolicy);
+      
+      if (result.success) {
+        ToastUtils.success(`Bucket policy set to ${newPolicy}`);
+        setEditBucketAccessPolicy(newPolicy);
+        await loadBuckets();
+        // Update the bucket in state
+        const updatedBuckets = buckets.map(b => 
+          b.id === selectedBucketForSettings.id 
+            ? { ...b, access_policy: newPolicy }
+            : b
+        );
+        setBuckets(updatedBuckets);
+      } else {
+        ToastUtils.error(result.message || 'Failed to update bucket policy');
+      }
+    } catch (error) {
+      console.error('Error updating bucket policy:', error);
+      ToastUtils.error('Error updating bucket policy');
     }
   };
 
@@ -504,24 +623,46 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
               No buckets found. Create your first bucket to get started.
             </div>
           ) : (
-            <div className="relative">
-              <select
-                value={selectedBucket || ''}
-                onChange={(e) => {
-                  setSelectedBucket(e.target.value);
-                  setCurrentPath(''); // Reset path when bucket changes
-                  setSelectedFiles(new Set());
-                }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                required
-              >
-                <option value="">-- Select a bucket --</option>
-                {buckets.map((bucket) => (
-                  <option key={bucket.id} value={bucket.bucket_name}>
-                    {bucket.bucket_name} {bucket.description ? `- ${bucket.description}` : ''}
-                  </option>
-                ))}
-              </select>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <select
+                  value={selectedBucket || ''}
+                  onChange={(e) => {
+                    setSelectedBucket(e.target.value);
+                    setCurrentPath(''); // Reset path when bucket changes
+                    setSelectedFiles(new Set());
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  required
+                >
+                  <option value="">-- Select a bucket --</option>
+                  {buckets.map((bucket) => (
+                    <option key={bucket.id} value={bucket.bucket_name}>
+                      {bucket.bucket_name} {bucket.description ? `- ${bucket.description}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedBucket && (
+                <AppButton
+                  onClick={() => {
+                    const bucket = buckets.find(b => b.bucket_name === selectedBucket);
+                    if (bucket) {
+                      setSelectedBucketForSettings(bucket);
+                      setEditBucketName(bucket.bucket_name);
+                      setEditBucketDescription(bucket.description || '');
+                      setEditBucketAccessPolicy(bucket.access_policy || 'public');
+                      setShowBucketSettingsModal(true);
+                      loadBucketStats(bucket.id);
+                    }
+                  }}
+                  variant="secondary"
+                  size="sm"
+                  className="flex items-center gap-2"
+                >
+                  <Settings className="w-4 h-4" />
+                </AppButton>
+              )}
             </div>
           )}
         </div>
@@ -968,6 +1109,24 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
                   placeholder="Bucket description"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Access Policy
+                </label>
+                <select
+                  value={newBucketAccessPolicy}
+                  onChange={(e) => setNewBucketAccessPolicy(e.target.value as 'private' | 'public')}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="public">Public - Files accessible without authentication</option>
+                  <option value="private">Private - Files require authentication</option>
+                </select>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {newBucketAccessPolicy === 'public' 
+                    ? 'Anyone with the file URL can access files in this bucket'
+                    : 'Only authenticated users can access files in this bucket'}
+                </p>
+              </div>
             </div>
             <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
               <AppButton
@@ -991,6 +1150,277 @@ const StorageViewer: React.FC<StorageViewerProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Bucket Settings Modal */}
+      {showBucketSettingsModal && selectedBucketForSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <Settings className="w-5 h-5" />
+                Bucket Settings: {selectedBucketForSettings.bucket_name}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowBucketSettingsModal(false);
+                  setSelectedBucketForSettings(null);
+                  setBucketStats(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Access Policy Section */}
+              <div className="border-b border-gray-200 dark:border-gray-700 pb-4">
+                <h4 className="text-md font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                  {editBucketAccessPolicy === 'public' ? (
+                    <Unlock className="w-5 h-5 text-green-500" />
+                  ) : (
+                    <Lock className="w-5 h-5 text-red-500" />
+                  )}
+                  Access Policy
+                </h4>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handlePolicyChange('public')}
+                      className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
+                        editBucketAccessPolicy === 'public'
+                          ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                          : 'border-gray-300 dark:border-gray-600 hover:border-green-400'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Unlock className={`w-5 h-5 ${editBucketAccessPolicy === 'public' ? 'text-green-600' : 'text-gray-400'}`} />
+                        <div className="text-left">
+                          <div className="font-medium text-gray-900 dark:text-white">Public</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Files accessible without authentication</div>
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => handlePolicyChange('private')}
+                      className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
+                        editBucketAccessPolicy === 'private'
+                          ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                          : 'border-gray-300 dark:border-gray-600 hover:border-red-400'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Lock className={`w-5 h-5 ${editBucketAccessPolicy === 'private' ? 'text-red-600' : 'text-gray-400'}`} />
+                        <div className="text-left">
+                          <div className="font-medium text-gray-900 dark:text-white">Private</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Files require authentication</div>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Current policy: <span className="font-medium">{editBucketAccessPolicy}</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Statistics Section */}
+              <div className="border-b border-gray-200 dark:border-gray-700 pb-4">
+                <h4 className="text-md font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5" />
+                  Statistics
+                </h4>
+                {loadingStats ? (
+                  <div className="flex items-center justify-center py-4">
+                    <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
+                  </div>
+                ) : bucketStats ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">File Count</div>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                        {bucketStats.fileCount || 0}
+                      </div>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Total Size</div>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                        {formatFileSize(bucketStats.totalSize || 0)}
+                      </div>
+                    </div>
+                    {bucketStats.largestFile && (
+                      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Largest File</div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-white truncate" title={bucketStats.largestFile.key}>
+                          {bucketStats.largestFile.key.split('/').pop()}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {formatFileSize(bucketStats.largestFile.size)}
+                        </div>
+                      </div>
+                    )}
+                    {bucketStats.newestFile && (
+                      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Newest File</div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-white truncate" title={bucketStats.newestFile.key}>
+                          {bucketStats.newestFile.key.split('/').pop()}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {formatDate(bucketStats.newestFile.lastModified?.toString())}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500 dark:text-gray-400">No statistics available</div>
+                )}
+              </div>
+
+              {/* Actions Section */}
+              <div>
+                <h4 className="text-md font-semibold text-gray-900 dark:text-white mb-3">Actions</h4>
+                <div className="flex flex-wrap gap-2">
+                  <AppButton
+                    onClick={() => {
+                      setShowEditBucketModal(true);
+                    }}
+                    variant="secondary"
+                    size="sm"
+                    className="flex items-center gap-2"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    Edit Bucket
+                  </AppButton>
+                  <AppButton
+                    onClick={() => {
+                      loadBucketStats(selectedBucketForSettings.id);
+                    }}
+                    variant="secondary"
+                    size="sm"
+                    className="flex items-center gap-2"
+                    disabled={loadingStats}
+                  >
+                    <RefreshCw className={`w-4 h-4 ${loadingStats ? 'animate-spin' : ''}`} />
+                    Refresh Stats
+                  </AppButton>
+                  <AppButton
+                    onClick={() => {
+                      setShowDeleteBucketModal(true);
+                    }}
+                    variant="danger"
+                    size="sm"
+                    className="flex items-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete Bucket
+                  </AppButton>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Bucket Modal */}
+      {showEditBucketModal && selectedBucketForSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Bucket</h3>
+              <button
+                onClick={() => {
+                  setShowEditBucketModal(false);
+                  if (selectedBucketForSettings) {
+                    setEditBucketName(selectedBucketForSettings.bucket_name);
+                    setEditBucketDescription(selectedBucketForSettings.description || '');
+                    setEditBucketAccessPolicy(selectedBucketForSettings.access_policy || 'public');
+                  }
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Bucket Name *
+                </label>
+                <AppInput
+                  type="text"
+                  value={editBucketName}
+                  onChange={(value) => setEditBucketName(String(value).toLowerCase())}
+                  placeholder="my-bucket-name"
+                  required
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  3-63 characters, lowercase alphanumeric with hyphens
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Description (optional)
+                </label>
+                <AppInput
+                  type="text"
+                  value={editBucketDescription}
+                  onChange={(value) => setEditBucketDescription(String(value))}
+                  placeholder="Bucket description"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Access Policy
+                </label>
+                <select
+                  value={editBucketAccessPolicy}
+                  onChange={(e) => setEditBucketAccessPolicy(e.target.value as 'private' | 'public')}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="public">Public - Files accessible without authentication</option>
+                  <option value="private">Private - Files require authentication</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
+              <AppButton
+                onClick={() => {
+                  setShowEditBucketModal(false);
+                  if (selectedBucketForSettings) {
+                    setEditBucketName(selectedBucketForSettings.bucket_name);
+                    setEditBucketDescription(selectedBucketForSettings.description || '');
+                    setEditBucketAccessPolicy(selectedBucketForSettings.access_policy || 'public');
+                  }
+                }}
+                variant="ghost"
+                disabled={isUpdatingBucket}
+              >
+                Cancel
+              </AppButton>
+              <AppButton
+                onClick={handleUpdateBucket}
+                variant="primary"
+                disabled={isUpdatingBucket || !editBucketName.trim()}
+              >
+                {isUpdatingBucket ? 'Updating...' : 'Update'}
+              </AppButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Bucket Modal */}
+      {showDeleteBucketModal && selectedBucketForSettings && (
+        <DeleteConfirmModal
+          isOpen={showDeleteBucketModal}
+          onClose={() => {
+            setShowDeleteBucketModal(false);
+          }}
+          onConfirm={handleDeleteBucket}
+          title="Delete Bucket"
+          message={`Are you sure you want to delete the bucket "${selectedBucketForSettings.bucket_name}"? This action cannot be undone. If the bucket contains files, you'll need to delete them first or use force delete.`}
+        />
       )}
     </div>
   );

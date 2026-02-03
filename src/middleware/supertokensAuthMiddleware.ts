@@ -4,7 +4,8 @@ import { SessionRequest } from "supertokens-node/framework/express";
 import ResponseUtils from '../utils/ResponseUtils';
 import { db } from '../db/drizzle.config';
 import { projects } from '../db/schemas/ProjectsSchema';
-import { eq, sql } from 'drizzle-orm';
+import { organization_members } from '../db/schemas/OrganizationsSchema';
+import { eq, sql, inArray } from 'drizzle-orm';
 
 export interface SuperTokensAuthenticatedRequest extends SessionRequest {
   user?: {
@@ -36,31 +37,65 @@ export const attachUserInfo = async (req: SuperTokensAuthenticatedRequest, res: 
     const sessionData = req.session.getAccessTokenPayload();
 
     // Fetch user's projects from database (user_id is now VARCHAR for SuperTokens)
-    // Include both owned projects and projects they're members of
+    // Include: owned projects, direct project memberships, and projects from organizations
+    
+    // 1. Projects owned by user
     const ownedProjectsQuery = await db
       .select({ id: projects.id })
       .from(projects)
       .where(eq(projects.user_id, userId));
     
-    // Fetch projects user is a member of
+    // 2. Projects user is a direct member of (via project_members table)
     const memberProjectsQuery = await db.execute(sql`
       SELECT DISTINCT project_id as id 
       FROM skaftin_system_project_members 
       WHERE user_id = ${userId}
     `);
     
+    // 3. Projects from organizations user belongs to
+    const userOrganizations = await db
+      .select({ 
+        organization_id: organization_members.organization_id,
+        role: organization_members.role
+      })
+      .from(organization_members)
+      .where(eq(organization_members.user_id, userId));
+    
+    let orgProjectIds: number[] = [];
+    let isOrgOwnerOrAdmin = false;
+    if (userOrganizations.length > 0) {
+      const orgIds = userOrganizations.map(org => org.organization_id);
+      const orgProjectsQuery = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(inArray(projects.organization_id, orgIds));
+      orgProjectIds = orgProjectsQuery.map(p => p.id);
+      
+      // Check if user is owner or admin of any organization
+      isOrgOwnerOrAdmin = userOrganizations.some(org => 
+        org.role === 'owner' || org.role === 'admin'
+      );
+    }
+    
     const ownedProjectIds = ownedProjectsQuery.map(p => p.id);
     const memberProjectIds = (memberProjectsQuery.rows as any[]).map(p => p.id);
     
-    // Combine both lists and remove duplicates
-    const projectIds = [...new Set([...ownedProjectIds, ...memberProjectIds])];
+    // Combine all lists and remove duplicates
+    const projectIds = [...new Set([...ownedProjectIds, ...memberProjectIds, ...orgProjectIds])];
+
+    // Determine user role: admin if SuperTokens says so, or if they're an org owner/admin
+    let userRole = sessionData.role || 'user';
+    if (isOrgOwnerOrAdmin && userRole !== 'admin') {
+      // Organization owners/admins get admin-level access
+      userRole = 'admin';
+    }
 
     // Attach user info to request
     req.user = {
       userId,
       email: sessionData.email,
       projectIds,
-      role: sessionData.role || 'user',
+      role: userRole,
     };
 
     next();

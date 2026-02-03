@@ -46,8 +46,12 @@ const ApiRoutes = {
   PROJECT_BUCKETS: {
     LIST: (projectId: string) => `/api/projects/${projectId}/buckets`,
     CREATE: (projectId: string) => `/api/projects/${projectId}/buckets`,
+    GET: (projectId: string, bucketId: number) => `/api/projects/${projectId}/buckets/${bucketId}`,
     UPDATE: (projectId: string, bucketId: number) => `/api/projects/${projectId}/buckets/${bucketId}`,
     DELETE: (projectId: string, bucketId: number) => `/api/projects/${projectId}/buckets/${bucketId}`,
+    GET_POLICY: (projectId: string, bucketId: number) => `/api/projects/${projectId}/buckets/${bucketId}/policy`,
+    SET_POLICY: (projectId: string, bucketId: number) => `/api/projects/${projectId}/buckets/${bucketId}/policy`,
+    GET_STATS: (projectId: string, bucketId: number) => `/api/projects/${projectId}/buckets/${bucketId}/stats`,
   },
   
   // Users routes

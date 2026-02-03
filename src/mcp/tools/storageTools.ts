@@ -223,6 +223,20 @@ export function createStorageTools(config: StorageToolsConfig): Tool[] {
       },
     },
     {
+      name: 'set_bucket_public_policy',
+      description: 'Set public read policy on a MinIO bucket so objects are accessible without signed URLs',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          bucketName: {
+            type: 'string',
+            description: 'Name of the bucket to make public (read-only for all objects)',
+          },
+        },
+        required: ['bucketName'],
+      },
+    },
+    {
       name: 'list_files',
       description: 'List files in a bucket',
       inputSchema: {
@@ -482,6 +496,27 @@ export async function handleStorageTool(
           };
         }
         throw error;
+      }
+    }
+
+    case 'set_bucket_public_policy': {
+      const { bucketName } = args;
+      if (!bucketName || typeof bucketName !== 'string') {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'bucketName is required' }, null, 2) }],
+          isError: true,
+        };
+      }
+      try {
+        await setBucketPublicRead(s3Client, bucketName);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, message: `Public read policy set on bucket: ${bucketName}` }, null, 2) }],
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: err?.message || 'Failed to set bucket policy' }, null, 2) }],
+          isError: true,
+        };
       }
     }
 
@@ -860,8 +895,11 @@ export const storageToolModule: ToolModule = {
       'upload_file',
       'download_file',
       'list_buckets',
+      'list_project_buckets',
       'create_bucket',
+      'create_project_bucket',
       'delete_bucket',
+      'set_bucket_public_policy',
       'list_files',
     ];
   },
@@ -872,8 +910,11 @@ export const storageToolModule: ToolModule = {
       'upload_file',
       'download_file',
       'list_buckets',
+      'list_project_buckets',
       'create_bucket',
+      'create_project_bucket',
       'delete_bucket',
+      'set_bucket_public_policy',
       'list_files',
     ];
   },
