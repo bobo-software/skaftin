@@ -166,8 +166,13 @@ class AppAuthController {
 
       if (signUpResponse.status !== "OK") {
         if (signUpResponse.status === "EMAIL_ALREADY_EXISTS_ERROR") {
-          const errorMsg = email ? 'Email already registered' : 'Phone number already registered';
-          return ResponseUtils.error(res, errorMsg, null, null, 409);
+          if (email) {
+            return ResponseUtils.error(res, 'Email already registered', null, null, 409);
+          } else if (phone) {
+            return ResponseUtils.error(res, 'Phone number already registered', null, null, 409);
+          } else {
+            return ResponseUtils.error(res, 'Email and phone number already registered', null, {signUpResponse}, 409);
+          }
         }
         console.error('SuperTokens signup failed:', signUpResponse);
         return ResponseUtils.error(res, 'Failed to create user account', null, null, 500);
