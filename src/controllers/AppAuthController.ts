@@ -141,7 +141,7 @@ class AppAuthController {
         );
 
         if (existingPhoneUser.rows.length > 0) {
-          return ResponseUtils.error(res, `❌ Phone number already registered: ${JSON.stringify(existingPhoneUser.rows[0])}`, null, null, 409);
+          return ResponseUtils.error(res, 'Phone number already registered:' , null, 409);
         }
       }
 
@@ -167,7 +167,7 @@ class AppAuthController {
       if (signUpResponse.status !== "OK") {
         if (signUpResponse.status === "EMAIL_ALREADY_EXISTS_ERROR") {
           const errorMsg = email ? 'Email already registered' : 'Phone number already registered';
-          return ResponseUtils.error(res, errorMsg, null, null, 409);
+          // return ResponseUtils.error(res, errorMsg, null, null, 409);
         }
         console.error('SuperTokens signup failed:', signUpResponse);
         return ResponseUtils.error(res, 'Failed to create user account', null, null, 500);
