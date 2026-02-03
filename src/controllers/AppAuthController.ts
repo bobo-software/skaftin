@@ -141,6 +141,7 @@ class AppAuthController {
         );
 
         if (existingPhoneUser.rows.length > 0) {
+          console.log(`📱 Phone number already registered: ${JSON.stringify(existingPhoneUser.rows[0])}`);
           return ResponseUtils.error(res, 'Phone number already registered', null, null, 409);
         }
       }
