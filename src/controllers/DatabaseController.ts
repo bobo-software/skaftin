@@ -12,7 +12,8 @@ import { normalizeQuery } from '../utils/SqlUtils';
 import { AuthUtils } from '../utils/AuthUtils';
 import bcrypt from 'bcrypt';
 import EmailPassword from 'supertokens-node/recipe/emailpassword';
-import { convertToRecipeUserId } from 'supertokens-node';
+import { convertToRecipeUserId, listUsersByAccountInfo } from 'supertokens-node';
+import Session from 'supertokens-node/recipe/session';
 import { createProjectScopedEmail } from '../middleware/appUserSuperTokensMiddleware';
 import { getProjectFieldEncryptionKey, getEncryptionKeyError } from '../utils/ProjectEncryptionKey';
 import { encryptFieldsInData, decryptFieldsInRows, decryptFieldsInRow } from '../utils/FieldEncryption';
@@ -1423,6 +1424,7 @@ class DatabaseController {
         ResponseUtils.success(res, message);
       } else {
         // Soft delete: set is_active = false and deleted_at = CURRENT_TIMESTAMP
+        // Also revoke SuperTokens sessions to prevent access
         let client: any = null;
         try {
           client = await DatabaseController.getProjectClient(projectId);
@@ -1431,16 +1433,75 @@ class DatabaseController {
             return ResponseUtils.error(res, 'Project not found', null, null, 404);
           }
 
-          // Check if user exists
-          const userCheck = await client.query(
-            `SELECT id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
+          // Get user info including email, phone, and supertokens_user_id
+          const userResult = await client.query(
+            `SELECT id, email, phone, supertokens_user_id FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
             [parseInt(userId)]
           );
 
-          if (userCheck.rows.length === 0) {
+          if (userResult.rows.length === 0) {
             client.release();
             client = null;
             return ResponseUtils.error(res, 'User not found', null, null, 404);
+          }
+
+          const user = userResult.rows[0];
+          const superTokensUserIdsToRevoke = new Set<string>();
+
+          // Revoke SuperTokens sessions for soft-deleted users
+          try {
+            // Revoke by supertokens_user_id if available
+            if (user.supertokens_user_id) {
+              superTokensUserIdsToRevoke.add(user.supertokens_user_id);
+            }
+
+            // Also search by project-scoped email to find any other SuperTokens accounts
+            if (user.email) {
+              try {
+                const projectScopedEmail = createProjectScopedEmail(user.email, projectIdInt);
+                const usersByEmail = await listUsersByAccountInfo('public', {
+                  email: projectScopedEmail,
+                });
+                
+                for (const stUser of usersByEmail) {
+                  superTokensUserIdsToRevoke.add(stUser.id);
+                }
+              } catch (emailSearchError: any) {
+                console.warn(`⚠️ Could not search SuperTokens by email for soft delete: ${emailSearchError.message}`);
+              }
+            }
+
+            // Also search by phone number
+            if (user.phone) {
+              try {
+                const usersByPhone = await listUsersByAccountInfo('public', {
+                  phoneNumber: user.phone,
+                });
+                
+                for (const stUser of usersByPhone) {
+                  superTokensUserIdsToRevoke.add(stUser.id);
+                }
+              } catch (phoneSearchError: any) {
+                console.warn(`⚠️ Could not search SuperTokens by phone for soft delete: ${phoneSearchError.message}`);
+              }
+            }
+
+            // Revoke all sessions for found SuperTokens users
+            for (const stUserId of Array.from(superTokensUserIdsToRevoke)) {
+              try {
+                await Session.revokeAllSessionsForUser(stUserId);
+                console.log(`✅ Revoked sessions for SuperTokens user (soft delete): ${stUserId}`);
+              } catch (sessionError: any) {
+                console.warn(`⚠️ Could not revoke sessions for ${stUserId}: ${sessionError.message}`);
+              }
+            }
+
+            if (superTokensUserIdsToRevoke.size > 0) {
+              console.log(`✅ Revoked sessions for ${superTokensUserIdsToRevoke.size} SuperTokens user(s) during soft delete`);
+            }
+          } catch (stCleanupError: any) {
+            console.warn('⚠️ Error during SuperTokens session revocation (soft delete):', stCleanupError);
+            // Continue with soft delete even if session revocation fails
           }
 
           // Soft delete: set is_active = false, deleted_at = CURRENT_TIMESTAMP

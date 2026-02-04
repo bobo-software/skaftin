@@ -1,7 +1,9 @@
 import { Pool, PoolClient } from 'pg';
 import { deleteUser, listUsersByAccountInfo } from 'supertokens-node';
 import EmailPassword from 'supertokens-node/recipe/emailpassword';
+import Session from 'supertokens-node/recipe/session';
 import bcrypt from 'bcrypt';
+import { createProjectScopedEmail } from '../middleware/appUserSuperTokensMiddleware';
 
 /**
  * Utility functions for authentication operations
@@ -288,6 +290,7 @@ export class AuthUtils {
 
   /**
    * Delete a user with transaction safety and cascade cleanup
+   * Includes comprehensive SuperTokens cleanup to prevent credential conflicts
    */
   static async deleteUserWithTransaction(
     pool: Pool,
@@ -304,10 +307,13 @@ export class AuthUtils {
     try {
       await client.query('BEGIN');
 
-      // 1. Get user info
+      // 1. Get user info and project ID
       const userResult = await client.query(
-        `SELECT * FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
-        [userId]
+        `SELECT u.*, p.id as project_id 
+         FROM ${schemaName}.skaftin_system_users u
+         JOIN skaftin_system_projects p ON p.schema_name = $1
+         WHERE u.id = $2`,
+        [schemaName, userId]
       );
 
       if (userResult.rows.length === 0) {
@@ -320,7 +326,9 @@ export class AuthUtils {
       }
 
       const user = userResult.rows[0];
+      const projectId = user.project_id;
       let deletedFromSuperTokens = false;
+      const superTokensUserIdsToDelete = new Set<string>();
 
       if (permanent) {
         // 2. Delete role assignments
@@ -366,25 +374,104 @@ export class AuthUtils {
           }
         }
 
-        // 4. Delete user from database
+        // 4. Comprehensive SuperTokens cleanup BEFORE deleting from database
+        // This ensures we can find users by email/phone before they're gone
+        try {
+          // 4a. Revoke all sessions first (if we have supertokens_user_id)
+          if (user.supertokens_user_id) {
+            try {
+              await Session.revokeAllSessionsForUser(user.supertokens_user_id);
+              console.log(`✅ Revoked all sessions for SuperTokens user: ${user.supertokens_user_id}`);
+            } catch (sessionError: any) {
+              console.warn(`⚠️ Could not revoke sessions: ${sessionError.message}`);
+            }
+            superTokensUserIdsToDelete.add(user.supertokens_user_id);
+          }
+
+          // 4b. Search and delete by project-scoped email (if email exists)
+          if (user.email) {
+            try {
+              const projectScopedEmail = createProjectScopedEmail(user.email, projectId);
+              const usersByEmail = await listUsersByAccountInfo('public', {
+                email: projectScopedEmail,
+              });
+              
+              for (const stUser of usersByEmail) {
+                if (!superTokensUserIdsToDelete.has(stUser.id)) {
+                  superTokensUserIdsToDelete.add(stUser.id);
+                  try {
+                    await Session.revokeAllSessionsForUser(stUser.id);
+                    console.log(`✅ Revoked sessions for SuperTokens user found by email: ${stUser.id}`);
+                  } catch (sessionError: any) {
+                    console.warn(`⚠️ Could not revoke sessions for ${stUser.id}: ${sessionError.message}`);
+                  }
+                }
+              }
+            } catch (emailSearchError: any) {
+              console.warn(`⚠️ Could not search SuperTokens by email: ${emailSearchError.message}`);
+            }
+          }
+
+          // 4c. Search and delete by phone number (if phone exists)
+          // Note: SuperTokens passwordless recipe uses phone numbers
+          if (user.phone) {
+            try {
+              const usersByPhone = await listUsersByAccountInfo('public', {
+                phoneNumber: user.phone,
+              });
+              
+              for (const stUser of usersByPhone) {
+                if (!superTokensUserIdsToDelete.has(stUser.id)) {
+                  superTokensUserIdsToDelete.add(stUser.id);
+                  try {
+                    await Session.revokeAllSessionsForUser(stUser.id);
+                    console.log(`✅ Revoked sessions for SuperTokens user found by phone: ${stUser.id}`);
+                  } catch (sessionError: any) {
+                    console.warn(`⚠️ Could not revoke sessions for ${stUser.id}: ${sessionError.message}`);
+                  }
+                }
+              }
+            } catch (phoneSearchError: any) {
+              console.warn(`⚠️ Could not search SuperTokens by phone: ${phoneSearchError.message}`);
+            }
+          }
+
+          // 4d. Delete all found SuperTokens users
+          for (const stUserId of Array.from(superTokensUserIdsToDelete)) {
+            try {
+              await deleteUser(stUserId);
+              deletedFromSuperTokens = true;
+              console.log(`✅ Deleted SuperTokens user: ${stUserId}`);
+            } catch (deleteError: any) {
+              console.error(`❌ Error deleting SuperTokens user ${stUserId}:`, deleteError.message);
+              // Continue with other deletions even if one fails
+            }
+          }
+
+          if (superTokensUserIdsToDelete.size > 0 && deletedFromSuperTokens) {
+            console.log(`✅ SuperTokens cleanup complete: deleted ${superTokensUserIdsToDelete.size} user(s)`);
+          }
+        } catch (stCleanupError: any) {
+          console.error('⚠️ Error during SuperTokens cleanup:', stCleanupError);
+          // Continue with database deletion even if SuperTokens cleanup fails
+        }
+
+        // 5. Delete user from database
         await client.query(
           `DELETE FROM ${schemaName}.skaftin_system_users WHERE id = $1`,
           [userId]
         );
-
-        // 5. Delete from SuperTokens if they have an ID
+      } else {
+        // Soft delete - still revoke sessions but don't delete SuperTokens users
         if (user.supertokens_user_id) {
           try {
-            await deleteUser(user.supertokens_user_id);
-            deletedFromSuperTokens = true;
-            console.log(`✅ Deleted SuperTokens user: ${user.supertokens_user_id}`);
-          } catch (stError: any) {
-            console.error('Error deleting SuperTokens user:', stError);
-            // Continue anyway - user is gone from database
+            await Session.revokeAllSessionsForUser(user.supertokens_user_id);
+            console.log(`✅ Revoked all sessions for SuperTokens user: ${user.supertokens_user_id}`);
+          } catch (sessionError: any) {
+            console.warn(`⚠️ Could not revoke sessions: ${sessionError.message}`);
           }
         }
-      } else {
-        // Soft delete
+
         await client.query(
           `UPDATE ${schemaName}.skaftin_system_users 
            SET is_active = false, updated_at = CURRENT_TIMESTAMP 
