@@ -1032,21 +1032,139 @@ class DatabaseController {
         values.push(data.is_active);
       }
 
-      if (updateFields.length === 0) {
+      // Allow updating only roles if no other fields are provided
+      const hasRoleUpdate = data.role_ids !== undefined;
+      if (updateFields.length === 0 && !hasRoleUpdate) {
         client.release();
         return ResponseUtils.error(res, 'No fields to update', null, null, 400);
       }
 
-      updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-      values.push(parseInt(userId));
+      // If only roles are being updated, still update updated_at timestamp
+      if (updateFields.length === 0 && hasRoleUpdate) {
+        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+        values.push(parseInt(userId));
+        const updateQuery = `
+          UPDATE ${schemaName}.skaftin_system_users
+          SET ${updateFields.join(', ')}
+          WHERE id = $1
+        `;
+        await client.query(updateQuery, values);
+      } else if (updateFields.length > 0) {
+        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+        values.push(parseInt(userId));
 
-      const updateQuery = `
-        UPDATE ${schemaName}.skaftin_system_users
-        SET ${updateFields.join(', ')}
-        WHERE id = $${paramIndex}
-      `;
+        const updateQuery = `
+          UPDATE ${schemaName}.skaftin_system_users
+          SET ${updateFields.join(', ')}
+          WHERE id = $${paramIndex}
+        `;
 
-      await client.query(updateQuery, values);
+        await client.query(updateQuery, values);
+      }
+
+      // Handle role updates if role_ids is provided
+      if (data.role_ids !== undefined) {
+        if (!Array.isArray(data.role_ids)) {
+          client.release();
+          return ResponseUtils.error(res, 'role_ids must be an array', null, null, 400);
+        }
+
+        // Validate that all role IDs exist
+        if (data.role_ids.length > 0) {
+          const roleIdsPlaceholder = data.role_ids.map((_: any, i: number) => `$${i + 1}`).join(', ');
+          const roleCheckResult = await client.query(
+            `SELECT id FROM ${schemaName}.skaftin_system_roles WHERE id IN (${roleIdsPlaceholder})`,
+            data.role_ids
+          );
+
+          if (roleCheckResult.rows.length !== data.role_ids.length) {
+            const foundRoleIds = roleCheckResult.rows.map((row: any) => row.id);
+            const invalidRoleIds = data.role_ids.filter((id: number) => !foundRoleIds.includes(id));
+            client.release();
+            return ResponseUtils.error(
+              res,
+              `Invalid role IDs: ${invalidRoleIds.join(', ')}`,
+              null,
+              null,
+              400
+            );
+          }
+        }
+
+        // Get current roles for the user
+        const currentRolesResult = await client.query(
+          `SELECT role_id FROM ${schemaName}.skaftin_system_user_roles WHERE app_user_id = $1`,
+          [parseInt(userId)]
+        );
+        const currentRoleIds = currentRolesResult.rows.map((row: any) => row.role_id);
+
+        // Determine which roles to add and remove
+        const newRoleIds = data.role_ids.map((id: number) => parseInt(String(id)));
+        const rolesToAdd = newRoleIds.filter((id: number) => !currentRoleIds.includes(id));
+        const rolesToRemove = currentRoleIds.filter((id: number) => !newRoleIds.includes(id));
+
+        // Get assigned_by value (use req.user.userId if available, otherwise null)
+        const assignedBy = ('user' in req && req.user && req.user.userId) 
+          ? parseInt(String(req.user.userId)) 
+          : null;
+
+        // Remove roles that are no longer assigned
+        if (rolesToRemove.length > 0) {
+          const removePlaceholder = rolesToRemove.map((_: any, i: number) => `$${i + 2}`).join(', ');
+          await client.query(
+            `DELETE FROM ${schemaName}.skaftin_system_user_roles 
+             WHERE app_user_id = $1 AND role_id IN (${removePlaceholder})`,
+            [parseInt(userId), ...rolesToRemove]
+          );
+        }
+
+        // Add new roles
+        if (rolesToAdd.length > 0) {
+          for (const roleId of rolesToAdd) {
+            try {
+              await client.query(
+                `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id, assigned_by)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (app_user_id, role_id) DO NOTHING`,
+                [parseInt(userId), roleId, assignedBy]
+              );
+            } catch (insertError: any) {
+              // Handle primary key sequence out-of-sync error
+              if (insertError.code === '23505' && insertError.constraint === 'skaftin_system_user_roles_pkey') {
+                console.warn(`⚠️ Sequence out of sync for ${schemaName}.skaftin_system_user_roles, fixing...`);
+
+                // Reset the sequence to the max ID + 1
+                await client.query(`
+                  SELECT setval(
+                    pg_get_serial_sequence('${schemaName}.skaftin_system_user_roles', 'id'),
+                    COALESCE((SELECT MAX(id) FROM ${schemaName}.skaftin_system_user_roles), 0) + 1,
+                    false
+                  )
+                `);
+
+                // Check again if assignment exists
+                const recheckAssignment = await client.query(
+                  `SELECT id FROM ${schemaName}.skaftin_system_user_roles 
+                   WHERE app_user_id = $1 AND role_id = $2`,
+                  [parseInt(userId), roleId]
+                );
+
+                if (recheckAssignment.rows.length === 0) {
+                  // Retry the insert after fixing the sequence
+                  await client.query(
+                    `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id, assigned_by)
+                     VALUES ($1, $2, $3)`,
+                    [parseInt(userId), roleId, assignedBy]
+                  );
+                }
+              } else {
+                // Re-throw if it's a different error
+                throw insertError;
+              }
+            }
+          }
+        }
+      }
 
       // Fetch the user with roles (excluding password)
       const userColumnsResult = await client.query(`
