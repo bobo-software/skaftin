@@ -1,12 +1,29 @@
 import { ReactElement } from 'react';
 import { Navigate } from 'react-router-dom';
-import { SessionAuth } from 'supertokens-auth-react/recipe/session';
+import { SessionAuth, useSessionContext } from 'supertokens-auth-react/recipe/session';
 import { useAppStore } from '../stores/StoresIndex';
 
 interface ProtectedRouteProps {
   children: ReactElement;
   requiredRoles?: string[]; // Role keys required to access this route
 }
+
+/**
+ * Component that handles redirect when session doesn't exist
+ */
+const SessionHandler = ({ children }: { children: ReactElement }) => {
+  const session = useSessionContext();
+
+  if (session.loading === true) {
+    return <LoadingScreen />;
+  }
+
+  if (session.doesSessionExist === false) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+};
 
 /**
  * Loading component for session check
@@ -86,11 +103,10 @@ const RoleChecker = ({ children, requiredRoles }: ProtectedRouteProps) => {
  */
 export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps) => {
   return (
-    <SessionAuth
-      requireAuth={true}
-      redirectToLogin={() => <Navigate to="/login" replace />}
-    >
-      <RoleChecker requiredRoles={requiredRoles}>{children}</RoleChecker>
+    <SessionAuth requireAuth={true}>
+      <SessionHandler>
+        <RoleChecker requiredRoles={requiredRoles}>{children}</RoleChecker>
+      </SessionHandler>
     </SessionAuth>
   );
 };
