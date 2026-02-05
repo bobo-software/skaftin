@@ -43,7 +43,7 @@ class InvitationsController {
       let query = `
         SELECT i.*, p.name as project_name
         FROM skaftin_system_project_invitations i
-        JOIN projects p ON i.project_id = p.id
+        JOIN skaftin_system_projects p ON i.project_id = p.id
         WHERE i.project_id = $1
       `;
       
@@ -83,7 +83,7 @@ class InvitationsController {
       const query = `
         SELECT pm.*, p.name as project_name
         FROM skaftin_system_project_members pm
-        JOIN projects p ON pm.project_id = p.id
+        JOIN skaftin_system_projects p ON pm.project_id = p.id
         WHERE pm.project_id = $1
         ORDER BY pm.joined_at DESC
       `;
@@ -345,7 +345,7 @@ class InvitationsController {
       const query = `
         SELECT i.*, p.name as project_name, p.description as project_description
         FROM skaftin_system_project_invitations i
-        JOIN projects p ON i.project_id = p.id
+        JOIN skaftin_system_projects p ON i.project_id = p.id
         WHERE i.invite_code = $1
       `;
 
