@@ -27,22 +27,29 @@ Get all buckets for the project.
 Authorization: Bearer <jwt-token>
 ```
 
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| includeStats | string | If `true`, includes `fileCount` and `totalSize` for each bucket |
+
 **Response:**
 ```json
 {
   "success": true,
   "data": [
     {
+      "id": 1,
       "name": "uploads",
-      "creationDate": "2024-01-15T10:30:00.000Z"
+      "description": "User uploads bucket",
+      "creationDate": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
     },
     {
+      "id": 2,
       "name": "images",
-      "creationDate": "2024-01-10T08:00:00.000Z"
-    },
-    {
-      "name": "documents",
-      "creationDate": "2024-01-05T14:20:00.000Z"
+      "description": "Image assets",
+      "creationDate": "2024-01-10T08:00:00.000Z",
+      "updatedAt": "2024-01-10T08:00:00.000Z"
     }
   ]
 }
@@ -81,20 +88,20 @@ GET /app-api/storage/uploads/files?prefix=images/&maxKeys=100
   "data": {
     "files": [
       {
-        "name": "images/logo.png",
+        "key": "images/logo.png",
         "size": 24576,
         "lastModified": "2024-01-15T10:30:00.000Z",
         "etag": "\"d41d8cd98f00b204e9800998ecf8427e\""
       },
       {
-        "name": "images/banner.jpg",
+        "key": "images/banner.jpg",
         "size": 102400,
         "lastModified": "2024-01-14T09:15:00.000Z",
         "etag": "\"a87ff679a2f3e71d9181a67b7542122c\""
       }
     ],
-    "isTruncated": false,
-    "keyCount": 2
+    "count": 2,
+    "bucket": "uploads"
   }
 }
 ```
@@ -138,12 +145,14 @@ Authorization: Bearer <jwt-token>
   "data": {
     "files": [
       {
-        "name": "reports/monthly-report-jan.pdf",
+        "key": "reports/monthly-report-jan.pdf",
         "size": 512000,
-        "lastModified": "2024-01-15T10:30:00.000Z"
+        "lastModified": "2024-01-15T10:30:00.000Z",
+        "etag": "\"d41d8cd98f00b204e9800998ecf8427e\""
       }
     ],
-    "totalResults": 1
+    "count": 1,
+    "bucket": "uploads"
   }
 }
 ```
@@ -165,7 +174,7 @@ Authorization: Bearer <jwt-token>
 **Request Body:**
 ```json
 {
-  "fileName": "documents/report.pdf",
+  "filePath": "documents/report.pdf",
   "fileContent": "JVBERi0xLjQKJeLjz9MKMyAwIG9ia...",
   "contentType": "application/pdf",
   "metadata": {
@@ -177,21 +186,21 @@ Authorization: Bearer <jwt-token>
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| fileName | string | Yes | Path and filename in bucket |
-| fileContent | string | Yes | Base64 encoded file content |
+| filePath | string | Yes | Path and filename in bucket |
+| fileContent | string | Yes | Base64 encoded file content (empty string allowed for folder markers) |
 | contentType | string | No | MIME type of the file |
 | metadata | object | No | Custom metadata key-value pairs |
 
-**Response:**
+**Response (201):**
 ```json
 {
   "success": true,
   "message": "File uploaded successfully",
   "data": {
-    "fileName": "documents/report.pdf",
+    "filePath": "documents/report.pdf",
     "size": 512000,
-    "etag": "\"d41d8cd98f00b204e9800998ecf8427e\"",
-    "url": "https://minio.example.com/project-bucket/documents/report.pdf"
+    "contentType": "application/pdf",
+    "bucket": "documents"
   }
 }
 ```
@@ -226,6 +235,23 @@ curl -X POST "http://localhost:4006/app-api/storage/uploads/upload-multipart" \
   -F "path=documents/" \
   -F 'metadata={"author":"John"}'
 ```
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "message": "File uploaded successfully",
+  "data": {
+    "fileName": "1704067200000-file.pdf",
+    "originalName": "file.pdf",
+    "size": 512000,
+    "contentType": "application/pdf",
+    "bucket": "uploads"
+  }
+}
+```
+
+**Note:** The filename is automatically prefixed with a timestamp to ensure uniqueness.
 
 ---
 
@@ -373,7 +399,11 @@ DELETE /app-api/storage/documents/files/old-report.pdf
 ```json
 {
   "success": true,
-  "message": "File deleted successfully"
+  "message": "File deleted successfully",
+  "data": {
+    "filePath": "old-report.pdf",
+    "bucket": "documents"
+  }
 }
 ```
 
@@ -396,6 +426,18 @@ Authorization: Bearer <jwt-token>
 {
   "bucket": "documents",
   "path": "reports/old-report.pdf"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "File deleted successfully",
+  "data": {
+    "filePath": "reports/old-report.pdf",
+    "bucket": "documents"
+  }
 }
 ```
 
@@ -422,7 +464,7 @@ GET /app-api/storage/documents/files/reports/monthly-jan.pdf/metadata
 {
   "success": true,
   "data": {
-    "fileName": "reports/monthly-jan.pdf",
+    "filePath": "reports/monthly-jan.pdf",
     "size": 512000,
     "contentType": "application/pdf",
     "lastModified": "2024-01-15T10:30:00.000Z",
@@ -430,7 +472,8 @@ GET /app-api/storage/documents/files/reports/monthly-jan.pdf/metadata
     "metadata": {
       "author": "John Doe",
       "department": "Finance"
-    }
+    },
+    "bucket": "documents"
   }
 }
 ```
@@ -465,6 +508,8 @@ Authorization: Bearer <jwt-token>
   "success": true,
   "message": "Folder renamed successfully",
   "data": {
+    "oldPath": "documents/2023/",
+    "newPath": "documents/archive-2023/",
     "filesRenamed": 15
   }
 }
@@ -494,6 +539,7 @@ DELETE /app-api/storage/documents/folders/old-reports/
   "success": true,
   "message": "Folder deleted successfully",
   "data": {
+    "folderPath": "old-reports/",
     "filesDeleted": 10
   }
 }
@@ -518,13 +564,126 @@ These endpoints only require an API key (no user JWT).
 | GET | `/:bucketName/files` | List files |
 | POST | `/:bucketName/search` | Search files |
 | POST | `/:bucketName/upload` | Upload file (base64) |
+| POST | `/:bucketName/upload-multipart` | Upload file (multipart) |
+| POST | `/files` | Upload file (form with bucket) |
 | GET | `/:bucketName/download/:filePath` | Download file |
+| GET | `/files/download` | Download file (query params) |
 
 **Example:**
 ```bash
 curl -X GET "http://localhost:4006/app-api-2/storage/uploads/files" \
   -H "x-api-key: your-api-key"
 ```
+
+---
+
+## Working with File URLs
+
+### Why Store Paths, Not URLs
+
+Presigned URLs expire (default: 1 hour). **Do not store presigned URLs in your database.** Instead, store the bucket and path, then generate a fresh URL when needed.
+
+**Bad (URL expires):**
+```json
+{
+  "vendorId": 12,
+  "logoUrl": "http://localhost:9020/phandapay/vendors/12/logo.png?X-Amz-Algorithm=...&X-Amz-Expires=3600&..."
+}
+```
+
+**Good (path never expires):**
+```json
+{
+  "vendorId": 12,
+  "logoBucket": "phandapay",
+  "logoPath": "vendors/12/logo.png"
+}
+```
+
+### Retrieving a Presigned URL
+
+When you need to display an image or download a file, generate a fresh presigned URL:
+
+**Request:**
+```
+GET /app-api/storage/files/download?bucket=phandapay&path=vendors/12/logo.png&returnUrl=true
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Download URL generated",
+  "data": {
+    "url": "http://localhost:9020/phandapay/vendors/12/logo.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=3600&..."
+  }
+}
+```
+
+### Example: Displaying a Vendor Logo
+
+**1. Store the path when uploading:**
+```javascript
+// Upload the file
+const formData = new FormData();
+formData.append('file', logoFile);
+formData.append('bucket', 'phandapay');
+formData.append('path', `vendors/${vendorId}/logo.png`);
+
+const uploadRes = await fetch('/app-api/storage/files', {
+  method: 'POST',
+  headers: { 'Authorization': `Bearer ${token}` },
+  body: formData,
+});
+
+// Save only the path to your database
+await saveVendor({
+  id: vendorId,
+  logoBucket: 'phandapay',
+  logoPath: `vendors/${vendorId}/logo.png`
+});
+```
+
+**2. Retrieve the URL when displaying:**
+```javascript
+// Get fresh presigned URL
+const urlRes = await fetch(
+  `/app-api/storage/files/download?bucket=${vendor.logoBucket}&path=${encodeURIComponent(vendor.logoPath)}&returnUrl=true`,
+  { headers: { 'Authorization': `Bearer ${token}` } }
+);
+const { data } = await urlRes.json();
+
+// Use the URL (valid for 1 hour)
+const imageUrl = data.url;
+```
+
+**3. In React/Vue, fetch URL on component mount:**
+```javascript
+// React example
+const [logoUrl, setLogoUrl] = useState(null);
+
+useEffect(() => {
+  if (vendor.logoPath) {
+    fetch(`/app-api/storage/files/download?bucket=${vendor.logoBucket}&path=${encodeURIComponent(vendor.logoPath)}&returnUrl=true`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(({ data }) => setLogoUrl(data.url));
+  }
+}, [vendor.logoBucket, vendor.logoPath]);
+
+return <img src={logoUrl} alt="Vendor logo" />;
+```
+
+### Alternative: Direct Download (No URL)
+
+If you don't need the URL (e.g., for direct file downloads), omit `returnUrl`:
+
+```
+GET /app-api/storage/files/download?bucket=phandapay&path=vendors/12/logo.png
+```
+
+This redirects directly to the file (302 redirect to presigned URL).
 
 ---
 
