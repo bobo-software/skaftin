@@ -1,3 +1,5 @@
+import { signOut as superTokensSignOut } from 'supertokens-auth-react/recipe/session';
+
 // Use empty string to make requests relative (will use Vite proxy)
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
@@ -10,7 +12,7 @@ interface AuthResponse {
       email: string;
       name?: string;
     };
-    token: string;
+    token?: string;
   };
   error?: string;
 }
@@ -22,50 +24,66 @@ interface LoginResult {
     email: string;
     name?: string;
   };
-  token?: string;
   error?: string;
 }
 
+/**
+ * AuthService - Handles authentication operations
+ * 
+ * NOTE: Platform user auth (login/register/logout) now uses SuperTokens directly.
+ * Use the exported functions from supertokens.ts for platform auth.
+ * 
+ * This service is primarily for:
+ * - App user authentication (different from platform users)
+ * - Password reset flows
+ * - Legacy compatibility
+ */
 class AuthService {
-  private getToken(): string | null {
-    return localStorage.getItem('skaftin-token');
-  }
-
-  storeToken(token: string): void {
-    localStorage.setItem('skaftin-token', token);
-  }
-
-  removeToken(): void {
-    localStorage.removeItem('skaftin-token');
-  }
-
+  /**
+   * Get headers for authenticated API requests
+   * Uses credentials: 'include' to send HTTP-only cookies
+   * No more localStorage tokens!
+   */
   getAuthHeaders(): Record<string, string> {
-    const token = this.getToken();
     return {
       'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
     };
   }
 
+  /**
+   * Logout using SuperTokens
+   * This properly clears HTTP-only cookies and revokes the session
+   */
+  async logout(): Promise<void> {
+    try {
+      await superTokensSignOut();
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  }
+
+  /**
+   * @deprecated Use SuperTokens signIn/signUp directly instead
+   * Kept for backward compatibility with some components
+   */
   async login(email: string, password: string): Promise<LoginResult> {
+    console.warn('AuthService.login is deprecated. Use signIn from supertokens.ts instead.');
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include', // CRITICAL: Send/receive cookies
+        credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
 
       const data: AuthResponse = await response.json();
 
       if (response.ok && data.success && data.data) {
-        this.storeToken(data.data.token);
         return {
           success: true,
           user: data.data.user,
-          token: data.data.token,
         };
       } else {
         return {
@@ -82,25 +100,28 @@ class AuthService {
     }
   }
 
+  /**
+   * @deprecated Use SuperTokens signIn/signUp directly instead
+   * Kept for backward compatibility with some components
+   */
   async register(email: string, password: string, fullName?: string): Promise<LoginResult> {
+    console.warn('AuthService.register is deprecated. Use signUp from supertokens.ts instead.');
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include', // CRITICAL: Send/receive cookies
+        credentials: 'include',
         body: JSON.stringify({ email, password, full_name: fullName }),
       });
 
       const data: AuthResponse = await response.json();
 
       if (response.ok && data.success && data.data) {
-        this.storeToken(data.data.token);
         return {
           success: true,
           user: data.data.user,
-          token: data.data.token,
         };
       } else {
         return {
@@ -117,28 +138,12 @@ class AuthService {
     }
   }
 
-  async logout(): Promise<void> {
-    // Call backend to revoke SuperTokens session
-    try {
-      await fetch(`${API_BASE_URL}/api/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-    
-    // Clear localStorage
-    this.removeToken();
-  }
-
-  isAuthenticated(): boolean {
-    return !!this.getToken();
-  }
-
   /**
    * App user login with multiple method support
    * Supports: email, phone, custom_field_1, custom_field_2
+   * 
+   * Note: App users use header-based tokens (returned in response) or HTTP-only cookies
+   * No localStorage storage - tokens are managed via Authorization header or cookies
    */
   async appUserLogin(
     username: string, 
@@ -173,15 +178,11 @@ class AuthService {
       const data: AuthResponse = await response.json();
 
       if (response.ok && data.success && data.data) {
-        // App users use session.accessToken instead of data.token
-        const accessToken = (data.data as any).session?.accessToken || data.data.token;
-        if (accessToken) {
-          this.storeToken(accessToken);
-        }
+        // Session is managed via HTTP-only cookies (credentials: 'include')
+        // For header-based auth, the token is returned in the response for the client to use
         return {
           success: true,
           user: data.data.user,
-          token: accessToken,
         };
       } else {
         return {
@@ -201,6 +202,8 @@ class AuthService {
   /**
    * Single credential login (passwordless)
    * Supports: email, phone, custom_field_1, custom_field_2
+   * 
+   * Note: Session is managed via HTTP-only cookies - no localStorage storage
    */
   async singleCredentialLogin(
     credential: string,
@@ -234,15 +237,10 @@ class AuthService {
       const data: AuthResponse = await response.json();
 
       if (response.ok && data.success && data.data) {
-        // App users use session.accessToken instead of data.token
-        const accessToken = (data.data as any).session?.accessToken || data.data.token;
-        if (accessToken) {
-          this.storeToken(accessToken);
-        }
+        // Session is managed via HTTP-only cookies (credentials: 'include')
         return {
           success: true,
           user: data.data.user,
-          token: accessToken,
         };
       } else {
         return {
@@ -261,6 +259,8 @@ class AuthService {
 
   /**
    * App user registration with custom fields support
+   * 
+   * Note: Session is managed via HTTP-only cookies - no localStorage storage
    */
   async appUserRegister(
     name: string,
@@ -309,15 +309,10 @@ class AuthService {
       const data: AuthResponse = await response.json();
 
       if (response.ok && data.success && data.data) {
-        // App users use session.accessToken instead of data.token
-        const accessToken = (data.data as any).session?.accessToken || data.data.token;
-        if (accessToken) {
-          this.storeToken(accessToken);
-        }
+        // Session is managed via HTTP-only cookies (credentials: 'include')
         return {
           success: true,
           user: data.data.user,
-          token: accessToken,
         };
       } else {
         return {
