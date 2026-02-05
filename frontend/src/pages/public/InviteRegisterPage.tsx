@@ -65,7 +65,7 @@ const InviteRegisterPage = () => {
       // Register user
       const response = await AuthService.register(formData.email, formData.password);
 
-      if (response.success && response.user && response.token) {
+      if (response.success && response.user) {
         // Set user in store
         setUser({
           id: response.user.id,
