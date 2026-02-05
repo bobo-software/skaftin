@@ -18,10 +18,17 @@ export interface SuperTokensAuthenticatedRequest extends SessionRequest {
 
 /**
  * Middleware to verify SuperTokens session and attach user info to request
+ * 
+ * CSRF Protection:
+ * - Enabled for production (cookie-based auth requires CSRF protection)
+ * - Disabled in development for easier testing
+ * - For header-based auth (app users), CSRF is not needed
  */
+const isProduction = process.env.NODE_ENV === 'production';
+
 export const authenticateSession = verifySession({
   sessionRequired: true,
-  antiCsrfCheck: false, // Disable CSRF for development (re-enable in production)
+  antiCsrfCheck: isProduction, // Enable CSRF protection in production
 });
 
 /**

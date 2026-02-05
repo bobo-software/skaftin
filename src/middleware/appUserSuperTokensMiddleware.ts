@@ -24,10 +24,15 @@ export interface AppUserSuperTokensRequest extends SessionRequest {
  * Middleware to verify SuperTokens session for app users
  * Uses header-based tokens (not cookies) for app user authentication
  * Token transfer method is configured in supertokens.ts
+ * 
+ * CSRF Protection: Disabled for app users because:
+ * - App users use header-based tokens (Authorization: Bearer)
+ * - Header-based auth is inherently CSRF-safe (no automatic cookie sending)
+ * - CSRF protection is only needed for cookie-based browser authentication
  */
 export const verifyAppUserSession = verifySession({
   sessionRequired: true,
-  antiCsrfCheck: false, // CSRF handled via tokens
+  antiCsrfCheck: false, // CSRF not needed for header-based token auth
 });
 
 /**
