@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Routes, Route, Navigate } from 'react-router-dom';
 import { useAppStore, useProjectStore } from '../../../stores/StoresIndex';
-import ProjectSidebar from '../../../components/dashboard/ProjectSidebar';
-import DashboardNavbar from '../../../components/dashboard/DashboardNavbar';
+import { DashboardNavbar, ProjectSidebar } from '@components/ComponentsIndex';
 
 import ProjectDatabaseTab from './database/ProjectDatabaseTab';
 import ProjectStorageTab from './storage/ProjectStoageTab';

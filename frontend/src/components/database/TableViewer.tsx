@@ -484,7 +484,7 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
       <div className="flex h-[88vh]">
         {/* Tables Sidebar */}
         <div className="w-30 flex-shrink-0 border-r border-dark-200 dark:border-dark-700 bg-dark-50 dark:bg-dark-800">
-          <div className="h-full flex flex-col">
+          <div className="h-full flex flex-col p-2">
             {/* Sidebar Header */}
             <div className="border-b border-dark-200 dark:border-dark-700 flex-shrink-0">
               <div className="flex items-center justify-between mb-3">

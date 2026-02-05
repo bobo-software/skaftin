@@ -13,6 +13,7 @@ import {
 import { useAppStore } from '../stores/StoresIndex';
 import ProjectService from '../services/ProjectService';
 import AuthService from '../services/AuthService';
+import { AppButton } from '@/components/ComponentsIndex';
 
 const ProjectsPage = () => {
   const navigate = useNavigate();
@@ -195,6 +196,15 @@ const ProjectsPage = () => {
             <p className="text-dark-600 dark:text-dark-400 mb-6 max-w-md mx-auto">
               Get started by creating your first project. Each project gets its own database schema and file storage.
             </p>
+            <AppButton
+              onClick={() => setShowCreateModal(true)}
+              variant="primary"
+              size="lg"
+              icon={<Plus className="w-5 h-5" />}
+            >
+              <Plus className="w-5 h-5" />
+              <span>Create Project</span>
+            </AppButton>
             <button
               onClick={() => setShowCreateModal(true)}
               className="btn-primary inline-flex items-center space-x-2"

@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "skaftin_mcp": {
-      "command": "npx",
+      "command": "/home/bobo/.nvm/versions/node/v25.3.0/bin/npx",
       "args": ["tsx", "src/mcp-server.ts"],
       "env": {
         "NODE_ENV": "development"

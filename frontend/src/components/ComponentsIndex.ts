@@ -63,3 +63,8 @@ export { default as NodeWrapper } from './workflows/NodeWrapper';
 export { default as NodeActions } from './workflows/NodeActions';
 export { SchemaIcon } from './workflows/SchemaIcon';
 export { NodeOutputTypeIndicator } from './workflows/NodeOutputTypeIndicator';
+
+// ---------- Items ---------- //
+export { default as DashboardStatItems } from './items/DashboardStatItems';
+export { default as ProjectTileItem } from './items/ProjectTileItem';
+export {  default as SidebarItem   } from './items/SidebarItem';

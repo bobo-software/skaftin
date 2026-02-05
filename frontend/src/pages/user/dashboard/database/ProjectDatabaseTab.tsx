@@ -1,18 +1,7 @@
 import { useState } from 'react';
 import { useProjectStore } from '../../../../stores/StoresIndex';
-import { 
-  Database, 
-  Code,
-  Table,
-  Sparkles,
-  Clock
-} from 'lucide-react';
-import { 
-  TableViewer, 
-  SqlEditor,
-  GraphQLEditor,
-  CronManager
-} from '../../../../components/ComponentsIndex';
+import { Database, Code, Table, Sparkles, Clock} from 'lucide-react';
+import { TableViewer, SqlEditor,GraphQLEditor, CronManager } from '@components/ComponentsIndex';
 
 interface ProjectDatabaseTabProps {
   projectId: string;

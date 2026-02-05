@@ -2,8 +2,8 @@ import { useAppStore, useProjectStore, useOrganizationStore } from "../../../sto
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import ProjectCreationLoadingPage from "./ProjectCreationLoadingPage";
-import { Database, FolderOpen, Plus, User, LogOut, Edit3, Trash2, Calendar, Cloud, Code, BarChart3, Activity } from "lucide-react";
-import { AppButton, OrganizationSwitcher } from "../../../components/ComponentsIndex";
+import { Database, FolderOpen, Plus, User, LogOut } from "lucide-react";
+import { AppButton, AppText, OrganizationSwitcher, DashboardStatItems, ProjectTileItem } from "../../../components/ComponentsIndex";
 import CreateProjectModal from "../../../components/modals/CreateProjectModal";
 import RequestUtils from "../../../utils/RequestUtils";
 import ApiRoutes from "../../../constants/ApiRoutes";
@@ -158,7 +158,14 @@ return (
         </div>
         <div>
           <h1 className="text-2xl font-bold text-dark-900 dark:text-white">Skaftin</h1>
-          <p className="text-sm text-dark-600 dark:text-dark-300">Your Projects</p>
+          <AppText
+            as="h1"
+            size="sm"
+            color="primary"
+            className="text-dark-900 dark:text-white"
+          >
+            Your Projects
+          </AppText>
         </div>
         
         {/* Organization Switcher */}
@@ -189,19 +196,14 @@ return (
 <main className="max-w-7xl mx-auto px-6 py-8">
   <div className="flex items-center justify-between mb-8">
     <div>
-      <h2 className="text-3xl font-bold text-dark-900 dark:text-white mb-2">
+      <AppText as="h2" size="2xl" weight="bold" color="white">
         Your Projects
-      </h2>
-      <p className="text-dark-600 dark:text-dark-300">
+      </AppText>
+      <AppText as="p" size="sm" color="white" >
         Manage your database projects and storage buckets
-      </p>
+      </AppText>
     </div>
-    
-    <AppButton
-      onClick={handleCreateProject}
-      icon={<Plus className="w-5 h-5" />}
-      size="lg"
-    >
+    <AppButton size="md" variant="primary" onClick={handleCreateProject} icon={<Plus className="w-5 h-5" />}>
       Create Project
     </AppButton>
   </div>
@@ -222,116 +224,7 @@ return (
 
   {/* Dashboard Metrics */}
   {dashboardStats && (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-      <div className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-dark-600 dark:text-dark-300 mb-1">Total Projects</p>
-            <p className="text-3xl font-bold text-dark-900 dark:text-white">
-              {loadingStats ? (
-                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-              ) : (
-                dashboardStats.totalProjects
-              )}
-            </p>
-          </div>
-          <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center">
-            <Database className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-dark-600 dark:text-dark-300 mb-1">Total Tables</p>
-            <p className="text-3xl font-bold text-dark-900 dark:text-white">
-              {loadingStats ? (
-                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-              ) : (
-                dashboardStats.totalTables
-              )}
-            </p>
-          </div>
-          <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-            <Database className="w-6 h-6 text-green-600 dark:text-green-400" />
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-dark-600 dark:text-dark-300 mb-1">Total Files</p>
-            <p className="text-3xl font-bold text-dark-900 dark:text-white">
-              {loadingStats ? (
-                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-              ) : (
-                dashboardStats.totalFiles
-              )}
-            </p>
-          </div>
-          <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
-            <Cloud className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-dark-600 dark:text-dark-300 mb-1">API Calls</p>
-            <p className="text-3xl font-bold text-dark-900 dark:text-white">
-              {loadingStats ? (
-                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-              ) : (
-                dashboardStats.totalApiCalls.toLocaleString()
-              )}
-            </p>
-          </div>
-          <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
-            <Activity className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-          </div>
-        </div>
-      </div>
-    </div>
-  )}
-
-  {/* Quick Actions */}
-  {filteredProjects.length > 0 && (
-    <div className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6 mb-8">
-      <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4">Quick Actions</h3>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <AppButton
-          onClick={handleCreateProject}
-          variant="secondary"
-          className="w-full justify-start"
-          icon={<Plus className="w-4 h-4" />}
-        >
-          Create New Project
-        </AppButton>
-        {filteredProjects.length > 0 && (
-          <AppButton
-            onClick={() => navigate(`/projects/${filteredProjects[0].id}/analytics`)}
-            variant="secondary"
-            className="w-full justify-start"
-            icon={<BarChart3 className="w-4 h-4" />}
-          >
-            View Analytics
-          </AppButton>
-        )}
-        {filteredProjects.length > 0 && (
-          <AppButton
-            onClick={() => navigate(`/projects/${filteredProjects[0].id}/database`)}
-            variant="secondary"
-            className="w-full justify-start"
-            icon={<Code className="w-4 h-4" />}
-          >
-            Open Database
-          </AppButton>
-        )}
-      </div>
-    </div>
+    <DashboardStatItems stats={dashboardStats} loading={loadingStats} />
   )}
 
   {/* Projects Grid */}
@@ -359,56 +252,11 @@ return (
   ) : (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {filteredProjects.map((project) => (
-        <div
+        <ProjectTileItem
           key={project.id}
-          className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-dark-200 dark:border-dark-700 p-6 hover:shadow-xl transition-all duration-200 cursor-pointer group"
-          onClick={() => handleProjectSelect(project)}
-        >
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center">
-                <Database className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-dark-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                  {project.name}
-                </h3>
-                <p className="text-sm text-dark-500 dark:text-dark-400">
-                  {project.schema_name}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button className="p-1 rounded hover:bg-dark-100 dark:hover:bg-dark-700">
-                <Edit3 className="w-4 h-4 text-dark-400" />
-              </button>
-              <button className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/20">
-                <Trash2 className="w-4 h-4 text-red-400" />
-              </button>
-            </div>
-          </div>
-          
-          {project.description && (
-            <p className="text-dark-600 dark:text-dark-300 text-sm mb-4 line-clamp-2">
-              {project.description}
-            </p>
-          )}
-          
-          <div className="flex items-center justify-between text-sm text-dark-500 dark:text-dark-400">
-            <div className="flex items-center space-x-1">
-              <Calendar className="w-4 h-4" />
-              <span>
-                {new Date(project.created_at).toLocaleDateString()}
-              </span>
-            </div>
-            
-            <div className="flex items-center space-x-1 text-primary-600 dark:text-primary-400">
-              <span>Open</span>
-              <Database className="w-4 h-4" />
-            </div>
-          </div>
-        </div>
+          project={project}
+          onClick={handleProjectSelect}
+        />
       ))}
     </div>
   )}

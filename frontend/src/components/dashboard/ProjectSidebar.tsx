@@ -1,6 +1,7 @@
-import { NavLink, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Database, Cloud, Settings, Home, Layers, LucideIcon, ChevronRight, ChevronLeft, Mail, Shield, BarChart3, GitBranch, Clock, CreditCard } from 'lucide-react';
 import useSidebarStore from '../../stores/state/useSidebarStore';
+import { SidebarItem } from '@components/ComponentsIndex';
 
 interface NavItem {
   path: string;
@@ -35,11 +36,9 @@ const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSide
 
   return (
     <aside
-      className={`${
-        isOpen ? 'translate-x-0' : '-translate-x-full'
-      } fixed lg:translate-x-0 inset-y-0 left-0 z-30 ${
-        shouldShowFull ? 'w-64' : 'w-16'
-      } bg-white dark:bg-dark-800 border-r border-dark-200 dark:border-dark-700 transition-all duration-200 ease-in-out flex flex-col shadow-lg`}
+      className={`${ isOpen ? 'translate-x-0' : '-translate-x-full'} fixed lg:translate-x-0 inset-y-0 left-0 z-30 ${
+        shouldShowFull ? 'w-64' : 'w-14'
+      } bg-white dark:bg-dark-800 border-r border-dark-200 dark:border-dark-700 transition-all duration-200 ease-in-out flex flex-col shadow-lg z-50`}
     >
       {/* Project Info */}
       <div className="p-4 border-b border-dark-200 dark:border-dark-700 overflow-hidden">
@@ -63,31 +62,16 @@ const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSide
 
       {/* Navigation */}
       <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const to = item.path === 'overview'
-            ? `/projects/${projectId}`
-            : `/projects/${projectId}/${item.path}`;
-
-          return (
-            <NavLink
-              key={item.path}
-              to={to}
-              end={item.path === 'overview'}
-              title={!shouldShowFull ? item.label : undefined}
-              className={({ isActive }) =>
-                `flex items-center ${shouldShowFull ? 'space-x-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors ${
-                  isActive
-                    ? 'bg-primary-600 text-white'
-                    : 'text-dark-600 dark:text-dark-400 hover:bg-dark-100 dark:hover:bg-dark-700 hover:text-dark-900 dark:hover:text-white'
-                }`
-              }
-            >
-              <Icon className="w-5 h-5 flex-shrink-0" />
-              {shouldShowFull && <span className="font-medium">{item.label}</span>}
-            </NavLink>
-          );
-        })}
+        {navItems.map((item) => (
+          <SidebarItem
+            key={item.path}
+            to={item.path === 'overview' ? `/projects/${projectId}` : `/projects/${projectId}/${item.path}`}
+            icon={item.icon}
+            label={item.label}
+            isCollapsed={isCollapsed}
+            end={item.path === 'overview'}
+          />
+        ))}
       </nav>
 
       {/* Toggle Button & Footer */}
