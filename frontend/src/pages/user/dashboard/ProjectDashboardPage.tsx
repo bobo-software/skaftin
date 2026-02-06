@@ -12,7 +12,6 @@ import ProjectPaymentsTab from './payments/ProjectPaymentsTab';
 import ProjectAnalyticsTab from './analytics/ProjectAnalyticsTab';
 import ProjectWorkflowsTab from './workflows/ProjectWorkflowsTab';
 import ProjectCronTab from './cron/ProjectCronTab';
-import ProjectRequestLogsTab from './request-logs/ProjectRequestLogsTab';
 import AuthTab from './auth/AuthTab';
 
 const ProjectDashboardPage = () => {
@@ -140,7 +139,6 @@ const ProjectDashboardPage = () => {
             <Route path="auth/*" element={projectId ? <AuthTab /> : null} />
             <Route path="communications" element={projectId ? <ProjectCommunicationsTab /> : null} />
             <Route path="payments" element={projectId ? <ProjectPaymentsTab /> : null} />
-            <Route path="request-logs" element={projectId ? <ProjectRequestLogsTab /> : null} />
             <Route path="settings" element={projectId ? <ProjectSettingsTab /> : null} />
             <Route path="*" element={projectId ? <Navigate to="" replace /> : null} />
           </Routes>

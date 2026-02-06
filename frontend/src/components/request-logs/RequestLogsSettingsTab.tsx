@@ -1,156 +1,164 @@
 import React, { useState, useEffect } from 'react';
-import { useProjectStore } from '../../stores/StoresIndex';
-import RequestLogsService, { RequestLogSettings } from '../../services/RequestLogsService';
+import { useProjectStore, useRequestLogsStore } from '../../stores/StoresIndex';
 import ToastUtils from '../../utils/ToastUtils';
-import { Loader2, Settings, Save } from 'lucide-react';
+import { Loader2, Save, Trash2 } from 'lucide-react';
 
 const RequestLogsSettingsTab = () => {
   const { currentProject } = useProjectStore();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [settings, setSettings] = useState<RequestLogSettings>({
-    request_logging_enabled: false,
-    request_log_retention: 'weekly'
-  });
+  const {
+    settings,
+    settingsLoading,
+    fetchSettings,
+    updateSettings,
+    cleanup,
+    setProjectId,
+  } = useRequestLogsStore();
 
+  const [localSettings, setLocalSettings] = useState(settings);
+  const [cleanupDays, setCleanupDays] = useState(7);
+  const [cleaningUp, setCleaningUp] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Set project ID when component mounts or project changes
   useEffect(() => {
     if (currentProject?.id) {
-      loadSettings();
+      setProjectId(String(currentProject.id));
     }
   }, [currentProject?.id]);
 
-  const loadSettings = async () => {
-    if (!currentProject?.id) return;
-    
-    setLoading(true);
-    try {
-      const settingsData = await RequestLogsService.getSettings(String(currentProject.id));
-      setSettings(settingsData);
-    } catch (error: any) {
-      console.error('Error loading settings:', error);
-      ToastUtils.error('Failed to load settings');
-    } finally {
-      setLoading(false);
+  // Fetch settings on mount
+  useEffect(() => {
+    if (currentProject?.id) {
+      fetchSettings(String(currentProject.id));
     }
-  };
+  }, [currentProject?.id]);
+
+  // Sync local settings with store
+  useEffect(() => {
+    setLocalSettings(settings);
+  }, [settings]);
 
   const handleSaveSettings = async () => {
     if (!currentProject?.id) return;
     
     setSaving(true);
-    try {
-      const updatedSettings = await RequestLogsService.updateSettings(
-        String(currentProject.id),
-        settings
-      );
-      setSettings(updatedSettings);
-      ToastUtils.success('Request logging settings saved');
-    } catch (error: any) {
-      console.error('Error saving settings:', error);
+    const success = await updateSettings(String(currentProject.id), localSettings);
+    setSaving(false);
+    
+    if (success) {
+      ToastUtils.success('Settings saved');
+    } else {
       ToastUtils.error('Failed to save settings');
-    } finally {
-      setSaving(false);
     }
   };
 
-  if (loading) {
+  const handleCleanup = async () => {
+    if (!currentProject?.id) return;
+    
+    setCleaningUp(true);
+    const result = await cleanup(String(currentProject.id), cleanupDays);
+    setCleaningUp(false);
+    
+    if (result) {
+      ToastUtils.success(`Deleted ${result.deleted_count} logs older than ${cleanupDays} days`);
+    } else {
+      ToastUtils.error('Failed to cleanup logs');
+    }
+  };
+
+  if (settingsLoading && !settings.request_logging_enabled && settings.request_log_retention === 'weekly') {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Enable/Disable Card */}
-      <div className="card">
-        <h3 className="text-lg font-semibold text-dark-900 dark:text-white mb-4 flex items-center gap-2">
-          <Settings className="w-5 h-5" />
-          Logging Configuration
-        </h3>
-        
-        <div className="space-y-6">
-          {/* Enable/Disable Toggle */}
-          <div className="flex items-center justify-between p-4 bg-dark-50 dark:bg-dark-800 rounded-lg">
-            <div>
-              <label className="font-medium text-dark-900 dark:text-white">Enable Request Logging</label>
-              <p className="text-sm text-dark-500 dark:text-dark-400 mt-1">
-                Automatically log all API requests made through this project's endpoints
-              </p>
-            </div>
+    <div className="space-y-4 max-w-2xl">
+      {/* Enable Toggle */}
+      <div className="flex items-center justify-between p-3 bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700">
+        <div>
+          <div className="text-sm font-medium text-dark-900 dark:text-white">Enable Request Logging</div>
+          <div className="text-xs text-dark-500 dark:text-dark-400">Log all API requests to this project</div>
+        </div>
+        <button
+          onClick={() => setLocalSettings({ ...localSettings, request_logging_enabled: !localSettings.request_logging_enabled })}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+            localSettings.request_logging_enabled ? 'bg-primary-600' : 'bg-dark-300 dark:bg-dark-600'
+          }`}
+        >
+          <span
+            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform`}
+            style={{ transform: localSettings.request_logging_enabled ? 'translateX(18px)' : 'translateX(2px)' }}
+          />
+        </button>
+      </div>
+
+      {/* Retention Period */}
+      <div className="p-3 bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700">
+        <div className="text-sm font-medium text-dark-900 dark:text-white mb-2">Retention Period</div>
+        <div className="grid grid-cols-4 gap-2">
+          {[
+            { value: 'daily', label: '1 Day' },
+            { value: 'weekly', label: '7 Days' },
+            { value: 'monthly', label: '30 Days' },
+            { value: 'disabled', label: 'Manual' },
+          ].map((option) => (
             <button
-              onClick={() => setSettings({ ...settings, request_logging_enabled: !settings.request_logging_enabled })}
-              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
-                settings.request_logging_enabled ? 'bg-primary-600' : 'bg-dark-300 dark:bg-dark-600'
+              key={option.value}
+              onClick={() => setLocalSettings({ ...localSettings, request_log_retention: option.value as any })}
+              className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+                localSettings.request_log_retention === option.value
+                  ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 ring-1 ring-primary-500'
+                  : 'bg-dark-100 dark:bg-dark-700 text-dark-600 dark:text-dark-300 hover:bg-dark-200 dark:hover:bg-dark-600'
               }`}
             >
-              <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                  settings.request_logging_enabled ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-dark-500 dark:text-dark-400 mt-2">
+          Logs are auto-deleted daily at 3 AM UTC based on this setting
+        </p>
+      </div>
+
+      {/* Save Button */}
+      <button
+        onClick={handleSaveSettings}
+        disabled={saving || settingsLoading}
+        className="btn-primary text-sm px-4 py-1.5 flex items-center gap-1.5"
+      >
+        {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+        Save Settings
+      </button>
+
+      {/* Manual Cleanup */}
+      <div className="p-3 bg-white dark:bg-dark-800 rounded-lg border border-red-200 dark:border-red-900/50">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-dark-900 dark:text-white">Manual Cleanup</div>
+            <div className="text-xs text-dark-500 dark:text-dark-400">Delete old logs manually</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={cleanupDays}
+              onChange={(e) => setCleanupDays(Number(e.target.value))}
+              min={1}
+              max={365}
+              className="w-14 px-2 py-1 text-sm border border-dark-200 dark:border-dark-700 rounded bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+            />
+            <span className="text-xs text-dark-500">days</span>
+            <button
+              onClick={handleCleanup}
+              disabled={cleaningUp}
+              className="px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center gap-1"
+            >
+              {cleaningUp ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+              Delete
             </button>
           </div>
-
-          {/* Retention Period */}
-          <div>
-            <label className="block font-medium text-dark-900 dark:text-white mb-2">
-              Log Retention Period
-            </label>
-            <p className="text-sm text-dark-500 dark:text-dark-400 mb-3">
-              Logs older than this period will be automatically deleted daily at 3 AM UTC
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { value: 'daily', label: '1 Day', desc: 'Delete after 24 hours' },
-                { value: 'weekly', label: '7 Days', desc: 'Delete after 1 week' },
-                { value: 'monthly', label: '30 Days', desc: 'Delete after 1 month' },
-                { value: 'disabled', label: 'Manual Only', desc: 'No auto-delete' },
-              ].map((option) => (
-                <button
-                  key={option.value}
-                  onClick={() => setSettings({ ...settings, request_log_retention: option.value as any })}
-                  className={`p-4 rounded-lg border-2 transition-all text-left ${
-                    settings.request_log_retention === option.value
-                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                      : 'border-dark-200 dark:border-dark-700 hover:border-dark-300 dark:hover:border-dark-600'
-                  }`}
-                >
-                  <div className={`font-medium ${
-                    settings.request_log_retention === option.value
-                      ? 'text-primary-700 dark:text-primary-400'
-                      : 'text-dark-900 dark:text-white'
-                  }`}>
-                    {option.label}
-                  </div>
-                  <div className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                    {option.desc}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Info Box */}
-          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-            <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">How it works</h4>
-            <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
-              <li>• All requests to <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">/app-api/*</code> endpoints are logged</li>
-              <li>• Logs include method, URL, status code, duration, and payload data</li>
-              <li>• Large payloads are automatically truncated to save storage</li>
-              <li>• Use the Logs tab to view and filter request history</li>
-            </ul>
-          </div>
-
-          <button
-            onClick={handleSaveSettings}
-            disabled={saving}
-            className="btn-primary flex items-center gap-2"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Save Settings
-          </button>
         </div>
       </div>
     </div>
