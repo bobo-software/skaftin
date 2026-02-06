@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Database, Loader2 } from 'lucide-react';
-import { thirdPartySignInAndUp } from 'supertokens-auth-react/recipe/thirdparty';
+import ThirdParty from 'supertokens-auth-react/recipe/thirdparty';
 import { useAppStore } from '../stores/StoresIndex';
 import OrganizationService from '../services/OrganizationService';
 
@@ -24,9 +24,9 @@ const AuthCallbackPage = () => {
   useEffect(() => {
     const handleOAuthCallback = async () => {
       try {
-        // SuperTokens thirdPartySignInAndUp handles the OAuth code exchange
+        // SuperTokens ThirdParty.signInAndUp handles the OAuth code exchange
         // It reads the code and state from the URL automatically
-        const response = await thirdPartySignInAndUp();
+        const response = await ThirdParty.signInAndUp();
 
         if (response.status === 'OK') {
           // Successfully signed in - fetch user data
