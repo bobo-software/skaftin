@@ -65,5 +65,6 @@ export {
 export {
   redirectToThirdPartyLogin,
   getAuthorisationURLWithQueryParamsAndSetState,
+  thirdPartySignInAndUp,
 } from 'supertokens-auth-react/recipe/thirdparty';
 

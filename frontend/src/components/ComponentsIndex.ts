@@ -67,4 +67,10 @@ export { NodeOutputTypeIndicator } from './workflows/NodeOutputTypeIndicator';
 // ---------- Items ---------- //
 export { default as DashboardStatItems } from './items/DashboardStatItems';
 export { default as ProjectTileItem } from './items/ProjectTileItem';
-export {  default as SidebarItem   } from './items/SidebarItem';
+export { default as SidebarItem } from './items/SidebarItem';
+
+// ---------- Request Logs Components ---------- //
+export { default as RequestLogsListTab } from './request-logs/RequestLogsListTab';
+export { default as RequestLogsStatsTab } from './request-logs/RequestLogsStatsTab';
+export { default as RequestLogsSettingsTab } from './request-logs/RequestLogsSettingsTab';
+export { default as RequestLogDetailModal } from './request-logs/RequestLogDetailModal';

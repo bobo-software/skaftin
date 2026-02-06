@@ -1791,6 +1791,8 @@ export class DatabaseInitializer {
 
       console.log(`✅ skaftin_system_payment_transactions table created in schema: ${schemaName}`);
 
+      // Note: Request logs are stored in public.skaftin_system_request_logs with project_id column
+
       // Update auth_settings with default role
       const defaultRoleResult = await this.db.execute(sql.raw(`
         SELECT id FROM ${schemaName}.skaftin_system_roles WHERE role_key = 'user' LIMIT 1;

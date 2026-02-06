@@ -200,9 +200,15 @@ import { createAuthRouter } from './routers/AuthRouter';
 import { createAnalyticsRouter } from './routers/AnalyticsRouter';
 import { createWorkflowsRouter } from './routers/WorkflowsRouter';
 import { router as BackupRouter } from './routers/BackupRouter';
+import { createRequestLogsRouter, createClientRequestLogsRouter } from './routers/RequestLogsRouter';
+import { createMigrationsRouter } from './routers/MigrationsRouter';
+import MigrationsController from './controllers/MigrationsController';
+import RequestLogsController from './controllers/RequestLogsController';
+import { initRequestLoggingMiddleware, requestLoggingMiddleware } from './middleware/requestLoggingMiddleware';
 import BackupController from './controllers/BackupController';
 import { BackupScheduler } from './services/BackupScheduler';
 import { AccountDeletionService } from './services/AccountDeletionService';
+import { RequestLogsCleanupService } from './services/RequestLogsCleanupService';
 import { initializeApiKeyMiddleware } from './middleware/apiKeyMiddleware';
 import { AnalyticsService } from './services/AnalyticsService';
 
@@ -267,6 +273,9 @@ ProjectsController.initialize(pool);
 ProjectBucketsController.initialize(pool);
 StorageController.initialize({ pool, s3Client });
 BackupController.initialize(pool, s3Client);
+MigrationsController.initialize(pool);
+RequestLogsController.initialize(pool);
+initRequestLoggingMiddleware(pool);
 
 // Initialize API key middleware
 initializeApiKeyMiddleware(pool);
@@ -344,10 +353,16 @@ app.use('/api/workflows', createWorkflowsRouter(pool));
 app.use('/api/backups', BackupRouter);
 app.use('/api/payments', PaymentRouter);
 app.use('/api/payments/webhook', PaymentWebhookRouter);
+app.use('/api/request-logs', createRequestLogsRouter(pool));
+app.use('/api/migrations', createMigrationsRouter());
 
 // ============================================================================
 // CLIENT-FACING ROUTES (/app-api/*) - API Key / App User JWT authentication
 // ============================================================================
+// Apply request logging middleware to all client-facing routes
+// This automatically logs requests for projects with logging enabled
+app.use('/app-api', requestLoggingMiddleware);
+
 // SuperTokens middleware for app users at /app-api/auth (for session/refresh endpoints)
 // This allows SuperTokens SDK to call /app-api/auth/session/refresh
 app.use('/app-api/auth', (req, res, next) => {
@@ -375,6 +390,8 @@ app.use('/app-api/database', createDatabaseRouter(pool));
 app.use('/app-api/communications', ClientCommunicationsRouter);
 // Payment operations (supports both API key and SuperTokens via hybrid auth)
 app.use('/app-api/payments', ClientPaymentRouter);
+// Request logging operations (supports both API key and SuperTokens via hybrid auth)
+app.use('/app-api/request-logs', createClientRequestLogsRouter(pool));
 // Client MCP operations (restricted tool set, MCP keys/API keys only)
 app.use('/app-api/mcp', ClientMCPRouter);
 
@@ -382,6 +399,8 @@ app.use('/app-api/mcp', ClientMCPRouter);
 // PUBLIC API ROUTES (/app-api-2/*) - API Key / Access Token only (no user auth)
 // ============================================================================
 console.log('🔓 [Server] Registering public API routes at /app-api-2');
+// Apply request logging middleware to public API routes as well
+app.use('/app-api-2', requestLoggingMiddleware);
 // Public database operations (GET & POST only, API key/access token required)
 app.use('/app-api-2/database', PublicDatabaseRouter);
 // Public storage operations (GET & POST only, API key/access token required)
@@ -448,6 +467,22 @@ const startServer = async () => {
     }
   });
   console.log('✅ Account deletion service scheduled (daily at 2 AM)');
+
+  // Initialize Request Logs Cleanup Service (runs daily at 3 AM)
+  console.log('🧹 Initializing request logs cleanup service...');
+  const requestLogsCleanupService = new RequestLogsCleanupService(pool);
+
+  // Schedule daily request logs cleanup at 3 AM
+  cron.schedule('0 3 * * *', async () => {
+    console.log('🧹 [CRON] Running scheduled request logs cleanup...');
+    try {
+      const result = await requestLogsCleanupService.cleanupAllProjects();
+      console.log(`✅ [CRON] Request logs cleanup completed: ${result.processed} projects, ${result.deleted} logs deleted, ${result.errors} errors`);
+    } catch (error) {
+      console.error('❌ [CRON] Error during request logs cleanup:', error);
+    }
+  });
+  console.log('✅ Request logs cleanup service scheduled (daily at 3 AM)');
 
   // Handle graceful shutdown
   const gracefulShutdown = () => {
