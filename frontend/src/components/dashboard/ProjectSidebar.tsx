@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { Database, Cloud, Settings, Home, Layers, LucideIcon, ChevronRight, ChevronLeft, Mail, Shield, BarChart3, GitBranch, Clock, CreditCard, History } from 'lucide-react';
+import { Database, Cloud, Settings, Home, Layers, LucideIcon, ChevronRight, ChevronLeft, Mail, Shield, BarChart3, GitBranch, Clock, CreditCard } from 'lucide-react';
 import useSidebarStore from '../../stores/state/useSidebarStore';
 import { SidebarItem } from '@components/ComponentsIndex';
 
@@ -29,7 +29,6 @@ const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSide
     { path: 'auth', icon: Shield, label: 'Auth' },
     { path: 'communications', icon: Mail, label: 'Communications' },
     { path: 'payments', icon: CreditCard, label: 'Payments' },
-    { path: 'request-logs', icon: History, label: 'Request Logs' },
     { path: 'settings', icon: Settings, label: 'Settings' },
   ];
 
