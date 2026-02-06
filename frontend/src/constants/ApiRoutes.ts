@@ -275,6 +275,23 @@ const ApiRoutes = {
     INITIATE: () => '/app-api/payments/initiate',
     GET_TRANSACTION: (transactionId: string) => `/app-api/payments/transaction/${transactionId}`,
     CANCEL_SUBSCRIPTION: () => '/app-api/payments/subscription/cancel',
+  },
+  
+  // Request Logs routes - Admin API (SuperTokens authentication)
+  REQUEST_LOGS: {
+    // Settings
+    GET_SETTINGS: (projectId: string) => `/api/request-logs/${projectId}/settings`,
+    UPDATE_SETTINGS: (projectId: string) => `/api/request-logs/${projectId}/settings`,
+    // Logs
+    LIST: (projectId: string) => `/api/request-logs/${projectId}`,
+    GET_STATS: (projectId: string) => `/api/request-logs/${projectId}/stats`,
+    GET_LOG: (projectId: string, logId: string) => `/api/request-logs/${projectId}/${logId}`,
+    CLEANUP: (projectId: string) => `/api/request-logs/${projectId}`,
+  },
+  
+  // App API Request Logs routes - Client API (API keys, project ID in URL)
+  APP_API_REQUEST_LOGS: {
+    CREATE: (projectId: string) => `/app-api/request-logs/${projectId}`,
   }
 }
 

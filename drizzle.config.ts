@@ -23,11 +23,11 @@ const config: Config = {
   out: "./drizzle/migrations",
   dialect: "postgresql",
   dbCredentials: {
-    host: process.env.DB_HOST || '102.218.215.251',
-    port: parseInt(process.env.DB_PORT || '5433', 10),
-    user: process.env.DB_USERNAME || 'kcd_user',
-    password: process.env.DB_PASSWORD || ' ',
-    database: process.env.DB_DATABASE || 'kcd',
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5440', 10),
+    user: process.env.DB_USER || 'skaftin_user',
+    password: process.env.DB_PASSWORD || 'skaftin_password',
+    database: process.env.DB_NAME || 'skaftin_db',
     ssl: {
       rejectUnauthorized: false
     }

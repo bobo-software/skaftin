@@ -12,10 +12,10 @@ initSuperTokens();
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT as string, 10) || 5432,
-  user: process.env.DB_USERNAME || process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE || process.env.DB_NAME || 'skaftin_db',
+  port: parseInt(process.env.DB_PORT as string, 10) || 5440,
+  user: process.env.DB_USER || 'skaftin_user',
+  password: process.env.DB_PASSWORD || 'skaftin_password',
+  database: process.env.DB_NAME || 'skaftin_db',
   ssl: process.env.DB_SSL === 'true' ? {
     rejectUnauthorized: false
   } : false

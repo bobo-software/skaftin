@@ -4,7 +4,12 @@
       "command": "/home/bobo/.nvm/versions/node/v25.3.0/bin/npx",
       "args": ["tsx", "src/mcp-server.ts"],
       "env": {
-        "NODE_ENV": "development"
+        "NODE_ENV": "development",
+        "DB_HOST": "localhost",
+        "DB_PORT": "5440",
+        "DB_USER": "skaftin_user",
+        "DB_PASSWORD": "skaftin_password",
+        "DB_NAME": "skaftin_db"
       },
       "headers": {
         "Authorization": "Bearer skaftin-token"

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useProjectStore } from '../../../../stores/StoresIndex';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { DeleteProjectModal, ResetProjectModal } from '../../../../components/ComponentsIndex';
 import { Settings, Users, Shield, Database, Loader2, Key } from 'lucide-react';
 import TeamTab from '../../../../components/settings/TeamTab';
