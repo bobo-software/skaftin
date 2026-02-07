@@ -5,7 +5,7 @@ import { authenticateAndVerifyProject, authenticateAndAttachUser } from '../../m
 import { hybridAuthAndVerifyProject, hybridAuthWithOptionalProject, verifyProjectAccess as verifyHybridProjectAccess } from '../../middleware/hybridAuthMiddleware';
 import { extractProjectFromCredentials } from '../../middleware/appUserAuthMiddleware';
 import { verifyProjectAccess } from '../../middleware/authMiddleware';
-import { attachAppUserInfo, AppUserSuperTokensRequest } from '../../middleware/appUserSuperTokensMiddleware';
+// AppUserSuperTokensRequest type imported for typing only (extractAppUserFromBearerToken handles extraction directly)
 import { organisationFilterMiddleware } from '../../middleware/organisationFilterMiddleware';
 import { apiKeyOnlyAuthAndVerifyProject } from '../../middleware/apiKeyOnlyMiddleware';
 import Session from "supertokens-node/recipe/session";
@@ -115,6 +115,10 @@ export class MiddlewareBuilder {
   /**
    * Extract app user info from Bearer token even when API key is used
    * This allows organization filtering to work when client sends both API key and Bearer token
+   * 
+   * NOTE: This is an OPTIONAL extraction - if the app user is not found, we continue
+   * without it. The API key auth is still valid. This is different from attachAppUserInfo
+   * which is a REQUIRED middleware that fails the request if user is not found.
    */
   private extractAppUserFromBearerToken(): Middleware {
     return async (req: Request, res: Response, next: NextFunction) => {
@@ -145,26 +149,82 @@ export class MiddlewareBuilder {
 
         console.log('  └─ ✅ SuperTokens session found, extracting app user info...');
 
-        // Attach session to request so attachAppUserInfo can access it
-        (req as any).session = session;
-
-        // Extract app user info using the same logic as attachAppUserInfo
-        const attachMiddleware = attachAppUserInfo(this.pool);
+        // Get session data
+        const supertokensUserId = session.getUserId();
+        const sessionData = session.getAccessTokenPayload();
         
-        // Call the middleware manually
-        await new Promise<void>((resolve, reject) => {
-          attachMiddleware(req as AppUserSuperTokensRequest, res, (err?: any) => {
-            if (err) {
-              console.log('  └─ ⚠️  Could not extract app user from Bearer token:', err.message || err);
-              // Don't reject, just continue without app user
-              resolve();
-            } else {
-              console.log('  └─ ✅ App user extracted:', (req as any).appUser?.email);
-              console.log('  └─   Organisation:', (req as any).appUser?.organisation_name, '=', (req as any).appUser?.organisation_id);
-              resolve();
-            }
-          });
-        });
+        // Get projectId from request (set by API key auth) or session
+        const projectId = (req as any).projectId || sessionData.projectId;
+        
+        if (!projectId) {
+          console.log('  └─ ⚠️  No project context available');
+          return next();
+        }
+
+        // Get project schema
+        const schemaResult = await this.pool.query(
+          'SELECT schema_name FROM skaftin_system_projects WHERE id = $1',
+          [projectId]
+        );
+
+        if (schemaResult.rows.length === 0) {
+          console.log('  └─ ⚠️  Project not found:', projectId);
+          return next();
+        }
+
+        const schemaName = schemaResult.rows[0].schema_name;
+
+        // Find app user by SuperTokens user ID (non-blocking - just log if not found)
+        const userResult = await this.pool.query(
+          `SELECT u.id, u.email, u.name, u.is_active,
+           COALESCE(
+             json_agg(
+               json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key)
+             ) FILTER (WHERE r.id IS NOT NULL), 
+             '[]'
+           ) as roles
+           FROM ${schemaName}.skaftin_system_users u
+           LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+           LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
+           WHERE u.supertokens_user_id = $1
+           GROUP BY u.id`,
+          [supertokensUserId]
+        );
+
+        if (userResult.rows.length === 0) {
+          // This is expected for platform users or when session is from a different project
+          console.log('  └─ ⚠️  App user not found in project', projectId, '(continuing without app user)');
+          return next();
+        }
+
+        const user = userResult.rows[0];
+
+        if (!user.is_active) {
+          console.log('  └─ ⚠️  App user account is inactive');
+          return next();
+        }
+
+        // Extract organization context from session payload
+        const organisation_name = sessionData.organisation_name || null;
+        const organisation_id = sessionData.organisation_id || null;
+        const is_admin = sessionData.is_admin || false;
+
+        // Attach app user info to request
+        (req as any).appUser = {
+          userId: user.id,
+          supertokensUserId: supertokensUserId,
+          email: user.email,
+          projectId: projectId,
+          roles: user.roles || [],
+          organisation_name,
+          organisation_id,
+          is_admin,
+        };
+
+        (req as any).schemaName = schemaName;
+
+        console.log('  └─ ✅ App user extracted:', (req as any).appUser?.email);
+        console.log('  └─   Organisation:', organisation_name, '=', organisation_id);
 
         return next();
       } catch (error: any) {
