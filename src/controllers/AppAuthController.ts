@@ -1048,11 +1048,8 @@ class AppAuthController {
       }
 
       if (userResult.rows.length === 0) {
-        // For security, don't reveal if user exists or not
         const identifierName = email ? 'email' : 'phone number';
-        return ResponseUtils.success(res, `If the ${identifierName} exists, an OTP code has been sent`, {
-          message: `If the ${identifierName} exists in our system, you will receive an OTP code shortly.`,
-        });
+        return ResponseUtils.error(res, `No account found with the provided ${identifierName}`, null, null, 404);
       }
 
       const user = userResult.rows[0];
