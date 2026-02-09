@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { BaseSmsProvider, SmsMessage, SendSmsResult } from './BaseSmsProvider';
+import { BaseSmsProvider, SmsMessage, SendSmsResult, MessageStatusResult } from './BaseSmsProvider';
 import { MyMobileApiProvider } from './MyMobileApiProvider';
 import { TwilioProvider } from './TwilioProvider';
 
@@ -13,6 +13,7 @@ export interface SmsProviderRecord {
   post_url: string;
   messaging_service_sid?: string;
   phone_number?: string;
+  whatsapp_from?: string;
   is_active: boolean;
 }
 
@@ -27,7 +28,7 @@ export class SmsService {
     const result = await this.pool.query(
       `
       SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, 
-             messaging_service_sid, phone_number, is_active
+             messaging_service_sid, phone_number, whatsapp_from, is_active
       FROM public.sms_providers
       WHERE project_id = $1 AND is_active = true
       ORDER BY updated_at DESC, id DESC
@@ -55,6 +56,7 @@ export class SmsService {
         authToken: record.api_secret,
         messagingServiceSid: record.messaging_service_sid,
         phoneNumber: record.phone_number,
+        whatsappFrom: record.whatsapp_from,
       });
     }
 
@@ -69,6 +71,39 @@ export class SmsService {
     const provider = this.buildProvider(providerRecord);
     return provider.send(messages);
   }
+
+  async sendWhatsApp(projectId: string, messages: SmsMessage[]): Promise<SendSmsResult> {
+    const providerRecord = await this.getActiveProvider(projectId);
+    if (!providerRecord) {
+      return { success: false, error: 'No active SMS provider configured for project' };
+    }
+
+    const provider = this.buildProvider(providerRecord);
+
+    if (!provider.sendWhatsApp) {
+      return {
+        success: false,
+        error: `Provider type '${providerRecord.provider_type}' does not support WhatsApp messaging. Only Twilio providers support WhatsApp.`,
+      };
+    }
+
+    return provider.sendWhatsApp(messages);
+  }
+
+  async getMessageStatus(projectId: string, messageSid: string): Promise<MessageStatusResult> {
+    const providerRecord = await this.getActiveProvider(projectId);
+    if (!providerRecord) {
+      throw new Error('No active SMS provider configured for project');
+    }
+
+    const provider = this.buildProvider(providerRecord);
+
+    if (!provider.getMessageStatus) {
+      throw new Error(
+        `Provider type '${providerRecord.provider_type}' does not support message status tracking. Only Twilio providers support this feature.`
+      );
+    }
+
+    return provider.getMessageStatus(messageSid);
+  }
 }
-
-

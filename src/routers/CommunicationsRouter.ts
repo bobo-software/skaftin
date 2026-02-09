@@ -69,6 +69,13 @@ export function createCommunicationsRouter(pool: Pool): Router {
   router.put('/:projectId/sms/providers/:providerId', authMiddleware, smsController.updateProvider);
   router.delete('/:projectId/sms/providers/:providerId', authMiddleware, smsController.deleteProvider);
 
+  // SMS Message Status
+  router.post('/:projectId/sms/check-status', authMiddleware, smsController.checkMessageStatus);
+
+  // WhatsApp Sending
+  router.post('/:projectId/whatsapp/send', authMiddleware, smsController.sendWhatsApp);
+  router.post('/:projectId/whatsapp/send-basic', authMiddleware, smsController.sendWhatsAppBasic);
+
   return router;
 }
 

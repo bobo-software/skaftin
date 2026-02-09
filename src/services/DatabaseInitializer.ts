@@ -566,6 +566,7 @@ export class DatabaseInitializer {
           post_url VARCHAR(500),
           messaging_service_sid VARCHAR(255),
           phone_number VARCHAR(50),
+          whatsapp_from VARCHAR(50),
           is_active BOOLEAN DEFAULT true,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -596,6 +597,13 @@ export class DatabaseInitializer {
             WHERE table_schema = 'public' AND table_name = 'sms_providers' AND column_name = 'phone_number'
           ) THEN
             ALTER TABLE public.sms_providers ADD COLUMN phone_number VARCHAR(50);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'sms_providers' AND column_name = 'whatsapp_from'
+          ) THEN
+            ALTER TABLE public.sms_providers ADD COLUMN whatsapp_from VARCHAR(50);
           END IF;
 
           -- Make post_url nullable for Twilio (which doesn't need it)

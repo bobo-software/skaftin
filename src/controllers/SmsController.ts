@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import CommonUtils from '../utils/CommonUtils';
 import { SmsService } from '../services/sms/SmsService';
+import { TwilioProvider } from '../services/sms/TwilioProvider';
 import { HybridAuthRequest } from '../middleware/hybridAuthMiddleware';
 
 export default class SmsController {
@@ -24,7 +25,7 @@ export default class SmsController {
     }
     try {
       const query = `
-        SELECT id, project_id, name, provider_type, post_url, messaging_service_sid, phone_number, is_active, created_at, updated_at
+        SELECT id, project_id, name, provider_type, post_url, messaging_service_sid, phone_number, whatsapp_from, is_active, created_at, updated_at
         FROM public.sms_providers
         WHERE project_id = $1
         ORDER BY created_at DESC
@@ -49,7 +50,7 @@ export default class SmsController {
     try {
       // Return api_key and api_secret when fetching a single provider for editing
       const query = `
-        SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, is_active, created_at, updated_at
+        SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, whatsapp_from, is_active, created_at, updated_at
         FROM public.sms_providers
         WHERE id = $1 AND project_id = $2
       `;
@@ -73,7 +74,7 @@ export default class SmsController {
       res.status(400).json({ success: false, error: 'Project ID is required' });
       return;
     }
-    const { name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, is_active } = req.body || {};
+    const { name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, whatsapp_from, is_active } = req.body || {};
     
     // Validate required fields based on provider type
     if (!name || !provider_type || !api_key || !api_secret) {
@@ -95,11 +96,11 @@ export default class SmsController {
     
     try {
       const query = `
-        INSERT INTO public.sms_providers (project_id, name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, true))
-        RETURNING id, project_id, name, provider_type, post_url, messaging_service_sid, phone_number, is_active, created_at, updated_at
+        INSERT INTO public.sms_providers (project_id, name, provider_type, api_key, api_secret, post_url, messaging_service_sid, phone_number, whatsapp_from, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, true))
+        RETURNING id, project_id, name, provider_type, post_url, messaging_service_sid, phone_number, whatsapp_from, is_active, created_at, updated_at
       `;
-      const result = await this.pool.query(query, [projectId, name, provider_type, api_key, api_secret, post_url || null, messaging_service_sid || null, phone_number || null, is_active]);
+      const result = await this.pool.query(query, [projectId, name, provider_type, api_key, api_secret, post_url || null, messaging_service_sid || null, phone_number || null, whatsapp_from || null, is_active]);
       res.status(201).json({ success: true, data: result.rows[0] });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error?.message ?? 'Failed to create SMS provider' });
@@ -116,7 +117,7 @@ export default class SmsController {
       return;
     }
     const { providerId } = req.params;
-    const allowed = ['name', 'provider_type', 'api_key', 'api_secret', 'post_url', 'messaging_service_sid', 'phone_number', 'is_active'];
+    const allowed = ['name', 'provider_type', 'api_key', 'api_secret', 'post_url', 'messaging_service_sid', 'phone_number', 'whatsapp_from', 'is_active'];
     const updates = req.body || {};
     const fields: string[] = [];
     const values: any[] = [];
@@ -138,7 +139,7 @@ export default class SmsController {
         UPDATE public.sms_providers
         SET ${fields.join(', ')}
         WHERE id = $${idx++} AND project_id = $${idx++}
-        RETURNING id, project_id, name, provider_type, post_url, messaging_service_sid, phone_number, is_active, created_at, updated_at
+        RETURNING id, project_id, name, provider_type, post_url, messaging_service_sid, phone_number, whatsapp_from, is_active, created_at, updated_at
       `;
       const result = await this.pool.query(query, values);
       if (result.rows.length === 0) {
@@ -266,6 +267,129 @@ export default class SmsController {
     try {
       // In MVP, accept and ack; future: verify signature, persist to analytics table
       res.status(200).json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message ?? 'Internal error' });
+    }
+  };
+
+  // ---------- WhatsApp Endpoints ----------
+
+  // POST /api/communications/:projectId/whatsapp/send
+  // POST /app-api/communications/whatsapp/send
+  sendWhatsApp = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
+    // Support both SuperTokens and API key auth
+    const isSuperTokensAuth = 'user' in req && req.user && (req.user as any).userId;
+    const isApiKeyAuth = 'credential' in req && (req as any).credential && (req as HybridAuthRequest).projectId;
+
+    if (!isSuperTokensAuth && !isApiKeyAuth) {
+      const decodedToken = CommonUtils.handleAuthHeader(req);
+      if (decodedToken instanceof Response) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+    }
+
+    const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+    if (!projectId) {
+      res.status(400).json({ success: false, error: 'Project ID is required' });
+      return;
+    }
+
+    const { messages } = req.body as { messages: { content: string; destination: string }[] };
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      res.status(400).json({ success: false, error: 'messages[] is required' });
+      return;
+    }
+
+    try {
+      const service = new SmsService(this.pool);
+      const result = await service.sendWhatsApp(projectId.toString(), messages);
+      if (result.success) {
+        res.status(200).json({ success: true, data: result.providerResponse });
+        return;
+      }
+      res.status(502).json({ success: false, error: result.error });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message ?? 'Internal error' });
+    }
+  };
+
+  // POST /api/communications/:projectId/whatsapp/send-basic
+  // POST /app-api/communications/whatsapp/send-basic
+  sendWhatsAppBasic = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
+    // Support both SuperTokens and API key auth
+    const isSuperTokensAuth = 'user' in req && req.user && (req.user as any).userId;
+    const isApiKeyAuth = 'credential' in req && (req as any).credential && (req as HybridAuthRequest).projectId;
+
+    if (!isSuperTokensAuth && !isApiKeyAuth) {
+      const decodedToken = CommonUtils.handleAuthHeader(req);
+      if (decodedToken instanceof Response) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+    }
+
+    const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+    if (!projectId) {
+      res.status(400).json({ success: false, error: 'Project ID is required' });
+      return;
+    }
+
+    const { message, destination } = req.body as { message: string; destination: string };
+
+    if (!message || !destination) {
+      res.status(400).json({ success: false, error: 'message and destination are required' });
+      return;
+    }
+
+    try {
+      const service = new SmsService(this.pool);
+      const result = await service.sendWhatsApp(projectId.toString(), [{ content: message, destination }]);
+      if (result.success) {
+        res.status(200).json({ success: true, data: result.providerResponse });
+        return;
+      }
+      res.status(502).json({ success: false, error: result.error });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message ?? 'Internal error' });
+    }
+  };
+
+  // ---------- Message Status Endpoint ----------
+
+  // POST /api/communications/:projectId/sms/check-status
+  // POST /app-api/communications/sms/check-status
+  checkMessageStatus = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
+    // Support both SuperTokens and API key auth
+    const isSuperTokensAuth = 'user' in req && req.user && (req.user as any).userId;
+    const isApiKeyAuth = 'credential' in req && (req as any).credential && (req as HybridAuthRequest).projectId;
+
+    if (!isSuperTokensAuth && !isApiKeyAuth) {
+      const decodedToken = CommonUtils.handleAuthHeader(req);
+      if (decodedToken instanceof Response) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+    }
+
+    const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+    if (!projectId) {
+      res.status(400).json({ success: false, error: 'Project ID is required' });
+      return;
+    }
+
+    const { messageSid } = req.body as { messageSid: string };
+
+    if (!messageSid) {
+      res.status(400).json({ success: false, error: 'messageSid is required' });
+      return;
+    }
+
+    try {
+      const service = new SmsService(this.pool);
+      const status = await service.getMessageStatus(projectId.toString(), messageSid);
+      res.status(200).json({ success: true, data: status });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message ?? 'Internal error' });
     }

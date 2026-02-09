@@ -1,4 +1,4 @@
-# Communications Requests (Email & SMS)
+# Communications Requests (Email, SMS & WhatsApp)
 
 All communications endpoints are available at `/app-api/communications`.
 
@@ -208,15 +208,23 @@ Authorization: Bearer <jwt-token>
       "id": 1,
       "name": "Primary SMS Provider",
       "provider_type": "mymobileapi",
+      "post_url": "https://rest.mymobileapi.com/bulkmessages",
+      "messaging_service_sid": null,
+      "phone_number": null,
+      "whatsapp_from": null,
       "is_active": true,
       "created_at": "2024-01-15T10:30:00.000Z"
     },
     {
       "id": 2,
-      "name": "Backup SMS Provider",
-      "provider_type": "sa_mobile_sms",
-      "is_active": false,
-      "created_at": "2024-01-10T08:00:00.000Z"
+      "name": "Twilio Provider",
+      "provider_type": "twilio",
+      "post_url": null,
+      "messaging_service_sid": "MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "phone_number": "+1234567890",
+      "whatsapp_from": "whatsapp:+14155238886",
+      "is_active": true,
+      "created_at": "2024-02-01T08:00:00.000Z"
     }
   ]
 }
@@ -235,7 +243,7 @@ Get a specific SMS provider.
 Authorization: Bearer <jwt-token>
 ```
 
-**Response:**
+**Response (MyMobileAPI):**
 ```json
 {
   "success": true,
@@ -243,11 +251,36 @@ Authorization: Bearer <jwt-token>
     "id": 1,
     "name": "Primary SMS Provider",
     "provider_type": "mymobileapi",
-    "api_key": "sk_***hidden***",
-    "post_url": "https://api.mymobileapi.com/sms/send",
+    "api_key": "your-api-key",
+    "api_secret": "your-api-secret",
+    "post_url": "https://rest.mymobileapi.com/bulkmessages",
+    "messaging_service_sid": null,
+    "phone_number": null,
+    "whatsapp_from": null,
     "is_active": true,
     "created_at": "2024-01-15T10:30:00.000Z",
     "updated_at": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+**Response (Twilio):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 2,
+    "name": "Twilio Provider",
+    "provider_type": "twilio",
+    "api_key": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "api_secret": "auth_token_here",
+    "post_url": null,
+    "messaging_service_sid": "MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "phone_number": "+1234567890",
+    "whatsapp_from": "whatsapp:+14155238886",
+    "is_active": true,
+    "created_at": "2024-02-01T08:00:00.000Z",
+    "updated_at": "2024-02-01T08:00:00.000Z"
   }
 }
 ```
@@ -256,7 +289,7 @@ Authorization: Bearer <jwt-token>
 
 ### 6. Create SMS Provider
 
-Create a new SMS provider.
+Create a new SMS provider. Supports MyMobileAPI, SA Mobile SMS, and Twilio.
 
 **Endpoint:** `POST /app-api/communications/sms/providers`
 
@@ -266,14 +299,28 @@ Content-Type: application/json
 Authorization: Bearer <jwt-token>
 ```
 
-**Request Body:**
+**Request Body (MyMobileAPI / SA Mobile SMS):**
 ```json
 {
   "name": "My SMS Provider",
   "provider_type": "mymobileapi",
   "api_key": "your-api-key",
   "api_secret": "your-api-secret",
-  "post_url": "https://api.mymobileapi.com/sms/send",
+  "post_url": "https://rest.mymobileapi.com/bulkmessages",
+  "is_active": true
+}
+```
+
+**Request Body (Twilio):**
+```json
+{
+  "name": "Twilio Provider",
+  "provider_type": "twilio",
+  "api_key": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "api_secret": "your_auth_token_here",
+  "messaging_service_sid": "MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "phone_number": "+1234567890",
+  "whatsapp_from": "whatsapp:+14155238886",
   "is_active": true
 }
 ```
@@ -281,21 +328,31 @@ Authorization: Bearer <jwt-token>
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | name | string | Yes | Provider display name |
-| provider_type | string | Yes | "mymobileapi" or "sa_mobile_sms" |
-| api_key | string | Yes | API key from provider |
-| api_secret | string | Yes | API secret from provider |
-| post_url | string | Yes | Provider's API endpoint URL |
+| provider_type | string | Yes | `"mymobileapi"`, `"sa_mobile_sms"`, or `"twilio"` |
+| api_key | string | Yes | API key (MyMobileAPI/SA Mobile) or Account SID (Twilio) |
+| api_secret | string | Yes | API secret (MyMobileAPI/SA Mobile) or Auth Token (Twilio) |
+| post_url | string | Conditional | Provider API URL (required for MyMobileAPI/SA Mobile, not needed for Twilio) |
+| phone_number | string | Recommended | Twilio From phone number (Twilio only). **Recommended** -- used as the direct sender. |
+| messaging_service_sid | string | No | Twilio Messaging Service SID (Twilio only, fallback if no phone_number) |
+| whatsapp_from | string | No | WhatsApp sender number e.g. `whatsapp:+14155238886` (Twilio only) |
 | is_active | boolean | No | Active status (default: true) |
+
+> **Twilio note:** `phone_number` is the recommended field for sending SMS -- it is used directly as the `From` value and is the most reliable approach. If only `messaging_service_sid` is provided (without `phone_number`), Twilio will select a number from the service's sender pool, which can fail with error 21704 if no numbers are assigned to the pool. The `whatsapp_from` field is needed for WhatsApp messaging; for Twilio Sandbox testing use `whatsapp:+14155238886`.
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "SMS provider created successfully",
   "data": {
     "id": 3,
-    "name": "My SMS Provider",
-    ...
+    "name": "Twilio Provider",
+    "provider_type": "twilio",
+    "messaging_service_sid": "MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "phone_number": "+1234567890",
+    "whatsapp_from": "whatsapp:+14155238886",
+    "is_active": true,
+    "created_at": "2026-02-09T10:00:00.000Z",
+    "updated_at": "2026-02-09T10:00:00.000Z"
   }
 }
 ```
@@ -464,6 +521,214 @@ Authorization: Bearer <jwt-token>
 
 ---
 
+## WhatsApp Operations (Twilio)
+
+WhatsApp messaging is available when the active SMS provider is Twilio with a `whatsapp_from` number configured. Phone numbers starting with `0` are automatically formatted to `+27` (South Africa).
+
+### 14. Send Single WhatsApp Message
+
+Send a single WhatsApp message.
+
+**Endpoint:** `POST /app-api/communications/whatsapp/send-basic`
+
+**Headers:**
+```
+Content-Type: application/json
+Authorization: Bearer <jwt-token>
+```
+
+**Request Body:**
+```json
+{
+  "destination": "+27712345678",
+  "message": "Hello from Skaftin via WhatsApp!"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| destination | string | Yes | Phone number (E.164 format, or SA format like `0712345678`) |
+| message | string | Yes | WhatsApp message content |
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "to": "whatsapp:+27712345678",
+      "from": "whatsapp:+14155238886",
+      "sid": "SM1234567890abcdef1234567890abcdef",
+      "status": "queued",
+      "errorCode": null,
+      "errorMessage": null,
+      "errorCodeExplanation": null,
+      "dateCreated": "2026-02-09T10:00:00.000Z",
+      "dateSent": null
+    }
+  ]
+}
+```
+
+**Response (Recipient Not Opted In):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "to": "whatsapp:+27712345678",
+      "from": "whatsapp:+14155238886",
+      "sid": "SM1234567890abcdef1234567890abcdef",
+      "status": "undelivered",
+      "errorCode": 63016,
+      "errorCodeExplanation": "Recipient has not opted-in to receive WhatsApp messages. They must send a message to your Twilio WhatsApp number first.",
+      "troubleshooting": "To fix this:\n1. Have the recipient send a WhatsApp message to your Twilio WhatsApp number\n2. If using Twilio Sandbox, they need to send: join [your-sandbox-code]\n3. Check your Twilio Console → Messaging → Try it out for the exact opt-in code"
+    }
+  ]
+}
+```
+
+---
+
+### 15. Send Bulk WhatsApp Messages
+
+Send multiple WhatsApp messages at once.
+
+**Endpoint:** `POST /app-api/communications/whatsapp/send`
+
+**Headers:**
+```
+Content-Type: application/json
+Authorization: Bearer <jwt-token>
+```
+
+**Request Body:**
+```json
+{
+  "messages": [
+    {
+      "destination": "+27712345678",
+      "content": "Hi John, your order has been dispatched!"
+    },
+    {
+      "destination": "0829876543",
+      "content": "Hi Jane, your appointment is confirmed for tomorrow."
+    }
+  ]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| messages | array | Yes | Array of message objects |
+| messages[].destination | string | Yes | Phone number |
+| messages[].content | string | Yes | Message content |
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "to": "whatsapp:+27712345678",
+      "from": "whatsapp:+14155238886",
+      "sid": "SMabc123...",
+      "status": "queued"
+    },
+    {
+      "to": "whatsapp:+27829876543",
+      "from": "whatsapp:+14155238886",
+      "sid": "SMdef456...",
+      "status": "queued"
+    }
+  ]
+}
+```
+
+---
+
+## Message Status Tracking (Twilio)
+
+Check the delivery status of any SMS or WhatsApp message sent via Twilio using its message SID.
+
+### 16. Check Message Status
+
+**Endpoint:** `POST /app-api/communications/sms/check-status`
+
+**Headers:**
+```
+Content-Type: application/json
+Authorization: Bearer <jwt-token>
+```
+
+**Request Body:**
+```json
+{
+  "messageSid": "SM1234567890abcdef1234567890abcdef"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| messageSid | string | Yes | The Twilio message SID (returned from send operations) |
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "messageSid": "SM1234567890abcdef1234567890abcdef",
+    "status": "delivered",
+    "to": "+27712345678",
+    "from": "+14155238886",
+    "body": "Hello from Skaftin!",
+    "errorCode": null,
+    "errorMessage": null,
+    "errorCodeExplanation": null,
+    "dateCreated": "2026-02-09T10:00:00.000Z",
+    "dateSent": "2026-02-09T10:00:01.000Z",
+    "dateUpdated": "2026-02-09T10:00:02.000Z",
+    "price": "-0.00750",
+    "priceUnit": "USD",
+    "statusExplanation": "Message was delivered to recipient",
+    "troubleshooting": null
+  }
+}
+```
+
+### Message Statuses
+
+| Status | Description |
+|--------|-------------|
+| `queued` | Message is queued for sending |
+| `sending` | Message is being sent |
+| `sent` | Message was sent to the carrier/provider |
+| `delivered` | Message was delivered to recipient |
+| `read` | Message was read by recipient (WhatsApp only) |
+| `undelivered` | Message could not be delivered |
+| `failed` | Message failed to send |
+
+---
+
+## Twilio Error Codes
+
+When a Twilio message fails or is undelivered, the response includes an `errorCode` with an explanation:
+
+| Error Code | Description | Solution |
+|------------|-------------|----------|
+| 21704 | Messaging Service has no phone numbers | Add a phone number to the Messaging Service sender pool, or use a direct `phone_number` instead |
+| 63016 | Recipient not opted-in to WhatsApp | Recipient must send a message to your WhatsApp number first |
+| 63007 | Invalid WhatsApp number format | Ensure number is in E.164 format (`+[country][number]`) |
+| 21608 | Recipient has unsubscribed | Recipient opted out of messages |
+| 21610 | Not a valid WhatsApp number | Number does not have WhatsApp |
+| 30003 | Unreachable destination | Phone is off or out of coverage |
+| 30004 | Message blocked | Carrier or recipient blocked the message |
+| 30005 | Unknown destination | Invalid phone number |
+
+> **Note on error 21704:** This is a common issue when `messaging_service_sid` is configured but no phone numbers are assigned to that Messaging Service's sender pool. The message will show status `accepted` initially but then fail. The fix is to either add a phone number to the Messaging Service in the Twilio Console, or configure the provider with a `phone_number` field which is used directly as the sender.
+
+---
+
 ## Common Use Cases
 
 ### Send Verification OTP via SMS
@@ -528,6 +793,60 @@ curl -X POST "http://localhost:4006/app-api/communications/email/send" \
   }'
 ```
 
+### Send WhatsApp Message
+
+```bash
+curl -X POST "http://localhost:4006/app-api/communications/whatsapp/send-basic" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "destination": "0712345678",
+    "message": "Hi! Your order has been dispatched and will arrive tomorrow."
+  }'
+```
+
+### Send WhatsApp to Multiple Recipients
+
+```bash
+curl -X POST "http://localhost:4006/app-api/communications/whatsapp/send" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "messages": [
+      {"destination": "+27712345678", "content": "Your appointment is confirmed for 10:00 AM."},
+      {"destination": "+27829876543", "content": "Your appointment is confirmed for 11:30 AM."}
+    ]
+  }'
+```
+
+### Check Message Delivery Status
+
+```bash
+curl -X POST "http://localhost:4006/app-api/communications/sms/check-status" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "messageSid": "SM1234567890abcdef1234567890abcdef"
+  }'
+```
+
+### Create a Twilio Provider with WhatsApp Support
+
+```bash
+curl -X POST "http://localhost:4006/app-api/communications/sms/providers" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "name": "Twilio (SMS + WhatsApp)",
+    "provider_type": "twilio",
+    "api_key": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "api_secret": "your_auth_token",
+    "phone_number": "+1234567890",
+    "whatsapp_from": "whatsapp:+14155238886",
+    "is_active": true
+  }'
+```
+
 ---
 
 ## Template Variables
@@ -548,7 +867,7 @@ SMS templates support variable interpolation using `{{variable}}` syntax:
 ```json
 {
   "success": false,
-  "message": "SMS provider not found"
+  "error": "SMS provider not found"
 }
 ```
 
@@ -556,7 +875,6 @@ SMS templates support variable interpolation using `{{variable}}` syntax:
 ```json
 {
   "success": false,
-  "message": "Invalid phone number format",
   "error": "Phone number must be in E.164 format (e.g., +27821234567)"
 }
 ```
@@ -565,7 +883,23 @@ SMS templates support variable interpolation using `{{variable}}` syntax:
 ```json
 {
   "success": false,
-  "message": "No active SMS provider found for this project"
+  "error": "No active SMS provider configured for project"
+}
+```
+
+### WhatsApp Not Supported
+```json
+{
+  "success": false,
+  "error": "Provider type 'mymobileapi' does not support WhatsApp messaging. Only Twilio providers support WhatsApp."
+}
+```
+
+### Message Status Not Supported
+```json
+{
+  "success": false,
+  "error": "Provider type 'sa_mobile_sms' does not support message status tracking. Only Twilio providers support this feature."
 }
 ```
 
@@ -573,6 +907,6 @@ SMS templates support variable interpolation using `{{variable}}` syntax:
 ```json
 {
   "success": false,
-  "message": "Rate limit exceeded. Please try again later."
+  "error": "Rate limit exceeded. Please try again later."
 }
 ```

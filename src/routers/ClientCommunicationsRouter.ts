@@ -87,6 +87,32 @@ export function createClientCommunicationsRouter(pool: Pool): Router {
       requiresProject: true,
       requiresAuth: true,
     },
+    // SMS Message Status
+    {
+      method: 'post',
+      path: '/sms/check-status',
+      handler: smsController.checkMessageStatus,
+      description: 'Check message delivery status',
+      requiresProject: true,
+      requiresAuth: true,
+    },
+    // WhatsApp Sending
+    {
+      method: 'post',
+      path: '/whatsapp/send',
+      handler: smsController.sendWhatsApp,
+      description: 'Send bulk WhatsApp messages',
+      requiresProject: true,
+      requiresAuth: true,
+    },
+    {
+      method: 'post',
+      path: '/whatsapp/send-basic',
+      handler: smsController.sendWhatsAppBasic,
+      description: 'Send single WhatsApp message',
+      requiresProject: true,
+      requiresAuth: true,
+    },
     // SMS Templates
     {
       method: 'get',

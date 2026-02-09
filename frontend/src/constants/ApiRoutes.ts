@@ -166,6 +166,11 @@ const ApiRoutes = {
     // SMS sending
     SEND_SMS: (projectId: string) => `/api/communications/${projectId}/sms/send`,
     SEND_SMS_BASIC: (projectId: string) => `/api/communications/${projectId}/sms/send-basic`,
+    // SMS message status
+    CHECK_SMS_STATUS: (projectId: string) => `/api/communications/${projectId}/sms/check-status`,
+    // WhatsApp sending
+    SEND_WHATSAPP: (projectId: string) => `/api/communications/${projectId}/whatsapp/send`,
+    SEND_WHATSAPP_BASIC: (projectId: string) => `/api/communications/${projectId}/whatsapp/send-basic`,
   },
   
   // Invitations routes
@@ -213,6 +218,11 @@ const ApiRoutes = {
     // SMS sending
     SEND_SMS: () => '/app-api/communications/sms/send',
     SEND_SMS_BASIC: () => '/app-api/communications/sms/send-basic',
+    // SMS message status
+    CHECK_SMS_STATUS: () => '/app-api/communications/sms/check-status',
+    // WhatsApp sending
+    SEND_WHATSAPP: () => '/app-api/communications/whatsapp/send',
+    SEND_WHATSAPP_BASIC: () => '/app-api/communications/whatsapp/send-basic',
     // SMS provider management
     LIST_SMS_PROVIDERS: () => '/app-api/communications/sms/providers',
     GET_SMS_PROVIDER: (providerId: string) => `/app-api/communications/sms/providers/${providerId}`,

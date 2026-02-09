@@ -504,6 +504,40 @@ class CommunicationsService {
     }
   }
 
+  async sendWhatsApp(projectId: string, messages: SendSmsMessage[]): Promise<any> {
+    try {
+      const response = await RequestUtils.post(
+        ApiRoutes.COMMUNICATIONS.SEND_WHATSAPP(projectId),
+        this.getToken(),
+        { messages }
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to send WhatsApp message');
+    } catch (error: any) {
+      console.error('Error sending WhatsApp:', error);
+      throw new Error(error.message || 'Failed to send WhatsApp message');
+    }
+  }
+
+  async checkMessageStatus(projectId: string, messageSid: string): Promise<any> {
+    try {
+      const response = await RequestUtils.post(
+        ApiRoutes.COMMUNICATIONS.CHECK_SMS_STATUS(projectId),
+        this.getToken(),
+        { messageSid }
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to check message status');
+    } catch (error: any) {
+      console.error('Error checking message status:', error);
+      throw new Error(error.message || 'Failed to check message status');
+    }
+  }
+
   // ---------- SMS TEMPLATES ----------
 
   async listSmsTemplates(projectId: string): Promise<SmsTemplate[]> {

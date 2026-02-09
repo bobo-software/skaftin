@@ -13,7 +13,8 @@ export class SmsNodeExecutor extends BaseNodeExecutor {
     const startTime = Date.now();
 
     try {
-      const { templateId, recipientPhone, providerId, projectId, variableMappings } = node.data;
+      const { templateId, recipientPhone, providerId, projectId, variableMappings, channel } = node.data;
+      const sendChannel: 'sms' | 'whatsapp' = channel === 'whatsapp' ? 'whatsapp' : 'sms';
 
       if (!templateId) {
         return this.fail('SMS template ID is required', Date.now() - startTime);
@@ -77,7 +78,7 @@ export class SmsNodeExecutor extends BaseNodeExecutor {
       // Get SMS provider from public schema
       const providerQuery = `
         SELECT id, project_id, name, provider_type, api_key, api_secret, post_url, 
-               messaging_service_sid, phone_number, is_active
+               messaging_service_sid, phone_number, whatsapp_from, is_active
         FROM public.sms_providers
         WHERE id = $1 AND project_id = $2
       `;
@@ -107,30 +108,42 @@ export class SmsNodeExecutor extends BaseNodeExecutor {
           authToken: providerRecord.api_secret,
           messagingServiceSid: providerRecord.messaging_service_sid,
           phoneNumber: providerRecord.phone_number,
+          whatsappFrom: providerRecord.whatsapp_from,
         });
       } else {
         return this.fail(`Unsupported SMS provider type: ${providerRecord.provider_type}`, Date.now() - startTime);
       }
 
-      // Send SMS
-      this.log(`Sending SMS to ${resolvedRecipientPhone} using template "${template.name}"`);
+      // Send message via selected channel
+      this.log(`Sending ${sendChannel.toUpperCase()} to ${resolvedRecipientPhone} using template "${template.name}"`);
       const messages: SmsMessage[] = [
         {
           content: resolvedContent,
           destination: resolvedRecipientPhone,
         },
       ];
-      
-      const result = await provider.send(messages);
+
+      let result;
+      if (sendChannel === 'whatsapp') {
+        if (!provider.sendWhatsApp) {
+          return this.fail(
+            `Provider type '${providerRecord.provider_type}' does not support WhatsApp messaging. Only Twilio providers support WhatsApp.`,
+            Date.now() - startTime
+          );
+        }
+        result = await provider.sendWhatsApp(messages);
+      } else {
+        result = await provider.send(messages);
+      }
 
       if (!result.success) {
         return this.fail(
-          result.error ? String(result.error) : 'Failed to send SMS',
+          result.error ? String(result.error) : `Failed to send ${sendChannel.toUpperCase()}`,
           Date.now() - startTime
         );
       }
 
-      this.log(`SMS sent successfully`);
+      this.log(`${sendChannel.toUpperCase()} sent successfully`);
 
       return this.success(
         {

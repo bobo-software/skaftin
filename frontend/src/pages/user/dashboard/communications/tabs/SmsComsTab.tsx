@@ -12,6 +12,7 @@ import useComProviderStore, {
   UpdateSmsProviderRequest,
 } from '../../../../../stores/data/useComProviderStore';
 import ToastUtils from '../../../../../utils/ToastUtils';
+import TwilioTestModal from '../../../../../components/modals/TwilioTestModal';
 
 const SmsComsTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -32,8 +33,6 @@ const SmsComsTab = () => {
   const [showSmsModal, setShowSmsModal] = useState(false);
   const [editingSmsProvider, setEditingSmsProvider] = useState<SmsProvider | null>(null);
   const [showSmsTestModal, setShowSmsTestModal] = useState(false);
-  const [smsTestDestination, setSmsTestDestination] = useState('');
-  const [smsTestMessage, setSmsTestMessage] = useState('Hello from Skaftin!');
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<SmsTemplate | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -688,80 +687,12 @@ const SmsComsTab = () => {
         </div>
       )}
 
-      {/* SMS Test Modal */}
-      {showSmsTestModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-dark-800 rounded-lg max-w-md w-full">
-            <div className="p-4 border-b border-dark-200 dark:border-dark-700 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-dark-900 dark:text-white">
-                Send Test SMS
-              </h3>
-              <button
-                onClick={() => setShowSmsTestModal(false)}
-                className="p-2 text-dark-400 hover:text-dark-600 dark:hover:text-dark-300 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                try {
-                  if (!smsTestDestination || !smsTestMessage) {
-                    ToastUtils.error('Enter destination and message');
-                    return;
-                  }
-                  await CommunicationsService.sendSms(projectId!, [
-                    { destination: smsTestDestination, content: smsTestMessage },
-                  ]);
-                  ToastUtils.success('Test SMS sent');
-                  setShowSmsTestModal(false);
-                } catch (err: any) {
-                  ToastUtils.error(err.message || 'Failed to send SMS');
-                }
-              }}
-              className="p-4 space-y-4"
-            >
-              <div>
-                <label className="block text-sm font-medium mb-1">Destination (E.164)</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 rounded-md border border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-900"
-                  placeholder="+27..."
-                  value={smsTestDestination}
-                  onChange={(e) => setSmsTestDestination(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Message</label>
-                <textarea
-                  className="w-full px-3 py-2 rounded-md border border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-900"
-                  rows={3}
-                  value={smsTestMessage}
-                  onChange={(e) => setSmsTestMessage(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowSmsTestModal(false)}
-                  className="px-4 py-2 rounded-md border border-dark-200 dark:border-dark-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-md bg-primary-600 text-white hover:bg-primary-700"
-                >
-                  Send
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Twilio Test Modal (SMS + WhatsApp + Status) */}
+      <TwilioTestModal
+        isOpen={showSmsTestModal}
+        onClose={() => setShowSmsTestModal(false)}
+        projectId={projectId!}
+      />
 
       {/* SMS Template Modal */}
       {showTemplateModal && (
