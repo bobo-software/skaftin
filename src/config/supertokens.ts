@@ -13,6 +13,111 @@ import { eq, sql, inArray } from "drizzle-orm";
 import nodemailer from "nodemailer";
 
 /**
+ * Migrate database records from stale SuperTokens user IDs to the current user ID.
+ * 
+ * This handles the case where the same person has multiple SuperTokens user IDs
+ * (e.g., from email/password + OAuth, or after a SuperTokens Core reset).
+ * Database records (orgs, projects, memberships) may be stored under an old user ID.
+ * This function finds those records and migrates them to the current session's user ID.
+ * 
+ * @param currentUserId - The SuperTokens user ID from the current session
+ * @returns true if any records were migrated
+ */
+export async function migrateStaleUserRecords(currentUserId: string): Promise<boolean> {
+  try {
+    // Get the current user's info from SuperTokens
+    const stUser = await supertokens.getUser(currentUserId);
+    if (!stUser || !stUser.emails || stUser.emails.length === 0) {
+      return false;
+    }
+
+    const email = stUser.emails[0];
+
+    // Find all SuperTokens users with the same email (different login methods, old accounts, etc.)
+    const allUsersWithEmail = await supertokens.listUsersByAccountInfo("public", { email });
+    const otherUserIds = allUsersWithEmail
+      .map(u => u.id)
+      .filter(id => id !== currentUserId);
+
+    if (otherUserIds.length === 0) {
+      return false;
+    }
+
+    let migrated = false;
+
+    for (const oldUserId of otherUserIds) {
+      // Check if this old user ID has any organization memberships
+      const oldMemberships = await db
+        .select({ id: organization_members.id })
+        .from(organization_members)
+        .where(eq(organization_members.user_id, oldUserId));
+
+      // Also check for owned projects under the old ID
+      const oldProjects = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.user_id, oldUserId));
+
+      if (oldMemberships.length > 0 || oldProjects.length > 0) {
+        console.log(`🔄 Migrating records from stale user ID ${oldUserId} to current user ID ${currentUserId} (email: ${email})`);
+
+        // Migrate organization memberships (skip if current user already has membership in that org)
+        await db.execute(sql`
+          UPDATE skaftin_system_organization_members 
+          SET user_id = ${currentUserId} 
+          WHERE user_id = ${oldUserId}
+          AND organization_id NOT IN (
+            SELECT organization_id FROM skaftin_system_organization_members WHERE user_id = ${currentUserId}
+          )
+        `);
+        // Remove any remaining duplicate old memberships
+        await db.execute(sql`
+          DELETE FROM skaftin_system_organization_members 
+          WHERE user_id = ${oldUserId}
+        `);
+
+        // Migrate organization ownership
+        await db.execute(sql`
+          UPDATE skaftin_system_organizations 
+          SET owner_id = ${currentUserId} 
+          WHERE owner_id = ${oldUserId}
+        `);
+
+        // Migrate project creator/owner
+        await db.execute(sql`
+          UPDATE skaftin_system_projects 
+          SET user_id = ${currentUserId} 
+          WHERE user_id = ${oldUserId}
+        `);
+
+        // Migrate project memberships (skip duplicates)
+        await db.execute(sql`
+          UPDATE skaftin_system_project_members 
+          SET user_id = ${currentUserId} 
+          WHERE user_id = ${oldUserId}
+          AND project_id NOT IN (
+            SELECT project_id FROM skaftin_system_project_members WHERE user_id = ${currentUserId}
+          )
+        `);
+        // Remove any remaining duplicate old project memberships
+        await db.execute(sql`
+          DELETE FROM skaftin_system_project_members 
+          WHERE user_id = ${oldUserId}
+        `);
+
+        migrated = true;
+        console.log(`✅ Successfully migrated records from ${oldUserId} to ${currentUserId}`);
+      }
+    }
+
+    return migrated;
+  } catch (error) {
+    console.error('Error migrating stale user records:', error);
+    return false;
+  }
+}
+
+/**
  * Fetch project IDs for a user from the database
  * Used during session creation to populate the access token payload
  */
@@ -384,6 +489,11 @@ The ${appName} Team
               createNewSession: async function (input) {
                 // Add custom claims to session
                 const userId = input.userId;
+
+                // Migrate any records from stale SuperTokens user IDs (e.g., if user
+                // previously signed in via a different method like OAuth vs email/password,
+                // or if SuperTokens Core was reset and the user got a new ID)
+                await migrateStaleUserRecords(userId);
                 
                 // Fetch user's projects and role from database
                 const [projectIds, role] = await Promise.all([

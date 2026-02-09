@@ -6,6 +6,7 @@ import { db } from '../db/drizzle.config';
 import { projects } from '../db/schemas/ProjectsSchema';
 import { organization_members } from '../db/schemas/OrganizationsSchema';
 import { eq, sql, inArray } from 'drizzle-orm';
+import { migrateStaleUserRecords } from '../config/supertokens';
 
 export interface SuperTokensAuthenticatedRequest extends SessionRequest {
   user?: {
@@ -32,7 +33,63 @@ export const authenticateSession = verifySession({
 });
 
 /**
+ * Helper to fetch user data (projects, org memberships, role) from the database
+ */
+async function fetchUserData(userId: string) {
+  // 1. Projects owned by user
+  const ownedProjectsQuery = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(eq(projects.user_id, userId));
+  
+  // 2. Projects user is a direct member of (via project_members table)
+  const memberProjectsQuery = await db.execute(sql`
+    SELECT DISTINCT project_id as id 
+    FROM skaftin_system_project_members 
+    WHERE user_id = ${userId}
+  `);
+  
+  // 3. Projects from organizations user belongs to
+  const userOrganizations = await db
+    .select({ 
+      organization_id: organization_members.organization_id,
+      role: organization_members.role
+    })
+    .from(organization_members)
+    .where(eq(organization_members.user_id, userId));
+  
+  let orgProjectIds: number[] = [];
+  let isOrgOwnerOrAdmin = false;
+  if (userOrganizations.length > 0) {
+    const orgIds = userOrganizations.map(org => org.organization_id);
+    const orgProjectsQuery = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(inArray(projects.organization_id, orgIds));
+    orgProjectIds = orgProjectsQuery.map(p => p.id);
+    
+    // Check if user is owner or admin of any organization
+    isOrgOwnerOrAdmin = userOrganizations.some(org => 
+      org.role === 'owner' || org.role === 'admin'
+    );
+  }
+  
+  const ownedProjectIds = ownedProjectsQuery.map(p => p.id);
+  const memberProjectIds = (memberProjectsQuery.rows as any[]).map(p => p.id);
+  
+  // Combine all lists and remove duplicates
+  const projectIds = [...new Set([...ownedProjectIds, ...memberProjectIds, ...orgProjectIds])];
+
+  return { projectIds, isOrgOwnerOrAdmin };
+}
+
+/**
  * Middleware to extract user info from SuperTokens session and attach to req.user
+ * 
+ * If no data is found for the current SuperTokens user ID, this middleware will
+ * check if records exist under a different SuperTokens user ID for the same email
+ * (e.g., from OAuth vs email/password, or after a SuperTokens Core reset) and
+ * migrate them to the current user ID.
  */
 export const attachUserInfo = async (req: SuperTokensAuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -43,52 +100,22 @@ export const attachUserInfo = async (req: SuperTokensAuthenticatedRequest, res: 
     const userId = req.session.getUserId();
     const sessionData = req.session.getAccessTokenPayload();
 
-    // Fetch user's projects from database (user_id is now VARCHAR for SuperTokens)
-    // Include: owned projects, direct project memberships, and projects from organizations
-    
-    // 1. Projects owned by user
-    const ownedProjectsQuery = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.user_id, userId));
-    
-    // 2. Projects user is a direct member of (via project_members table)
-    const memberProjectsQuery = await db.execute(sql`
-      SELECT DISTINCT project_id as id 
-      FROM skaftin_system_project_members 
-      WHERE user_id = ${userId}
-    `);
-    
-    // 3. Projects from organizations user belongs to
-    const userOrganizations = await db
-      .select({ 
-        organization_id: organization_members.organization_id,
-        role: organization_members.role
-      })
-      .from(organization_members)
-      .where(eq(organization_members.user_id, userId));
-    
-    let orgProjectIds: number[] = [];
-    let isOrgOwnerOrAdmin = false;
-    if (userOrganizations.length > 0) {
-      const orgIds = userOrganizations.map(org => org.organization_id);
-      const orgProjectsQuery = await db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(inArray(projects.organization_id, orgIds));
-      orgProjectIds = orgProjectsQuery.map(p => p.id);
-      
-      // Check if user is owner or admin of any organization
-      isOrgOwnerOrAdmin = userOrganizations.some(org => 
-        org.role === 'owner' || org.role === 'admin'
-      );
+    // Fetch user's data from database
+    let { projectIds, isOrgOwnerOrAdmin } = await fetchUserData(userId);
+
+    // If no data found, check for stale user ID and migrate records if needed.
+    // This handles the case where a restored session has a different SuperTokens user ID
+    // than the one currently associated with the user's data (e.g., OAuth vs email/password
+    // login, or SuperTokens Core reset).
+    if (projectIds.length === 0 && !isOrgOwnerOrAdmin) {
+      const migrated = await migrateStaleUserRecords(userId);
+      if (migrated) {
+        // Re-fetch data after migration
+        const freshData = await fetchUserData(userId);
+        projectIds = freshData.projectIds;
+        isOrgOwnerOrAdmin = freshData.isOrgOwnerOrAdmin;
+      }
     }
-    
-    const ownedProjectIds = ownedProjectsQuery.map(p => p.id);
-    const memberProjectIds = (memberProjectsQuery.rows as any[]).map(p => p.id);
-    
-    // Combine all lists and remove duplicates
-    const projectIds = [...new Set([...ownedProjectIds, ...memberProjectIds, ...orgProjectIds])];
 
     // Determine user role: admin if SuperTokens says so, or if they're an org owner/admin
     let userRole = sessionData.role || 'user';
