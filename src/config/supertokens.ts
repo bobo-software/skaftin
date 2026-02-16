@@ -275,6 +275,82 @@ export function initSuperTokens() {
             },
           ],
         },
+        emailDelivery: {
+          override: (originalImplementation) => {
+            return {
+              ...originalImplementation,
+              sendEmail: async function (input) {
+                if (input.type === "PASSWORD_RESET") {
+                  const { user, passwordResetLink } = input;
+                  const appName = process.env.SUPERTOKENS_APP_NAME || "Skaftin";
+
+                  const subject = `Reset your password - ${appName}`;
+                  const textContent = `
+Hello,
+
+We received a request to reset your password for your ${appName} account.
+
+Click the link below to reset your password:
+
+${passwordResetLink}
+
+This link will expire in 1 hour.
+
+If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
+
+Best regards,
+The ${appName} Team
+                  `.trim();
+
+                  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #32A956; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+    .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+    .button { display: inline-block; padding: 12px 30px; background-color: #32A956; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+    .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+    .warning { background-color: #fff3cd; border: 1px solid #ffc107; padding: 10px; border-radius: 4px; margin-top: 15px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Reset Your Password</h1>
+    </div>
+    <div class="content">
+      <p>Hello,</p>
+      <p>We received a request to reset your password for your ${appName} account.</p>
+      <p>Click the button below to set a new password:</p>
+      <div style="text-align: center;">
+        <a href="${passwordResetLink}" class="button">Reset Password</a>
+      </div>
+      <p>Or copy and paste this link into your browser:</p>
+      <p style="word-break: break-all; color: #666; font-size: 12px;">${passwordResetLink}</p>
+      <p>This link will expire in <strong>1 hour</strong>.</p>
+      <div class="warning">
+        If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
+      </div>
+      <div class="footer">
+        <p>Best regards,<br>The ${appName} Team</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+                  `.trim();
+
+                  await sendPlatformEmail(user.email, subject, textContent, htmlContent);
+                } else {
+                  return originalImplementation.sendEmail(input);
+                }
+              },
+            };
+          },
+        },
         override: {
           apis: (originalImplementation) => {
             return {

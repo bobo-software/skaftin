@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Database, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { useAppStore } from '../stores/StoresIndex';
 import { signIn, signUp, redirectToThirdPartyLogin } from '../config/supertokens';
@@ -263,6 +263,16 @@ const LoginPage = () => {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {isLogin && (
+                <div className="flex justify-end mt-1">
+                  <Link
+                    to="/forgot-password"
+                    className="text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+                  >
+                    Forgot Password?
+                  </Link>
+                </div>
+              )}
             </div>
 
             {/* Confirm Password (Register only) */}

@@ -51,8 +51,15 @@ export { SuperTokensWrapper } from 'supertokens-auth-react';
 // Export session hooks for use in components
 export { useSessionContext } from 'supertokens-auth-react/recipe/session';
 
-// Export EmailPassword functions for login/signup
-export { signIn, signUp, signOut } from 'supertokens-auth-react/recipe/emailpassword';
+// Export EmailPassword functions for login/signup/password-reset
+export { 
+  signIn, 
+  signUp, 
+  signOut,
+  sendPasswordResetEmail,
+  submitNewPassword,
+  getResetPasswordTokenFromURL,
+} from 'supertokens-auth-react/recipe/emailpassword';
 export { doesSessionExist } from 'supertokens-auth-react/recipe/session';
 
 // Export EmailVerification functions

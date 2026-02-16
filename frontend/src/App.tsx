@@ -15,6 +15,8 @@ import PaymentReturnPage from './pages/payments/PaymentReturnPage';
 import PaymentCancelPage from './pages/payments/PaymentCancelPage';
 import FNBThankYouPage from './pages/payments/FNBThankYouPage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import { useAppStore } from './stores/StoresIndex';
 import { doesSessionExist } from './config/supertokens';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -101,6 +103,8 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
         {/* OAuth callback routes for Google, GitHub, Apple */}
         <Route path="/auth/callback/:providerId" element={<AuthCallbackPage />} />
         <Route path="/invite/:inviteCode" element={<InviteAcceptPage />} />
