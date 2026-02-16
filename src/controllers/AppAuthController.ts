@@ -1006,7 +1006,7 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
 
-      const { email, phone } = req.body;
+      const { email, phone, otp: customOtp } = req.body;
 
       // Validate: at least one identifier is required
       if (!email && !phone) {
@@ -1017,8 +1017,7 @@ class AppAuthController {
       const otpMethod: 'email' | 'sms' = email ? 'email' : 'sms';
       const identifier = email || phone;
       const identifierType = email ? 'email' : 'phone';
-
-      console.log(`🔐 [requestOTPLogin] Processing OTP login request for: ${identifier} (${identifierType})`);
+      console.log(`🔐 [requestOTPLogin] Processing OTP login request for: ${identifier} (${identifierType})${customOtp ? ' [custom OTP provided]' : ''}`);
 
       // Check if auth is enabled and get settings
       const settingsResult = await AppAuthController.pool.query(
@@ -1069,8 +1068,8 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Email not available for this account. Please use phone.', null, null, 400);
       }
 
-      // Generate OTP code with configurable length
-      const otp = AppAuthController.generateOTP(authSettings.otp_length || 6);
+      // Use the caller-provided OTP or generate one with configurable length
+      const otp = customOtp ? String(customOtp) : AppAuthController.generateOTP(authSettings.otp_length || 6);
       const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
       // Invalidate any existing pending OTP login codes for this user
@@ -1089,7 +1088,7 @@ class AppAuthController {
         [user.id, otp, otpMethod, otpMethod === 'email' ? user.email : user.phone, otpExpiresAt]
       );
 
-      console.log(`   └─ OTP generated and stored for OTP login`);
+      console.log(`   └─ OTP ${customOtp ? 'accepted from caller' : 'generated'} and stored for OTP login`);
 
       // Send OTP based on method
       let otpSent = false;
