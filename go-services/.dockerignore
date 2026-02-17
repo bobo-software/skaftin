@@ -1,0 +1,15 @@
+# Build artifacts (root level only)
+/api
+*.exe
+*.out
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Git
+.git/
+.gitignore
