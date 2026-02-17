@@ -1,5 +1,5 @@
-# Build artifacts
-api
+# Build artifacts (root level binary only)
+/api
 *.exe
 *.out
 
