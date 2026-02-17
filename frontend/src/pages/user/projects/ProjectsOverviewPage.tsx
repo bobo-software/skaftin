@@ -26,10 +26,7 @@ fetchProjects,
 createProject,
 clearError 
 } = useProjectStore();
-const { organizations, currentOrganization, fetchOrganizations } = useOrganizationStore();
-
-// Check if user can create projects (has admin or dev role in at least one org)
-const canCreateProject = organizations.some(org => org.role === 'admin' || org.role === 'dev');
+const { currentOrganization, fetchOrganizations } = useOrganizationStore();
 
 // Filter projects by current organization
 const filteredProjects = currentOrganization
@@ -192,11 +189,9 @@ return (
         Manage your database projects and storage buckets
       </AppText>
     </div>
-    {canCreateProject && (
-      <AppButton size="md" variant="primary" onClick={handleCreateProject} icon={<Plus className="w-5 h-5" />}>
-        Create Project
-      </AppButton>
-    )}
+    <AppButton size="md" variant="primary" onClick={handleCreateProject} icon={<Plus className="w-5 h-5" />}>
+      Create Project
+    </AppButton>
   </div>
 
   {error && (
