@@ -2,9 +2,10 @@ import { useAppStore, useProjectStore, useOrganizationStore } from "../../../sto
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import ProjectCreationLoadingPage from "./ProjectCreationLoadingPage";
-import { Database, FolderOpen, Plus, User, LogOut } from "lucide-react";
+import { Database, FolderOpen, Plus, Users } from "lucide-react";
 import { AppButton, AppText, OrganizationSwitcher, DashboardStatItems, ProjectTileItem } from "../../../components/ComponentsIndex";
 import CreateProjectModal from "../../../components/modals/CreateProjectModal";
+import AccountDropdown from "../../../components/dashboard/AccountDropdown";
 import RequestUtils from "../../../utils/RequestUtils";
 import ApiRoutes from "../../../constants/ApiRoutes";
 
@@ -25,12 +26,19 @@ fetchProjects,
 createProject,
 clearError 
 } = useProjectStore();
-const { currentOrganization, fetchOrganizations } = useOrganizationStore();
+const { organizations, currentOrganization, fetchOrganizations } = useOrganizationStore();
+
+// Check if user can create projects (has admin or dev role in at least one org)
+const canCreateProject = organizations.some(org => org.role === 'admin' || org.role === 'dev');
 
 // Filter projects by current organization
 const filteredProjects = currentOrganization
   ? projects.filter(project => project.organization_id === currentOrganization.id)
   : projects;
+
+// Split into owned and invited projects
+const ownedProjects = filteredProjects.filter(project => project.user_id === user?.id);
+const invitedProjects = filteredProjects.filter(project => project.user_id !== user?.id);
 
 // State variables
 const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -110,12 +118,6 @@ onProjectSelect?.(project);
 navigate(`/projects/${project.id}`);
 };
 
-const handleLogout = async () => {
-  const { default: AuthService } = await import('../../../services/AuthService');
-  await AuthService.logout();
-  logout();
-  navigate('/login');
-};
 
 // Show loading page during project creation
 if (showLoadingPage && creatingProject) {
@@ -174,20 +176,7 @@ return (
         </div>
       </div>
       
-      <div className="flex items-center space-x-4">
-        <div className="flex items-center space-x-2 text-dark-600 dark:text-dark-300">
-          <User className="w-4 h-4" />
-          <span className="text-sm">{user?.email}</span>
-        </div>
-        <AppButton
-          variant="ghost"
-          size="sm"
-          onClick={handleLogout}
-          icon={<LogOut className="w-4 h-4" />}
-        >
-          Logout
-        </AppButton>
-      </div>
+      <AccountDropdown onLogout={logout} />
     </div>
   </div>
 </header>
@@ -196,16 +185,18 @@ return (
 <main className="max-w-7xl mx-auto px-6 py-8">
   <div className="flex items-center justify-between mb-8">
     <div>
-      <AppText as="h2" size="2xl" weight="bold" color="white">
+      <AppText as="h2" size="2xl" weight="bold" color="default">
         Your Projects
       </AppText>
-      <AppText as="p" size="sm" color="white" >
+      <AppText as="p" size="sm" color="muted">
         Manage your database projects and storage buckets
       </AppText>
     </div>
-    <AppButton size="md" variant="primary" onClick={handleCreateProject} icon={<Plus className="w-5 h-5" />}>
-      Create Project
-    </AppButton>
+    {canCreateProject && (
+      <AppButton size="md" variant="primary" onClick={handleCreateProject} icon={<Plus className="w-5 h-5" />}>
+        Create Project
+      </AppButton>
+    )}
   </div>
 
   {error && (
@@ -228,38 +219,62 @@ return (
   )}
 
   {/* Projects Grid */}
-  {filteredProjects.length === 0 ? (
-    <div className="text-center py-16">
-      <div className="inline-flex items-center justify-center w-20 h-20 bg-dark-100 dark:bg-dark-800 rounded-2xl mb-6">
-        <FolderOpen className="w-10 h-10 text-dark-400 dark:text-dark-500" />
-      </div>
-      <h3 className="text-xl font-semibold text-dark-900 dark:text-white mb-2">
-        No Projects Yet
-      </h3>
-      <p className="text-dark-600 dark:text-dark-300 mb-8 max-w-md mx-auto">
-        {currentOrganization 
-          ? `Create your first project in ${currentOrganization.name} to start building your database and storage solution.`
-          : 'Create your first project to start building your database and storage solution.'}
-      </p>
-      <AppButton
-        onClick={handleCreateProject}
-        icon={<Plus className="w-5 h-5" />}
-        size="lg"
-      >
-        Create Your First Project
-      </AppButton>
+
+    <div className="space-y-5">
+      {/* Owned Projects */}
+            <AppText as="h3" size="lg" weight="semibold" color="default" className="flex items-center gap-2">
+              <FolderOpen className="w-5 h-5 text-primary-400" />
+              My Projects
+            </AppText>
+      {ownedProjects.length > 0 ? (
+        <div>
+          <div className="mb-4">
+            <AppText as="p" size="sm" color="muted" className="mt-1">
+              Projects you own and manage
+            </AppText>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {ownedProjects.map((project) => (
+              <ProjectTileItem
+                key={project.id}
+                project={project}
+                onClick={handleProjectSelect}
+              />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col justify-center items-center text-center">
+          <AppText as="p" size="sm" color="muted" className="mt-1">
+            You don't have any of your own projects yet.
+          </AppText>
+        </div>
+      )}
+
+     
+        <div>
+          <div className="mb-4">
+            <AppText as="h3" size="lg" weight="semibold" color="default" className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-primary-400" />
+              Invited Projects
+            </AppText>
+            <AppText as="p" size="sm" color="muted" className="mt-1">
+              Projects you've been invited to collaborate on
+            </AppText>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {invitedProjects.map((project) => (
+              <ProjectTileItem
+                key={project.id}
+                project={project}
+                onClick={handleProjectSelect}
+              />
+            ))}
+          </div>
+        </div>
+    
     </div>
-  ) : (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {filteredProjects.map((project) => (
-        <ProjectTileItem
-          key={project.id}
-          project={project}
-          onClick={handleProjectSelect}
-        />
-      ))}
-    </div>
-  )}
+  
 </main>
 
 {/* Create Project Modal */}

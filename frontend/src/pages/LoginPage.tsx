@@ -163,16 +163,14 @@ const LoginPage = () => {
             if (orgResult.organizations.length > 1) {
               // User has multiple organizations, let them choose
               navigate('/organizations/select');
-            } else if (orgResult.organizations.length === 1) {
-              // User has exactly one organization, go directly to projects
-              navigate('/projects');
             } else {
-              // User doesn't have organizations, redirect to create organization
-              navigate('/organizations/create');
+              // User has 0 or 1 organizations — go straight to projects
+              // Invited team members may not have their own org yet
+              navigate('/projects');
             }
           } else {
-            // Error fetching organizations or no organizations
-            navigate('/organizations/create');
+            // Error fetching organizations — go to projects anyway
+            navigate('/projects');
           }
         }
       } else if (response.status === 'FIELD_ERROR') {

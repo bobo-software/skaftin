@@ -62,7 +62,7 @@ const DashboardStatItems = ({ stats, loading = false }: DashboardStatItemsProps)
             <div className="flex items-center justify-between">
               <div>     
                   <AppText  as="p" size="sm" color="muted" className="mb-1">{item.label}</AppText>
-                  <AppText  as="p" size="2xl" weight="bold" color="white">
+                  <AppText  as="p" size="2xl" weight="bold" color="default">
                   {loading ? (
                     <LoadingSpinner />
                   ) : item.formatValue ? (

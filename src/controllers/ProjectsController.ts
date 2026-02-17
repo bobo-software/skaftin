@@ -90,25 +90,31 @@ class ProjectsController {
     try {
       const userId = req.user.userId;
 
-      // Get all organizations the user is a member of
+      // Get all organizations the user is a member of, including their role
       const userOrgs = await db
-        .select({ organization_id: organization_members.organization_id })
+        .select({
+          organization_id: organization_members.organization_id,
+          role: organization_members.role,
+        })
         .from(organization_members)
         .where(eq(organization_members.user_id, userId));
 
-      const orgIds = userOrgs.map(org => org.organization_id);
+      // Only fetch all org projects for orgs where user is admin or dev
+      const fullAccessOrgIds = userOrgs
+        .filter(org => org.role === 'admin' || org.role === 'dev')
+        .map(org => org.organization_id);
 
-      // Get projects from organizations
       let orgProjects: any[] = [];
-      if (orgIds.length > 0) {
+      if (fullAccessOrgIds.length > 0) {
         orgProjects = await db
           .select()
           .from(projects)
-          .where(inArray(projects.organization_id, orgIds))
+          .where(inArray(projects.organization_id, fullAccessOrgIds))
           .orderBy(projects.created_at);
       }
 
-      // Get projects where user is a direct member (via invitations)
+      // Get projects where user is a direct member (via invitations / project_members)
+      // This covers member/viewer org roles who only see projects they were explicitly invited to
       const memberProjects = await db.execute(sql`
         SELECT DISTINCT p.* 
         FROM skaftin_system_projects p

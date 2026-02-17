@@ -10,8 +10,8 @@ import {
 } from '../types/Types';
 
 class OrganizationService {
-  private getToken(): string | null {
-    return localStorage.getItem('skaftin-token');
+  private getToken(): string {
+    return localStorage.getItem('skaftin-token') || 'session-managed-by-supertokens';
   }
 
   /**
@@ -20,9 +20,6 @@ class OrganizationService {
   async getUserOrganizations(): Promise<{ success: boolean; organizations?: Organization[]; error?: string }> {
     try {
       const token = this.getToken();
-      if (!token) {
-        return { success: false, error: 'Not authenticated' };
-      }
 
       const response = await RequestUtils.get(
         ApiRoutes.ORGANIZATIONS.LIST,
@@ -46,9 +43,6 @@ class OrganizationService {
   async getOrganizationById(id: number): Promise<{ success: boolean; organization?: OrganizationWithMembers; error?: string }> {
     try {
       const token = this.getToken();
-      if (!token) {
-        return { success: false, error: 'Not authenticated' };
-      }
 
       const response = await RequestUtils.get(
         ApiRoutes.ORGANIZATIONS.GET(id),
@@ -72,9 +66,6 @@ class OrganizationService {
   async createOrganization(data: CreateOrganizationDto): Promise<{ success: boolean; organization?: Organization; error?: string }> {
     try {
       const token = this.getToken();
-      if (!token) {
-        return { success: false, error: 'Not authenticated' };
-      }
 
       const response = await RequestUtils.post(
         ApiRoutes.ORGANIZATIONS.CREATE,
@@ -99,9 +90,6 @@ class OrganizationService {
   async updateOrganization(id: number, data: UpdateOrganizationDto): Promise<{ success: boolean; organization?: Organization; error?: string }> {
     try {
       const token = this.getToken();
-      if (!token) {
-        return { success: false, error: 'Not authenticated' };
-      }
 
       const response = await RequestUtils.put(
         ApiRoutes.ORGANIZATIONS.UPDATE(id),
@@ -126,9 +114,6 @@ class OrganizationService {
   async deleteOrganization(id: number): Promise<{ success: boolean; error?: string }> {
     try {
       const token = this.getToken();
-      if (!token) {
-        return { success: false, error: 'Not authenticated' };
-      }
 
       const response = await RequestUtils.delete(
         ApiRoutes.ORGANIZATIONS.DELETE(id),
@@ -153,9 +138,6 @@ class OrganizationService {
   async addMemberById(orgId: number, data: AddMemberByIdDto): Promise<{ success: boolean; error?: string }> {
     try {
       const token = this.getToken();
-      if (!token) {
-        return { success: false, error: 'Not authenticated' };
-      }
 
       const response = await RequestUtils.post(
         ApiRoutes.ORGANIZATIONS.ADD_MEMBER_BY_ID(orgId),
@@ -180,9 +162,6 @@ class OrganizationService {
   async updateMemberRole(orgId: number, memberId: number, role: OrganizationRole): Promise<{ success: boolean; error?: string }> {
     try {
       const token = this.getToken();
-      if (!token) {
-        return { success: false, error: 'Not authenticated' };
-      }
 
       const response = await RequestUtils.put(
         ApiRoutes.ORGANIZATIONS.UPDATE_MEMBER(orgId, memberId),
@@ -207,9 +186,6 @@ class OrganizationService {
   async removeMember(orgId: number, memberId: number): Promise<{ success: boolean; error?: string }> {
     try {
       const token = this.getToken();
-      if (!token) {
-        return { success: false, error: 'Not authenticated' };
-      }
 
       const response = await RequestUtils.delete(
         ApiRoutes.ORGANIZATIONS.REMOVE_MEMBER(orgId, memberId),

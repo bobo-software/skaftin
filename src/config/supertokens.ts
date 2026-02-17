@@ -284,6 +284,10 @@ export function initSuperTokens() {
                   const { user, passwordResetLink } = input;
                   const appName = process.env.SUPERTOKENS_APP_NAME || "Skaftin";
 
+                  // Embed issued-at timestamp so the frontend can detect expiry on page load
+                  const issuedAt = Math.floor(Date.now() / 1000);
+                  const resetLink = `${passwordResetLink}&iat=${issuedAt}`;
+
                   const subject = `Reset your password - ${appName}`;
                   const textContent = `
 Hello,
@@ -292,9 +296,9 @@ We received a request to reset your password for your ${appName} account.
 
 Click the link below to reset your password:
 
-${passwordResetLink}
+${resetLink}
 
-This link will expire in 1 hour.
+This link will expire in 15 minutes.
 
 If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
 
@@ -326,11 +330,11 @@ The ${appName} Team
       <p>We received a request to reset your password for your ${appName} account.</p>
       <p>Click the button below to set a new password:</p>
       <div style="text-align: center;">
-        <a href="${passwordResetLink}" class="button">Reset Password</a>
+        <a href="${resetLink}" class="button">Reset Password</a>
       </div>
       <p>Or copy and paste this link into your browser:</p>
-      <p style="word-break: break-all; color: #666; font-size: 12px;">${passwordResetLink}</p>
-      <p>This link will expire in <strong>1 hour</strong>.</p>
+      <p style="word-break: break-all; color: #666; font-size: 12px;">${resetLink}</p>
+      <p>This link will expire in <strong>15 minutes</strong>.</p>
       <div class="warning">
         If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
       </div>

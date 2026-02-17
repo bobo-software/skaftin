@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { AppButton, AppInput } from '@components/ComponentsIndex';
-import { Database, X, Building2 } from 'lucide-react';
+import { Database, X, Building2, Plus } from 'lucide-react';
 import { useProjectStore, useOrganizationStore } from '../../stores/StoresIndex';
+import CreateOrganizationModal from './CreateOrganizationModal';
 
 interface CreateProjectModalProps {
   isOpen: boolean;
@@ -12,6 +13,10 @@ interface CreateProjectModalProps {
 const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalProps) => {
   const { createProject } = useProjectStore();
   const { organizations, fetchOrganizations } = useOrganizationStore();
+  // Only show orgs where the user has permission to create projects (admin or dev)
+  const creatableOrgs = organizations.filter(org => org.role === 'admin' || org.role === 'dev');
+  const hasOrganizations = creatableOrgs.length > 0;
+  const [showCreateOrgModal, setShowCreateOrgModal] = useState(false);
   
   // State variables
   const [projectData, setProjectData] = useState({
@@ -29,15 +34,15 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
     }
   }, [isOpen, fetchOrganizations]);
 
-  // Set default organization when organizations are loaded
+  // Set default organization when creatable organizations are loaded
   useEffect(() => {
-    if (organizations.length > 0 && projectData.organization_id === 0) {
+    if (creatableOrgs.length > 0 && projectData.organization_id === 0) {
       setProjectData(prev => ({
         ...prev,
-        organization_id: organizations[0].id
+        organization_id: creatableOrgs[0].id
       }));
     }
-  }, [organizations, projectData.organization_id]);
+  }, [creatableOrgs, projectData.organization_id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +57,7 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
 
       if (newProject) {
         // Reset form
-        setProjectData({ name: '', description: '', organization_id: organizations.length > 0 ? organizations[0].id : 0 });
+        setProjectData({ name: '', description: '', organization_id: creatableOrgs.length > 0 ? creatableOrgs[0].id : 0 });
         // Call success callback with the created project
         onSuccess?.(newProject);
         onClose();
@@ -102,34 +107,41 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
             <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
               Organization *
             </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Building2 className="w-4 h-4 text-dark-400" />
-              </div>
-              <select
-                value={projectData.organization_id}
-                onChange={(e) => handleInputChange('organization_id', e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-dark-200 dark:border-dark-700 rounded-lg 
-                         bg-white dark:bg-dark-700 text-dark-900 dark:text-white 
-                         focus:ring-2 focus:ring-primary-500 focus:border-transparent
-                         transition-colors"
-                required
-              >
-                {organizations.length === 0 ? (
-                  <option value="">No organizations available</option>
-                ) : (
-                  organizations.map((org) => (
+            {hasOrganizations ? (
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Building2 className="w-4 h-4 text-dark-400" />
+                </div>
+                <select
+                  value={projectData.organization_id}
+                  onChange={(e) => handleInputChange('organization_id', e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 border border-dark-200 dark:border-dark-700 rounded-lg 
+                           bg-white dark:bg-dark-700 text-dark-900 dark:text-white 
+                           focus:ring-2 focus:ring-primary-500 focus:border-transparent
+                           transition-colors"
+                  required
+                >
+                  {creatableOrgs.map((org) => (
                     <option key={org.id} value={org.id}>
                       {org.name}
                     </option>
-                  ))
-                )}
-              </select>
-            </div>
-            {organizations.length === 0 && (
-              <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                Please create an organization first before creating a project.
-              </p>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+                  You need an organization before you can create a project.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateOrgModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create Organization
+                </button>
+              </div>
             )}
           </div>
 
@@ -139,6 +151,7 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
             value={projectData.name}
             onChange={(value: string) => handleInputChange('name', value)}
             required
+            disabled={!hasOrganizations}
             icon={<Database className="w-4 h-4" />}
           />
           <AppInput
@@ -146,6 +159,7 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
             placeholder="Describe your project..."
             value={projectData.description}
             onChange={(value: string) => handleInputChange('description', value)}
+            disabled={!hasOrganizations}
           />
 
 
@@ -167,7 +181,7 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
             <AppButton
               type="submit"
               loading={isCreating}
-              disabled={!projectData.name.trim() || !projectData.organization_id || isCreating || organizations.length === 0}
+              disabled={!projectData.name.trim() || !projectData.organization_id || isCreating || creatableOrgs.length === 0}
               className="flex-1"
             >
               {isCreating ? 'Creating...' : 'Create Project'}
@@ -175,6 +189,13 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
           </div>
         </form>
       </div>
+
+      {/* Create Organization Modal */}
+      <CreateOrganizationModal
+        isOpen={showCreateOrgModal}
+        onClose={() => setShowCreateOrgModal(false)}
+        onSuccess={() => fetchOrganizations()}
+      />
     </div>
   );
 };

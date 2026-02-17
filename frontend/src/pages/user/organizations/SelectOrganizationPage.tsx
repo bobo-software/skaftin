@@ -19,9 +19,9 @@ const SelectOrganizationPage = () => {
       try {
         const result = await OrganizationService.getUserOrganizations();
         if (result.success && result.organizations) {
-          // If user has 0 orgs, redirect to create
+          // If user has 0 orgs, go straight to projects (invited team members)
           if (result.organizations.length === 0) {
-            navigate('/organizations/create');
+            navigate('/projects');
             return;
           }
           // If user has exactly 1 org, auto-select and redirect
@@ -32,12 +32,12 @@ const SelectOrganizationPage = () => {
           }
           setOrganizations(result.organizations);
         } else {
-          // Error fetching, redirect to create
-          navigate('/organizations/create');
+          // Error fetching, go to projects
+          navigate('/projects');
         }
       } catch (error) {
         console.error('Error fetching organizations:', error);
-        navigate('/organizations/create');
+        navigate('/projects');
       } finally {
         setLoading(false);
       }

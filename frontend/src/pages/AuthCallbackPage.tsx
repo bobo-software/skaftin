@@ -58,13 +58,14 @@ const AuthCallbackPage = () => {
           if (orgResult.success && orgResult.organizations) {
             if (orgResult.organizations.length > 1) {
               navigate('/organizations/select');
-            } else if (orgResult.organizations.length === 1) {
-              navigate('/projects');
             } else {
-              navigate('/organizations/create');
+              // User has 0 or 1 organizations — go straight to projects
+              // Invited team members may not have their own org yet
+              navigate('/projects');
             }
           } else {
-            navigate('/organizations/create');
+            // Error fetching organizations — go to projects anyway
+            navigate('/projects');
           }
         } else if (response.status === 'NO_EMAIL_GIVEN_BY_PROVIDER') {
           setError('The OAuth provider did not share your email address. Please try a different login method.');

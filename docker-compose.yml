@@ -22,6 +22,9 @@ services:
       
       # Log level
       LOG_LEVEL: info
+      
+      # Password reset token expires after 15 minutes (in milliseconds)
+      PASSWORD_RESET_TOKEN_LIFETIME: 900000
     networks:
       - skaftin-network
     restart: unless-stopped

@@ -29,6 +29,14 @@ export default defineConfig({
           '/auth/session/refresh': '/auth/session/refresh',
           '*': '/'
         },
+        bypass(req) {
+          // Don't proxy browser navigation requests (HTML page requests).
+          // Let Vite serve them as SPA routes so React Router handles
+          // pages like /auth/reset-password and /auth/verify-email.
+          if (req.headers.accept?.includes('text/html')) {
+            return '/index.html';
+          }
+        },
       },
       '/api': {
         target: 'http://localhost:4006',

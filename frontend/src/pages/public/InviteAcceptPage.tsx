@@ -185,12 +185,15 @@ const InviteAcceptPage = () => {
                 >
                   Create Account
                 </Link>
+                <p className="text-sm text-dark-600 dark:text-dark-400">  
+                  Don't have an account? 
+                </p>
                 <Link
                   to="/login"
                   state={{ redirectTo: `/invite/${inviteCode}` }}
                   className="block w-full px-6 py-3 border border-primary-600 text-primary-600 text-center rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors font-medium"
                 >
-                  Sign In to Accept
+                  Sign In
                 </Link>
               </div>
             </div>

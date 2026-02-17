@@ -1,12 +1,14 @@
 import { Request, Response } from 'express';
 import { db } from '../db/drizzle.config';
 import { users } from '../db/schemas/UsersSchema';
-import { eq } from 'drizzle-orm';
+import { organization_members } from '../db/schemas/OrganizationsSchema';
+import { eq, sql } from 'drizzle-orm';
 import ResponseUtils from '../utils/ResponseUtils';
 import CommonUtils from '../utils/CommonUtils';
 import { SuperTokensAuthenticatedRequest } from '../middleware/supertokensAuthMiddleware';
 import EmailPassword from 'supertokens-node/recipe/emailpassword';
-import { convertToRecipeUserId } from 'supertokens-node';
+import Session from 'supertokens-node/recipe/session';
+import { deleteUser as deleteSupertokensUser, convertToRecipeUserId } from 'supertokens-node';
 
 class UsersController {
   /**
@@ -245,6 +247,37 @@ class UsersController {
     } catch (error: any) {
       console.error('Change password error:', error);
       ResponseUtils.error(res, 'Failed to change password', error);
+    }
+  }
+
+  /**
+   * Delete current user account
+   * DELETE /api/users/me
+   */
+  static async deleteAccount(req: SuperTokensAuthenticatedRequest, res: Response) {
+    try {
+      if (!req.user || !req.user.userId) {
+        return ResponseUtils.error(res, 'User not authenticated', null, null, 401);
+      }
+
+      const userId = req.user.userId;
+
+      // Remove from all organization memberships
+      await db.delete(organization_members).where(eq(organization_members.user_id, userId));
+
+      // Remove from all project memberships
+      await db.execute(sql`DELETE FROM skaftin_system_project_members WHERE user_id = ${userId}`);
+
+      // Revoke all active sessions for this user
+      await Session.revokeAllSessionsForUser(userId);
+
+      // Delete the user from SuperTokens
+      await deleteSupertokensUser(userId);
+
+      ResponseUtils.success(res, 'Account deleted successfully');
+    } catch (error: any) {
+      console.error('Delete account error:', error);
+      ResponseUtils.error(res, 'Failed to delete account', error);
     }
   }
 }

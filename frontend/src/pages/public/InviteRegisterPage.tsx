@@ -117,14 +117,14 @@ const InviteRegisterPage = () => {
               <span className="text-sm font-medium">You're Invited!</span>
             </div>
             
-            <h1 className="text-5xl font-bold leading-tight">
+            <h1 className="text-5xl font-bold leading-tight text-black/80">
               Join{' '}
               <span className="bg-gradient-to-r from-primary-400 to-purple-400 bg-clip-text text-transparent">
                 {invitation.project_name}
               </span>
             </h1>
             
-            <p className="text-xl text-white/80">
+            <p className="text-xl text-black/80">
               Create your account to start collaborating with your team on Skaftin Platform.
             </p>
           </div>
@@ -136,8 +136,8 @@ const InviteRegisterPage = () => {
                 <CheckCircle className="w-5 h-5 text-green-400" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">Instant Access</h3>
-                <p className="text-white/70 text-sm">
+                <h3 className="font-semibold mb-1 text-black/70">Instant Access</h3>
+                <p className="text-black/70 text-sm">
                   Get immediate access to the project after registration
                 </p>
               </div>
@@ -148,8 +148,8 @@ const InviteRegisterPage = () => {
                 <Users className="w-5 h-5 text-blue-400" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">Team Collaboration</h3>
-                <p className="text-white/70 text-sm">
+                <h3 className="font-semibold mb-1 text-black/70">Team Collaboration</h3>
+                <p className="text-black/70 text-sm">
                   Work together with your team on shared resources
                 </p>
               </div>
@@ -160,8 +160,8 @@ const InviteRegisterPage = () => {
                 <Mail className="w-5 h-5 text-purple-400" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">Secure Platform</h3>
-                <p className="text-white/70 text-sm">
+                <h3 className="font-semibold mb-1 text-black/70">Secure Platform</h3>
+                <p className="text-black/70 text-sm">
                   Enterprise-grade security for all your data
                 </p>
               </div>

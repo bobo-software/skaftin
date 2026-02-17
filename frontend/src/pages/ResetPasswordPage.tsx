@@ -1,7 +1,32 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Database, Lock, Eye, EyeOff, ArrowRight, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Database, Lock, Eye, EyeOff, ArrowRight, CheckCircle, AlertTriangle, Clock, ShieldCheck } from 'lucide-react';
 import { submitNewPassword, getResetPasswordTokenFromURL } from '../config/supertokens';
+
+const RESET_LINK_LIFETIME_SECONDS = 900; // 15 minutes
+const USED_TOKENS_KEY = 'skaftin_used_reset_tokens';
+
+/** Mark a reset token as consumed in localStorage. */
+function markTokenUsed(token: string) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(USED_TOKENS_KEY) || '[]') as string[];
+    // Keep only the last 20 entries to avoid unbounded growth
+    const updated = [...stored.slice(-19), token];
+    localStorage.setItem(USED_TOKENS_KEY, JSON.stringify(updated));
+  } catch {
+    // Ignore storage errors (private browsing, quota, etc.)
+  }
+}
+
+/** Check whether a reset token has already been consumed. */
+function isTokenUsed(token: string): boolean {
+  try {
+    const stored = JSON.parse(localStorage.getItem(USED_TOKENS_KEY) || '[]') as string[];
+    return stored.includes(token);
+  } catch {
+    return false;
+  }
+}
 
 const ResetPasswordPage = () => {
   const navigate = useNavigate();
@@ -19,6 +44,21 @@ const ResetPasswordPage = () => {
   } catch {
     token = undefined;
   }
+
+  // Check if the link has expired using the issued-at timestamp in the URL
+  const isLinkExpired = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const iat = params.get('iat');
+    if (!iat) return false; // No iat param -- fall through to server-side validation
+    const issuedAt = parseInt(iat, 10);
+    if (isNaN(issuedAt)) return false;
+    return Math.floor(Date.now() / 1000) > issuedAt + RESET_LINK_LIFETIME_SECONDS;
+  }, []);
+
+  // Check if this token was already used (client-side via localStorage)
+  const isAlreadyUsed = useMemo(() => {
+    return token ? isTokenUsed(token) : false;
+  }, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +82,7 @@ const ResetPasswordPage = () => {
       });
 
       if (response.status === 'OK') {
+        if (token) markTokenUsed(token);
         setSuccess(true);
       } else if (response.status === 'RESET_PASSWORD_INVALID_TOKEN_ERROR') {
         setError('This reset link has expired or is invalid. Please request a new one.');
@@ -58,6 +99,84 @@ const ResetPasswordPage = () => {
       setIsLoading(false);
     }
   };
+
+  // Link has expired (detected client-side via iat timestamp)
+  if (token && isLinkExpired) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl mb-4">
+              <Database className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-3xl font-bold text-dark-900 dark:text-white mb-2">
+              Link Expired
+            </h1>
+          </div>
+          <div className="bg-white dark:bg-dark-800 rounded-2xl shadow-xl p-8 text-center space-y-6">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full mx-auto">
+              <Clock className="w-8 h-8 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <p className="text-dark-600 dark:text-dark-300 text-sm">
+                This password reset link has expired. Reset links are valid for 15 minutes. Please request a new one.
+              </p>
+            </div>
+            <Link
+              to="/forgot-password"
+              className="w-full btn-primary text-lg py-3 flex items-center justify-center"
+            >
+              Request New Reset Link
+              <ArrowRight className="w-5 h-5 ml-2" />
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Link has already been used (detected client-side via localStorage)
+  if (token && isAlreadyUsed) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl mb-4">
+              <Database className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-3xl font-bold text-dark-900 dark:text-white mb-2">
+              Link Already Used
+            </h1>
+          </div>
+          <div className="bg-white dark:bg-dark-800 rounded-2xl shadow-xl p-8 text-center space-y-6">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full mx-auto">
+              <ShieldCheck className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <p className="text-dark-600 dark:text-dark-300 text-sm">
+                This password reset link has already been used. For security, each link can only be used once.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <Link
+                to="/forgot-password"
+                className="w-full btn-primary text-lg py-3 flex items-center justify-center"
+              >
+                Request New Reset Link
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Link>
+              <Link
+                to="/login"
+                className="w-full text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors text-sm inline-flex items-center justify-center"
+              >
+                Back to Login
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // No token in URL
   if (!token) {

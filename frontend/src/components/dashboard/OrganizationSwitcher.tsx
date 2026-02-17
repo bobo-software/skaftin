@@ -77,14 +77,14 @@ const OrganizationSwitcher = () => {
             <AppText
               children="Organization"
               size="xs"
-              color="white"
+              color="default" 
               weight="thin"
               align="left"
             />
             <AppText
               children={currentOrganization.name}
               size="xs"
-              color="white"
+              color="default"
               weight="medium"
               align="left"
               truncate={true}

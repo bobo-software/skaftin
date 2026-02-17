@@ -22,6 +22,12 @@ const TeamTab = () => {
     }
   }, [projectId]);
 
+  useEffect(() => {
+    if (emailProviders.length > 0 && selectedProvider === undefined) {
+      setSelectedProvider(emailProviders[0].id);
+    }
+  }, [emailProviders]);
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -76,7 +82,7 @@ const TeamTab = () => {
 
       setShowInviteModal(false);
       setInviteEmail('');
-      setSelectedProvider(undefined);
+      setSelectedProvider(emailProviders.length > 0 ? emailProviders[0].id : undefined);
       loadData();
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to send invitation');
@@ -272,7 +278,7 @@ const TeamTab = () => {
               {/* Email Provider Selection */}
               <div>
                 <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Send via Email Provider (Optional)
+                  Send via Email Provider
                 </label>
                 <select
                   value={selectedProvider || ''}

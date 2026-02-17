@@ -259,7 +259,7 @@ class InvitationsController {
     const providerQuery = `
       SELECT smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, 
              from_email, from_name, is_active
-      FROM email_providers
+      FROM skaftin_system_email_providers
       WHERE id = $1 AND project_id = $2 AND is_active = true
     `;
 
@@ -507,6 +507,23 @@ class InvitationsController {
       );
 
       console.log('  └─ ✅ User added to skaftin_system_project_members with ID:', insertMember.rows[0].id);
+
+      // Auto-add user to the project's organization as 'member' if not already a member
+      console.log('  └─ Adding user to project organization...');
+      const orgResult = await this.pool.query(
+        'SELECT organization_id FROM skaftin_system_projects WHERE id = $1',
+        [invitation.project_id]
+      );
+      if (orgResult.rows.length > 0 && orgResult.rows[0].organization_id) {
+        const orgId = orgResult.rows[0].organization_id;
+        await this.pool.query(
+          `INSERT INTO skaftin_system_organization_members (organization_id, user_id, role)
+           VALUES ($1, $2, 'member')
+           ON CONFLICT (organization_id, user_id) DO NOTHING`,
+          [orgId, userId]
+        );
+        console.log('  └─ ✅ User added to organization', orgId, 'as member');
+      }
 
       // Delete the invitation (no need to keep it after acceptance)
       console.log('  └─ Deleting invitation from database...');
