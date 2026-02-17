@@ -59,3 +59,15 @@ jobs:
           tags: |
             dr.bobosoftware.co.za/skaftin-frontend:latest
             dr.bobosoftware.co.za/skaftin-frontend:${{ env.VERSION }}
+
+      - name: Build and push Go Service Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./go-services
+          file: ./go-services/Dockerfile
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            dr.bobosoftware.co.za/skaftin-go-service:latest
+            dr.bobosoftware.co.za/skaftin-go-service:${{ env.VERSION }}

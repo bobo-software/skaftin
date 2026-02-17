@@ -38,6 +38,11 @@ export default defineConfig({
           }
         },
       },
+      '/api/v2': {
+        target: 'http://localhost:4007',
+        changeOrigin: true,
+        secure: false,
+      },
       '/api': {
         target: 'http://localhost:4006',
         changeOrigin: true,
