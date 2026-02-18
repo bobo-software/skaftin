@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/config"
+	"github.com/skaftin/go-services/internal/dbproxy"
 	"github.com/skaftin/go-services/internal/gateway"
 	"github.com/skaftin/go-services/internal/health"
 )
@@ -27,6 +28,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 
 	// ---- Domain handlers ----
 	healthHandler := health.NewHandler(pool)
+	dbHandler := dbproxy.NewHandler(pool)
 
 	// ==================================================================
 	// PUBLIC ROUTES (no auth required)
@@ -38,6 +40,14 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	// ==================================================================
 	v2Mux := http.NewServeMux()
 	mux.Handle("/api/v2/", auth.APIKey(pool)(v2Mux))
+
+	// ==================================================================
+	// GO-HANDLED DATABASE ROUTES (JWT auth + project access)
+	// Must be registered BEFORE the /api/ catch-all proxy.
+	// ==================================================================
+	dbMux := http.NewServeMux()
+	dbHandler.RegisterRoutes(dbMux)
+	mux.Handle("/api/database/", auth.JWTAuth(jwks)(auth.VerifyProjectAccess(pool)(dbMux)))
 
 	// ==================================================================
 	// PROXIED ROUTES (forwarded to Node.js)
