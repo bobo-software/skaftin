@@ -35,7 +35,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/projects/{id}", h.GetProject)
 	mux.HandleFunc("PUT /api/projects/update/{id}", h.UpdateProject)
 	mux.HandleFunc("DELETE /api/projects/delete/{id}", h.DeleteProject)
-	mux.HandleFunc("POST /api/projects/reset/{id}", h.ResetProject)
+	mux.HandleFunc("POST /api/projects/{id}/reset", h.ResetProject)
 	mux.HandleFunc("GET /api/projects/{id}/stats", h.GetProjectStats)
 
 	// Bucket management
