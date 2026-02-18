@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/skaftin/go-services/internal/database"
 	"github.com/skaftin/go-services/internal/handlers"
 	"github.com/skaftin/go-services/internal/middleware"
+	"github.com/skaftin/go-services/internal/noderunner"
+	"github.com/skaftin/go-services/internal/proxy"
 )
 
 func main() {
@@ -35,26 +38,75 @@ func main() {
 	defer pool.Close()
 	slog.Info("connected to PostgreSQL")
 
+	// ======================================================================
+	// NODE.JS CHILD PROCESS (local dev only)
+	// ======================================================================
+	var nodeRunner *noderunner.Runner
+	if cfg.AutoStartNode {
+		// Extract the port from the Node backend URL for the health check
+		nodePort := "4007"
+		if parts := strings.Split(cfg.NodeBackendURL, ":"); len(parts) == 3 {
+			nodePort = parts[2]
+		}
+
+		healthURL := cfg.NodeBackendURL + "/api/health"
+		nodeRunner = noderunner.New(cfg.NodeCommand, cfg.NodeWorkDir, nodePort, healthURL)
+
+		startCtx, startCancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer startCancel()
+
+		if err := nodeRunner.Start(startCtx); err != nil {
+			slog.Error("failed to start Node.js backend", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		slog.Info("AUTO_START_NODE=false, skipping Node.js child process")
+	}
+
+	// ======================================================================
+	// JWKS + REVERSE PROXY
+	// ======================================================================
+	jwks := middleware.NewJWKSProvider(cfg.SuperTokensCoreURL)
+	slog.Info("JWKS provider initialized", "supertokensCoreURL", cfg.SuperTokensCoreURL)
+
+	nodeProxy, err := proxy.NewReverseProxy(cfg.NodeBackendURL)
+	if err != nil {
+		slog.Error("failed to create reverse proxy", "error", err)
+		os.Exit(1)
+	}
+	nodeHandler := proxy.WebSocketAwareHandler(nodeProxy, cfg.NodeBackendURL)
+	slog.Info("reverse proxy initialized", "nodeBackendURL", cfg.NodeBackendURL)
+
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler(pool)
 
-	// Set up routes
+	// ======================================================================
+	// ROUTE SETUP
+	// ======================================================================
 	mux := http.NewServeMux()
 
-	// Public routes (no auth required)
+	// --- Public routes (no auth required) ---
 	mux.HandleFunc("GET /api/v2/health", healthHandler.Health)
 
-	// Authenticated routes
-	authMux := http.NewServeMux()
-	// Future endpoints will be registered here, for example:
-	// authMux.HandleFunc("GET /api/v2/data/{table}", dataHandler.Query)
-	// authMux.HandleFunc("POST /api/v2/data/{table}", dataHandler.Insert)
+	// --- Go-handled routes (API key / access token auth) ---
+	v2Mux := http.NewServeMux()
+	mux.Handle("/api/v2/", middleware.Auth(pool)(v2Mux))
 
-	// Wrap authenticated routes with auth middleware
-	authHandler := middleware.Auth(pool)(authMux)
-	mux.Handle("/api/v2/", authHandler)
+	// --- Auth routes: pass through to Node.js with NO auth check ---
+	mux.Handle("/auth/", nodeHandler)
 
-	// Apply global middleware stack
+	// --- Platform API routes: validate JWT, then proxy to Node.js ---
+	mux.Handle("/api/", middleware.JWTAuth(jwks)(nodeHandler))
+
+	// --- Client API routes: validate API key, then proxy to Node.js ---
+	mux.Handle("/app-api/", middleware.Auth(pool)(nodeHandler))
+
+	// --- Socket.IO: pass through to Node.js (handles its own auth) ---
+	mux.Handle("/socket.io/", nodeHandler)
+
+	// ======================================================================
+	// GLOBAL MIDDLEWARE
+	// ======================================================================
 	corsHandler := middleware.NewCORS()
 	handler := corsHandler.Handler(middleware.Logging(mux))
 
@@ -63,8 +115,8 @@ func main() {
 		Addr:         ":" + cfg.Port,
 		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// Graceful shutdown
@@ -72,7 +124,12 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		slog.Info("Go microservice starting", "port", cfg.Port)
+		slog.Info("Go gateway starting",
+			"port", cfg.Port,
+			"nodeBackend", cfg.NodeBackendURL,
+			"supertokensCore", cfg.SuperTokensCoreURL,
+			"autoStartNode", cfg.AutoStartNode,
+		)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "error", err)
 			os.Exit(1)
@@ -82,11 +139,17 @@ func main() {
 	<-done
 	slog.Info("shutting down gracefully...")
 
+	// Shutdown Go HTTP server
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server shutdown error", "error", err)
+	}
+
+	// Stop Node.js child process if we started it
+	if nodeRunner != nil {
+		nodeRunner.Stop()
 	}
 
 	slog.Info("server stopped")

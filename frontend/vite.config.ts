@@ -20,6 +20,7 @@ export default defineConfig({
     port: 3005,
     host: true,
     proxy: {
+      // All traffic routes through the Go gateway
       '/auth': {
         target: 'http://localhost:4006',
         changeOrigin: true,
@@ -38,11 +39,6 @@ export default defineConfig({
           }
         },
       },
-      '/api/v2': {
-        target: 'http://localhost:4007',
-        changeOrigin: true,
-        secure: false,
-      },
       '/api': {
         target: 'http://localhost:4006',
         changeOrigin: true,
@@ -56,6 +52,12 @@ export default defineConfig({
         secure: false,
         cookieDomainRewrite: 'localhost',
         cookiePathRewrite: '/',
+      },
+      '/socket.io': {
+        target: 'http://localhost:4006',
+        changeOrigin: true,
+        secure: false,
+        ws: true,
       },
     },
   },

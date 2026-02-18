@@ -4,7 +4,10 @@ import EmailPassword from 'supertokens-auth-react/recipe/emailpassword';
 import EmailVerification from 'supertokens-auth-react/recipe/emailverification';
 import ThirdParty, { Google, Github, Apple } from 'supertokens-auth-react/recipe/thirdparty';
 
-const API_DOMAIN = import.meta.env.VITE_API_URL || 'http://localhost:4006';
+// In production, VITE_API_URL should point to the Go gateway domain.
+// In development, use the frontend's own origin so requests go through the
+// Vite dev proxy (configured in vite.config.ts), avoiding CORS issues.
+const API_DOMAIN = import.meta.env.VITE_API_URL || window.location.origin;
 const WEBSITE_DOMAIN = window.location.origin;
 
 export function initSuperTokensFrontend() {

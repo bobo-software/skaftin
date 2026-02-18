@@ -546,6 +546,10 @@ The ${appName} Team
       Session.init({
         ...cookieSettings,
         sessionExpiredStatusCode: 401,
+        // Expose the access token as a standard JWT so external services (e.g. Go gateway)
+        // can verify sessions independently using the JWKS endpoint at
+        // {supertokensCore}/.well-known/jwks.json
+        exposeAccessTokenToFrontendInCookieBasedAuth: true,
         // Note: Token lifetimes are configured via SuperTokens Core environment variables:
         // - ACCESS_TOKEN_VALIDITY_SECONDS (default: 3600 = 1 hour)
         // - REFRESH_TOKEN_VALIDITY_SECONDS (default: 8640000 = 100 days)
