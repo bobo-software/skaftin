@@ -1,0 +1,13 @@
+package payments
+
+import "github.com/jackc/pgx/v5/pgxpool"
+
+// Service contains business logic for payment provider dispatch.
+type Service struct {
+	store *Store
+}
+
+// NewService creates a new payments Service.
+func NewService(pool *pgxpool.Pool) *Service {
+	return &Service{store: NewStore(pool)}
+}
