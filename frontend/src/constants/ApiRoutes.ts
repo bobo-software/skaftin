@@ -37,7 +37,7 @@ const ApiRoutes = {
     GET: (id: string) => `/api/projects/${id}`,
     UPDATE: (id: string) => `/api/projects/update/${id}`,
     DELETE: (id: string) => `/api/projects/delete/${id}`,
-    RESET: (id: string) => `/api/projects/reset/${id}`,
+    RESET: (id: string) => `/api/projects/${id}/reset`,
     STATS: (id: string) => `/api/projects/${id}/stats`,
     DASHBOARD_STATS: '/api/projects/dashboard-stats',
   },
