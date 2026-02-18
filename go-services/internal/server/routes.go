@@ -12,6 +12,7 @@ import (
 	"github.com/skaftin/go-services/internal/health"
 	"github.com/skaftin/go-services/internal/orgs"
 	"github.com/skaftin/go-services/internal/projects"
+	"github.com/skaftin/go-services/internal/requestlogs"
 )
 
 // RegisterRoutes wires all domain handlers and proxy routes onto the mux.
@@ -36,6 +37,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 		return err
 	}
 	orgsHandler := orgs.NewHandler(pool)
+	requestLogsHandler := requestlogs.NewHandler(pool)
 
 	// ==================================================================
 	// PUBLIC ROUTES (no auth required)
@@ -71,6 +73,14 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	orgsMux := http.NewServeMux()
 	orgsHandler.RegisterRoutes(orgsMux)
 	mux.Handle("/api/organizations/", auth.JWTAuth(jwks)(orgsMux))
+
+	// ==================================================================
+	// GO-HANDLED REQUEST LOG ROUTES (JWT auth, access checks in handlers)
+	// Must be registered BEFORE the /api/ catch-all proxy.
+	// ==================================================================
+	requestLogsMux := http.NewServeMux()
+	requestLogsHandler.RegisterRoutes(requestLogsMux)
+	mux.Handle("/api/request-logs/", auth.JWTAuth(jwks)(requestLogsMux))
 
 	// ==================================================================
 	// PROXIED ROUTES (forwarded to Node.js)
