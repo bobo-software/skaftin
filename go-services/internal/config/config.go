@@ -2,14 +2,22 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Port     string
-	Database DatabaseConfig
-	MinIO    MinIOConfig
+	Port               string
+	Database           DatabaseConfig
+	MinIO              MinIOConfig
+	SuperTokensCoreURL string
+	NodeBackendURL     string
+	AutoStartNode      bool
+	NodeCommand        string
+	NodeWorkDir        string
 }
 
 type DatabaseConfig struct {
@@ -35,8 +43,17 @@ func (d DatabaseConfig) DSN() string {
 }
 
 func Load() *Config {
+	// Load .env file if it exists (does not override existing env vars)
+	if err := godotenv.Load(); err == nil {
+		slog.Info("loaded .env file")
+	}
 	return &Config{
-		Port: getEnv("PORT", "4007"),
+		Port:               getEnv("PORT", "4006"),
+		SuperTokensCoreURL: getEnvAny([]string{"SUPERTOKENS_CORE_URL", "SUPERTOKENS_CONNECTION_URI"}, "http://localhost:3567"),
+		NodeBackendURL:     getEnv("NODE_BACKEND_URL", "http://localhost:4007"),
+		AutoStartNode:      getEnv("AUTO_START_NODE", "true") == "true",
+		NodeCommand:        getEnv("NODE_COMMAND", "npx nodemon src/Server.ts"),
+		NodeWorkDir:        getEnv("NODE_WORK_DIR", ".."),
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "5432"),
@@ -56,6 +73,16 @@ func Load() *Config {
 func getEnv(key, fallback string) string {
 	if val, ok := os.LookupEnv(key); ok {
 		return val
+	}
+	return fallback
+}
+
+// getEnvAny checks multiple env var names in order and returns the first one found.
+func getEnvAny(keys []string, fallback string) string {
+	for _, key := range keys {
+		if val, ok := os.LookupEnv(key); ok {
+			return val
+		}
 	}
 	return fallback
 }
