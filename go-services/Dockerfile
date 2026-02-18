@@ -22,6 +22,6 @@ RUN apk --no-cache add ca-certificates wget
 
 COPY --from=builder /server /server
 
-EXPOSE 4007
+EXPOSE 4006
 
 CMD ["/server"]
