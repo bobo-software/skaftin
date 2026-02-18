@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -61,12 +62,33 @@ func Load() *Config {
 			User:     getEnv("DB_USER", "postgres"),
 			Password: getEnv("DB_PASSWORD", ""),
 		},
-		MinIO: MinIOConfig{
-			Endpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
-			AccessKey: getEnv("MINIO_ACCESS_KEY", ""),
-			SecretKey: getEnv("MINIO_SECRET_KEY", ""),
-			UseSSL:    getEnv("MINIO_USE_SSL", "false") == "true",
-		},
+		MinIO: parseMinIOConfig(),
+	}
+}
+
+// parseMinIOConfig builds a MinIOConfig, handling endpoints that may contain a
+// URL scheme (e.g. "https://minio.example.com"). The MinIO Go SDK expects a
+// bare host[:port], so we strip the scheme and infer UseSSL from it.
+func parseMinIOConfig() MinIOConfig {
+	raw := getEnv("MINIO_ENDPOINT", "localhost:9000")
+	endpoint := raw
+	sslFromScheme := false
+
+	if strings.Contains(raw, "://") {
+		u, err := url.Parse(raw)
+		if err == nil {
+			endpoint = u.Host
+			sslFromScheme = u.Scheme == "https"
+		}
+	}
+
+	useSSL := getEnv("MINIO_USE_SSL", "false") == "true" || sslFromScheme
+
+	return MinIOConfig{
+		Endpoint:  endpoint,
+		AccessKey: getEnv("MINIO_ACCESS_KEY", ""),
+		SecretKey: getEnv("MINIO_SECRET_KEY", ""),
+		UseSSL:    useSSL,
 	}
 }
 
