@@ -86,6 +86,7 @@ func scanProjectRows(rows pgx.Rows) ([]Project, error) {
 }
 
 const projectColumns = `id, name, description, organization_id, user_id, schema_name, field_encryption_key, created_at, updated_at`
+const qualifiedProjectColumns = `p.id, p.name, p.description, p.organization_id, p.user_id, p.schema_name, p.field_encryption_key, p.created_at, p.updated_at`
 
 // GetProjectByID fetches a single project.
 func (s *Store) GetProjectByID(ctx context.Context, id int) (*Project, error) {
@@ -147,7 +148,7 @@ func (s *Store) GetUserOrgMembership(ctx context.Context, orgID int, userID stri
 // ListUserProjects returns all projects a user can access (via org admin/dev + direct membership).
 func (s *Store) ListUserProjects(ctx context.Context, userID string) ([]Project, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT DISTINCT p.`+projectColumns+`
+		SELECT DISTINCT `+qualifiedProjectColumns+`
 		FROM skaftin_system_projects p
 		LEFT JOIN skaftin_system_organization_members om
 			ON p.organization_id = om.organization_id AND om.user_id = $1
@@ -168,7 +169,7 @@ func (s *Store) ListUserProjects(ctx context.Context, userID string) ([]Project,
 // Used for dashboard stats where we need the broadest view.
 func (s *Store) ListAllUserProjects(ctx context.Context, userID string) ([]Project, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT DISTINCT p.`+projectColumns+`
+		SELECT DISTINCT `+qualifiedProjectColumns+`
 		FROM skaftin_system_projects p
 		LEFT JOIN skaftin_system_organization_members om
 			ON p.organization_id = om.organization_id AND om.user_id = $1
