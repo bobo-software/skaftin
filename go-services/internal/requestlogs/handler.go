@@ -9,7 +9,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/auth"
-	"github.com/skaftin/go-services/internal/model"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
@@ -33,29 +32,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/request-logs/{projectId}", h.Cleanup)
 }
 
-func requireUser(w http.ResponseWriter, r *http.Request) *model.UserContext {
-	u := auth.GetUserContext(r)
-	if u == nil {
-		httputil.WriteError(w, http.StatusUnauthorized, "Unauthorized")
-		return nil
-	}
-	return u
-}
-
-func projectID(w http.ResponseWriter, r *http.Request) (int, bool) {
-	id, err := strconv.Atoi(r.PathValue("projectId"))
-	if err != nil || id <= 0 {
-		httputil.WriteError(w, http.StatusBadRequest, "Project ID is required")
-		return 0, false
-	}
-	return id, true
-}
-
 func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
-	if requireUser(w, r) == nil {
+	if auth.RequireUser(w, r) == nil {
 		return
 	}
-	pid, ok := projectID(w, r)
+	pid, ok := httputil.ProjectID(w, r)
 	if !ok {
 		return
 	}
@@ -70,10 +51,10 @@ func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
-	if requireUser(w, r) == nil {
+	if auth.RequireUser(w, r) == nil {
 		return
 	}
-	pid, ok := projectID(w, r)
+	pid, ok := httputil.ProjectID(w, r)
 	if !ok {
 		return
 	}
@@ -104,10 +85,10 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
-	if requireUser(w, r) == nil {
+	if auth.RequireUser(w, r) == nil {
 		return
 	}
-	pid, ok := projectID(w, r)
+	pid, ok := httputil.ProjectID(w, r)
 	if !ok {
 		return
 	}
@@ -129,18 +110,18 @@ func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
-	if requireUser(w, r) == nil {
+	if auth.RequireUser(w, r) == nil {
 		return
 	}
-	pid, ok := projectID(w, r)
+	pid, ok := httputil.ProjectID(w, r)
 	if !ok {
 		return
 	}
 
 	q := r.URL.Query()
 	filters := LogFilters{
-		Limit:    intQuery(q.Get("limit"), 50),
-		Offset:   intQuery(q.Get("offset"), 0),
+		Limit:    httputil.IntQuery(q.Get("limit"), 50),
+		Offset:   httputil.IntQuery(q.Get("offset"), 0),
 		HasError: q.Get("has_error") == "true",
 	}
 
@@ -173,10 +154,10 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetLog(w http.ResponseWriter, r *http.Request) {
-	if requireUser(w, r) == nil {
+	if auth.RequireUser(w, r) == nil {
 		return
 	}
-	pid, ok := projectID(w, r)
+	pid, ok := httputil.ProjectID(w, r)
 	if !ok {
 		return
 	}
@@ -201,15 +182,15 @@ func (h *Handler) GetLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Cleanup(w http.ResponseWriter, r *http.Request) {
-	if requireUser(w, r) == nil {
+	if auth.RequireUser(w, r) == nil {
 		return
 	}
-	pid, ok := projectID(w, r)
+	pid, ok := httputil.ProjectID(w, r)
 	if !ok {
 		return
 	}
 
-	olderThanDays := intQuery(r.URL.Query().Get("older_than_days"), 7)
+	olderThanDays := httputil.IntQuery(r.URL.Query().Get("older_than_days"), 7)
 
 	deleted, cutoff, err := h.service.Cleanup(r.Context(), pid, olderThanDays)
 	if err != nil {
@@ -223,9 +204,3 @@ func (h *Handler) Cleanup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func intQuery(s string, fallback int) int {
-	if v, err := strconv.Atoi(s); err == nil {
-		return v
-	}
-	return fallback
-}

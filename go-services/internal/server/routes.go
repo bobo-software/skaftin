@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/skaftin/go-services/internal/analytics"
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/dbproxy"
@@ -13,6 +14,7 @@ import (
 	"github.com/skaftin/go-services/internal/orgs"
 	"github.com/skaftin/go-services/internal/projects"
 	"github.com/skaftin/go-services/internal/requestlogs"
+	"github.com/skaftin/go-services/internal/storage"
 )
 
 // RegisterRoutes wires all domain handlers and proxy routes onto the mux.
@@ -38,6 +40,11 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	}
 	orgsHandler := orgs.NewHandler(pool)
 	requestLogsHandler := requestlogs.NewHandler(pool)
+	analyticsHandler := analytics.NewHandler(pool)
+	storageHandler, err := storage.NewHandler(pool, cfg)
+	if err != nil {
+		return err
+	}
 
 	// ==================================================================
 	// PUBLIC ROUTES (no auth required)
@@ -51,36 +58,19 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	mux.Handle("/api/v2/", auth.APIKey(pool)(v2Mux))
 
 	// ==================================================================
-	// GO-HANDLED DATABASE ROUTES (JWT auth + project access)
-	// Must be registered BEFORE the /api/ catch-all proxy.
+	// GO-HANDLED DOMAIN ROUTES (JWT auth, registered before catch-all)
 	// ==================================================================
+
+	// Database routes also require project access verification middleware.
 	dbMux := http.NewServeMux()
 	dbHandler.RegisterRoutes(dbMux)
 	mux.Handle("/api/database/", auth.JWTAuth(jwks)(auth.VerifyProjectAccess(pool)(dbMux)))
 
-	// ==================================================================
-	// GO-HANDLED PROJECT ROUTES (JWT auth, access checks in handlers)
-	// Must be registered BEFORE the /api/ catch-all proxy.
-	// ==================================================================
-	projectsMux := http.NewServeMux()
-	projectsHandler.RegisterRoutes(projectsMux)
-	mux.Handle("/api/projects/", auth.JWTAuth(jwks)(projectsMux))
-
-	// ==================================================================
-	// GO-HANDLED ORGANIZATION ROUTES (JWT auth, access checks in handlers)
-	// Must be registered BEFORE the /api/ catch-all proxy.
-	// ==================================================================
-	orgsMux := http.NewServeMux()
-	orgsHandler.RegisterRoutes(orgsMux)
-	mux.Handle("/api/organizations/", auth.JWTAuth(jwks)(orgsMux))
-
-	// ==================================================================
-	// GO-HANDLED REQUEST LOG ROUTES (JWT auth, access checks in handlers)
-	// Must be registered BEFORE the /api/ catch-all proxy.
-	// ==================================================================
-	requestLogsMux := http.NewServeMux()
-	requestLogsHandler.RegisterRoutes(requestLogsMux)
-	mux.Handle("/api/request-logs/", auth.JWTAuth(jwks)(requestLogsMux))
+	mountJWT(mux, "/api/projects/", jwks, projectsHandler.RegisterRoutes)
+	mountJWT(mux, "/api/organizations/", jwks, orgsHandler.RegisterRoutes)
+	mountJWT(mux, "/api/request-logs/", jwks, requestLogsHandler.RegisterRoutes)
+	mountJWT(mux, "/api/storage/", jwks, storageHandler.RegisterRoutes)
+	mountJWT(mux, "/api/analytics/", jwks, analyticsHandler.RegisterRoutes)
 
 	// ==================================================================
 	// PROXIED ROUTES (forwarded to Node.js)
@@ -99,4 +89,12 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	mux.Handle("/socket.io/", nodeHandler)
 
 	return nil
+}
+
+// mountJWT creates a sub-mux, registers routes on it, and mounts it under
+// the given pattern with JWT authentication middleware.
+func mountJWT(mux *http.ServeMux, pattern string, jwks *auth.JWKSProvider, register func(*http.ServeMux)) {
+	sub := http.NewServeMux()
+	register(sub)
+	mux.Handle(pattern, auth.JWTAuth(jwks)(sub))
 }
