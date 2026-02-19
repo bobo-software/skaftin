@@ -12,6 +12,9 @@ import {
   Phone,
   Copy,
   Check,
+  FileText,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import CommunicationsService from '../../services/CommunicationsService';
 import ToastUtils from '../../utils/ToastUtils';
@@ -22,7 +25,7 @@ interface TwilioTestModalProps {
   projectId: string;
 }
 
-type TabType = 'sms' | 'whatsapp' | 'status';
+type TabType = 'sms' | 'whatsapp' | 'wa-template' | 'status';
 
 interface SendResult {
   sid?: string;
@@ -75,6 +78,14 @@ const TwilioTestModal = ({ isOpen, onClose, projectId }: TwilioTestModalProps) =
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [statusResult, setStatusResult] = useState<StatusResult | null>(null);
 
+  const [templatePhone, setTemplatePhone] = useState('');
+  const [contentSid, setContentSid] = useState('');
+  const [contentVars, setContentVars] = useState<{ key: string; value: string }[]>([
+    { key: '1', value: '' },
+  ]);
+  const [sendingTemplate, setSendingTemplate] = useState(false);
+  const [templateResult, setTemplateResult] = useState<SendResult | null>(null);
+
   const [copiedSid, setCopiedSid] = useState(false);
 
   if (!isOpen) return null;
@@ -119,6 +130,63 @@ const TwilioTestModal = ({ isOpen, onClose, projectId }: TwilioTestModalProps) =
     }
   };
 
+  const handleSendTemplate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!templatePhone.trim() || !contentSid.trim()) {
+      ToastUtils.error('Enter phone number and Content SID');
+      return;
+    }
+
+    setSendingTemplate(true);
+    setTemplateResult(null);
+
+    try {
+      const variables: Record<string, string> = {};
+      for (const v of contentVars) {
+        if (v.key.trim() && v.value.trim()) {
+          variables[v.key.trim()] = v.value.trim();
+        }
+      }
+
+      const data = await CommunicationsService.sendWhatsAppTemplate(
+        projectId,
+        templatePhone.trim(),
+        contentSid.trim(),
+        Object.keys(variables).length > 0 ? variables : undefined
+      );
+
+      const result = Array.isArray(data) ? data[0] : data;
+      setTemplateResult(result);
+
+      if (result?.sid) {
+        setStatusSid(result.sid);
+      }
+
+      ToastUtils.success('WhatsApp template message sent');
+    } catch (err: any) {
+      ToastUtils.error(err.message || 'Failed to send WhatsApp template');
+      setTemplateResult({ errorMessage: err.message });
+    } finally {
+      setSendingTemplate(false);
+    }
+  };
+
+  const handleAddVariable = () => {
+    const nextKey = String(contentVars.length + 1);
+    setContentVars([...contentVars, { key: nextKey, value: '' }]);
+  };
+
+  const handleRemoveVariable = (index: number) => {
+    if (contentVars.length <= 1) return;
+    setContentVars(contentVars.filter((_, i) => i !== index));
+  };
+
+  const handleVariableChange = (index: number, field: 'key' | 'value', val: string) => {
+    const updated = [...contentVars];
+    updated[index] = { ...updated[index], [field]: val };
+    setContentVars(updated);
+  };
+
   const handleCheckStatus = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!statusSid.trim()) {
@@ -149,6 +217,7 @@ const TwilioTestModal = ({ isOpen, onClose, projectId }: TwilioTestModalProps) =
   const handleClose = () => {
     setSendResult(null);
     setStatusResult(null);
+    setTemplateResult(null);
     onClose();
   };
 
@@ -160,12 +229,13 @@ const TwilioTestModal = ({ isOpen, onClose, projectId }: TwilioTestModalProps) =
   const tabs: { id: TabType; label: string; icon: typeof MessageSquare }[] = [
     { id: 'sms', label: 'SMS', icon: MessageSquare },
     { id: 'whatsapp', label: 'WhatsApp', icon: Phone },
-    { id: 'status', label: 'Check Status', icon: Search },
+    { id: 'wa-template', label: 'WA Template', icon: FileText },
+    { id: 'status', label: 'Status', icon: Search },
   ];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-dark-800 rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+      <div className="bg-white dark:bg-dark-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-dark-200 dark:border-dark-700 flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -200,8 +270,9 @@ const TwilioTestModal = ({ isOpen, onClose, projectId }: TwilioTestModalProps) =
                   setActiveTab(tab.id);
                   setSendResult(null);
                   setStatusResult(null);
+                  setTemplateResult(null);
                 }}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
                   activeTab === tab.id
                     ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400 bg-primary-50/50 dark:bg-primary-900/10'
                     : 'text-dark-500 dark:text-dark-400 hover:text-dark-700 dark:hover:text-dark-300 hover:bg-dark-50 dark:hover:bg-dark-700/50'
@@ -363,6 +434,196 @@ const TwilioTestModal = ({ isOpen, onClose, projectId }: TwilioTestModalProps) =
                     <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
                       <p className="text-xs font-medium text-amber-700 dark:text-amber-300 mb-1">Troubleshooting</p>
                       <p className="text-xs text-amber-600 dark:text-amber-400 whitespace-pre-line">{sendResult.troubleshooting}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </form>
+          )}
+
+          {/* WA Template tab */}
+          {activeTab === 'wa-template' && (
+            <form onSubmit={handleSendTemplate} className="space-y-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Send a pre-approved WhatsApp template using a Twilio Content SID (starts with <strong>HX</strong>).
+                    Create templates in Twilio Console &rarr; Content &rarr; Content Templates.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1.5">
+                  Destination Phone Number
+                </label>
+                <input
+                  type="text"
+                  value={templatePhone}
+                  onChange={(e) => setTemplatePhone(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white text-sm placeholder-dark-400"
+                  placeholder="+27712345678 or 0712345678"
+                  required
+                />
+                <p className="text-xs text-dark-400 dark:text-dark-500 mt-1">
+                  SA numbers starting with 0 are auto-formatted to +27
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1.5">
+                  Content SID
+                </label>
+                <input
+                  type="text"
+                  value={contentSid}
+                  onChange={(e) => setContentSid(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white text-sm font-mono placeholder-dark-400"
+                  placeholder="HX350d429d32e64a552466cafecbe95f3c"
+                  required
+                />
+                <p className="text-xs text-dark-400 dark:text-dark-500 mt-1">
+                  Found in Twilio Console &rarr; Content &rarr; Content Templates
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300">
+                    Template Variables
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddVariable}
+                    className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {contentVars.map((v, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={v.key}
+                        onChange={(e) => handleVariableChange(i, 'key', e.target.value)}
+                        className="w-16 px-2 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white text-sm text-center placeholder-dark-400"
+                        placeholder="Key"
+                      />
+                      <span className="text-dark-400 text-xs">=</span>
+                      <input
+                        type="text"
+                        value={v.value}
+                        onChange={(e) => handleVariableChange(i, 'value', e.target.value)}
+                        className="flex-1 px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white text-sm placeholder-dark-400"
+                        placeholder={`Value for {{${v.key}}}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveVariable(i)}
+                        disabled={contentVars.length <= 1}
+                        className="p-1.5 text-dark-400 hover:text-red-500 dark:hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-dark-400 dark:text-dark-500 mt-1">
+                  Keys match template placeholders (e.g. 1 &rarr; {'{{1}}'}, 2 &rarr; {'{{2}}'})
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={sendingTemplate}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+              >
+                {sendingTemplate ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    Send Template Message
+                  </>
+                )}
+              </button>
+
+              {templateResult && (
+                <div className="mt-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-dark-900 dark:text-white">Response</h4>
+
+                  {templateResult.status && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-dark-500 dark:text-dark-400 w-16">Status</span>
+                      {(() => {
+                        const style = getStatusStyle(templateResult.status);
+                        const Icon = style.icon;
+                        return (
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${style.bg} ${style.text}`}>
+                            <Icon className="w-3.5 h-3.5" />
+                            {templateResult.status}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {templateResult.sid && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-dark-500 dark:text-dark-400 w-16">SID</span>
+                      <code className="flex-1 text-xs font-mono bg-dark-50 dark:bg-dark-900 text-dark-700 dark:text-dark-300 px-2 py-1 rounded truncate">
+                        {templateResult.sid}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => handleCopySid(templateResult.sid!)}
+                        className="p-1 text-dark-400 hover:text-dark-600 dark:hover:text-dark-300 transition-colors"
+                        title="Copy SID"
+                      >
+                        {copiedSid ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  )}
+
+                  {templateResult.to && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-dark-500 dark:text-dark-400 w-16">To</span>
+                      <span className="text-xs text-dark-700 dark:text-dark-300">{templateResult.to}</span>
+                    </div>
+                  )}
+                  {templateResult.from && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-dark-500 dark:text-dark-400 w-16">From</span>
+                      <span className="text-xs text-dark-700 dark:text-dark-300">{templateResult.from}</span>
+                    </div>
+                  )}
+
+                  {(templateResult.errorCode || templateResult.errorMessage || templateResult.errorCodeExplanation) && (
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                      {templateResult.errorCode && (
+                        <p className="text-xs font-medium text-red-700 dark:text-red-300 mb-1">
+                          Error Code: {templateResult.errorCode}
+                        </p>
+                      )}
+                      {templateResult.errorCodeExplanation && (
+                        <p className="text-xs text-red-600 dark:text-red-400">{templateResult.errorCodeExplanation}</p>
+                      )}
+                      {templateResult.errorMessage && !templateResult.errorCodeExplanation && (
+                        <p className="text-xs text-red-600 dark:text-red-400">{templateResult.errorMessage}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {templateResult.troubleshooting && (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                      <p className="text-xs font-medium text-amber-700 dark:text-amber-300 mb-1">Troubleshooting</p>
+                      <p className="text-xs text-amber-600 dark:text-amber-400 whitespace-pre-line">{templateResult.troubleshooting}</p>
                     </div>
                   )}
                 </div>

@@ -356,6 +356,52 @@ export default class SmsController {
     }
   };
 
+  // POST /api/communications/:projectId/whatsapp/template
+  // POST /app-api/communications/whatsapp/template
+  sendWhatsAppTemplate = async (req: Request | HybridAuthRequest, res: Response): Promise<void> => {
+    const isSuperTokensAuth = 'user' in req && req.user && (req.user as any).userId;
+    const isApiKeyAuth = 'credential' in req && (req as any).credential && (req as HybridAuthRequest).projectId;
+
+    if (!isSuperTokensAuth && !isApiKeyAuth) {
+      const decodedToken = CommonUtils.handleAuthHeader(req);
+      if (decodedToken instanceof Response) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+    }
+
+    const projectId = (req as HybridAuthRequest).projectId || (req.params.projectId ? parseInt(req.params.projectId) : null);
+    if (!projectId) {
+      res.status(400).json({ success: false, error: 'Project ID is required' });
+      return;
+    }
+
+    const { phone, contentSid, contentVariables } = req.body as {
+      phone: string;
+      contentSid: string;
+      contentVariables?: Record<string, string> | string;
+    };
+
+    if (!phone || !contentSid) {
+      res.status(400).json({ success: false, error: 'phone and contentSid are required' });
+      return;
+    }
+
+    try {
+      const service = new SmsService(this.pool);
+      const result = await service.sendWhatsAppTemplate(projectId.toString(), [
+        { destination: phone, contentSid, contentVariables },
+      ]);
+      if (result.success) {
+        res.status(200).json({ success: true, data: result.providerResponse });
+        return;
+      }
+      res.status(502).json({ success: false, error: result.error });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message ?? 'Internal error' });
+    }
+  };
+
   // ---------- Message Status Endpoint ----------
 
   // POST /api/communications/:projectId/sms/check-status

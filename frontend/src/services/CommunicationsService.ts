@@ -521,6 +521,28 @@ class CommunicationsService {
     }
   }
 
+  async sendWhatsAppTemplate(
+    projectId: string,
+    phone: string,
+    contentSid: string,
+    contentVariables?: Record<string, string>
+  ): Promise<any> {
+    try {
+      const response = await RequestUtils.post(
+        ApiRoutes.COMMUNICATIONS.SEND_WHATSAPP_TEMPLATE(projectId),
+        this.getToken(),
+        { phone, contentSid, contentVariables }
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to send WhatsApp template message');
+    } catch (error: any) {
+      console.error('Error sending WhatsApp template:', error);
+      throw new Error(error.message || 'Failed to send WhatsApp template message');
+    }
+  }
+
   async checkMessageStatus(projectId: string, messageSid: string): Promise<any> {
     try {
       const response = await RequestUtils.post(

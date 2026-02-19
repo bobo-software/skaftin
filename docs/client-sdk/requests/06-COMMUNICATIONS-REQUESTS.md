@@ -647,11 +647,104 @@ Authorization: Bearer <jwt-token>
 
 ---
 
+### 16. Send WhatsApp Template Message
+
+Send a pre-approved WhatsApp template message using Twilio Content Templates. Templates must be created and approved in the Twilio Console under Content > Content Templates. Each template has a Content SID (starting with `HX`) and can accept variable parameters.
+
+**Endpoint:** `POST /app-api/communications/whatsapp/template`
+
+**Headers:**
+```
+Content-Type: application/json
+Authorization: Bearer <jwt-token>
+```
+
+**Request Body:**
+```json
+{
+  "phone": "0712442080",
+  "contentSid": "HX350d429d32e64a552466cafecbe95f3c",
+  "contentVariables": {
+    "1": "12/1",
+    "2": "3pm"
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| phone | string | Yes | Recipient phone number (E.164 format, or SA format like `0712345678`) |
+| contentSid | string | Yes | Twilio Content Template SID (starts with `HX`) |
+| contentVariables | object | No | Template variable values keyed by placeholder number (e.g. `"1"` for `{{1}}`) |
+
+> **Note:** `contentVariables` can also be passed as a JSON string: `"{\"1\":\"12/1\",\"2\":\"3pm\"}"`.
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "to": "whatsapp:+27712442080",
+      "from": "whatsapp:+14155238886",
+      "sid": "SM1234567890abcdef1234567890abcdef",
+      "status": "queued",
+      "contentSid": "HX350d429d32e64a552466cafecbe95f3c",
+      "contentVariables": { "1": "12/1", "2": "3pm" },
+      "errorCode": null,
+      "errorMessage": null,
+      "errorCodeExplanation": null,
+      "troubleshooting": null,
+      "dateCreated": "2026-02-09T10:00:00.000Z",
+      "dateSent": null,
+      "dateUpdated": "2026-02-09T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Response (Recipient Not Opted In):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "to": "whatsapp:+27712442080",
+      "from": "whatsapp:+14155238886",
+      "sid": "SM1234567890abcdef1234567890abcdef",
+      "status": "undelivered",
+      "contentSid": "HX350d429d32e64a552466cafecbe95f3c",
+      "errorCode": 63016,
+      "errorCodeExplanation": "Recipient has not opted-in to receive WhatsApp messages. They must send a message to your Twilio WhatsApp number first.",
+      "troubleshooting": "To fix this:\n1. Have the recipient send a WhatsApp message to your Twilio WhatsApp number\n2. If using Twilio Sandbox, they need to send: join [your-sandbox-code]\n3. Check your Twilio Console → Messaging → Try it out for the exact opt-in code"
+    }
+  ]
+}
+```
+
+**Response (Provider Not Supported):**
+```json
+{
+  "success": false,
+  "error": "Provider type 'mymobileapi' does not support WhatsApp template messaging. Only Twilio providers support this feature."
+}
+```
+
+**Getting Your Content Template SID:**
+1. Go to Twilio Console → Content → Content Templates
+2. Create a new template or select an existing approved template
+3. Copy the Content SID (starts with `HX`)
+4. Note the template variables (e.g. `{{1}}`, `{{2}}`) and their expected values
+
+> **Important:** WhatsApp templates must be pre-approved by WhatsApp before they can be used. You can create and submit templates in Twilio Console → Content → Content Templates. Freeform messages sent outside the 24-hour customer service window will be rejected -- templates are the only way to initiate a conversation.
+
+---
+
 ## Message Status Tracking (Twilio)
 
 Check the delivery status of any SMS or WhatsApp message sent via Twilio using its message SID.
 
-### 16. Check Message Status
+### 17. Check Message Status
 
 **Endpoint:** `POST /app-api/communications/sms/check-status`
 
@@ -819,6 +912,34 @@ curl -X POST "http://localhost:4006/app-api/communications/whatsapp/send" \
   }'
 ```
 
+### Send WhatsApp Template Message
+
+```bash
+curl -X POST "http://localhost:4006/app-api/communications/whatsapp/template" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "phone": "0712442080",
+    "contentSid": "HX350d429d32e64a552466cafecbe95f3c",
+    "contentVariables": {
+      "1": "12/1",
+      "2": "3pm"
+    }
+  }'
+```
+
+### Send WhatsApp Template (No Variables)
+
+```bash
+curl -X POST "http://localhost:4006/app-api/communications/whatsapp/template" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "phone": "+27712345678",
+    "contentSid": "HX350d429d32e64a552466cafecbe95f3c"
+  }'
+```
+
 ### Check Message Delivery Status
 
 ```bash
@@ -892,6 +1013,14 @@ SMS templates support variable interpolation using `{{variable}}` syntax:
 {
   "success": false,
   "error": "Provider type 'mymobileapi' does not support WhatsApp messaging. Only Twilio providers support WhatsApp."
+}
+```
+
+### WhatsApp Templates Not Supported
+```json
+{
+  "success": false,
+  "error": "Provider type 'mymobileapi' does not support WhatsApp template messaging. Only Twilio providers support this feature."
 }
 ```
 
