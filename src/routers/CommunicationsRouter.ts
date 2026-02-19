@@ -75,6 +75,7 @@ export function createCommunicationsRouter(pool: Pool): Router {
   // WhatsApp Sending
   router.post('/:projectId/whatsapp/send', authMiddleware, smsController.sendWhatsApp);
   router.post('/:projectId/whatsapp/send-basic', authMiddleware, smsController.sendWhatsAppBasic);
+  router.post('/:projectId/whatsapp/template', authMiddleware, smsController.sendWhatsAppTemplate);
 
   return router;
 }

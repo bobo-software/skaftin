@@ -3,6 +3,12 @@ export interface SmsMessage {
   destination: string;
 }
 
+export interface WhatsAppTemplateMessage {
+  destination: string;
+  contentSid: string;
+  contentVariables?: Record<string, string> | string;
+}
+
 export interface SendSmsResult {
   success: boolean;
   providerResponse?: any;
@@ -30,6 +36,7 @@ export interface MessageStatusResult {
 export interface BaseSmsProvider {
   send(messages: SmsMessage[]): Promise<SendSmsResult>;
   sendWhatsApp?(messages: SmsMessage[]): Promise<SendSmsResult>;
+  sendWhatsAppTemplate?(messages: WhatsAppTemplateMessage[]): Promise<SendSmsResult>;
   getMessageStatus?(messageSid: string): Promise<MessageStatusResult>;
 }
 

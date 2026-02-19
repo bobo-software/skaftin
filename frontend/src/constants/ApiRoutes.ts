@@ -171,6 +171,7 @@ const ApiRoutes = {
     // WhatsApp sending
     SEND_WHATSAPP: (projectId: string) => `/api/communications/${projectId}/whatsapp/send`,
     SEND_WHATSAPP_BASIC: (projectId: string) => `/api/communications/${projectId}/whatsapp/send-basic`,
+    SEND_WHATSAPP_TEMPLATE: (projectId: string) => `/api/communications/${projectId}/whatsapp/template`,
   },
   
   // Invitations routes
@@ -223,6 +224,7 @@ const ApiRoutes = {
     // WhatsApp sending
     SEND_WHATSAPP: () => '/app-api/communications/whatsapp/send',
     SEND_WHATSAPP_BASIC: () => '/app-api/communications/whatsapp/send-basic',
+    SEND_WHATSAPP_TEMPLATE: () => '/app-api/communications/whatsapp/template',
     // SMS provider management
     LIST_SMS_PROVIDERS: () => '/app-api/communications/sms/providers',
     GET_SMS_PROVIDER: (providerId: string) => `/app-api/communications/sms/providers/${providerId}`,

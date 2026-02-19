@@ -113,6 +113,14 @@ export function createClientCommunicationsRouter(pool: Pool): Router {
       requiresProject: true,
       requiresAuth: true,
     },
+    {
+      method: 'post',
+      path: '/whatsapp/template',
+      handler: smsController.sendWhatsAppTemplate,
+      description: 'Send WhatsApp template message',
+      requiresProject: true,
+      requiresAuth: true,
+    },
     // SMS Templates
     {
       method: 'get',

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BaseSmsProvider, SmsMessage, SendSmsResult, MessageStatusResult } from './BaseSmsProvider';
+import { BaseSmsProvider, SmsMessage, WhatsAppTemplateMessage, SendSmsResult, MessageStatusResult } from './BaseSmsProvider';
 
 export interface TwilioConfig {
   accountSid: string;
@@ -212,6 +212,100 @@ export class TwilioProvider implements BaseSmsProvider {
           from,
           sid: response.data.sid,
           status: response.data.status,
+          errorCode,
+          errorMessage: response.data.error_message ?? null,
+          errorCodeExplanation: errorInfo?.explanation ?? null,
+          troubleshooting: errorInfo?.troubleshooting ?? null,
+          dateCreated: response.data.date_created ?? null,
+          dateSent: response.data.date_sent ?? null,
+          dateUpdated: response.data.date_updated ?? null,
+        });
+      } catch (error: any) {
+        if (axios.isAxiosError(error) && error.response) {
+          const code = error.response.data?.code ?? null;
+          const errorInfo = TwilioProvider.getErrorCodeExplanation(code);
+          errors.push({
+            to: message.destination,
+            error: error.response.data,
+            errorCodeExplanation: errorInfo?.explanation ?? null,
+            troubleshooting: errorInfo?.troubleshooting ?? null,
+          });
+        } else {
+          errors.push({
+            to: message.destination,
+            error: error.message || error,
+          });
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      return {
+        success: false,
+        error: errors,
+        providerResponse: results,
+      };
+    }
+
+    return {
+      success: true,
+      providerResponse: results,
+    };
+  }
+
+  async sendWhatsAppTemplate(messages: WhatsAppTemplateMessage[]): Promise<SendSmsResult> {
+    const { accountSid, authToken, whatsappFrom, phoneNumber } = this.config;
+
+    const from = whatsappFrom || (phoneNumber ? `whatsapp:${phoneNumber}` : null);
+    if (!from) {
+      return {
+        success: false,
+        error: 'Twilio WhatsApp requires a whatsapp_from number or a phone_number configured on the provider',
+      };
+    }
+
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+
+    const results: any[] = [];
+    const errors: any[] = [];
+
+    for (const message of messages) {
+      try {
+        const formattedPhone = TwilioProvider.formatPhoneNumber(message.destination);
+        const whatsappTo = `whatsapp:${formattedPhone}`;
+
+        const params = new URLSearchParams();
+        params.append('To', whatsappTo);
+        params.append('From', from);
+        params.append('ContentSid', message.contentSid);
+
+        if (message.contentVariables) {
+          const varsString = typeof message.contentVariables === 'string'
+            ? message.contentVariables
+            : JSON.stringify(message.contentVariables);
+          params.append('ContentVariables', varsString);
+        }
+
+        const response = await axios.post(url, params.toString(), {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          auth: {
+            username: accountSid,
+            password: authToken,
+          },
+        });
+
+        const errorCode = response.data.error_code ?? null;
+        const errorInfo = TwilioProvider.getErrorCodeExplanation(errorCode);
+
+        results.push({
+          to: whatsappTo,
+          from,
+          sid: response.data.sid,
+          status: response.data.status,
+          contentSid: message.contentSid,
+          contentVariables: message.contentVariables ?? null,
           errorCode,
           errorMessage: response.data.error_message ?? null,
           errorCodeExplanation: errorInfo?.explanation ?? null,

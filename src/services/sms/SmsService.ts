@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { BaseSmsProvider, SmsMessage, SendSmsResult, MessageStatusResult } from './BaseSmsProvider';
+import { BaseSmsProvider, SmsMessage, WhatsAppTemplateMessage, SendSmsResult, MessageStatusResult } from './BaseSmsProvider';
 import { MyMobileApiProvider } from './MyMobileApiProvider';
 import { TwilioProvider } from './TwilioProvider';
 
@@ -88,6 +88,24 @@ export class SmsService {
     }
 
     return provider.sendWhatsApp(messages);
+  }
+
+  async sendWhatsAppTemplate(projectId: string, messages: WhatsAppTemplateMessage[]): Promise<SendSmsResult> {
+    const providerRecord = await this.getActiveProvider(projectId);
+    if (!providerRecord) {
+      return { success: false, error: 'No active SMS provider configured for project' };
+    }
+
+    const provider = this.buildProvider(providerRecord);
+
+    if (!provider.sendWhatsAppTemplate) {
+      return {
+        success: false,
+        error: `Provider type '${providerRecord.provider_type}' does not support WhatsApp template messaging. Only Twilio providers support this feature.`,
+      };
+    }
+
+    return provider.sendWhatsAppTemplate(messages);
   }
 
   async getMessageStatus(projectId: string, messageSid: string): Promise<MessageStatusResult> {

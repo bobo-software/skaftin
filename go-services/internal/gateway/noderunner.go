@@ -72,7 +72,6 @@ func (r *NodeRunner) Start(ctx context.Context) error {
 
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("BACKEND_PORT=%s", r.port),
-		fmt.Sprintf("PORT=%s", r.port),
 	)
 
 	if err := cmd.Start(); err != nil {

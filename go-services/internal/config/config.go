@@ -53,7 +53,7 @@ func Load() *Config {
 		SuperTokensCoreURL: getEnvAny([]string{"SUPERTOKENS_CORE_URL", "SUPERTOKENS_CONNECTION_URI"}, "http://localhost:3567"),
 		NodeBackendURL:     getEnv("NODE_BACKEND_URL", "http://localhost:4007"),
 		AutoStartNode:      getEnv("AUTO_START_NODE", "true") == "true",
-		NodeCommand:        getEnv("NODE_COMMAND", "npx nodemon src/Server.ts"),
+		NodeCommand:        getEnv("NODE_COMMAND", "npx nodemon"),
 		NodeWorkDir:        getEnv("NODE_WORK_DIR", ".."),
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
