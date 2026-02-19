@@ -21,6 +21,17 @@ func GetUserContext(r *http.Request) *model.UserContext {
 	return nil
 }
 
+// RequireUser extracts the authenticated user from the request context.
+// Returns nil and writes a 401 response if no user is present.
+func RequireUser(w http.ResponseWriter, r *http.Request) *model.UserContext {
+	u := GetUserContext(r)
+	if u == nil {
+		httputil.WriteError(w, http.StatusUnauthorized, "Unauthorized")
+		return nil
+	}
+	return u
+}
+
 // JWTAuth returns middleware that validates SuperTokens JWT access tokens.
 // It checks the sAccessToken cookie and Authorization: Bearer header.
 func JWTAuth(jwks *JWKSProvider) func(http.Handler) http.Handler {

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
@@ -13,7 +14,7 @@ var bucketNameRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
 
 // ListBuckets returns all buckets for a project with file stats.
 func (h *Handler) ListBuckets(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -37,7 +38,7 @@ func (h *Handler) ListBuckets(w http.ResponseWriter, r *http.Request) {
 
 // CreateBucket creates a new bucket for a project.
 func (h *Handler) CreateBucket(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -54,7 +55,7 @@ func (h *Handler) CreateBucket(w http.ResponseWriter, r *http.Request) {
 		// snake_case alias
 		AccessPolicySnake string `json:"access_policy"`
 	}
-	if err := decodeBody(r, &body); err != nil {
+	if err := httputil.DecodeBody(r, &body); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -105,7 +106,7 @@ func (h *Handler) CreateBucket(w http.ResponseWriter, r *http.Request) {
 
 // GetBucket returns a single bucket with stats and policy info.
 func (h *Handler) GetBucket(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -115,7 +116,7 @@ func (h *Handler) GetBucket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bucketID, ok := pathInt(r, "bucketId")
+	bucketID, ok := httputil.PathInt(r, "bucketId")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid bucket ID")
 		return
@@ -131,7 +132,7 @@ func (h *Handler) GetBucket(w http.ResponseWriter, r *http.Request) {
 
 // UpdateBucket updates a bucket's metadata.
 func (h *Handler) UpdateBucket(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -141,7 +142,7 @@ func (h *Handler) UpdateBucket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bucketID, ok := pathInt(r, "bucketId")
+	bucketID, ok := httputil.PathInt(r, "bucketId")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid bucket ID")
 		return
@@ -158,7 +159,7 @@ func (h *Handler) UpdateBucket(w http.ResponseWriter, r *http.Request) {
 		Description  *string `json:"description"`
 		AccessPolicy *string `json:"accessPolicy"`
 	}
-	if err := decodeBody(r, &body); err != nil {
+	if err := httputil.DecodeBody(r, &body); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -220,7 +221,7 @@ func (h *Handler) UpdateBucket(w http.ResponseWriter, r *http.Request) {
 
 // DeleteBucket deletes a bucket.
 func (h *Handler) DeleteBucket(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -230,7 +231,7 @@ func (h *Handler) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bucketID, ok := pathInt(r, "bucketId")
+	bucketID, ok := httputil.PathInt(r, "bucketId")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid bucket ID")
 		return
@@ -261,7 +262,7 @@ func (h *Handler) DeleteBucket(w http.ResponseWriter, r *http.Request) {
 
 // GetBucketPolicy returns stored and actual bucket policy.
 func (h *Handler) GetBucketPolicy(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -271,7 +272,7 @@ func (h *Handler) GetBucketPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bucketID, ok := pathInt(r, "bucketId")
+	bucketID, ok := httputil.PathInt(r, "bucketId")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid bucket ID")
 		return
@@ -287,7 +288,7 @@ func (h *Handler) GetBucketPolicy(w http.ResponseWriter, r *http.Request) {
 
 // SetBucketPolicy updates the access policy for a bucket.
 func (h *Handler) SetBucketPolicy(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -297,7 +298,7 @@ func (h *Handler) SetBucketPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bucketID, ok := pathInt(r, "bucketId")
+	bucketID, ok := httputil.PathInt(r, "bucketId")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid bucket ID")
 		return
@@ -306,7 +307,7 @@ func (h *Handler) SetBucketPolicy(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		AccessPolicy string `json:"accessPolicy"`
 	}
-	if err := decodeBody(r, &body); err != nil {
+	if err := httputil.DecodeBody(r, &body); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -340,7 +341,7 @@ func (h *Handler) SetBucketPolicy(w http.ResponseWriter, r *http.Request) {
 
 // GetBucketStats returns detailed stats for a bucket.
 func (h *Handler) GetBucketStats(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -350,7 +351,7 @@ func (h *Handler) GetBucketStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bucketID, ok := pathInt(r, "bucketId")
+	bucketID, ok := httputil.PathInt(r, "bucketId")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid bucket ID")
 		return

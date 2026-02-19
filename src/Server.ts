@@ -195,7 +195,8 @@ import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import { createClientCommunicationsRouter } from './routers/ClientCommunicationsRouter';
 import { createInvitationsRouter } from './routers/InvitationsRouter';
 import { createPaymentRouter, createClientPaymentRouter, createPaymentWebhookRouter } from './routers/PaymentRouter';
-import { createCredentialsRouter } from './routers/CredentialsRouter';
+// Credentials routes are now handled by the Go gateway.
+// import { createCredentialsRouter } from './routers/CredentialsRouter';
 import { createAuthRouter } from './routers/AuthRouter';
 import { createAnalyticsRouter } from './routers/AnalyticsRouter';
 import { createWorkflowsRouter } from './routers/WorkflowsRouter';
@@ -295,8 +296,8 @@ const CommunicationsRouter = createCommunicationsRouter(pool);
 // Initialize Invitations Router
 const InvitationsRouter = createInvitationsRouter(pool);
 
-// Initialize Credentials Router
-const CredentialsRouter = createCredentialsRouter(pool);
+// Credentials routes are now handled by the Go gateway.
+// const CredentialsRouter = createCredentialsRouter(pool);
 
 // Initialize Auth Management Router (for app user management)
 const AuthManagementRouter = createAuthRouter(pool);
@@ -342,7 +343,7 @@ app.use('/api/files', FilesRouter);
 app.use('/api/users', UsersRouter);
 app.use('/api/communications', CommunicationsRouter);
 app.use('/api/invitations', InvitationsRouter);
-app.use('/api/credentials', CredentialsRouter);
+// app.use('/api/credentials', CredentialsRouter); // Now handled by Go gateway
 app.use('/api/analytics', AnalyticsRouter);
 app.use('/api/health', HealthRouter);
 app.use('/api/mcp', MCPRouter);

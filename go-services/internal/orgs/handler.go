@@ -1,15 +1,12 @@
 package orgs
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/auth"
-	"github.com/skaftin/go-services/internal/model"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
@@ -40,34 +37,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/organizations/{id}/members/{memberId}", h.RemoveMember)
 }
 
-// --- helpers ---
-
-func requireUser(w http.ResponseWriter, r *http.Request) *model.UserContext {
-	u := auth.GetUserContext(r)
-	if u == nil {
-		httputil.WriteError(w, http.StatusUnauthorized, "Unauthorized")
-		return nil
-	}
-	return u
-}
-
-func pathInt(r *http.Request, name string) (int, bool) {
-	v, err := strconv.Atoi(r.PathValue(name))
-	if err != nil {
-		return 0, false
-	}
-	return v, true
-}
-
-func decodeBody(r *http.Request, dst any) error {
-	defer r.Body.Close()
-	return json.NewDecoder(r.Body).Decode(dst)
-}
-
 // --- Organization CRUD handlers ---
 
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -85,12 +58,12 @@ func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetOrganization(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
 
-	orgID, ok := pathInt(r, "id")
+	orgID, ok := httputil.PathInt(r, "id")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid organization ID")
 		return
@@ -114,7 +87,7 @@ func (h *Handler) GetOrganization(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateOrganization(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -123,7 +96,7 @@ func (h *Handler) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	}
-	if err := decodeBody(r, &body); err != nil {
+	if err := httputil.DecodeBody(r, &body); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -143,19 +116,19 @@ func (h *Handler) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
 
-	orgID, ok := pathInt(r, "id")
+	orgID, ok := httputil.PathInt(r, "id")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
 	var raw map[string]any
-	if err := decodeBody(r, &raw); err != nil {
+	if err := httputil.DecodeBody(r, &raw); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -197,12 +170,12 @@ func (h *Handler) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
 
-	orgID, ok := pathInt(r, "id")
+	orgID, ok := httputil.PathInt(r, "id")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid organization ID")
 		return
@@ -227,12 +200,12 @@ func (h *Handler) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 // --- Member management handlers ---
 
 func (h *Handler) ListMembers(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
 
-	orgID, ok := pathInt(r, "id")
+	orgID, ok := httputil.PathInt(r, "id")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid organization ID")
 		return
@@ -256,7 +229,7 @@ func (h *Handler) ListMembers(w http.ResponseWriter, r *http.Request) {
 
 // AddMember (by email) returns 501 -- not implemented, matching Node behavior.
 func (h *Handler) AddMember(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -266,12 +239,12 @@ func (h *Handler) AddMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AddMemberByUserID(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
 
-	orgID, ok := pathInt(r, "id")
+	orgID, ok := httputil.PathInt(r, "id")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid organization ID")
 		return
@@ -281,7 +254,7 @@ func (h *Handler) AddMemberByUserID(w http.ResponseWriter, r *http.Request) {
 		UserID string `json:"user_id"`
 		Role   string `json:"role"`
 	}
-	if err := decodeBody(r, &body); err != nil {
+	if err := httputil.DecodeBody(r, &body); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -317,18 +290,18 @@ func (h *Handler) AddMemberByUserID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
 
-	orgID, ok := pathInt(r, "id")
+	orgID, ok := httputil.PathInt(r, "id")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
-	memberID, ok := pathInt(r, "memberId")
+	memberID, ok := httputil.PathInt(r, "memberId")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid member ID")
 		return
@@ -337,7 +310,7 @@ func (h *Handler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Role string `json:"role"`
 	}
-	if err := decodeBody(r, &body); err != nil {
+	if err := httputil.DecodeBody(r, &body); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -370,18 +343,18 @@ func (h *Handler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) RemoveMember(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
 
-	orgID, ok := pathInt(r, "id")
+	orgID, ok := httputil.PathInt(r, "id")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid organization ID")
 		return
 	}
 
-	memberID, ok := pathInt(r, "memberId")
+	memberID, ok := httputil.PathInt(r, "memberId")
 	if !ok {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid member ID")
 		return

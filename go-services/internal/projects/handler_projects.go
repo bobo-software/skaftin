@@ -6,12 +6,13 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
 // ListProjects returns all projects the authenticated user can access.
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -30,7 +31,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 
 // GetDashboardStats returns aggregated stats across all user projects.
 func (h *Handler) GetDashboardStats(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -46,7 +47,7 @@ func (h *Handler) GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 
 // CreateProject creates a new project.
 func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -56,7 +57,7 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		Description    string `json:"description"`
 		OrganizationID *int   `json:"organization_id"`
 	}
-	if err := decodeBody(r, &body); err != nil {
+	if err := httputil.DecodeBody(r, &body); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -82,7 +83,7 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 
 // GetProject returns a single project by ID.
 func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -96,7 +97,7 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 
 // UpdateProject updates an existing project.
 func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -111,7 +112,7 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		Description        *string `json:"description"`
 		FieldEncryptionKey *string `json:"field_encryption_key"`
 	}
-	if err := decodeBody(r, &body); err != nil {
+	if err := httputil.DecodeBody(r, &body); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -147,7 +148,7 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 
 // DeleteProject deletes a project.
 func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -167,7 +168,7 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 
 // ResetProject resets a project's database tables and storage.
 func (h *Handler) ResetProject(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
@@ -193,7 +194,7 @@ func (h *Handler) ResetProject(w http.ResponseWriter, r *http.Request) {
 
 // GetProjectStats returns stats for a single project.
 func (h *Handler) GetProjectStats(w http.ResponseWriter, r *http.Request) {
-	u := requireUser(w, r)
+	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
