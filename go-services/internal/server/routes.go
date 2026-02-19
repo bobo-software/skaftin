@@ -8,6 +8,7 @@ import (
 	"github.com/skaftin/go-services/internal/analytics"
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/config"
+	"github.com/skaftin/go-services/internal/credentials"
 	"github.com/skaftin/go-services/internal/dbproxy"
 	"github.com/skaftin/go-services/internal/gateway"
 	"github.com/skaftin/go-services/internal/health"
@@ -45,6 +46,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	if err != nil {
 		return err
 	}
+	credentialsHandler := credentials.NewHandler(pool)
 
 	// ==================================================================
 	// PUBLIC ROUTES (no auth required)
@@ -71,6 +73,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	mountJWT(mux, "/api/request-logs/", jwks, requestLogsHandler.RegisterRoutes)
 	mountJWT(mux, "/api/storage/", jwks, storageHandler.RegisterRoutes)
 	mountJWT(mux, "/api/analytics/", jwks, analyticsHandler.RegisterRoutes)
+	mountJWT(mux, "/api/credentials/", jwks, credentialsHandler.RegisterRoutes)
 
 	// ==================================================================
 	// PROXIED ROUTES (forwarded to Node.js)
