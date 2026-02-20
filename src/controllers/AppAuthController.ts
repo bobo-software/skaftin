@@ -1798,10 +1798,11 @@ class AppAuthController {
    * POST /api/app-auth/auth/forgot-password (with x-api-key or x-access-token)
    * POST /api/app-auth/:projectId/auth/forgot-password (backward compatibility)
    * 
-   * Request body: { email?: string, phone?: string, method: 'email' | 'sms' }
+   * Request body: { email?: string, phone?: string, method: 'email' | 'sms', code?: string }
    * - At least one of email or phone is required
    * - If only phone provided, method must be 'sms'
    * - If only email provided, method defaults to 'email'
+   * - If code is provided, it will be used as the OTP instead of generating one
    */
   static async sendForgotPasswordOTP(req: AppUserAuthenticatedRequest, res: Response) {
     try {
@@ -1813,7 +1814,7 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
 
-      const { email, phone, method } = req.body;
+      const { email, phone, method, code } = req.body;
 
       // Validate: at least one identifier is required
       if (!email && !phone) {
@@ -1896,8 +1897,8 @@ class AppAuthController {
         return ResponseUtils.error(res, 'Email not available for this account. Please use SMS method.', null, null, 400);
       }
 
-      // Generate OTP code with configurable length
-      const otp = AppAuthController.generateOTP(authSettings.otp_length || 6);
+      // Use caller-provided code or generate one
+      const otp = code || AppAuthController.generateOTP(authSettings.otp_length || 6);
       const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
       // Invalidate any existing pending password reset OTPs for this user

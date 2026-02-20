@@ -456,6 +456,7 @@ x-api-key: your-api-key
 | email | string | Conditional | User's email address (required if phone not provided) |
 | phone | string | Conditional | User's phone number (required if email not provided) |
 | method | string | Conditional | OTP delivery: "email" or "sms". Required "sms" if only phone provided |
+| code | string | No | Custom OTP code to use. If omitted, one is auto-generated |
 
 **Examples:**
 
@@ -476,6 +477,13 @@ x-api-key: your-api-key
 {
   "email": "john.doe@example.com",
   "method": "sms"
+}
+
+// With a custom OTP code
+{
+  "email": "john.doe@example.com",
+  "method": "email",
+  "code": "123456"
 }
 ```
 
