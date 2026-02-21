@@ -6,9 +6,57 @@ Welcome to the Skaftin platform documentation! This directory contains comprehen
 
 ### 🚀 Getting Started
 
-- [Development Setup](./DEVELOPMENT_SETUP.md) - Set up your local development environment
+- [Development Setup](./plans/DEVELOPMENT_SETUP.md) - Set up your local development environment
 - [App Planning](./APP_PLANNING.md) - Understand the platform architecture
 - [App Brief](./APP_BREIF.md) - High-level overview of Skaftin
+
+### Initialize This Project (Local)
+
+Use this checklist to get a fresh clone running quickly.
+
+1. **Install dependencies**
+```bash
+# from repository root
+npm install
+
+# frontend dependencies
+cd frontend && npm install && cd ..
+
+# go service dependencies
+cd go-services && go mod download && cd ..
+```
+
+2. **Start local infrastructure and services**
+```bash
+# from repository root
+docker compose up -d --build
+```
+
+This starts PostgreSQL, MinIO, SuperTokens, the Node backend, and the Go gateway.
+
+3. **Verify services are healthy**
+```bash
+docker compose ps
+curl http://localhost:4006/api/v2/health
+```
+
+4. **Open the platform**
+- API gateway: `http://localhost:4006`
+- MinIO console: `http://localhost:9021`
+- SuperTokens health: `http://localhost:3567/hello`
+
+### Optional: Run apps locally (infra in Docker)
+
+If you prefer local hot-reload for Node/frontend while keeping infra in Docker:
+
+```bash
+# infrastructure only
+docker compose up -d postgres minio supertokens
+
+# in separate terminals
+npm run dev            # Node backend
+cd frontend && npm run dev
+```
 
 ### 🔐 Authentication & Authorization
 

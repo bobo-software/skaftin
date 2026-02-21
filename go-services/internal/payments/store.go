@@ -1,6 +1,15 @@
 package payments
 
-import "github.com/jackc/pgx/v5/pgxpool"
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
 
 // Store handles transaction DB queries.
 type Store struct {
@@ -10,4 +19,463 @@ type Store struct {
 // NewStore creates a new payments Store.
 func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
+}
+
+func (s *Store) ProjectSchema(ctx context.Context, projectID int) (string, error) {
+	var schema string
+	err := s.pool.QueryRow(ctx, "SELECT schema_name FROM skaftin_system_projects WHERE id = $1", projectID).Scan(&schema)
+	if err != nil {
+		return "", err
+	}
+	return schema, nil
+}
+
+func (s *Store) withSchema(ctx context.Context, schema string, fn func(pgx.Tx) error) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, fmt.Sprintf("SET search_path TO %s, public", schema)); err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func scanProvider(row pgx.Row) (PaymentProviderRecord, error) {
+	var p PaymentProviderRecord
+	var metadataRaw []byte
+	err := row.Scan(
+		&p.ID,
+		&p.ProjectID,
+		&p.Name,
+		&p.ProviderType,
+		&p.MerchantID,
+		&p.MerchantKey,
+		&p.Passphrase,
+		&p.APIKey,
+		&p.APISecret,
+		&p.PublicKey,
+		&p.ReturnURL,
+		&p.CancelURL,
+		&p.NotifyURL,
+		&p.SandboxMode,
+		&p.IsActive,
+		&metadataRaw,
+		&p.CreatedAt,
+		&p.UpdatedAt,
+	)
+	if err != nil {
+		return PaymentProviderRecord{}, err
+	}
+	if len(metadataRaw) > 0 {
+		_ = json.Unmarshal(metadataRaw, &p.Metadata)
+	}
+	if p.Metadata == nil {
+		p.Metadata = map[string]any{}
+	}
+	return p, nil
+}
+
+func scanTransaction(row pgx.Row) (PaymentTransactionRecord, error) {
+	var t PaymentTransactionRecord
+	var metadataRaw []byte
+	var webhookRaw []byte
+	err := row.Scan(
+		&t.ID,
+		&t.ProjectID,
+		&t.ProviderID,
+		&t.TransactionID,
+		&t.ExternalPaymentID,
+		&t.Amount,
+		&t.Currency,
+		&t.ItemName,
+		&t.ItemDescription,
+		&t.CustomerEmail,
+		&t.CustomerName,
+		&t.CustomerPhone,
+		&t.PaymentType,
+		&t.SubscriptionType,
+		&t.Frequency,
+		&t.Cycles,
+		&t.SubscriptionToken,
+		&t.Status,
+		&t.StatusMessage,
+		&t.PaymentURL,
+		&t.ReturnURL,
+		&t.CancelURL,
+		&metadataRaw,
+		&webhookRaw,
+		&t.PaidAt,
+		&t.CreatedAt,
+		&t.UpdatedAt,
+	)
+	if err != nil {
+		return PaymentTransactionRecord{}, err
+	}
+	if len(metadataRaw) > 0 {
+		_ = json.Unmarshal(metadataRaw, &t.Metadata)
+	}
+	if len(webhookRaw) > 0 {
+		_ = json.Unmarshal(webhookRaw, &t.WebhookData)
+	}
+	if t.Metadata == nil {
+		t.Metadata = map[string]any{}
+	}
+	return t, nil
+}
+
+func (s *Store) ListProviders(ctx context.Context, projectID int, schema string) ([]PaymentProviderRecord, error) {
+	var providers []PaymentProviderRecord
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id, project_id, name, provider_type, merchant_id, merchant_key, passphrase,
+				api_key, api_secret, public_key, return_url, cancel_url, notify_url, sandbox_mode,
+				is_active, metadata, created_at, updated_at
+			FROM skaftin_system_payment_providers
+			WHERE project_id = $1
+			ORDER BY created_at DESC
+		`, projectID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			provider, err := scanProvider(rows)
+			if err != nil {
+				return err
+			}
+			providers = append(providers, provider)
+		}
+		return rows.Err()
+	})
+	return providers, err
+}
+
+func (s *Store) GetProvider(ctx context.Context, projectID, providerID int, schema string) (*PaymentProviderRecord, error) {
+	var provider *PaymentProviderRecord
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			SELECT id, project_id, name, provider_type, merchant_id, merchant_key, passphrase,
+				api_key, api_secret, public_key, return_url, cancel_url, notify_url, sandbox_mode,
+				is_active, metadata, created_at, updated_at
+			FROM skaftin_system_payment_providers
+			WHERE id = $1 AND project_id = $2
+		`, providerID, projectID)
+		p, err := scanProvider(row)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			return err
+		}
+		provider = &p
+		return nil
+	})
+	return provider, err
+}
+
+func (s *Store) GetProviderByType(ctx context.Context, projectID int, providerType ProviderType, schema string) (*PaymentProviderRecord, error) {
+	var provider *PaymentProviderRecord
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			SELECT id, project_id, name, provider_type, merchant_id, merchant_key, passphrase,
+				api_key, api_secret, public_key, return_url, cancel_url, notify_url, sandbox_mode,
+				is_active, metadata, created_at, updated_at
+			FROM skaftin_system_payment_providers
+			WHERE project_id = $1 AND provider_type = $2 AND is_active = true
+			ORDER BY created_at ASC
+			LIMIT 1
+		`, projectID, providerType)
+		p, err := scanProvider(row)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			return err
+		}
+		provider = &p
+		return nil
+	})
+	return provider, err
+}
+
+func (s *Store) InsertProvider(ctx context.Context, req CreateProviderRequest, schema string) (*PaymentProviderRecord, error) {
+	var provider *PaymentProviderRecord
+	metaJSON, _ := json.Marshal(req.Metadata)
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		sandbox := true
+		if req.SandboxMode != nil {
+			sandbox = *req.SandboxMode
+		}
+		active := true
+		if req.IsActive != nil {
+			active = *req.IsActive
+		}
+		row := tx.QueryRow(ctx, `
+			INSERT INTO skaftin_system_payment_providers (
+				project_id, name, provider_type, merchant_id, merchant_key, passphrase,
+				api_key, api_secret, public_key, return_url, cancel_url, notify_url,
+				sandbox_mode, is_active, metadata
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+			RETURNING id, project_id, name, provider_type, merchant_id, merchant_key, passphrase,
+				api_key, api_secret, public_key, return_url, cancel_url, notify_url, sandbox_mode,
+				is_active, metadata, created_at, updated_at
+		`,
+			req.ProjectID, req.Name, req.ProviderType, req.MerchantID, req.MerchantKey, req.Passphrase,
+			req.APIKey, req.APISecret, req.PublicKey, req.ReturnURL, req.CancelURL, req.NotifyURL,
+			sandbox, active, metaJSON)
+		p, err := scanProvider(row)
+		if err != nil {
+			return err
+		}
+		provider = &p
+		return nil
+	})
+	return provider, err
+}
+
+func (s *Store) UpdateProvider(ctx context.Context, projectID, providerID int, req UpdateProviderRequest, schema string) (*PaymentProviderRecord, error) {
+	updates := make([]string, 0, 12)
+	args := make([]any, 0, 14)
+	next := 1
+
+	add := func(col string, v any) {
+		updates = append(updates, fmt.Sprintf("%s = $%d", col, next))
+		args = append(args, v)
+		next++
+	}
+
+	if req.Name != nil {
+		add("name", *req.Name)
+	}
+	if req.MerchantID != nil {
+		add("merchant_id", *req.MerchantID)
+	}
+	if req.MerchantKey != nil {
+		add("merchant_key", *req.MerchantKey)
+	}
+	if req.Passphrase != nil {
+		add("passphrase", *req.Passphrase)
+	}
+	if req.APIKey != nil {
+		add("api_key", *req.APIKey)
+	}
+	if req.APISecret != nil {
+		add("api_secret", *req.APISecret)
+	}
+	if req.PublicKey != nil {
+		add("public_key", *req.PublicKey)
+	}
+	if req.ReturnURL != nil {
+		add("return_url", *req.ReturnURL)
+	}
+	if req.CancelURL != nil {
+		add("cancel_url", *req.CancelURL)
+	}
+	if req.NotifyURL != nil {
+		add("notify_url", *req.NotifyURL)
+	}
+	if req.SandboxMode != nil {
+		add("sandbox_mode", *req.SandboxMode)
+	}
+	if req.IsActive != nil {
+		add("is_active", *req.IsActive)
+	}
+	if req.Metadata != nil {
+		metaJSON, _ := json.Marshal(req.Metadata)
+		add("metadata", metaJSON)
+	}
+
+	if len(updates) == 0 {
+		return s.GetProvider(ctx, projectID, providerID, schema)
+	}
+	updates = append(updates, "updated_at = CURRENT_TIMESTAMP")
+
+	args = append(args, providerID, projectID)
+	q := fmt.Sprintf(`
+		UPDATE skaftin_system_payment_providers
+		SET %s
+		WHERE id = $%d AND project_id = $%d
+		RETURNING id, project_id, name, provider_type, merchant_id, merchant_key, passphrase,
+			api_key, api_secret, public_key, return_url, cancel_url, notify_url, sandbox_mode,
+			is_active, metadata, created_at, updated_at
+	`, strings.Join(updates, ", "), next, next+1)
+
+	var provider *PaymentProviderRecord
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, q, args...)
+		p, err := scanProvider(row)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			return err
+		}
+		provider = &p
+		return nil
+	})
+	return provider, err
+}
+
+func (s *Store) DeleteProvider(ctx context.Context, projectID, providerID int, schema string) (bool, error) {
+	var deleted bool
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		cmd, err := tx.Exec(ctx, `
+			DELETE FROM skaftin_system_payment_providers
+			WHERE id = $1 AND project_id = $2
+		`, providerID, projectID)
+		if err != nil {
+			return err
+		}
+		deleted = cmd.RowsAffected() > 0
+		return nil
+	})
+	return deleted, err
+}
+
+func (s *Store) GetTransaction(ctx context.Context, projectID int, transactionID, schema string) (*PaymentTransactionRecord, error) {
+	var txRecord *PaymentTransactionRecord
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			SELECT id, project_id, provider_id, transaction_id, external_payment_id, amount, currency,
+				item_name, item_description, customer_email, customer_name, customer_phone, payment_type,
+				subscription_type, frequency, cycles, subscription_token, status, status_message,
+				payment_url, return_url, cancel_url, metadata, webhook_data, paid_at, created_at, updated_at
+			FROM skaftin_system_payment_transactions
+			WHERE transaction_id = $1 AND project_id = $2
+		`, transactionID, projectID)
+		rec, err := scanTransaction(row)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			return err
+		}
+		txRecord = &rec
+		return nil
+	})
+	return txRecord, err
+}
+
+func (s *Store) ListTransactions(ctx context.Context, projectID int, schema string, opts TransactionListOptions) ([]PaymentTransactionRecord, int, error) {
+	var records []PaymentTransactionRecord
+	var total int
+
+	conditions := []string{"project_id = $1"}
+	args := []any{projectID}
+	next := 2
+	if opts.Status != "" {
+		conditions = append(conditions, fmt.Sprintf("status = $%d", next))
+		args = append(args, opts.Status)
+		next++
+	}
+	if opts.PaymentType != "" {
+		conditions = append(conditions, fmt.Sprintf("payment_type = $%d", next))
+		args = append(args, opts.PaymentType)
+		next++
+	}
+	if opts.StartDate != nil {
+		conditions = append(conditions, fmt.Sprintf("created_at >= $%d", next))
+		args = append(args, *opts.StartDate)
+		next++
+	}
+	if opts.EndDate != nil {
+		conditions = append(conditions, fmt.Sprintf("created_at <= $%d", next))
+		args = append(args, *opts.EndDate)
+		next++
+	}
+	where := strings.Join(conditions, " AND ")
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM skaftin_system_payment_transactions WHERE "+where, args...).Scan(&total); err != nil {
+			return err
+		}
+
+		queryArgs := append([]any{}, args...)
+		queryArgs = append(queryArgs, limit, offset)
+		rows, err := tx.Query(ctx, fmt.Sprintf(`
+			SELECT id, project_id, provider_id, transaction_id, external_payment_id, amount, currency,
+				item_name, item_description, customer_email, customer_name, customer_phone, payment_type,
+				subscription_type, frequency, cycles, subscription_token, status, status_message,
+				payment_url, return_url, cancel_url, metadata, webhook_data, paid_at, created_at, updated_at
+			FROM skaftin_system_payment_transactions
+			WHERE %s
+			ORDER BY created_at DESC
+			LIMIT $%d OFFSET $%d
+		`, where, next, next+1), queryArgs...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			rec, err := scanTransaction(rows)
+			if err != nil {
+				return err
+			}
+			records = append(records, rec)
+		}
+		return rows.Err()
+	})
+	return records, total, err
+}
+
+func (s *Store) HasRecentBlockingPayment(ctx context.Context, userID string, cutoff time.Time) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM public.fnb_payments
+			WHERE user_id = $1
+				AND status = ANY($2::text[])
+				AND created_at > $3
+			LIMIT 1
+		)
+	`, userID, []string{"pending", "Busy", "paid"}, cutoff).Scan(&exists)
+	return exists, err
+}
+
+func (s *Store) InsertFNBPayment(ctx context.Context, userID, reference string, amount float64, signature, payload string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.fnb_payments (user_id, reference, status, price, gateway, signature, payload, updated_at)
+		VALUES ($1, $2, 'pending', $3, 'fnb_pay', $4, $5, CURRENT_TIMESTAMP)
+	`, userID, reference, amount, signature, payload)
+	return err
+}
+
+func (s *Store) UpdateTransactionFromWebhook(
+	ctx context.Context,
+	schema string,
+	projectID int,
+	transactionID string,
+	status string,
+	externalPaymentID string,
+	rawData map[string]any,
+) error {
+	webhookJSON, _ := json.Marshal(rawData)
+	return s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			UPDATE skaftin_system_payment_transactions
+			SET
+				status = $1,
+				external_payment_id = $2,
+				webhook_data = $3,
+				paid_at = CASE WHEN $1 = 'complete' THEN CURRENT_TIMESTAMP ELSE paid_at END,
+				updated_at = CURRENT_TIMESTAMP
+			WHERE transaction_id = $4 AND project_id = $5
+		`, status, externalPaymentID, webhookJSON, transactionID, projectID)
+		return err
+	})
 }
