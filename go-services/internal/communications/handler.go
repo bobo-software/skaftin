@@ -20,6 +20,10 @@ func NewHandler(pool *pgxpool.Pool) *Handler {
 	return &Handler{service: NewService(pool)}
 }
 
+// Service returns the underlying communications Service so other packages
+// (e.g. invitations) can send emails without duplicating SMTP logic.
+func (h *Handler) Service() *Service { return h.service }
+
 func (h *Handler) RegisterProjectRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/communications/{projectId}/email/providers", h.ListEmailProviders)
 	mux.HandleFunc("GET /api/communications/{projectId}/email/providers/{providerId}", h.GetEmailProvider)
