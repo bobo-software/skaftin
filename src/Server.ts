@@ -193,7 +193,8 @@ import { createAdminStorageRouter } from './routers/AdminStorageRouter';
 import { createAdminAuthRouter } from './routers/AdminAuthRouter';
 import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import { createClientCommunicationsRouter } from './routers/ClientCommunicationsRouter';
-import { createInvitationsRouter } from './routers/InvitationsRouter';
+// Invitations routes are now handled by the Go gateway.
+// import { createInvitationsRouter } from './routers/InvitationsRouter';
 import { createPaymentRouter, createClientPaymentRouter, createPaymentWebhookRouter } from './routers/PaymentRouter';
 // Credentials routes are now handled by the Go gateway.
 // import { createCredentialsRouter } from './routers/CredentialsRouter';
@@ -293,8 +294,8 @@ initializeApiKeyOnlyMiddleware(pool);
 const communicationsController = new CommunicationsController(pool);
 const CommunicationsRouter = createCommunicationsRouter(pool);
 
-// Initialize Invitations Router
-const InvitationsRouter = createInvitationsRouter(pool);
+// Invitations routes are now handled by the Go gateway.
+// const InvitationsRouter = createInvitationsRouter(pool);
 
 // Credentials routes are now handled by the Go gateway.
 // const CredentialsRouter = createCredentialsRouter(pool);
@@ -342,7 +343,7 @@ app.use('/api/projects', ProjectBucketsRouter);
 app.use('/api/files', FilesRouter);
 app.use('/api/users', UsersRouter);
 app.use('/api/communications', CommunicationsRouter);
-app.use('/api/invitations', InvitationsRouter);
+// app.use('/api/invitations', InvitationsRouter); // Now handled by Go gateway
 // app.use('/api/credentials', CredentialsRouter); // Now handled by Go gateway
 app.use('/api/analytics', AnalyticsRouter);
 app.use('/api/health', HealthRouter);

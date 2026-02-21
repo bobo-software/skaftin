@@ -13,6 +13,7 @@ import (
 	"github.com/skaftin/go-services/internal/dbproxy"
 	"github.com/skaftin/go-services/internal/gateway"
 	"github.com/skaftin/go-services/internal/health"
+	"github.com/skaftin/go-services/internal/invitations"
 	"github.com/skaftin/go-services/internal/orgs"
 	"github.com/skaftin/go-services/internal/payments"
 	"github.com/skaftin/go-services/internal/projects"
@@ -50,6 +51,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	}
 	credentialsHandler := credentials.NewHandler(pool)
 	communicationsHandler := communications.NewHandler(pool)
+	invitationsHandler := invitations.NewHandler(pool, communicationsHandler.Service(), cfg.FrontendURL)
 	paymentsHandler := payments.NewHandler(pool)
 
 	// ==================================================================
@@ -78,6 +80,19 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	mountJWT(mux, "/api/storage/", jwks, storageHandler.RegisterRoutes)
 	mountJWT(mux, "/api/analytics/", jwks, analyticsHandler.RegisterRoutes)
 	mountJWT(mux, "/api/credentials/", jwks, credentialsHandler.RegisterRoutes)
+
+	// Invitations: mixed auth (public, JWT-only, JWT+project)
+	invitationsPublicMux := http.NewServeMux()
+	invitationsHandler.RegisterPublicRoutes(invitationsPublicMux)
+	mux.Handle("/api/invitations/code/", invitationsPublicMux)
+
+	invitationsAuthMux := http.NewServeMux()
+	invitationsHandler.RegisterAuthRoutes(invitationsAuthMux)
+	mux.Handle("/api/invitations/accept/", auth.JWTAuth(jwks)(invitationsAuthMux))
+
+	invitationsProjectMux := http.NewServeMux()
+	invitationsHandler.RegisterProjectRoutes(invitationsProjectMux)
+	mux.Handle("/api/invitations/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/invitations/")(invitationsProjectMux)))
 
 	communicationsPublicMux := http.NewServeMux()
 	communicationsHandler.RegisterPublicRoutes(communicationsPublicMux)

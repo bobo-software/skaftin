@@ -19,6 +19,7 @@ type Config struct {
 	AutoStartNode      bool
 	NodeCommand        string
 	NodeWorkDir        string
+	FrontendURL        string
 }
 
 type DatabaseConfig struct {
@@ -55,6 +56,7 @@ func Load() *Config {
 		AutoStartNode:      getEnv("AUTO_START_NODE", "true") == "true",
 		NodeCommand:        getEnv("NODE_COMMAND", "npx nodemon"),
 		NodeWorkDir:        getEnv("NODE_WORK_DIR", ".."),
+		FrontendURL:        getEnvAny([]string{"FRONTEND_URL", "SUPERTOKENS_WEBSITE_DOMAIN"}, "http://localhost:3005"),
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "5432"),
