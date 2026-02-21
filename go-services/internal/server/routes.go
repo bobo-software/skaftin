@@ -7,12 +7,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/analytics"
 	"github.com/skaftin/go-services/internal/auth"
+	"github.com/skaftin/go-services/internal/communications"
 	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/credentials"
 	"github.com/skaftin/go-services/internal/dbproxy"
 	"github.com/skaftin/go-services/internal/gateway"
 	"github.com/skaftin/go-services/internal/health"
 	"github.com/skaftin/go-services/internal/orgs"
+	"github.com/skaftin/go-services/internal/payments"
 	"github.com/skaftin/go-services/internal/projects"
 	"github.com/skaftin/go-services/internal/requestlogs"
 	"github.com/skaftin/go-services/internal/storage"
@@ -47,6 +49,8 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 		return err
 	}
 	credentialsHandler := credentials.NewHandler(pool)
+	communicationsHandler := communications.NewHandler(pool)
+	paymentsHandler := payments.NewHandler(pool)
 
 	// ==================================================================
 	// PUBLIC ROUTES (no auth required)
@@ -74,6 +78,27 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	mountJWT(mux, "/api/storage/", jwks, storageHandler.RegisterRoutes)
 	mountJWT(mux, "/api/analytics/", jwks, analyticsHandler.RegisterRoutes)
 	mountJWT(mux, "/api/credentials/", jwks, credentialsHandler.RegisterRoutes)
+
+	communicationsPublicMux := http.NewServeMux()
+	communicationsHandler.RegisterPublicRoutes(communicationsPublicMux)
+	mux.Handle("/api/communications/{projectId}/sms/webhook", communicationsPublicMux)
+
+	communicationsProjectMux := http.NewServeMux()
+	communicationsHandler.RegisterProjectRoutes(communicationsProjectMux)
+	mux.Handle("/api/communications/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/communications/")(communicationsProjectMux)))
+
+	// Payments webhook routes are public and handled by Go.
+	paymentsWebhookMux := http.NewServeMux()
+	paymentsHandler.RegisterWebhookRoutes(paymentsWebhookMux)
+	mux.Handle("/api/payments/webhook/", paymentsWebhookMux)
+
+	paymentsSessionMux := http.NewServeMux()
+	paymentsHandler.RegisterSessionRoutes(paymentsSessionMux)
+	mux.Handle("/api/payments/handle_fnb_payment", auth.JWTAuth(jwks)(paymentsSessionMux))
+
+	paymentsProjectMux := http.NewServeMux()
+	paymentsHandler.RegisterProjectRoutes(paymentsProjectMux)
+	mux.Handle("/api/payments/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/payments/")(paymentsProjectMux)))
 
 	// ==================================================================
 	// PROXIED ROUTES (forwarded to Node.js)

@@ -19,6 +19,10 @@ import (
 // r.PathValue because path parameters are only populated after the inner
 // ServeMux matches, which hasn't happened at the middleware layer.
 func VerifyProjectAccess(pool *pgxpool.Pool) func(http.Handler) http.Handler {
+	return VerifyProjectAccessForPrefix(pool, "/api/database/")
+}
+
+func VerifyProjectAccessForPrefix(pool *pgxpool.Pool, mountPrefix string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userCtx := GetUserContext(r)
@@ -29,7 +33,7 @@ func VerifyProjectAccess(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 
 			projectIDStr := r.PathValue("projectId")
 			if projectIDStr == "" {
-				projectIDStr = extractProjectID(r.URL.Path, "/api/database/")
+				projectIDStr = extractProjectID(r.URL.Path, mountPrefix)
 			}
 			if projectIDStr == "" {
 				httputil.WriteError(w, http.StatusBadRequest, "Project ID is required")
