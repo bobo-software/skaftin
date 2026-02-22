@@ -57,10 +57,7 @@ func (h *Handler) requireProjectAccess(w http.ResponseWriter, r *http.Request) (
 }
 
 func (h *Handler) GetAvailablePermissions(w http.ResponseWriter, r *http.Request) {
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"data":    AvailablePermissions,
-	})
+	httputil.WriteSuccess(w, http.StatusOK, "Available permissions retrieved successfully", AvailablePermissions)
 }
 
 func (h *Handler) ListCredentials(w http.ResponseWriter, r *http.Request) {
@@ -76,11 +73,7 @@ func (h *Handler) ListCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"data":    creds,
-		"count":   len(creds),
-	})
+	httputil.WriteSuccess(w, http.StatusOK, "Credentials listed successfully", creds)
 }
 
 func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
@@ -118,11 +111,7 @@ func (h *Handler) CreateCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, http.StatusCreated, map[string]any{
-		"success": true,
-		"data":    cred,
-		"message": "Credential created successfully",
-	})
+	httputil.WriteSuccess(w, http.StatusCreated, "Credential created successfully", cred)
 }
 
 func (h *Handler) UpdateCredential(w http.ResponseWriter, r *http.Request) {
@@ -159,11 +148,7 @@ func (h *Handler) UpdateCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"data":    cred,
-		"message": "Credential updated successfully",
-	})
+	httputil.WriteSuccess(w, http.StatusOK, "Credential updated successfully", cred)
 }
 
 func (h *Handler) DeleteCredential(w http.ResponseWriter, r *http.Request) {
@@ -190,10 +175,7 @@ func (h *Handler) DeleteCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"message": "Credential revoked successfully",
-	})
+	httputil.WriteSuccess(w, http.StatusOK, "Credential revoked successfully", nil)
 }
 
 func (h *Handler) GetMcpKey(w http.ResponseWriter, r *http.Request) {
@@ -218,10 +200,7 @@ func (h *Handler) GetMcpKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"data":    cred,
-	})
+	httputil.WriteSuccess(w, http.StatusOK, "MCP key retrieved successfully", cred)
 }
 
 func (h *Handler) RegenerateMcpKey(w http.ResponseWriter, r *http.Request) {
@@ -246,9 +225,5 @@ func (h *Handler) RegenerateMcpKey(w http.ResponseWriter, r *http.Request) {
 		msg = "MCP key created successfully"
 	}
 
-	httputil.WriteJSON(w, status, map[string]any{
-		"success": true,
-		"data":    cred,
-		"message": msg,
-	})
+	httputil.WriteSuccess(w, status, msg, cred)
 }

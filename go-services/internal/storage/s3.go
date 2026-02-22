@@ -117,6 +117,15 @@ func (s *S3Client) RemoveObjects(ctx context.Context, bucket string, keys []stri
 	return len(keys), nil
 }
 
+// GetObject returns the object body as an io.ReadCloser. The caller must close it.
+func (s *S3Client) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+	obj, err := s.client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return obj, nil
+}
+
 // CopyObject copies an object within the same bucket.
 func (s *S3Client) CopyObject(ctx context.Context, bucket, srcKey, dstKey string) error {
 	src := minio.CopySrcOptions{Bucket: bucket, Object: srcKey}

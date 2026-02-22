@@ -33,6 +33,11 @@ func NewHandler(pool *pgxpool.Pool, cfg *config.Config) (*Handler, error) {
 	return &Handler{service: svc}, nil
 }
 
+// S3 returns the underlying S3 client for reuse by other packages.
+func (h *Handler) S3() *S3Client {
+	return h.service.s3
+}
+
 // RegisterRoutes registers all storage routes on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Non-project routes (bucket/path in body or query).

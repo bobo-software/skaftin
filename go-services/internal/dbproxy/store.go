@@ -93,7 +93,7 @@ func (s *Store) ListTables(ctx context.Context, pc *ProjectConn, includeSystemTa
 	}
 	defer rows.Close()
 
-	var tables []map[string]any
+	tables := make([]map[string]any, 0)
 	for rows.Next() {
 		var name, schema, tableType string
 		if err := rows.Scan(&name, &schema, &tableType); err != nil {
@@ -139,7 +139,7 @@ func (s *Store) GetTableSchema(ctx context.Context, pc *ProjectConn, tableName s
 	}
 	defer rows.Close()
 
-	var columns []TableColumn
+	columns := make([]TableColumn, 0)
 	for rows.Next() {
 		var c TableColumn
 		var nullable string

@@ -2,9 +2,20 @@ package httputil
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 )
+
+// ReadJSON decodes the request body into the given destination.
+func ReadJSON(r *http.Request, dst any) error {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+	defer r.Body.Close()
+	return json.Unmarshal(body, dst)
+}
 
 // WriteJSON writes a JSON response with the given status code.
 func WriteJSON(w http.ResponseWriter, status int, data any) {
@@ -26,13 +37,10 @@ func WriteError(w http.ResponseWriter, status int, message string) {
 // WriteSuccess writes a standardized JSON success response.
 // Format: {success: true, message: "...", data: ..., timestamp: "..."}
 func WriteSuccess(w http.ResponseWriter, status int, message string, data any) {
-	resp := map[string]any{
+	WriteJSON(w, status, map[string]any{
 		"success":   true,
 		"message":   message,
+		"data":      data,
 		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	if data != nil {
-		resp["data"] = data
-	}
-	WriteJSON(w, status, resp)
+	})
 }

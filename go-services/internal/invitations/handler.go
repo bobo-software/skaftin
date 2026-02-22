@@ -50,7 +50,7 @@ func (h *Handler) GetByCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": inv})
+	httputil.WriteSuccess(w, 200, "Invitation retrieved successfully", inv)
 }
 
 func (h *Handler) Accept(w http.ResponseWriter, r *http.Request) {
@@ -71,11 +71,7 @@ func (h *Handler) Accept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, 200, map[string]any{
-		"success": true,
-		"message": "Invitation accepted successfully",
-		"data":    member,
-	})
+	httputil.WriteSuccess(w, 200, "Invitation accepted successfully", member)
 }
 
 func (h *Handler) ListInvitations(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +87,7 @@ func (h *Handler) ListInvitations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": list, "count": len(list)})
+	httputil.WriteSuccess(w, 200, "Invitations listed successfully", list)
 }
 
 func (h *Handler) CreateInvitation(w http.ResponseWriter, r *http.Request) {
@@ -131,12 +127,7 @@ func (h *Handler) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, 201, map[string]any{
-		"success":     true,
-		"data":        inv,
-		"message":     "Invitation created successfully",
-		"invite_link": inviteLink,
-	})
+	httputil.WriteSuccess(w, 201, "Invitation created successfully", map[string]any{"invitation": inv, "invite_link": inviteLink})
 }
 
 func (h *Handler) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +152,7 @@ func (h *Handler) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "message": "Invitation revoked successfully"})
+	httputil.WriteSuccess(w, 200, "Invitation revoked successfully", nil)
 }
 
 func (h *Handler) ListMembers(w http.ResponseWriter, r *http.Request) {
@@ -176,7 +167,7 @@ func (h *Handler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": list, "count": len(list)})
+	httputil.WriteSuccess(w, 200, "Members listed successfully", list)
 }
 
 func (h *Handler) RemoveMember(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +192,7 @@ func (h *Handler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "message": "Member removed successfully"})
+	httputil.WriteSuccess(w, 200, "Member removed successfully", nil)
 }
 
 func parseProjectID(w http.ResponseWriter, r *http.Request) (int, bool) {

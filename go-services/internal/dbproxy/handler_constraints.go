@@ -127,7 +127,7 @@ func (h *Handler) CreateForeignKey(w http.ResponseWriter, r *http.Request) {
 
 	if err := pc.Exec(r.Context(), sql); err != nil {
 		slog.Error("create foreign key failed", "error", err)
-		httputil.WriteError(w, http.StatusInternalServerError, "Failed to create foreign key")
+		httputil.WriteError(w, http.StatusConflict, fmt.Sprintf("Failed to create foreign key: %s", err.Error()))
 		return
 	}
 

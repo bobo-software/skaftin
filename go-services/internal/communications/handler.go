@@ -97,7 +97,7 @@ func (h *Handler) ListEmailProviders(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": "Failed to list email providers", "message": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data, "count": len(data)})
+	httputil.WriteSuccess(w, 200, "Email providers listed successfully", data)
 }
 
 func (h *Handler) GetEmailProvider(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +118,7 @@ func (h *Handler) GetEmailProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "Email provider not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": p})
+	httputil.WriteSuccess(w, 200, "Email provider retrieved successfully", p)
 }
 
 func (h *Handler) CreateEmailProvider(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +149,7 @@ func (h *Handler) CreateEmailProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": "Failed to create email provider", "message": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 201, map[string]any{"success": true, "data": created, "message": "Email provider created successfully"})
+	httputil.WriteSuccess(w, 201, "Email provider created successfully", created)
 }
 
 func (h *Handler) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +201,7 @@ func (h *Handler) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "Email provider not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": updated, "message": "Email provider updated successfully"})
+	httputil.WriteSuccess(w, 200, "Email provider updated successfully", updated)
 }
 
 func (h *Handler) DeleteEmailProvider(w http.ResponseWriter, r *http.Request) {
@@ -222,7 +222,7 @@ func (h *Handler) DeleteEmailProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "Email provider not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "message": "Email provider deleted successfully"})
+	httputil.WriteSuccess(w, 200, "Email provider deleted successfully", nil)
 }
 
 func (h *Handler) TestEmailProvider(w http.ResponseWriter, r *http.Request) {
@@ -248,21 +248,17 @@ func (h *Handler) TestEmailProvider(w http.ResponseWriter, r *http.Request) {
 		if body.TestEmail != "" {
 			_, sendErr := h.service.SendEmail(r.Context(), projectID, providerID, []string{body.TestEmail}, nil, nil, "Test Email", "Connection test successful", "<p>Connection test successful</p>", nil)
 			if sendErr != nil {
-				httputil.WriteJSON(w, 500, map[string]any{
-					"success": false,
-					"error":   "Connection failed",
-					"message": sendErr.Error(),
-				})
+			httputil.WriteJSON(w, 500, map[string]any{
+				"success": false,
+				"error":   "Connection failed",
+				"message": sendErr.Error(),
+			})
 				return
 			}
-			httputil.WriteJSON(w, 200, map[string]any{
-				"success":   true,
-				"message":   "Connection successful and test email sent to " + body.TestEmail,
-				"emailSent": true,
-			})
+			httputil.WriteSuccess(w, 200, "Connection successful and test email sent to "+body.TestEmail, map[string]any{"emailSent": true})
 			return
 		}
-		httputil.WriteJSON(w, 200, map[string]any{"success": true, "message": "Connection successful", "emailSent": false})
+		httputil.WriteSuccess(w, 200, "Connection successful", map[string]any{"emailSent": false})
 		return
 	}
 	httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": "Connection failed"})
@@ -339,7 +335,7 @@ func (h *Handler) SendEmail(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": "Failed to send email", "message": msg})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "message": "Email sent successfully", "data": data})
+	httputil.WriteSuccess(w, 200, "Email sent successfully", data)
 }
 
 func (h *Handler) ListEmailTemplates(w http.ResponseWriter, r *http.Request) {
@@ -352,7 +348,7 @@ func (h *Handler) ListEmailTemplates(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": "Failed to list email templates", "message": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data, "count": len(data)})
+	httputil.WriteSuccess(w, 200, "Email templates listed successfully", data)
 }
 
 func (h *Handler) GetEmailTemplate(w http.ResponseWriter, r *http.Request) {
@@ -373,7 +369,7 @@ func (h *Handler) GetEmailTemplate(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "Email template not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "Email template retrieved successfully", data)
 }
 
 func (h *Handler) CreateEmailTemplate(w http.ResponseWriter, r *http.Request) {
@@ -405,7 +401,7 @@ func (h *Handler) CreateEmailTemplate(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": "Failed to create email template", "message": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 201, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 201, "Email template created successfully", data)
 }
 
 func (h *Handler) UpdateEmailTemplate(w http.ResponseWriter, r *http.Request) {
@@ -457,7 +453,7 @@ func (h *Handler) UpdateEmailTemplate(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "Email template not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "Email template updated successfully", data)
 }
 
 func (h *Handler) DeleteEmailTemplate(w http.ResponseWriter, r *http.Request) {
@@ -478,7 +474,7 @@ func (h *Handler) DeleteEmailTemplate(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "Email template not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "message": "Email template deleted successfully"})
+	httputil.WriteSuccess(w, 200, "Email template deleted successfully", nil)
 }
 
 func (h *Handler) ListSMSTemplates(w http.ResponseWriter, r *http.Request) {
@@ -491,7 +487,7 @@ func (h *Handler) ListSMSTemplates(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": "Failed to list SMS templates", "message": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data, "count": len(data)})
+	httputil.WriteSuccess(w, 200, "SMS templates listed successfully", data)
 }
 
 func (h *Handler) GetSMSTemplate(w http.ResponseWriter, r *http.Request) {
@@ -512,7 +508,7 @@ func (h *Handler) GetSMSTemplate(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "SMS template not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "SMS template retrieved successfully", data)
 }
 
 func (h *Handler) CreateSMSTemplate(w http.ResponseWriter, r *http.Request) {
@@ -542,7 +538,7 @@ func (h *Handler) CreateSMSTemplate(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": "Failed to create SMS template", "message": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 201, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 201, "SMS template created successfully", data)
 }
 
 func (h *Handler) UpdateSMSTemplate(w http.ResponseWriter, r *http.Request) {
@@ -594,7 +590,7 @@ func (h *Handler) UpdateSMSTemplate(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "SMS template not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "SMS template updated successfully", data)
 }
 
 func (h *Handler) DeleteSMSTemplate(w http.ResponseWriter, r *http.Request) {
@@ -615,7 +611,7 @@ func (h *Handler) DeleteSMSTemplate(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "SMS template not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "message": "SMS template deleted successfully"})
+	httputil.WriteSuccess(w, 200, "SMS template deleted successfully", nil)
 }
 
 func (h *Handler) ListSMSProviders(w http.ResponseWriter, r *http.Request) {
@@ -628,7 +624,7 @@ func (h *Handler) ListSMSProviders(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "SMS providers listed successfully", data)
 }
 
 func (h *Handler) GetSMSProvider(w http.ResponseWriter, r *http.Request) {
@@ -649,7 +645,7 @@ func (h *Handler) GetSMSProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "SMS provider not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "SMS provider retrieved successfully", data)
 }
 
 func (h *Handler) CreateSMSProvider(w http.ResponseWriter, r *http.Request) {
@@ -679,7 +675,7 @@ func (h *Handler) CreateSMSProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 201, map[string]any{"success": true, "data": created})
+	httputil.WriteSuccess(w, 201, "SMS provider created successfully", created)
 }
 
 func (h *Handler) UpdateSMSProvider(w http.ResponseWriter, r *http.Request) {
@@ -716,7 +712,7 @@ func (h *Handler) UpdateSMSProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "SMS provider not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": updated})
+	httputil.WriteSuccess(w, 200, "SMS provider updated successfully", updated)
 }
 
 func (h *Handler) DeleteSMSProvider(w http.ResponseWriter, r *http.Request) {
@@ -737,7 +733,7 @@ func (h *Handler) DeleteSMSProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "SMS provider not found"})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true})
+	httputil.WriteSuccess(w, 200, "SMS provider deleted successfully", nil)
 }
 
 func (h *Handler) SendSMS(w http.ResponseWriter, r *http.Request) {
@@ -761,7 +757,7 @@ func (h *Handler) SendSMS(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 502, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "SMS sent successfully", data)
 }
 
 func (h *Handler) SendSMSBasic(w http.ResponseWriter, r *http.Request) {
@@ -786,11 +782,11 @@ func (h *Handler) SendSMSBasic(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 502, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "SMS sent successfully", data)
 }
 
 func (h *Handler) SMSWebhook(w http.ResponseWriter, r *http.Request) {
-	httputil.WriteJSON(w, 200, map[string]any{"success": true})
+	httputil.WriteSuccess(w, 200, "Webhook received", nil)
 }
 
 func (h *Handler) SendWhatsApp(w http.ResponseWriter, r *http.Request) {
@@ -814,7 +810,7 @@ func (h *Handler) SendWhatsApp(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 502, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "WhatsApp message sent successfully", data)
 }
 
 func (h *Handler) SendWhatsAppBasic(w http.ResponseWriter, r *http.Request) {
@@ -839,7 +835,7 @@ func (h *Handler) SendWhatsAppBasic(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 502, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "WhatsApp message sent successfully", data)
 }
 
 func (h *Handler) SendWhatsAppTemplate(w http.ResponseWriter, r *http.Request) {
@@ -869,7 +865,7 @@ func (h *Handler) SendWhatsAppTemplate(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 502, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "WhatsApp template sent successfully", data)
 }
 
 func (h *Handler) CheckSMSStatus(w http.ResponseWriter, r *http.Request) {
@@ -893,5 +889,5 @@ func (h *Handler) CheckSMSStatus(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	httputil.WriteJSON(w, 200, map[string]any{"success": true, "data": data})
+	httputil.WriteSuccess(w, 200, "SMS status retrieved successfully", data)
 }

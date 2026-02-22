@@ -56,7 +56,7 @@ func (s *Store) ListProjectBuckets(ctx context.Context, projectID int) ([]Bucket
 	}
 	defer rows.Close()
 
-	var buckets []Bucket
+	buckets := make([]Bucket, 0)
 	for rows.Next() {
 		var b Bucket
 		if err := rows.Scan(&b.ID, &b.BucketName, &b.Description, &b.CreatedAt, &b.UpdatedAt); err != nil {

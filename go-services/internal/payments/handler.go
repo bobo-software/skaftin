@@ -60,11 +60,7 @@ func (h *Handler) ListProviders(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"data":    providers,
-		"count":   len(providers),
-	})
+	httputil.WriteSuccess(w, http.StatusOK, "Payment providers listed successfully", providers)
 }
 
 func (h *Handler) GetProvider(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +87,7 @@ func (h *Handler) GetProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"success": false, "error": "Payment provider not found"})
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{"success": true, "data": provider})
+	httputil.WriteSuccess(w, http.StatusOK, "Payment provider retrieved successfully", provider)
 }
 
 func (h *Handler) CreateProvider(w http.ResponseWriter, r *http.Request) {
@@ -167,11 +163,7 @@ func (h *Handler) CreateProvider(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	httputil.WriteJSON(w, http.StatusCreated, map[string]any{
-		"success": true,
-		"data":    created,
-		"message": "Payment provider created successfully",
-	})
+	httputil.WriteSuccess(w, http.StatusCreated, "Payment provider created successfully", created)
 }
 
 func (h *Handler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
@@ -240,11 +232,7 @@ func (h *Handler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"success": false, "error": "Payment provider not found"})
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"data":    updated,
-		"message": "Payment provider updated successfully",
-	})
+	httputil.WriteSuccess(w, http.StatusOK, "Payment provider updated successfully", updated)
 }
 
 func (h *Handler) DeleteProvider(w http.ResponseWriter, r *http.Request) {
@@ -270,7 +258,7 @@ func (h *Handler) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"success": false, "error": "Payment provider not found"})
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{"success": true, "message": "Payment provider deleted successfully"})
+	httputil.WriteSuccess(w, http.StatusOK, "Payment provider deleted successfully", nil)
 }
 
 func (h *Handler) TestProvider(w http.ResponseWriter, r *http.Request) {
@@ -292,7 +280,7 @@ func (h *Handler) TestProvider(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, result)
+	httputil.WriteSuccess(w, http.StatusOK, "Payment provider test successful", result)
 }
 
 func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
@@ -330,12 +318,7 @@ func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"data":    transactions,
-		"total":   total,
-		"count":   len(transactions),
-	})
+	httputil.WriteSuccess(w, http.StatusOK, "Transactions listed successfully", map[string]any{"transactions": transactions, "total": total})
 }
 
 func (h *Handler) GetTransaction(w http.ResponseWriter, r *http.Request) {
@@ -361,7 +344,7 @@ func (h *Handler) GetTransaction(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"success": false, "error": "Transaction not found"})
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{"success": true, "data": tx})
+	httputil.WriteSuccess(w, http.StatusOK, "Transaction retrieved successfully", tx)
 }
 
 func (h *Handler) HandleFNBPayment(w http.ResponseWriter, r *http.Request) {
@@ -434,14 +417,9 @@ func (h *Handler) HandleFNBPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if result.Success {
-		httputil.WriteJSON(w, http.StatusOK, map[string]any{
-			"success": true,
-			"message": "Redirect to complete payment",
-			"data": map[string]any{
-				"url":       result.URL,
-				"reference": result.Reference,
-			},
-			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+		httputil.WriteSuccess(w, http.StatusOK, "Redirect to complete payment", map[string]any{
+			"url":       result.URL,
+			"reference": result.Reference,
 		})
 		return
 	}

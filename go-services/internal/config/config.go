@@ -14,7 +14,9 @@ type Config struct {
 	Port               string
 	Database           DatabaseConfig
 	MinIO              MinIOConfig
+	MinioBucket        string
 	SuperTokensCoreURL string
+	SuperTokensAPIKey  string
 	NodeBackendURL     string
 	AutoStartNode      bool
 	NodeCommand        string
@@ -52,11 +54,13 @@ func Load() *Config {
 	return &Config{
 		Port:               getEnv("PORT", "4006"),
 		SuperTokensCoreURL: getEnvAny([]string{"SUPERTOKENS_CORE_URL", "SUPERTOKENS_CONNECTION_URI"}, "http://localhost:3567"),
+		SuperTokensAPIKey:  getEnv("SUPERTOKENS_API_KEY", ""),
 		NodeBackendURL:     getEnv("NODE_BACKEND_URL", "http://localhost:4007"),
 		AutoStartNode:      getEnv("AUTO_START_NODE", "true") == "true",
 		NodeCommand:        getEnv("NODE_COMMAND", "npx nodemon"),
 		NodeWorkDir:        getEnv("NODE_WORK_DIR", ".."),
 		FrontendURL:        getEnvAny([]string{"FRONTEND_URL", "SUPERTOKENS_WEBSITE_DOMAIN"}, "http://localhost:3005"),
+		MinioBucket:        getEnv("MINIO_BUCKET", "skaftin"),
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "5432"),

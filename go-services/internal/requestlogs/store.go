@@ -100,7 +100,7 @@ func scanLog(row pgx.Row) (*RequestLog, error) {
 }
 
 func scanLogRows(rows pgx.Rows) ([]RequestLog, error) {
-	var out []RequestLog
+	out := make([]RequestLog, 0)
 	for rows.Next() {
 		var l RequestLog
 		if err := rows.Scan(
@@ -425,7 +425,7 @@ func (s *Store) TopEndpoints(ctx context.Context, projectID int, since time.Time
 	}
 	defer rows.Close()
 
-	var out []TopEndpoint
+	out := make([]TopEndpoint, 0)
 	for rows.Next() {
 		var ep TopEndpoint
 		var avgDur *float64

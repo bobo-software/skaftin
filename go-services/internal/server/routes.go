@@ -1,28 +1,39 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/analytics"
 	"github.com/skaftin/go-services/internal/auth"
+	"github.com/skaftin/go-services/internal/authmanagement"
+	"github.com/skaftin/go-services/internal/backups"
 	"github.com/skaftin/go-services/internal/communications"
 	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/credentials"
 	"github.com/skaftin/go-services/internal/dbproxy"
+	"github.com/skaftin/go-services/internal/files"
 	"github.com/skaftin/go-services/internal/gateway"
+	gqlhandler "github.com/skaftin/go-services/internal/graphql"
 	"github.com/skaftin/go-services/internal/health"
 	"github.com/skaftin/go-services/internal/invitations"
+	"github.com/skaftin/go-services/internal/migrations"
 	"github.com/skaftin/go-services/internal/orgs"
 	"github.com/skaftin/go-services/internal/payments"
 	"github.com/skaftin/go-services/internal/projects"
 	"github.com/skaftin/go-services/internal/requestlogs"
 	"github.com/skaftin/go-services/internal/storage"
+	"github.com/skaftin/go-services/internal/supertokens"
+	"github.com/skaftin/go-services/internal/users"
 )
 
 // RegisterRoutes wires all domain handlers and proxy routes onto the mux.
-func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) error {
+// The returned function should be called during graceful shutdown to stop
+// background services (e.g. the backup scheduler).
+func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) (func(), error) {
 	// ---- JWKS provider for JWT validation ----
 	jwks := auth.NewJWKSProvider(cfg.SuperTokensCoreURL)
 	slog.Info("JWKS provider initialized", "supertokensCoreURL", cfg.SuperTokensCoreURL)
@@ -30,7 +41,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	// ---- Node.js reverse proxy ----
 	nodeProxy, err := gateway.NewReverseProxy(cfg.NodeBackendURL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	nodeHandler := gateway.WebSocketAwareHandler(nodeProxy, cfg.NodeBackendURL)
 	slog.Info("reverse proxy initialized", "nodeBackendURL", cfg.NodeBackendURL)
@@ -40,19 +51,21 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	dbHandler := dbproxy.NewHandler(pool)
 	projectsHandler, err := projects.NewHandler(pool, cfg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	orgsHandler := orgs.NewHandler(pool)
 	requestLogsHandler := requestlogs.NewHandler(pool)
 	analyticsHandler := analytics.NewHandler(pool)
 	storageHandler, err := storage.NewHandler(pool, cfg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	credentialsHandler := credentials.NewHandler(pool)
 	communicationsHandler := communications.NewHandler(pool)
 	invitationsHandler := invitations.NewHandler(pool, communicationsHandler.Service(), cfg.FrontendURL)
 	paymentsHandler := payments.NewHandler(pool)
+	stClient := supertokens.NewClient(cfg.SuperTokensCoreURL, cfg.SuperTokensAPIKey)
+	usersHandler := users.NewHandler(pool, stClient)
 
 	// ==================================================================
 	// PUBLIC ROUTES (no auth required)
@@ -80,6 +93,20 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	mountJWT(mux, "/api/storage/", jwks, storageHandler.RegisterRoutes)
 	mountJWT(mux, "/api/analytics/", jwks, analyticsHandler.RegisterRoutes)
 	mountJWT(mux, "/api/credentials/", jwks, credentialsHandler.RegisterRoutes)
+	mountJWT(mux, "/api/users/", jwks, usersHandler.RegisterRoutes)
+
+	graphqlHandler, err := gqlhandler.NewHandler(pool)
+	if err != nil {
+		return nil, err
+	}
+	mountJWT(mux, "/api/graphql", jwks, graphqlHandler.RegisterRoutes)
+
+	filesHandler := files.NewHandler(storageHandler.S3(), cfg.MinioBucket)
+	mountJWT(mux, "/api/files/", jwks, filesHandler.RegisterRoutes)
+
+	migrationsDir := filepath.Join(cfg.NodeWorkDir, "migrations")
+	migrationsHandler := migrations.NewHandler(pool, migrationsDir)
+	mountJWT(mux, "/api/migrations/", jwks, migrationsHandler.RegisterRoutes)
 
 	// Invitations: mixed auth (public, JWT-only, JWT+project)
 	invitationsPublicMux := http.NewServeMux()
@@ -115,6 +142,35 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	paymentsHandler.RegisterProjectRoutes(paymentsProjectMux)
 	mux.Handle("/api/payments/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/payments/")(paymentsProjectMux)))
 
+	// Auth management: app auth (public) + management (JWT + project access)
+	authMgmtHandler := authmanagement.NewHandler(pool, stClient, communicationsHandler.Service())
+
+	authPublicMux := http.NewServeMux()
+	authMgmtHandler.RegisterPublicRoutes(authPublicMux)
+	mux.Handle("/api/auth/{projectId}/auth/", authPublicMux)
+
+	authProtectedMux := http.NewServeMux()
+	authMgmtHandler.RegisterProtectedRoutes(authProtectedMux)
+	mux.Handle("/api/auth/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/auth/")(authProtectedMux)))
+
+	// Backups: project-scoped routes (JWT + project access) + restore route (JWT only)
+	projectsStore := projects.NewStore(pool)
+	backupsHandler := backups.NewHandler(pool, storageHandler.S3(), cfg.MinioBucket, projectsStore)
+
+	backupsMux := http.NewServeMux()
+	backupsHandler.RegisterRoutes(backupsMux)
+	mux.Handle("/api/backups/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/backups/")(backupsMux)))
+
+	backupsRestoreMux := http.NewServeMux()
+	backupsHandler.RegisterRestoreRoute(backupsRestoreMux)
+	mux.Handle("/api/backups/restore", auth.JWTAuth(jwks)(backupsRestoreMux))
+
+	scheduler := backups.NewScheduler(backupsHandler.Service())
+	backupsHandler.SetScheduler(scheduler)
+	if err := scheduler.LoadAll(context.Background()); err != nil {
+		slog.Error("failed to load backup schedules", "error", err)
+	}
+
 	// ==================================================================
 	// PROXIED ROUTES (forwarded to Node.js)
 	// ==================================================================
@@ -131,7 +187,10 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	// Socket.IO: pass through (handles its own auth)
 	mux.Handle("/socket.io/", nodeHandler)
 
-	return nil
+	cleanup := func() {
+		scheduler.Stop()
+	}
+	return cleanup, nil
 }
 
 // mountJWT creates a sub-mux, registers routes on it, and mounts it under

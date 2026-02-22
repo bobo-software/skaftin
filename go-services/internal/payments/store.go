@@ -130,7 +130,7 @@ func scanTransaction(row pgx.Row) (PaymentTransactionRecord, error) {
 }
 
 func (s *Store) ListProviders(ctx context.Context, projectID int, schema string) ([]PaymentProviderRecord, error) {
-	var providers []PaymentProviderRecord
+	providers := make([]PaymentProviderRecord, 0)
 	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
 			SELECT id, project_id, name, provider_type, merchant_id, merchant_key, passphrase,
@@ -363,7 +363,7 @@ func (s *Store) GetTransaction(ctx context.Context, projectID int, transactionID
 }
 
 func (s *Store) ListTransactions(ctx context.Context, projectID int, schema string, opts TransactionListOptions) ([]PaymentTransactionRecord, int, error) {
-	var records []PaymentTransactionRecord
+	records := make([]PaymentTransactionRecord, 0)
 	var total int
 
 	conditions := []string{"project_id = $1"}
