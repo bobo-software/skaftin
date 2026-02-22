@@ -206,7 +206,7 @@ func (s *Store) GetAPITimeSeries(ctx context.Context, projectID int, start, end 
 	}
 	defer rows.Close()
 
-	var result []APITimeSeriesRow
+	result := make([]APITimeSeriesRow, 0)
 	for rows.Next() {
 		var r APITimeSeriesRow
 		if err := rows.Scan(&r.Time, &r.RequestCount, &r.AvgResponseTime, &r.ErrorCount); err != nil {
@@ -240,7 +240,7 @@ func (s *Store) GetTopEndpoints(ctx context.Context, projectID int, start, end t
 	}
 	defer rows.Close()
 
-	var result []TopEndpoint
+	result := make([]TopEndpoint, 0)
 	for rows.Next() {
 		var r TopEndpoint
 		if err := rows.Scan(&r.Endpoint, &r.Method, &r.RequestCount, &r.AvgResponseTime, &r.ErrorCount); err != nil {
@@ -275,7 +275,7 @@ func (s *Store) GetDBTimeSeries(ctx context.Context, projectID int, start, end t
 	}
 	defer rows.Close()
 
-	var result []DBTimeSeriesRow
+	result := make([]DBTimeSeriesRow, 0)
 	for rows.Next() {
 		var r DBTimeSeriesRow
 		if err := rows.Scan(&r.Time, &r.QueryCount, &r.AvgExecutionTime, &r.TotalRowsAffected); err != nil {
@@ -309,7 +309,7 @@ func (s *Store) GetTopTables(ctx context.Context, projectID int, start, end time
 	}
 	defer rows.Close()
 
-	var result []TopTable
+	result := make([]TopTable, 0)
 	for rows.Next() {
 		var r TopTable
 		if err := rows.Scan(&r.TableName, &r.QueryType, &r.QueryCount, &r.AvgExecutionTime, &r.TotalRowsAffected); err != nil {
@@ -342,7 +342,7 @@ func (s *Store) GetSlowQueries(ctx context.Context, projectID int, start, end ti
 	}
 	defer rows.Close()
 
-	var result []SlowQuery
+	result := make([]SlowQuery, 0)
 	for rows.Next() {
 		var r SlowQuery
 		if err := rows.Scan(&r.TableName, &r.QueryType, &r.ExecutionTimeMs, &r.RowsAffected, &r.CreatedAt); err != nil {
@@ -379,7 +379,7 @@ func (s *Store) GetStorageTimeSeries(ctx context.Context, projectID int, start, 
 	}
 	defer rows.Close()
 
-	var result []StorageTimeSeriesRow
+	result := make([]StorageTimeSeriesRow, 0)
 	for rows.Next() {
 		var r StorageTimeSeriesRow
 		if err := rows.Scan(&r.Time, &r.OperationCount, &r.UploadCount, &r.DownloadCount, &r.TotalBytes); err != nil {
@@ -411,7 +411,7 @@ func (s *Store) GetStorageBreakdown(ctx context.Context, projectID int, start, e
 	}
 	defer rows.Close()
 
-	var result []StorageBreakdownRow
+	result := make([]StorageBreakdownRow, 0)
 	for rows.Next() {
 		var r StorageBreakdownRow
 		if err := rows.Scan(&r.OperationType, &r.OperationCount, &r.TotalBytes, &r.AvgFileSize); err != nil {

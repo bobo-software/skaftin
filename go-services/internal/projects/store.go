@@ -68,7 +68,7 @@ func scanProject(row pgx.Row) (*Project, error) {
 }
 
 func scanProjectRows(rows pgx.Rows) ([]Project, error) {
-	var out []Project
+	out := make([]Project, 0)
 	for rows.Next() {
 		var p Project
 		var encKey *string
@@ -410,7 +410,7 @@ func scanBucket(row pgx.Row) (*Bucket, error) {
 }
 
 func scanBucketRows(rows pgx.Rows) ([]Bucket, error) {
-	var out []Bucket
+	out := make([]Bucket, 0)
 	for rows.Next() {
 		var b Bucket
 		if err := rows.Scan(&b.ID, &b.ProjectID, &b.BucketName, &b.Description, &b.AccessPolicy, &b.CreatedAt, &b.UpdatedAt); err != nil {

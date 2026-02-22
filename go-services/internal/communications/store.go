@@ -55,7 +55,7 @@ func (s *Store) ListEmailProviders(ctx context.Context, projectID int) ([]EmailP
 		return nil, err
 	}
 	defer rows.Close()
-	var out []EmailProvider
+	out := make([]EmailProvider, 0)
 	for rows.Next() {
 		var p EmailProvider
 		if err := rows.Scan(&p.ID, &p.ProjectID, &p.Name, &p.ProviderType, &p.SMTPHost, &p.SMTPPort, &p.SMTPSecure, &p.SMTPUser, &p.FromEmail, &p.FromName, &p.IsActive, &p.CreatedAt, &p.UpdatedAt); err != nil {
@@ -148,7 +148,7 @@ func (s *Store) ListEmailTemplates(ctx context.Context, projectID int) ([]EmailT
 		return nil, err
 	}
 	defer rows.Close()
-	var out []EmailTemplate
+	out := make([]EmailTemplate, 0)
 	for rows.Next() {
 		var t EmailTemplate
 		var varsRaw []byte
@@ -243,7 +243,7 @@ func (s *Store) ListSMSTemplates(ctx context.Context, projectID int) ([]SMSTempl
 		return nil, err
 	}
 	defer rows.Close()
-	var out []SMSTemplate
+	out := make([]SMSTemplate, 0)
 	for rows.Next() {
 		var t SMSTemplate
 		var varsRaw []byte
@@ -338,7 +338,7 @@ func (s *Store) ListSMSProviders(ctx context.Context, projectID int) ([]SMSProvi
 		return nil, err
 	}
 	defer rows.Close()
-	var out []SMSProvider
+	out := make([]SMSProvider, 0)
 	for rows.Next() {
 		var p SMSProvider
 		if err := rows.Scan(&p.ID, &p.ProjectID, &p.Name, &p.ProviderType, &p.PostURL, &p.MessagingServiceSID, &p.PhoneNumber, &p.WhatsAppFrom, &p.IsActive, &p.CreatedAt, &p.UpdatedAt); err != nil {

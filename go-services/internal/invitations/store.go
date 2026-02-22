@@ -102,7 +102,7 @@ func (s *Store) ListByProject(ctx context.Context, projectID int, status string)
 	}
 	defer rows.Close()
 
-	var list []Invitation
+	list := make([]Invitation, 0)
 	for rows.Next() {
 		var inv Invitation
 		if err := rows.Scan(
@@ -216,7 +216,7 @@ func (s *Store) ListMembers(ctx context.Context, projectID int) ([]Member, error
 	}
 	defer rows.Close()
 
-	var list []Member
+	list := make([]Member, 0)
 	for rows.Next() {
 		var m Member
 		if err := rows.Scan(&m.ID, &m.ProjectID, &m.UserID, &m.Role, &m.InvitedBy, &m.JoinedAt, &m.ProjectName); err != nil {

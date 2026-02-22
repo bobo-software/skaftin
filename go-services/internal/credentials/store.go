@@ -60,7 +60,7 @@ func (s *Store) ListByProject(ctx context.Context, projectID int) ([]CredentialR
 	}
 	defer rows.Close()
 
-	var creds []CredentialRecord
+	creds := make([]CredentialRecord, 0)
 	for rows.Next() {
 		c, err := scanCredential(rows)
 		if err != nil {

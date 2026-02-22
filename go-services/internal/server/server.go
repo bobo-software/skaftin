@@ -17,13 +17,15 @@ type Server struct {
 	httpServer *http.Server
 	cfg        *config.Config
 	pool       *pgxpool.Pool
+	cleanup    func()
 }
 
 // New creates a configured Server ready to start.
 func New(cfg *config.Config, pool *pgxpool.Pool) (*Server, error) {
 	mux := http.NewServeMux()
 
-	if err := RegisterRoutes(mux, cfg, pool); err != nil {
+	cleanup, err := RegisterRoutes(mux, cfg, pool)
+	if err != nil {
 		return nil, err
 	}
 
@@ -42,6 +44,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool) (*Server, error) {
 		httpServer: httpServer,
 		cfg:        cfg,
 		pool:       pool,
+		cleanup:    cleanup,
 	}, nil
 }
 
@@ -57,7 +60,10 @@ func (s *Server) Start() error {
 	return s.httpServer.ListenAndServe()
 }
 
-// Shutdown gracefully shuts down the HTTP server.
+// Shutdown gracefully shuts down the HTTP server and background services.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.cleanup != nil {
+		s.cleanup()
+	}
 	return s.httpServer.Shutdown(ctx)
 }

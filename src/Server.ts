@@ -17,7 +17,8 @@ import DatabaseController from './controllers/DatabaseController';
 import ProjectsController from './controllers/ProjectsController';
 import ProjectBucketsController from './controllers/ProjectBucketsController';
 import StorageController from './controllers/StorageController';
-import GraphQLController from './controllers/GraphQLController';
+// GraphQL is now handled by the Go gateway.
+// import GraphQLController from './controllers/GraphQLController';
 import CommunicationsController from './controllers/CommunicationsController';
 import { WorkflowScheduler } from './services/WorkflowScheduler';
 
@@ -181,16 +182,19 @@ import { router as AuthCompatibilityRouter } from './routers/AuthCompatibilityRo
 import { createAdminRouter } from './routers/AdminRouter';
 import { router as ProjectsRouter } from './routers/ProjectsRouter';
 import { router as ProjectBucketsRouter } from './routers/ProjectBucketsRouter';
-import { router as FilesRouter } from './routers/FilesRouter';
+// Files routes are now handled by the Go gateway.
+// import { router as FilesRouter } from './routers/FilesRouter';
 import { createStorageRouter } from './routers/StorageRouter';
-import { router as UsersRouter } from './routers/UsersRouter';
+// Users routes are now handled by the Go gateway.
+// import { router as UsersRouter } from './routers/UsersRouter';
 import { router as HealthRouter } from './routers/HealthRouter';
 import { router as MCPRouter } from './routers/MCPRouter';
 import { router as ClientMCPRouter } from './routers/ClientMCPRouter';
 import { createDatabaseRouter } from './routers/DatabaseRouter';
 import { createAdminDatabaseRouter } from './routers/AdminDatabaseRouter';
 import { createAdminStorageRouter } from './routers/AdminStorageRouter';
-import { createAdminAuthRouter } from './routers/AdminAuthRouter';
+// Admin auth routes are now handled by the Go gateway.
+// import { createAdminAuthRouter } from './routers/AdminAuthRouter';
 import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import { createClientCommunicationsRouter } from './routers/ClientCommunicationsRouter';
 // Invitations routes are now handled by the Go gateway.
@@ -201,14 +205,17 @@ import { createPaymentRouter, createClientPaymentRouter, createPaymentWebhookRou
 import { createAuthRouter } from './routers/AuthRouter';
 import { createAnalyticsRouter } from './routers/AnalyticsRouter';
 import { createWorkflowsRouter } from './routers/WorkflowsRouter';
-import { router as BackupRouter } from './routers/BackupRouter';
+// Backups are now handled by the Go gateway.
+// import { router as BackupRouter } from './routers/BackupRouter';
 import { createRequestLogsRouter, createClientRequestLogsRouter } from './routers/RequestLogsRouter';
-import { createMigrationsRouter } from './routers/MigrationsRouter';
-import MigrationsController from './controllers/MigrationsController';
+// Migrations routes are now handled by the Go gateway.
+// import { createMigrationsRouter } from './routers/MigrationsRouter';
+// import MigrationsController from './controllers/MigrationsController';
 import RequestLogsController from './controllers/RequestLogsController';
 import { initRequestLoggingMiddleware, requestLoggingMiddleware } from './middleware/requestLoggingMiddleware';
-import BackupController from './controllers/BackupController';
-import { BackupScheduler } from './services/BackupScheduler';
+// Backups are now handled by the Go gateway.
+// import BackupController from './controllers/BackupController';
+// import { BackupScheduler } from './services/BackupScheduler';
 import { AccountDeletionService } from './services/AccountDeletionService';
 import { RequestLogsCleanupService } from './services/RequestLogsCleanupService';
 import { initializeApiKeyMiddleware } from './middleware/apiKeyMiddleware';
@@ -274,8 +281,8 @@ DatabaseController.initialize(pool);
 ProjectsController.initialize(pool);
 ProjectBucketsController.initialize(pool);
 StorageController.initialize({ pool, s3Client });
-BackupController.initialize(pool, s3Client);
-MigrationsController.initialize(pool);
+// BackupController.initialize(pool, s3Client); // Now handled by Go gateway
+// MigrationsController.initialize(pool); // Now handled by Go gateway
 RequestLogsController.initialize(pool);
 initRequestLoggingMiddleware(pool);
 
@@ -340,8 +347,8 @@ app.use('/api/admin', AdminRouter);
 app.use('/api/organizations', OrganizationsRouter);
 app.use('/api/projects', ProjectsRouter);
 app.use('/api/projects', ProjectBucketsRouter);
-app.use('/api/files', FilesRouter);
-app.use('/api/users', UsersRouter);
+// app.use('/api/files', FilesRouter); // Now handled by Go gateway
+// app.use('/api/users', UsersRouter); // Now handled by Go gateway
 app.use('/api/communications', CommunicationsRouter);
 // app.use('/api/invitations', InvitationsRouter); // Now handled by Go gateway
 // app.use('/api/credentials', CredentialsRouter); // Now handled by Go gateway
@@ -350,13 +357,13 @@ app.use('/api/health', HealthRouter);
 app.use('/api/mcp', MCPRouter);
 app.use('/api/database', createAdminDatabaseRouter(pool));
 app.use('/api/storage', createAdminStorageRouter(pool, s3Client));
-app.use('/api/auth', createAdminAuthRouter(pool));
+// app.use('/api/auth', createAdminAuthRouter(pool)); // Now handled by Go gateway
 app.use('/api/workflows', createWorkflowsRouter(pool));
-app.use('/api/backups', BackupRouter);
+// app.use('/api/backups', BackupRouter); // Now handled by Go gateway
 app.use('/api/payments', PaymentRouter);
 app.use('/api/payments/webhook', PaymentWebhookRouter);
 app.use('/api/request-logs', createRequestLogsRouter(pool));
-app.use('/api/migrations', createMigrationsRouter());
+// app.use('/api/migrations', createMigrationsRouter()); // Now handled by Go gateway
 
 // ============================================================================
 // CLIENT-FACING ROUTES (/app-api/*) - API Key / App User JWT authentication
@@ -436,9 +443,9 @@ const startServer = async () => {
   const healthCheck = new HealthCheckService(pool, s3Client, BUCKET_NAME, minioEndpoint);
   await healthCheck.performHealthChecks();
 
-  // Initialize GraphQL server
-  console.log('🔧 Initializing GraphQL server...');
-  await GraphQLController.initialize(pool, app);
+  // GraphQL is now handled by the Go gateway.
+  // console.log('🔧 Initializing GraphQL server...');
+  // await GraphQLController.initialize(pool, app);
 
   // Initialize WebSocket service
   initializeWebSocketService(httpServer);
@@ -448,10 +455,10 @@ const startServer = async () => {
   const workflowScheduler = WorkflowScheduler.initialize(pool);
   await workflowScheduler.loadScheduledWorkflows();
 
-  // Initialize Backup Scheduler (singleton)
-  console.log('📦 Initializing backup scheduler...');
-  const backupScheduler = BackupScheduler.initialize(pool, s3Client);
-  await backupScheduler.loadScheduledBackups();
+  // Backup scheduler is now handled by the Go gateway.
+  // console.log('📦 Initializing backup scheduler...');
+  // const backupScheduler = BackupScheduler.initialize(pool, s3Client);
+  // await backupScheduler.loadScheduledBackups();
 
   // Initialize Account Deletion Service (runs daily at 2 AM)
   console.log('🗑️  Initializing account deletion service...');
@@ -490,7 +497,7 @@ const startServer = async () => {
   const gracefulShutdown = () => {
     console.log('\n🛑 Shutting down gracefully...');
     workflowScheduler.stopAll();
-    backupScheduler.stopAll();
+    // backupScheduler.stopAll(); // Now handled by Go gateway
     httpServer.close(() => {
       console.log('✅ Server closed');
       process.exit(0);

@@ -69,7 +69,7 @@ func scanMember(row pgx.Row) (*Member, error) {
 }
 
 func scanMemberRows(rows pgx.Rows) ([]Member, error) {
-	var out []Member
+	out := make([]Member, 0)
 	for rows.Next() {
 		var m Member
 		if err := rows.Scan(&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.CreatedAt); err != nil {
@@ -149,7 +149,7 @@ func (s *Store) ListUserOrgs(ctx context.Context, userID string) ([]OrgWithRole,
 	}
 	defer rows.Close()
 
-	var out []OrgWithRole
+	out := make([]OrgWithRole, 0)
 	for rows.Next() {
 		var r OrgWithRole
 		if err := rows.Scan(

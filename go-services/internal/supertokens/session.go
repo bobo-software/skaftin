@@ -1,0 +1,75 @@
+package supertokens
+
+import (
+	"context"
+	"fmt"
+)
+
+type CreateSessionRequest struct {
+	UserID                  string `json:"userId"`
+	UserDataInAccessToken   any    `json:"userDataInAccessToken,omitempty"`
+	UserDataInJWTPayload    any    `json:"userDataInJWTPayload,omitempty"`
+	EnableAntiCsrf          bool   `json:"enableAntiCsrf"`
+	UseDynamicSigningKey    bool   `json:"useDynamicSigningKey"`
+}
+
+type CreateSessionResponse struct {
+	Status       string       `json:"status"`
+	Session      SessionInfo  `json:"session"`
+	AccessToken  TokenInfo    `json:"accessToken"`
+	RefreshToken TokenInfo    `json:"refreshToken"`
+}
+
+type SessionInfo struct {
+	Handle                string `json:"handle"`
+	UserID                string `json:"userId"`
+	UserDataInAccessToken any    `json:"userDataInAccessToken"`
+}
+
+type TokenInfo struct {
+	Token     string `json:"token"`
+	Expiry    int64  `json:"expiry"`
+	CreatedAt int64  `json:"createdTime"`
+}
+
+// CreateSession creates a new session for the given user.
+func (c *Client) CreateSession(ctx context.Context, tenantID string, req CreateSessionRequest) (*CreateSessionResponse, error) {
+	path := fmt.Sprintf("/%s/recipe/session", tenantID)
+	var resp CreateSessionResponse
+	err := c.do(ctx, "POST", path, "session", req, &resp)
+	return &resp, err
+}
+
+type RevokeSessionsResponse struct {
+	Status              string   `json:"status"`
+	SessionHandlesRevoked []string `json:"sessionHandlesRevoked"`
+}
+
+// RevokeAllSessionsForUser revokes all sessions for a user.
+func (c *Client) RevokeAllSessionsForUser(ctx context.Context, userID string) (*RevokeSessionsResponse, error) {
+	var resp RevokeSessionsResponse
+	err := c.do(ctx, "POST", "/recipe/session/remove", "session", map[string]any{
+		"userId": userID,
+	}, &resp)
+	return &resp, err
+}
+
+// GetSession verifies a session token and returns session info.
+func (c *Client) GetSession(ctx context.Context, accessToken string) (*CreateSessionResponse, error) {
+	var resp CreateSessionResponse
+	err := c.do(ctx, "POST", "/recipe/session/verify", "session", map[string]any{
+		"accessToken":    accessToken,
+		"enableAntiCsrf": false,
+		"doAntiCsrfCheck": false,
+		"checkDatabase":  false,
+	}, &resp)
+	return &resp, err
+}
+
+// RevokeSession revokes a specific session by handle.
+func (c *Client) RevokeSession(ctx context.Context, sessionHandle string) error {
+	var resp RevokeSessionsResponse
+	return c.do(ctx, "POST", "/recipe/session/remove", "session", map[string]any{
+		"sessionHandles": []string{sessionHandle},
+	}, &resp)
+}
