@@ -1,5 +1,6 @@
-# Build artifacts (root level binary only)
+# Build artifacts
 /api
+/cmd/mcp/mcp
 *.exe
 *.out
 
