@@ -178,8 +178,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // ROUTERS
 // ============================================================================
 
-import { router as AuthCompatibilityRouter } from './routers/AuthCompatibilityRouter';
-import { createAdminRouter } from './routers/AdminRouter';
 import { router as ProjectsRouter } from './routers/ProjectsRouter';
 import { router as ProjectBucketsRouter } from './routers/ProjectBucketsRouter';
 // Files routes are now handled by the Go gateway.
@@ -204,7 +202,6 @@ import { createPaymentRouter, createClientPaymentRouter, createPaymentWebhookRou
 // import { createCredentialsRouter } from './routers/CredentialsRouter';
 import { createAuthRouter } from './routers/AuthRouter';
 import { createAnalyticsRouter } from './routers/AnalyticsRouter';
-import { createWorkflowsRouter } from './routers/WorkflowsRouter';
 // Backups are now handled by the Go gateway.
 // import { router as BackupRouter } from './routers/BackupRouter';
 import { createRequestLogsRouter, createClientRequestLogsRouter } from './routers/RequestLogsRouter';
@@ -324,9 +321,6 @@ import { createPublicStorageRouter } from './routers/PublicStorageRouter';
 const PublicDatabaseRouter = createPublicDatabaseRouter(pool);
 const PublicStorageRouter = createPublicStorageRouter(pool);
 
-// Initialize Admin Router (for managing SuperTokens users)
-const AdminRouter = createAdminRouter(pool);
-
 // Initialize Analytics Router
 const AnalyticsRouter = createAnalyticsRouter(pool);
 
@@ -339,10 +333,6 @@ AnalyticsService.initialize(pool);
 // ============================================================================
 // PLATFORM ADMIN ROUTES (/api/*) - SuperTokens authentication
 // ============================================================================
-// Auth compatibility layer for Skaftin platform login (keep this at /api/auth for backward compatibility)
-app.use('/api/auth', AuthCompatibilityRouter);
-// Admin routes for managing SuperTokens users (development/debugging)
-app.use('/api/admin', AdminRouter);
 // Platform management routes
 app.use('/api/organizations', OrganizationsRouter);
 app.use('/api/projects', ProjectsRouter);
@@ -358,7 +348,6 @@ app.use('/api/mcp', MCPRouter);
 app.use('/api/database', createAdminDatabaseRouter(pool));
 app.use('/api/storage', createAdminStorageRouter(pool, s3Client));
 // app.use('/api/auth', createAdminAuthRouter(pool)); // Now handled by Go gateway
-app.use('/api/workflows', createWorkflowsRouter(pool));
 // app.use('/api/backups', BackupRouter); // Now handled by Go gateway
 app.use('/api/payments', PaymentRouter);
 app.use('/api/payments/webhook', PaymentWebhookRouter);

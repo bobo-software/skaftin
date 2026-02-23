@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/skaftin/go-services/internal/admin"
 	"github.com/skaftin/go-services/internal/analytics"
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/authmanagement"
@@ -28,6 +29,7 @@ import (
 	"github.com/skaftin/go-services/internal/storage"
 	"github.com/skaftin/go-services/internal/supertokens"
 	"github.com/skaftin/go-services/internal/users"
+	"github.com/skaftin/go-services/internal/workflows"
 )
 
 // RegisterRoutes wires all domain handlers and proxy routes onto the mux.
@@ -66,6 +68,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	paymentsHandler := payments.NewHandler(pool)
 	stClient := supertokens.NewClient(cfg.SuperTokensCoreURL, cfg.SuperTokensAPIKey)
 	usersHandler := users.NewHandler(pool, stClient)
+	adminHandler := admin.NewHandler(pool, stClient)
 
 	// ==================================================================
 	// PUBLIC ROUTES (no auth required)
@@ -145,6 +148,14 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	// Auth management: app auth (public) + management (JWT + project access)
 	authMgmtHandler := authmanagement.NewHandler(pool, stClient, communicationsHandler.Service())
 
+	legacyAuthMux := http.NewServeMux()
+	authMgmtHandler.RegisterLegacyCompatibilityRoutes(legacyAuthMux)
+	mux.Handle("/api/auth/login", legacyAuthMux)
+	mux.Handle("/api/auth/register", legacyAuthMux)
+	mux.Handle("/api/auth/verify", legacyAuthMux)
+	mux.Handle("/api/auth/refresh", legacyAuthMux)
+	mux.Handle("/api/auth/logout", legacyAuthMux)
+
 	authPublicMux := http.NewServeMux()
 	authMgmtHandler.RegisterPublicRoutes(authPublicMux)
 	mux.Handle("/api/auth/{projectId}/auth/", authPublicMux)
@@ -152,6 +163,15 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	authProtectedMux := http.NewServeMux()
 	authMgmtHandler.RegisterProtectedRoutes(authProtectedMux)
 	mux.Handle("/api/auth/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/auth/")(authProtectedMux)))
+
+	// Admin: public email check + protected admin operations.
+	adminPublicMux := http.NewServeMux()
+	adminHandler.RegisterPublicRoutes(adminPublicMux)
+	mux.Handle("/api/admin/users/check-email", adminPublicMux)
+
+	adminProtectedMux := http.NewServeMux()
+	adminHandler.RegisterProtectedRoutes(adminProtectedMux)
+	mux.Handle("/api/admin/", auth.JWTAuth(jwks)(adminProtectedMux))
 
 	// Backups: project-scoped routes (JWT + project access) + restore route (JWT only)
 	projectsStore := projects.NewStore(pool)
@@ -165,10 +185,22 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	backupsHandler.RegisterRestoreRoute(backupsRestoreMux)
 	mux.Handle("/api/backups/restore", auth.JWTAuth(jwks)(backupsRestoreMux))
 
-	scheduler := backups.NewScheduler(backupsHandler.Service())
-	backupsHandler.SetScheduler(scheduler)
-	if err := scheduler.LoadAll(context.Background()); err != nil {
+	backupScheduler := backups.NewScheduler(backupsHandler.Service())
+	backupsHandler.SetScheduler(backupScheduler)
+	if err := backupScheduler.LoadAll(context.Background()); err != nil {
 		slog.Error("failed to load backup schedules", "error", err)
+	}
+
+	// Workflows: project-scoped routes (JWT + project access)
+	workflowsHandler := workflows.NewHandler(pool)
+	workflowsMux := http.NewServeMux()
+	workflowsHandler.RegisterRoutes(workflowsMux)
+	mux.Handle("/api/workflows/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/workflows/")(workflowsMux)))
+
+	workflowScheduler := workflows.NewScheduler(workflowsHandler.Service())
+	workflowsHandler.SetScheduler(workflowScheduler)
+	if err := workflowScheduler.LoadAll(context.Background()); err != nil {
+		slog.Error("failed to load workflow schedules", "error", err)
 	}
 
 	// ==================================================================
@@ -188,7 +220,8 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	mux.Handle("/socket.io/", nodeHandler)
 
 	cleanup := func() {
-		scheduler.Stop()
+		backupScheduler.Stop()
+		workflowScheduler.Stop()
 	}
 	return cleanup, nil
 }
