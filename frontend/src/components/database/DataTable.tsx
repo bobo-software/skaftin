@@ -73,8 +73,11 @@ const DataTable = ({
   const [filteredOptions, setFilteredOptions] = useState<any[]>([]);
   const autocompleteRef = useRef<HTMLDivElement>(null);
 
-  // Get columns from data if not provided
-  const tableColumns = columns || (data.length > 0 ? Object.keys(data[0]) : []);
+  // Get columns from data if not provided, ensuring 'id' is always first
+  const rawColumns = columns || (data.length > 0 ? Object.keys(data[0]) : []);
+  const tableColumns = rawColumns.includes('id')
+    ? ['id', ...rawColumns.filter(col => col !== 'id')]
+    : rawColumns;
   
   // Fetch foreign keys when table is available
   useEffect(() => {
