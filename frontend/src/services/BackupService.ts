@@ -105,7 +105,7 @@ class BackupService {
     try {
       const filename = backupId.split('/').pop();
       const response = await axios.get(
-        `${API_BASE}/api/backups/${projectId}/${encodeURIComponent(filename!)}/ download`,
+        `${API_BASE}/api/backups/${projectId}/${encodeURIComponent(filename!)}/download`,
         {
           withCredentials: true,
           responseType: 'blob',

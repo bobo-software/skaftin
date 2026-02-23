@@ -18,6 +18,15 @@ func NewHandler(pool *pgxpool.Pool, st *supertokens.Client, comms *communication
 	return &Handler{service: NewService(pool, st, comms)}
 }
 
+// RegisterLegacyCompatibilityRoutes registers non-project legacy platform auth routes.
+func (h *Handler) RegisterLegacyCompatibilityRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/auth/register", h.LegacyRegister)
+	mux.HandleFunc("POST /api/auth/login", h.LegacyLogin)
+	mux.HandleFunc("POST /api/auth/verify", h.LegacyVerify)
+	mux.HandleFunc("POST /api/auth/refresh", h.LegacyRefresh)
+	mux.HandleFunc("POST /api/auth/logout", h.LegacyLogout)
+}
+
 // RegisterPublicRoutes registers unauthenticated routes (app auth).
 func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/{projectId}/auth/register", h.Register)
