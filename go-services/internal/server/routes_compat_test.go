@@ -239,3 +239,29 @@ func TestAPIMCPRouteWinsOverAPIPrefix(t *testing.T) {
 		t.Fatalf("expected /api/ prefix route to not handle MCP request")
 	}
 }
+
+func TestAPIAuthImportRouteWinsOverAPIPrefix(t *testing.T) {
+	mux := http.NewServeMux()
+
+	var authImportHit, prefixHit bool
+
+	mux.HandleFunc("POST /api/auth/{projectId}/users/import", func(w http.ResponseWriter, r *http.Request) {
+		authImportHit = true
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.Handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefixHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/3/users/import", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if !authImportHit {
+		t.Fatalf("expected /api/auth/{projectId}/users/import route to handle import request")
+	}
+	if prefixHit {
+		t.Fatalf("expected /api/ prefix route to not handle auth import request")
+	}
+}

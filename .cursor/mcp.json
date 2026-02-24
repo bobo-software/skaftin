@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "skaftin_mcp": {
-      "command": "/home/bobo/.nvm/versions/node/v25.3.0/bin/npx",
-      "args": ["tsx", "src/mcp-server.ts"],
+      "command": "/home/bobo/Development/skaftin/skaftin/go-services/mcp",
+      "args": [],
       "env": {
         "NODE_ENV": "development",
         "DB_HOST": "localhost",

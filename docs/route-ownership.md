@@ -5,6 +5,7 @@ This document tracks which API routes are handled by Go gateway vs Node backend.
 ## Go-owned routes
 
 - `/api/auth/*`
+  - includes `POST /api/auth/{projectId}/users/import` (served by Go `authmanagement.ImportUsersHandler`)
 - `/api/admin/*`
 - `/api/organizations/*`
 - `/api/projects/*`

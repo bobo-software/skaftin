@@ -156,6 +156,10 @@ func (s *Service) deleteUserFromProjectSchema(ctx context.Context, schemaName, e
 
 	usersTable := pgx.Identifier{schemaName, "skaftin_system_users"}.Sanitize()
 	rolesTable := pgx.Identifier{schemaName, "skaftin_system_user_roles"}.Sanitize()
+	roleUserIDColumn, err := s.resolveUserRolesUserIDColumn(ctx, schemaName)
+	if err != nil {
+		return false, 0, fmt.Errorf("failed to resolve user role foreign key in %s: %w", schemaName, err)
+	}
 
 	var userID int
 	if err := tx.QueryRow(ctx, fmt.Sprintf("SELECT id FROM %s WHERE email = $1", usersTable), email).Scan(&userID); err != nil {
@@ -168,7 +172,7 @@ func (s *Service) deleteUserFromProjectSchema(ctx context.Context, schemaName, e
 		return false, 0, fmt.Errorf("failed to query user in %s: %w", schemaName, err)
 	}
 
-	roleRes, err := tx.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE app_user_id = $1", rolesTable), userID)
+	roleRes, err := tx.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE %s = $1", rolesTable, roleUserIDColumn), userID)
 	if err != nil {
 		return false, 0, fmt.Errorf("failed to delete role assignments in %s: %w", schemaName, err)
 	}
@@ -182,6 +186,39 @@ func (s *Service) deleteUserFromProjectSchema(ctx context.Context, schemaName, e
 	}
 
 	return true, int(roleRes.RowsAffected()), nil
+}
+
+func (s *Service) resolveUserRolesUserIDColumn(ctx context.Context, schemaName string) (string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT column_name
+		FROM information_schema.columns
+		WHERE table_schema = $1
+		  AND table_name = 'skaftin_system_user_roles'
+		  AND column_name IN ('app_user_id', 'user_id')
+	`, schemaName)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	seen := map[string]bool{}
+	for rows.Next() {
+		var col string
+		if err := rows.Scan(&col); err != nil {
+			return "", err
+		}
+		seen[col] = true
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	if seen["app_user_id"] {
+		return "app_user_id", nil
+	}
+	if seen["user_id"] {
+		return "user_id", nil
+	}
+	return "", fmt.Errorf("skaftin_system_user_roles has no app_user_id/user_id column in schema %s", schemaName)
 }
 
 func toISOTime(epoch int64) string {

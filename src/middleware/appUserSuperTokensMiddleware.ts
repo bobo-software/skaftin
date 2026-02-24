@@ -67,6 +67,31 @@ export function attachAppUserInfo(pool: Pool) {
       }
 
       const schemaName = schemaResult.rows[0].schema_name;
+      const roleUserIdColumnResult = await pool.query(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = $1
+           AND table_name = 'skaftin_system_user_roles'
+           AND column_name IN ('app_user_id', 'user_id')`,
+        [schemaName]
+      );
+      const roleUserIdColumns = new Set<string>(
+        roleUserIdColumnResult.rows.map((row: any) => row.column_name)
+      );
+      const roleUserIdColumn = roleUserIdColumns.has('app_user_id')
+        ? 'app_user_id'
+        : roleUserIdColumns.has('user_id')
+          ? 'user_id'
+          : null;
+      if (!roleUserIdColumn) {
+        return ResponseUtils.error(
+          res,
+          'Roles schema is missing user linkage column',
+          null,
+          null,
+          500
+        );
+      }
 
       // Find app user by SuperTokens user ID
       const userResult = await pool.query(
@@ -78,7 +103,7 @@ export function attachAppUserInfo(pool: Pool) {
            '[]'
          ) as roles
          FROM ${schemaName}.skaftin_system_users u
-         LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+         LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${roleUserIdColumn}
          LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
          WHERE u.supertokens_user_id = $1
          GROUP BY u.id`,

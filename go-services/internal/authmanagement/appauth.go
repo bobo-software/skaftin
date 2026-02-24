@@ -3,11 +3,41 @@ package authmanagement
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
+
+func extractAppUserID(body map[string]any) int {
+	for _, key := range []string{"app_user_id", "user_id"} {
+		value, ok := body[key]
+		if !ok {
+			continue
+		}
+		switch v := value.(type) {
+		case float64:
+			if int(v) > 0 {
+				return int(v)
+			}
+		case int:
+			if v > 0 {
+				return v
+			}
+		case int64:
+			if v > 0 {
+				return int(v)
+			}
+		case string:
+			id, err := strconv.Atoi(strings.TrimSpace(v))
+			if err == nil && id > 0 {
+				return id
+			}
+		}
+	}
+	return 0
+}
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := parseProjectID(w, r)
@@ -339,10 +369,9 @@ func (h *Handler) ChangePasswordRequest(w http.ResponseWriter, r *http.Request) 
 		httputil.WriteError(w, 400, "Invalid request body")
 		return
 	}
-	appUserIDRaw, _ := body["app_user_id"].(float64)
-	appUserID := int(appUserIDRaw)
+	appUserID := extractAppUserID(body)
 	if appUserID == 0 {
-		httputil.WriteError(w, 400, "app_user_id is required")
+		httputil.WriteError(w, 400, "app_user_id or user_id is required")
 		return
 	}
 	result, err := h.service.ChangePasswordRequest(r.Context(), projectID, appUserID, body)
@@ -363,10 +392,9 @@ func (h *Handler) VerifyPasswordChangeOTP(w http.ResponseWriter, r *http.Request
 		httputil.WriteError(w, 400, "Invalid request body")
 		return
 	}
-	appUserIDRaw, _ := body["app_user_id"].(float64)
-	appUserID := int(appUserIDRaw)
+	appUserID := extractAppUserID(body)
 	if appUserID == 0 {
-		httputil.WriteError(w, 400, "app_user_id is required")
+		httputil.WriteError(w, 400, "app_user_id or user_id is required")
 		return
 	}
 	if err := h.service.VerifyPasswordChangeOTP(r.Context(), projectID, appUserID, body); err != nil {
@@ -386,10 +414,9 @@ func (h *Handler) RequestAccountDeletion(w http.ResponseWriter, r *http.Request)
 		httputil.WriteError(w, 400, "Invalid request body")
 		return
 	}
-	appUserIDRaw, _ := body["app_user_id"].(float64)
-	appUserID := int(appUserIDRaw)
+	appUserID := extractAppUserID(body)
 	if appUserID == 0 {
-		httputil.WriteError(w, 400, "app_user_id is required")
+		httputil.WriteError(w, 400, "app_user_id or user_id is required")
 		return
 	}
 	result, err := h.service.RequestAccountDeletion(r.Context(), projectID, appUserID, body)
@@ -410,10 +437,9 @@ func (h *Handler) VerifyAccountDeletionOTP(w http.ResponseWriter, r *http.Reques
 		httputil.WriteError(w, 400, "Invalid request body")
 		return
 	}
-	appUserIDRaw, _ := body["app_user_id"].(float64)
-	appUserID := int(appUserIDRaw)
+	appUserID := extractAppUserID(body)
 	if appUserID == 0 {
-		httputil.WriteError(w, 400, "app_user_id is required")
+		httputil.WriteError(w, 400, "app_user_id or user_id is required")
 		return
 	}
 	if err := h.service.VerifyAccountDeletionOTP(r.Context(), projectID, appUserID, body); err != nil {
@@ -433,10 +459,9 @@ func (h *Handler) CancelAccountDeletion(w http.ResponseWriter, r *http.Request) 
 		httputil.WriteError(w, 400, "Invalid request body")
 		return
 	}
-	appUserIDRaw, _ := body["app_user_id"].(float64)
-	appUserID := int(appUserIDRaw)
+	appUserID := extractAppUserID(body)
 	if appUserID == 0 {
-		httputil.WriteError(w, 400, "app_user_id is required")
+		httputil.WriteError(w, 400, "app_user_id or user_id is required")
 		return
 	}
 	if err := h.service.CancelAccountDeletion(r.Context(), projectID, appUserID, body); err != nil {

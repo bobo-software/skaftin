@@ -56,6 +56,21 @@ class RolesController {
     }
   }
 
+  private static async getUserRoleUserIdColumn(schemaName: string): Promise<'app_user_id' | 'user_id'> {
+    const result = await RolesController.pool.query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = $1
+         AND table_name = 'skaftin_system_user_roles'
+         AND column_name IN ('app_user_id', 'user_id')`,
+      [schemaName]
+    );
+    const columns = new Set<string>(result.rows.map((r: any) => r.column_name));
+    if (columns.has('app_user_id')) return 'app_user_id';
+    if (columns.has('user_id')) return 'user_id';
+    throw new Error(`Neither app_user_id nor user_id exists on ${schemaName}.skaftin_system_user_roles`);
+  }
+
   /**
    * List all roles for a project
    * GET /api/auth/:projectId/roles
@@ -76,6 +91,7 @@ class RolesController {
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const roleUserIdColumn = await RolesController.getUserRoleUserIdColumn(schemaName);
 
       let rolesQuery: string;
       
@@ -83,7 +99,7 @@ class RolesController {
         rolesQuery = `
           SELECT 
             r.*,
-            COUNT(DISTINCT ur.app_user_id) as user_count
+            COUNT(DISTINCT ur.${roleUserIdColumn}) as user_count
           FROM ${schemaName}.skaftin_system_roles r
           LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON r.id = ur.role_id
           GROUP BY r.id
@@ -126,11 +142,12 @@ class RolesController {
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const roleUserIdColumn = await RolesController.getUserRoleUserIdColumn(schemaName);
 
       const roleQuery = `
         SELECT 
           r.*,
-          COUNT(DISTINCT ur.app_user_id) as user_count
+          COUNT(DISTINCT ur.${roleUserIdColumn}) as user_count
         FROM ${schemaName}.skaftin_system_roles r
         LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON r.id = ur.role_id
         WHERE r.id = $1

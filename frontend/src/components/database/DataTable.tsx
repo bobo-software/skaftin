@@ -392,7 +392,7 @@ const DataTable = ({
   };
 
   // Export functions
-  const exportToCsv = (dataToExport: any[]) => {
+  const exportToCsv = (dataToExport: any[], fileNameBase?: string) => {
     if (dataToExport.length === 0) return;
 
     const headers = tableColumns;
@@ -417,11 +417,28 @@ const DataTable = ({
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `export_${new Date().getTime()}.csv`);
+    const defaultName = `export_${new Date().getTime()}`;
+    link.setAttribute('download', `${fileNameBase || defaultName}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleExportEntireTableCsv = async () => {
+    if (data.length === 0) return;
+
+    setExportLoading(true);
+    try {
+      // Keep UX feedback consistent with modal export.
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const safeTableName = tableName ? tableName.replace(/[^a-zA-Z0-9_-]/g, '_') : 'table';
+      exportToCsv(data, `${safeTableName}_full_export_${new Date().getTime()}`);
+    } catch (error) {
+      console.error('Error exporting full table to CSV:', error);
+    } finally {
+      setExportLoading(false);
+    }
   };
 
   const exportToJson = (dataToExport: any[]) => {
@@ -593,6 +610,18 @@ const DataTable = ({
               onClick={onCsvImport}
             >
               Import CSV
+            </AppButton>
+          )}
+
+          {data.length > 0 && (
+            <AppButton
+              variant="secondary"
+              size="sm"
+              icon={<Download className="w-4 h-4" />}
+              onClick={handleExportEntireTableCsv}
+              disabled={exportLoading}
+            >
+              Export Full CSV
             </AppButton>
           )}
         </div>
