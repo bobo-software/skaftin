@@ -12,6 +12,7 @@ import (
 	"github.com/skaftin/go-services/internal/dbproxy"
 	"github.com/skaftin/go-services/internal/files"
 	gqlhandler "github.com/skaftin/go-services/internal/graphql"
+	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/migrations"
 	"github.com/skaftin/go-services/internal/orgs"
 	"github.com/skaftin/go-services/internal/projects"
@@ -25,6 +26,7 @@ func registerDataRoutes(
 	cfg *config.Config,
 	pool *pgxpool.Pool,
 	jwks *auth.JWKSProvider,
+	requestLogger *middleware.RequestLogger,
 	dbHandler *dbproxy.Handler,
 	projectsHandler *projects.Handler,
 	orgsHandler *orgs.Handler,
@@ -42,7 +44,7 @@ func registerDataRoutes(
 	// Client-facing database routes (project from API-key auth context).
 	appDBMux := http.NewServeMux()
 	dbHandler.RegisterAppAPIRoutes(appDBMux)
-	mux.Handle("/app-api/database/", auth.APIKey(pool)(appDBMux))
+	mux.Handle("/app-api/database/", auth.APIKey(pool)(requestLogger.Middleware(appDBMux)))
 
 	mountJWT(mux, "/api/projects/", jwks, projectsHandler.RegisterRoutes)
 	mountJWT(mux, "/api/organizations/", jwks, orgsHandler.RegisterRoutes)
@@ -52,7 +54,7 @@ func registerDataRoutes(
 	// Client-facing storage routes (project from API-key auth context).
 	appStorageMux := http.NewServeMux()
 	storageHandler.RegisterAppAPIRoutes(appStorageMux)
-	mux.Handle("/app-api/storage/", auth.APIKey(pool)(appStorageMux))
+	mux.Handle("/app-api/storage/", auth.APIKey(pool)(requestLogger.Middleware(appStorageMux)))
 
 	mountJWT(mux, "/api/analytics/", jwks, analyticsHandler.RegisterRoutes)
 	mountJWT(mux, "/api/credentials/", jwks, credentialsHandler.RegisterRoutes)

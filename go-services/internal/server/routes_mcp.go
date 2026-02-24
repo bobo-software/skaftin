@@ -6,12 +6,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/auth"
 	mcpserver "github.com/skaftin/go-services/internal/mcp"
+	"github.com/skaftin/go-services/internal/middleware"
 )
 
 func registerMCPRoutes(
 	mux *http.ServeMux,
 	pool *pgxpool.Pool,
 	jwks *auth.JWKSProvider,
+	requestLogger *middleware.RequestLogger,
 	adminHandler *mcpserver.HTTPHandler,
 	clientHandler *mcpserver.HTTPHandler,
 ) {
@@ -21,5 +23,5 @@ func registerMCPRoutes(
 
 	clientMux := http.NewServeMux()
 	clientHandler.RegisterRoutes(clientMux, "/app-api/mcp")
-	mux.Handle("/app-api/mcp/", auth.APIKey(pool)(clientMux))
+	mux.Handle("/app-api/mcp/", auth.APIKey(pool)(requestLogger.Middleware(clientMux)))
 }

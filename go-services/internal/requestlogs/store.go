@@ -22,20 +22,35 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 // RequestLog represents a row from public.skaftin_system_request_logs.
 type RequestLog struct {
-	ID             int              `json:"id"`
-	ProjectID      int              `json:"project_id"`
-	RequestID      *string          `json:"request_id"`
-	Method         string           `json:"method"`
-	URL            string           `json:"url"`
-	StatusCode     *int             `json:"status_code"`
-	RequestPayload json.RawMessage  `json:"request_payload"`
-	ResponseData   json.RawMessage  `json:"response_data"`
-	ErrorMessage   *string          `json:"error_message"`
-	DurationMs     *int             `json:"duration_ms"`
-	UserID         *int             `json:"user_id"`
-	IPAddress      *string          `json:"ip_address"`
-	UserAgent      *string          `json:"user_agent"`
-	CreatedAt      time.Time        `json:"created_at"`
+	ID             int             `json:"id"`
+	ProjectID      int             `json:"project_id"`
+	RequestID      *string         `json:"request_id"`
+	Method         string          `json:"method"`
+	URL            string          `json:"url"`
+	StatusCode     *int            `json:"status_code"`
+	RequestPayload json.RawMessage `json:"request_payload"`
+	ResponseData   json.RawMessage `json:"response_data"`
+	ErrorMessage   *string         `json:"error_message"`
+	DurationMs     *int            `json:"duration_ms"`
+	UserID         *int            `json:"user_id"`
+	IPAddress      *string         `json:"ip_address"`
+	UserAgent      *string         `json:"user_agent"`
+	CreatedAt      time.Time       `json:"created_at"`
+}
+
+// CreateLogInput is the payload for inserting one request log row.
+type CreateLogInput struct {
+	ProjectID      int
+	Method         string
+	URL            string
+	StatusCode     *int
+	RequestPayload json.RawMessage
+	ResponseData   json.RawMessage
+	ErrorMessage   *string
+	DurationMs     *int
+	UserID         *int
+	IPAddress      *string
+	UserAgent      *string
 }
 
 // LogSettings holds the request-logging-related fields from settings_json.
@@ -149,6 +164,49 @@ func (s *Store) GetSettings(ctx context.Context, projectID int) (*LogSettings, e
 		settings.RequestLogRetention = v
 	}
 	return settings, nil
+}
+
+// IsLoggingEnabled checks if request logging is enabled for the project.
+func (s *Store) IsLoggingEnabled(ctx context.Context, projectID int) (bool, error) {
+	settings, err := s.GetSettings(ctx, projectID)
+	if err != nil {
+		return false, err
+	}
+	return settings.RequestLoggingEnabled, nil
+}
+
+// CreateLog inserts one request log entry.
+func (s *Store) CreateLog(ctx context.Context, input CreateLogInput) (int, error) {
+	var id int
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.skaftin_system_request_logs
+			(project_id, method, url, status_code, request_payload, response_data, error_message, duration_ms, user_id, ip_address, user_agent)
+		VALUES
+			($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10, $11)
+		RETURNING id`,
+		input.ProjectID,
+		input.Method,
+		input.URL,
+		input.StatusCode,
+		nilIfEmptyJSON(input.RequestPayload),
+		nilIfEmptyJSON(input.ResponseData),
+		input.ErrorMessage,
+		input.DurationMs,
+		input.UserID,
+		input.IPAddress,
+		input.UserAgent,
+	).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func nilIfEmptyJSON(raw json.RawMessage) any {
+	if len(raw) == 0 {
+		return nil
+	}
+	return raw
 }
 
 // UpdateSettings merges request logging fields into settings_json.

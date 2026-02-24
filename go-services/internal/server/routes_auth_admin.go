@@ -7,12 +7,14 @@ import (
 	"github.com/skaftin/go-services/internal/admin"
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/authmanagement"
+	"github.com/skaftin/go-services/internal/middleware"
 )
 
 func registerAuthAndAdminRoutes(
 	mux *http.ServeMux,
 	pool *pgxpool.Pool,
 	jwks *auth.JWKSProvider,
+	requestLogger *middleware.RequestLogger,
 	authMgmtHandler *authmanagement.Handler,
 	adminHandler *admin.Handler,
 ) {
@@ -36,9 +38,9 @@ func registerAuthAndAdminRoutes(
 	// App API compatibility route: keep legacy login URL but serve from Go.
 	appAPICompatMux := http.NewServeMux()
 	authMgmtHandler.RegisterAppAPICompatibilityRoutes(appAPICompatMux)
-	mux.Handle("/app-api/auth/auth/login", auth.APIKey(pool)(appAPICompatMux))
-	mux.Handle("/app-api/auth/auth/logout", auth.APIKey(pool)(appAPICompatMux))
-	mux.Handle("/app-api/auth/session/refresh", auth.APIKey(pool)(appAPICompatMux))
+	mux.Handle("/app-api/auth/auth/login", auth.APIKey(pool)(requestLogger.Middleware(appAPICompatMux)))
+	mux.Handle("/app-api/auth/auth/logout", auth.APIKey(pool)(requestLogger.Middleware(appAPICompatMux)))
+	mux.Handle("/app-api/auth/session/refresh", auth.APIKey(pool)(requestLogger.Middleware(appAPICompatMux)))
 
 	// Admin: public email check + protected admin operations.
 	adminPublicMux := http.NewServeMux()
