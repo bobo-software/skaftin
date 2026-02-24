@@ -351,18 +351,25 @@ func (h *Handler) ImportUsersHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		SQL            string `json:"sql"`
-		ClearExisting  bool   `json:"clear_existing"`
+		SQL              string `json:"sql"`
+		SQLContent       string `json:"sqlContent"`
+		ClearExisting    bool   `json:"clear_existing"`
+		ClearExistingAlt bool   `json:"clearExisting"`
 	}
 	if err := httputil.ReadJSON(r, &body); err != nil {
 		httputil.WriteError(w, 400, "Invalid request body")
 		return
 	}
-	if body.SQL == "" {
+	sql := body.SQL
+	if sql == "" {
+		sql = body.SQLContent
+	}
+	if sql == "" {
 		httputil.WriteError(w, 400, "sql field is required")
 		return
 	}
-	result, err := h.service.ImportUsers(r.Context(), projectID, body.SQL, body.ClearExisting)
+	clearExisting := body.ClearExisting || body.ClearExistingAlt
+	result, err := h.service.ImportUsers(r.Context(), projectID, sql, clearExisting)
 	if err != nil {
 		httputil.WriteError(w, 500, err.Error())
 		return
