@@ -20,7 +20,7 @@ GraphQL support has been successfully added to the Skaftin Platform! You can now
 - **`src/controllers/GraphQLController.ts`** - Controller for initializing and managing Apollo Server
 
 #### MCP Tools (NEW!)
-- **`src/mcp/tools/graphqlTools.ts`** - 15 GraphQL MCP tools for AI assistants
+- **`go-services/internal/mcp/tools_graphql.go`** - GraphQL MCP tools for AI assistants
 
 #### Documentation
 - **`GRAPHQL_API_GUIDE.md`** - Comprehensive guide with examples for all operations
@@ -30,7 +30,7 @@ GraphQL support has been successfully added to the Skaftin Platform! You can now
 
 ### 3. **Modified Files**
 - **`src/Server.ts`** - Integrated GraphQL server initialization
-- **`src/mcp/MCPServer.ts`** - Added GraphQL MCP tools
+- **`go-services/internal/mcp/server.go`** - Added GraphQL MCP tools
 - **`package.json`** - Added new dependencies
 
 ## Features

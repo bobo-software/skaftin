@@ -161,13 +161,13 @@ Full documentation available at:
 ## ✅ Files Created/Updated
 
 ### New Files:
-- `src/mcp/tools/credentialsTools.ts` - MCP credentials tools implementation
+- `go-services/internal/mcp/tools_credentials.go` - MCP credentials tools implementation
 - `docs/MCP_CREDENTIALS_TOOLS.md` - Complete documentation
 - `MCP_CREDENTIALS_QUICK_START.md` - This file
 
 ### Updated Files:
-- `src/mcp/MCPServer.ts` - Registered credentials tools
-- `src/mcp/httpServer.ts` - Added HTTP endpoint support
+- `go-services/internal/mcp/server.go` - Registered credentials tools
+- `go-services/internal/mcp/http.go` - Added HTTP endpoint support
 
 ---
 

@@ -29,7 +29,7 @@
 - ✅ TypeScript interfaces for DatabaseEvent and ProjectEvent
 
 ### 4. Database Tools Integration
-**File**: `src/mcp/tools/databaseTools.ts`
+**File**: `go-services/internal/mcp/tools_database.go`
 
 - ✅ Added 6 new MCP tools:
   - `insert_data` - Insert single row with WebSocket event
@@ -43,7 +43,7 @@
 - ✅ All database operations now emit real-time events
 
 ### 5. MCP Server & HTTP Handler Updates
-**Files**: `src/mcp/httpServer.ts` and `src/mcp/MCPServer.ts`
+**Files**: `go-services/internal/mcp/http.go` and `go-services/internal/mcp/server.go`
 
 - ✅ Added new tool names to `databaseToolNames` array
 - ✅ Tools are now recognized and routed correctly
@@ -249,9 +249,9 @@ VITE_API_URL=http://localhost:4006
 - ✅ `src/Server.ts` - Integrated HTTP server with WebSocket
 - ✅ `src/services/WebSocketService.ts` - New WebSocket service
 - ✅ `src/utils/websocketEmitter.ts` - New event emitter utility
-- ✅ `src/mcp/tools/databaseTools.ts` - Added 6 new tools + WebSocket events
-- ✅ `src/mcp/httpServer.ts` - Updated tool names list
-- ✅ `src/mcp/MCPServer.ts` - Updated tool names list
+- ✅ `go-services/internal/mcp/tools_database.go` - Added database tool updates
+- ✅ `go-services/internal/mcp/http.go` - Updated tool names list
+- ✅ `go-services/internal/mcp/server.go` - Updated tool names list
 - ✅ `package.json` - Added socket.io dependency
 
 ### Frontend

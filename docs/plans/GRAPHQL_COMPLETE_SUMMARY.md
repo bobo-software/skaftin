@@ -39,12 +39,12 @@ http://localhost:4006/api/graphql
 
 #### Files Created (1)
 ```
-src/mcp/tools/graphqlTools.ts        (700+ lines) - 15 MCP tools
+go-services/internal/mcp/tools_graphql.go - GraphQL MCP tools
 ```
 
 #### Files Modified
 ```
-src/mcp/MCPServer.ts                 - Tool registration
+go-services/internal/mcp/server.go   - Tool registration
 ```
 
 #### Features

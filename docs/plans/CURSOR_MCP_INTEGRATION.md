@@ -197,34 +197,28 @@ The Cursor integration modal will automatically show the production URL in the c
 
 ## Example Configurations
 
-### Development
+### Development (Go MCP over HTTP)
 ```json
 {
   "mcpServers": {
     "skaftin": {
-      "command": "node",
-      "args": ["./mcp-server.js"],
-      "env": {
-        "SKAFTIN_API_URL": "http://localhost:4006",
-        "SKAFTIN_PROJECT_ID": "1",
-        "SKAFTIN_MCP_KEY": "mcp_dev_key_here"
+      "url": "http://localhost:4006/app-api/mcp/protocol",
+      "headers": {
+        "x-api-key": "sk_your_project_api_key_here"
       }
     }
   }
 }
 ```
 
-### Production
+### Production (Go MCP over HTTP)
 ```json
 {
   "mcpServers": {
     "skaftin": {
-      "command": "npx",
-      "args": ["@skaftin/mcp-server"],
-      "env": {
-        "SKAFTIN_API_URL": "https://skaftinplatform.bobosoftware.co.za",
-        "SKAFTIN_PROJECT_ID": "123",
-        "SKAFTIN_MCP_KEY": "mcp_prod_key_here"
+      "url": "https://skaftinplatform.bobosoftware.co.za/app-api/mcp/protocol",
+      "headers": {
+        "x-api-key": "sk_prod_project_api_key_here"
       }
     }
   }

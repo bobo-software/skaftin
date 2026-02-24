@@ -33,3 +33,9 @@ For each route migrated from Node to Go:
 2. Mount specific route prefix before the `/app-api/` catch-all.
 3. Preserve response envelope and auth behavior.
 4. Add route precedence tests in `routes_compat_test.go`.
+
+## Route Ownership Reference
+
+For the current Go-vs-Node ownership matrix, see:
+
+- `docs/route-ownership.md`
