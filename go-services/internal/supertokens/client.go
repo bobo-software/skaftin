@@ -52,7 +52,8 @@ func (c *Client) do(ctx context.Context, method, path string, recipeID string, b
 	if c.apiKey != "" {
 		req.Header.Set("api-key", c.apiKey)
 	}
-	req.Header.Set("cdi-version", "4.0")
+	// Use CDI 2.14 for compatibility with the deployed SuperTokens core.
+	req.Header.Set("cdi-version", "2.14")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
