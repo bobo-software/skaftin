@@ -1,27 +1,21 @@
 package server
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/admin"
 	"github.com/skaftin/go-services/internal/analytics"
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/authmanagement"
-	"github.com/skaftin/go-services/internal/backups"
 	"github.com/skaftin/go-services/internal/communications"
 	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/credentials"
 	"github.com/skaftin/go-services/internal/dbproxy"
-	"github.com/skaftin/go-services/internal/files"
 	"github.com/skaftin/go-services/internal/gateway"
-	gqlhandler "github.com/skaftin/go-services/internal/graphql"
 	"github.com/skaftin/go-services/internal/health"
-	"github.com/skaftin/go-services/internal/invitations"
-	"github.com/skaftin/go-services/internal/migrations"
+	mcpserver "github.com/skaftin/go-services/internal/mcp"
 	"github.com/skaftin/go-services/internal/orgs"
 	"github.com/skaftin/go-services/internal/payments"
 	"github.com/skaftin/go-services/internal/projects"
@@ -29,7 +23,6 @@ import (
 	"github.com/skaftin/go-services/internal/storage"
 	"github.com/skaftin/go-services/internal/supertokens"
 	"github.com/skaftin/go-services/internal/users"
-	"github.com/skaftin/go-services/internal/workflows"
 )
 
 // RegisterRoutes wires all domain handlers and proxy routes onto the mux.
@@ -64,8 +57,10 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	}
 	credentialsHandler := credentials.NewHandler(pool)
 	communicationsHandler := communications.NewHandler(pool)
-	invitationsHandler := invitations.NewHandler(pool, communicationsHandler.Service(), cfg.FrontendURL)
 	paymentsHandler := payments.NewHandler(pool)
+	mcpSvc := mcpserver.New(pool)
+	mcpHandler := mcpserver.NewHTTPHandler(mcpSvc, false)
+	clientMCPHandler := mcpserver.NewHTTPHandler(mcpSvc, true)
 	stClient := supertokens.NewClient(cfg.SuperTokensCoreURL, cfg.SuperTokensAPIKey)
 	usersHandler := users.NewHandler(pool, stClient)
 	adminHandler := admin.NewHandler(pool, stClient)
@@ -78,152 +73,26 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	// ==================================================================
 	// GO-HANDLED ROUTES (API key / access token auth)
 	// ==================================================================
-	v2Mux := http.NewServeMux()
-	mux.Handle("/api/v2/", auth.APIKey(pool)(v2Mux))
+	registerAPIGatewayRoutes(mux, pool, jwks, nodeHandler)
 
 	// ==================================================================
 	// GO-HANDLED DOMAIN ROUTES (JWT auth, registered before catch-all)
 	// ==================================================================
+	if err := registerDataRoutes(mux, cfg, pool, jwks, dbHandler, projectsHandler, orgsHandler, requestLogsHandler, storageHandler, analyticsHandler, credentialsHandler, usersHandler); err != nil {
+		return nil, err
+	}
 
-	// Database routes also require project access verification middleware.
-	dbMux := http.NewServeMux()
-	dbHandler.RegisterRoutes(dbMux)
-	mux.Handle("/api/database/", auth.JWTAuth(jwks)(auth.VerifyProjectAccess(pool)(dbMux)))
+	authMgmtHandler := authmanagement.NewHandler(pool, stClient, communicationsHandler.Service())
+	registerAuthAndAdminRoutes(mux, pool, jwks, authMgmtHandler, adminHandler)
+	registerMCPRoutes(mux, pool, jwks, mcpHandler, clientMCPHandler)
 
-	mountJWT(mux, "/api/projects/", jwks, projectsHandler.RegisterRoutes)
-	mountJWT(mux, "/api/organizations/", jwks, orgsHandler.RegisterRoutes)
-	mountJWT(mux, "/api/request-logs/", jwks, requestLogsHandler.RegisterRoutes)
-	mountJWT(mux, "/api/storage/", jwks, storageHandler.RegisterRoutes)
-	mountJWT(mux, "/api/analytics/", jwks, analyticsHandler.RegisterRoutes)
-	mountJWT(mux, "/api/credentials/", jwks, credentialsHandler.RegisterRoutes)
-	mountJWT(mux, "/api/users/", jwks, usersHandler.RegisterRoutes)
-
-	graphqlHandler, err := gqlhandler.NewHandler(pool)
+	opsCleanup, err := registerOperationalRoutes(mux, pool, cfg, jwks, communicationsHandler, paymentsHandler, storageHandler.S3())
 	if err != nil {
 		return nil, err
 	}
-	mountJWT(mux, "/api/graphql", jwks, graphqlHandler.RegisterRoutes)
 
-	filesHandler := files.NewHandler(storageHandler.S3(), cfg.MinioBucket)
-	mountJWT(mux, "/api/files/", jwks, filesHandler.RegisterRoutes)
-
-	migrationsDir := filepath.Join(cfg.NodeWorkDir, "migrations")
-	migrationsHandler := migrations.NewHandler(pool, migrationsDir)
-	mountJWT(mux, "/api/migrations/", jwks, migrationsHandler.RegisterRoutes)
-
-	// Invitations: mixed auth (public, JWT-only, JWT+project)
-	invitationsPublicMux := http.NewServeMux()
-	invitationsHandler.RegisterPublicRoutes(invitationsPublicMux)
-	mux.Handle("/api/invitations/code/", invitationsPublicMux)
-
-	invitationsAuthMux := http.NewServeMux()
-	invitationsHandler.RegisterAuthRoutes(invitationsAuthMux)
-	mux.Handle("/api/invitations/accept/", auth.JWTAuth(jwks)(invitationsAuthMux))
-
-	invitationsProjectMux := http.NewServeMux()
-	invitationsHandler.RegisterProjectRoutes(invitationsProjectMux)
-	mux.Handle("/api/invitations/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/invitations/")(invitationsProjectMux)))
-
-	communicationsPublicMux := http.NewServeMux()
-	communicationsHandler.RegisterPublicRoutes(communicationsPublicMux)
-	mux.Handle("/api/communications/{projectId}/sms/webhook", communicationsPublicMux)
-
-	communicationsProjectMux := http.NewServeMux()
-	communicationsHandler.RegisterProjectRoutes(communicationsProjectMux)
-	mux.Handle("/api/communications/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/communications/")(communicationsProjectMux)))
-
-	// Payments webhook routes are public and handled by Go.
-	paymentsWebhookMux := http.NewServeMux()
-	paymentsHandler.RegisterWebhookRoutes(paymentsWebhookMux)
-	mux.Handle("/api/payments/webhook/", paymentsWebhookMux)
-
-	paymentsSessionMux := http.NewServeMux()
-	paymentsHandler.RegisterSessionRoutes(paymentsSessionMux)
-	mux.Handle("/api/payments/handle_fnb_payment", auth.JWTAuth(jwks)(paymentsSessionMux))
-
-	paymentsProjectMux := http.NewServeMux()
-	paymentsHandler.RegisterProjectRoutes(paymentsProjectMux)
-	mux.Handle("/api/payments/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/payments/")(paymentsProjectMux)))
-
-	// Auth management: app auth (public) + management (JWT + project access)
-	authMgmtHandler := authmanagement.NewHandler(pool, stClient, communicationsHandler.Service())
-
-	legacyAuthMux := http.NewServeMux()
-	authMgmtHandler.RegisterLegacyCompatibilityRoutes(legacyAuthMux)
-	mux.Handle("/api/auth/login", legacyAuthMux)
-	mux.Handle("/api/auth/register", legacyAuthMux)
-	mux.Handle("/api/auth/verify", legacyAuthMux)
-	mux.Handle("/api/auth/refresh", legacyAuthMux)
-	mux.Handle("/api/auth/logout", legacyAuthMux)
-
-	authPublicMux := http.NewServeMux()
-	authMgmtHandler.RegisterPublicRoutes(authPublicMux)
-	mux.Handle("/api/auth/{projectId}/auth/", authPublicMux)
-
-	authProtectedMux := http.NewServeMux()
-	authMgmtHandler.RegisterProtectedRoutes(authProtectedMux)
-	mux.Handle("/api/auth/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/auth/")(authProtectedMux)))
-
-	// Admin: public email check + protected admin operations.
-	adminPublicMux := http.NewServeMux()
-	adminHandler.RegisterPublicRoutes(adminPublicMux)
-	mux.Handle("/api/admin/users/check-email", adminPublicMux)
-
-	adminProtectedMux := http.NewServeMux()
-	adminHandler.RegisterProtectedRoutes(adminProtectedMux)
-	mux.Handle("/api/admin/", auth.JWTAuth(jwks)(adminProtectedMux))
-
-	// Backups: project-scoped routes (JWT + project access) + restore route (JWT only)
-	projectsStore := projects.NewStore(pool)
-	backupsHandler := backups.NewHandler(pool, storageHandler.S3(), cfg.MinioBucket, projectsStore)
-
-	backupsMux := http.NewServeMux()
-	backupsHandler.RegisterRoutes(backupsMux)
-	mux.Handle("/api/backups/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/backups/")(backupsMux)))
-
-	backupsRestoreMux := http.NewServeMux()
-	backupsHandler.RegisterRestoreRoute(backupsRestoreMux)
-	mux.Handle("/api/backups/restore", auth.JWTAuth(jwks)(backupsRestoreMux))
-
-	backupScheduler := backups.NewScheduler(backupsHandler.Service())
-	backupsHandler.SetScheduler(backupScheduler)
-	if err := backupScheduler.LoadAll(context.Background()); err != nil {
-		slog.Error("failed to load backup schedules", "error", err)
-	}
-
-	// Workflows: project-scoped routes (JWT + project access)
-	workflowsHandler := workflows.NewHandler(pool)
-	workflowsMux := http.NewServeMux()
-	workflowsHandler.RegisterRoutes(workflowsMux)
-	mux.Handle("/api/workflows/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/workflows/")(workflowsMux)))
-
-	workflowScheduler := workflows.NewScheduler(workflowsHandler.Service())
-	workflowsHandler.SetScheduler(workflowScheduler)
-	if err := workflowScheduler.LoadAll(context.Background()); err != nil {
-		slog.Error("failed to load workflow schedules", "error", err)
-	}
-
-	// ==================================================================
-	// PROXIED ROUTES (forwarded to Node.js)
-	// ==================================================================
-
-	// Auth routes: pass through with NO auth check
-	mux.Handle("/auth/", nodeHandler)
-
-	// Platform API routes: validate JWT, then proxy to Node.js
-	mux.Handle("/api/", auth.JWTAuth(jwks)(nodeHandler))
-
-	// Client API routes: validate API key, then proxy to Node.js
-	mux.Handle("/app-api/", auth.APIKey(pool)(nodeHandler))
-
-	// Socket.IO: pass through (handles its own auth)
-	mux.Handle("/socket.io/", nodeHandler)
-
-	cleanup := func() {
-		backupScheduler.Stop()
-		workflowScheduler.Stop()
-	}
-	return cleanup, nil
+	registerProxyRoutes(mux, pool, jwks, nodeHandler)
+	return opsCleanup, nil
 }
 
 // mountJWT creates a sub-mux, registers routes on it, and mounts it under

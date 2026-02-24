@@ -11,7 +11,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func registerCredentialsTools(srv *sdkmcp.Server, pool *pgxpool.Pool) {
+func registerCredentialsTools(srv toolRegistrar, pool *pgxpool.Pool) {
 	reg := &credentialsTools{pool: pool}
 
 	srv.AddTool(makeTool("list_skaftin_system_api_credentials", "List all API credentials for a project", map[string]prop{

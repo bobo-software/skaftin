@@ -10,7 +10,7 @@ import (
 	"github.com/skaftin/go-services/internal/dbproxy"
 )
 
-func registerAuthTools(srv *sdkmcp.Server, pool *pgxpool.Pool, dbSvc *dbproxy.Service) {
+func registerAuthTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy.Service) {
 	reg := &authTools{pool: pool, svc: dbSvc}
 
 	srv.AddTool(makeTool("list_app_users", "List application users for a project with optional filters", map[string]prop{
