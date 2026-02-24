@@ -8,7 +8,7 @@ Successfully implemented comprehensive MCP (Model Context Protocol) tools for ap
 
 ## What Was Implemented
 
-### 1. MCP Auth Tools Module (`src/mcp/tools/authTools.ts`)
+### 1. MCP Auth Tools Module (`go-services/internal/mcp`)
 
 Created a new MCP tools module with **16 tools** organized into 4 categories:
 
@@ -36,7 +36,7 @@ Created a new MCP tools module with **16 tools** organized into 4 categories:
 - ✅ `get_auth_settings` - Get project auth configuration
 - ✅ `update_auth_settings` - Update auth settings (email verification, registration, MFA, etc.)
 
-### 2. MCP Server Integration (`src/mcp/MCPServer.ts`)
+### 2. MCP Server Integration (`go-services/internal/mcp/server.go`)
 
 Updated the MCP server to register and route the new auth tools:
 - ✅ Imported `createAuthTools` and `handleAuthTool`
@@ -211,13 +211,13 @@ const users = await mcpClient.callTool('list_app_users', {
 ## Files Changed/Created
 
 ### New Files (3)
-1. ✅ `src/mcp/tools/authTools.ts` (1,046 lines)
+1. ✅ `go-services/internal/mcp` auth tools implementation
 2. ✅ `docs/mcp/AUTH_TOOLS.md` (975 lines)
 3. ✅ `docs/mcp/AUTH_TOOLS_QUICKSTART.md` (468 lines)
 4. ✅ `docs/MCP_AUTH_TOOLS_COMPLETE.md` (this file)
 
 ### Modified Files (2)
-1. ✅ `src/mcp/MCPServer.ts` - Added auth tools registration and routing
+1. ✅ `go-services/internal/mcp/server.go` - Added auth tools registration and routing
 2. ✅ `docs/MCP_FEATURES.md` - Added auth tools section
 
 ## Testing Recommendations

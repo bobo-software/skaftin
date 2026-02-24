@@ -99,8 +99,7 @@ Created two migration files:
 3. Added defensive parsing with logging
 
 **Code Changes:**
-- `src/controllers/MCPController.ts` - Forward headers in mockReq
-- `src/mcp/httpServer.ts` - Case-insensitive header extraction
+- `go-services/internal/mcp/http.go` - Header extraction and protocol handling
 
 ### Issue #2: Debug Logging Added ✅
 
@@ -211,9 +210,9 @@ When deploying:
 ## 📚 Files Created/Modified
 
 ### Backend
-1. `src/controllers/MCPController.ts` - JSON-RPC 2.0 protocol handler
-2. `src/routers/MCPRouter.ts` - `/protocol` endpoint
-3. `src/mcp/httpServer.ts` - Case-insensitive header handling
+1. `go-services/internal/mcp/http.go` - JSON-RPC 2.0 protocol handler
+2. `go-services/internal/server/routes_mcp.go` - `/protocol` endpoint wiring
+3. `go-services/internal/mcp/server.go` - MCP tool registration
 4. `src/controllers/CredentialsController.ts` - MCP key support
 5. `src/services/DatabaseInitializer.ts` - Updated constraint
 

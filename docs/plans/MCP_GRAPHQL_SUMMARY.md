@@ -8,7 +8,7 @@ GraphQL MCP (Model Context Protocol) tools have been successfully added to the S
 
 ### New File Created
 ```
-src/mcp/tools/graphqlTools.ts (700+ lines)
+go-services/internal/mcp/tools_graphql.go
 ```
 
 **Implements 15 GraphQL MCP Tools:**
@@ -33,7 +33,7 @@ src/mcp/tools/graphqlTools.ts (700+ lines)
 15. ✅ `graphql_create_foreign_key` - Create foreign keys
 
 ### Files Modified
-- **`src/mcp/MCPServer.ts`** - Registered GraphQL tools with MCP server
+- **`go-services/internal/mcp/server.go`** - Registered GraphQL tools with MCP server
 
 ### Documentation Created
 - **`MCP_GRAPHQL_TOOLS.md`** - Complete tool reference guide

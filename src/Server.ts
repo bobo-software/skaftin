@@ -10,16 +10,8 @@ import { initSuperTokens } from './config/supertokens';
 import { initializeWebSocketService } from './services/WebSocketService';
 import { DatabaseInitializer } from './services/DatabaseInitializer';
 import { HealthCheckService } from './services/HealthCheckService';
-import OrganizationsRouter from './routers/OrganizationsRouter';
-import MCPController from './controllers/MCPController';
-import ClientMCPController from './controllers/ClientMCPController';
-import DatabaseController from './controllers/DatabaseController';
-import ProjectsController from './controllers/ProjectsController';
-import ProjectBucketsController from './controllers/ProjectBucketsController';
-import StorageController from './controllers/StorageController';
 // GraphQL is now handled by the Go gateway.
 // import GraphQLController from './controllers/GraphQLController';
-import CommunicationsController from './controllers/CommunicationsController';
 import { WorkflowScheduler } from './services/WorkflowScheduler';
 
 // Load environment variables
@@ -178,37 +170,32 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // ROUTERS
 // ============================================================================
 
-import { router as ProjectsRouter } from './routers/ProjectsRouter';
-import { router as ProjectBucketsRouter } from './routers/ProjectBucketsRouter';
+// Projects routes are now handled by the Go gateway.
+// import { router as ProjectsRouter } from './routers/ProjectsRouter';
+// import { router as ProjectBucketsRouter } from './routers/ProjectBucketsRouter';
 // Files routes are now handled by the Go gateway.
 // import { router as FilesRouter } from './routers/FilesRouter';
-import { createStorageRouter } from './routers/StorageRouter';
+// Storage routes are now handled by the Go gateway.
+// import { createStorageRouter } from './routers/StorageRouter';
 // Users routes are now handled by the Go gateway.
 // import { router as UsersRouter } from './routers/UsersRouter';
-import { router as HealthRouter } from './routers/HealthRouter';
-import { router as MCPRouter } from './routers/MCPRouter';
-import { router as ClientMCPRouter } from './routers/ClientMCPRouter';
-import { createDatabaseRouter } from './routers/DatabaseRouter';
-import { createAdminDatabaseRouter } from './routers/AdminDatabaseRouter';
-import { createAdminStorageRouter } from './routers/AdminStorageRouter';
+// Database routes are now handled by the Go gateway.
+// import { createDatabaseRouter } from './routers/DatabaseRouter';
 // Admin auth routes are now handled by the Go gateway.
 // import { createAdminAuthRouter } from './routers/AdminAuthRouter';
-import { createCommunicationsRouter } from './routers/CommunicationsRouter';
 import { createClientCommunicationsRouter } from './routers/ClientCommunicationsRouter';
 // Invitations routes are now handled by the Go gateway.
 // import { createInvitationsRouter } from './routers/InvitationsRouter';
-import { createPaymentRouter, createClientPaymentRouter, createPaymentWebhookRouter } from './routers/PaymentRouter';
+import { createClientPaymentRouter } from './routers/PaymentRouter';
 // Credentials routes are now handled by the Go gateway.
 // import { createCredentialsRouter } from './routers/CredentialsRouter';
 import { createAuthRouter } from './routers/AuthRouter';
-import { createAnalyticsRouter } from './routers/AnalyticsRouter';
 // Backups are now handled by the Go gateway.
 // import { router as BackupRouter } from './routers/BackupRouter';
-import { createRequestLogsRouter, createClientRequestLogsRouter } from './routers/RequestLogsRouter';
+import { createClientRequestLogsRouter } from './routers/RequestLogsRouter';
 // Migrations routes are now handled by the Go gateway.
 // import { createMigrationsRouter } from './routers/MigrationsRouter';
 // import MigrationsController from './controllers/MigrationsController';
-import RequestLogsController from './controllers/RequestLogsController';
 import { initRequestLoggingMiddleware, requestLoggingMiddleware } from './middleware/requestLoggingMiddleware';
 // Backups are now handled by the Go gateway.
 // import BackupController from './controllers/BackupController';
@@ -239,28 +226,26 @@ app.get('/', (req: Request, res: Response) => {
       // Platform Admin Routes (SuperTokens authentication)
       platform: {
         supertokens_auth: '/auth',
-        platform_auth: '/api/auth',
-        organizations: '/api/organizations',
-        projects: '/api/projects',
-        files: '/api/files',
-        communications: '/api/communications',
-        payments: '/api/payments',
-        invitations: '/api/invitations',
-        credentials: '/api/credentials',
-        analytics: '/api/analytics',
-        users: '/api/users',
-        health: '/api/health',
-        mcp: '/api/mcp',
+        platform_auth: '/api/auth (Go gateway)',
+        organizations: '/api/organizations (Go gateway)',
+        projects: '/api/projects (Go gateway)',
+        files: '/api/files (Go gateway)',
+        communications: '/api/communications (Go gateway)',
+        payments: '/api/payments (Go gateway)',
+        invitations: '/api/invitations (Go gateway)',
+        credentials: '/api/credentials (Go gateway)',
+        analytics: '/api/analytics (Go gateway)',
+        users: '/api/users (Go gateway)',
+        health: '/api/health (Go gateway)',
         graphql: '/api/graphql',
       },
       // Client-Facing Routes (API Key / App User JWT authentication)
       app_api: {
         app_user_auth: '/app-api/auth',
-        storage: '/app-api/storage',
-        database: '/app-api/database',
+        storage: '/app-api/storage (Go gateway)',
+        database: '/app-api/database (Go gateway)',
         communications: '/app-api/communications',
         payments: '/app-api/payments',
-        mcp: '/app-api/mcp',
       },
       // Public API Routes (API Key / Access Token only, GET & POST, no user auth required)
       app_api_2: {
@@ -272,15 +257,8 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 // Initialize controllers
-MCPController.initialize(pool, s3Client);
-ClientMCPController.initialize(pool, s3Client);
-DatabaseController.initialize(pool);
-ProjectsController.initialize(pool);
-ProjectBucketsController.initialize(pool);
-StorageController.initialize({ pool, s3Client });
 // BackupController.initialize(pool, s3Client); // Now handled by Go gateway
 // MigrationsController.initialize(pool); // Now handled by Go gateway
-RequestLogsController.initialize(pool);
 initRequestLoggingMiddleware(pool);
 
 // Initialize API key middleware
@@ -294,10 +272,6 @@ initializeHybridAuthMiddleware(pool);
 import { initializeApiKeyOnlyMiddleware } from './middleware/apiKeyOnlyMiddleware';
 initializeApiKeyOnlyMiddleware(pool);
 
-// Initialize Communications Controller and create router
-const communicationsController = new CommunicationsController(pool);
-const CommunicationsRouter = createCommunicationsRouter(pool);
-
 // Invitations routes are now handled by the Go gateway.
 // const InvitationsRouter = createInvitationsRouter(pool);
 
@@ -310,19 +284,14 @@ const AuthManagementRouter = createAuthRouter(pool);
 // Initialize Client Communications Router (for app-api routes)
 const ClientCommunicationsRouter = createClientCommunicationsRouter(pool);
 
-// Initialize Payment Routers
-const PaymentRouter = createPaymentRouter(pool);
+// Initialize Payment Router (client-facing only)
 const ClientPaymentRouter = createClientPaymentRouter(pool);
-const PaymentWebhookRouter = createPaymentWebhookRouter(pool);
 
 // Initialize Public Routers (for app-api-2 routes - API key only, no user auth)
 import { createPublicDatabaseRouter } from './routers/PublicDatabaseRouter';
 import { createPublicStorageRouter } from './routers/PublicStorageRouter';
 const PublicDatabaseRouter = createPublicDatabaseRouter(pool);
 const PublicStorageRouter = createPublicStorageRouter(pool);
-
-// Initialize Analytics Router
-const AnalyticsRouter = createAnalyticsRouter(pool);
 
 // Initialize Analytics Service
 AnalyticsService.initialize(pool);
@@ -333,25 +302,21 @@ AnalyticsService.initialize(pool);
 // ============================================================================
 // PLATFORM ADMIN ROUTES (/api/*) - SuperTokens authentication
 // ============================================================================
-// Platform management routes
-app.use('/api/organizations', OrganizationsRouter);
-app.use('/api/projects', ProjectsRouter);
-app.use('/api/projects', ProjectBucketsRouter);
+// Platform /api routes are handled by the Go gateway.
 // app.use('/api/files', FilesRouter); // Now handled by Go gateway
 // app.use('/api/users', UsersRouter); // Now handled by Go gateway
-app.use('/api/communications', CommunicationsRouter);
+// app.use('/api/communications', CommunicationsRouter); // Now handled by Go gateway
 // app.use('/api/invitations', InvitationsRouter); // Now handled by Go gateway
 // app.use('/api/credentials', CredentialsRouter); // Now handled by Go gateway
-app.use('/api/analytics', AnalyticsRouter);
-app.use('/api/health', HealthRouter);
-app.use('/api/mcp', MCPRouter);
-app.use('/api/database', createAdminDatabaseRouter(pool));
-app.use('/api/storage', createAdminStorageRouter(pool, s3Client));
+// app.use('/api/analytics', AnalyticsRouter); // Now handled by Go gateway
+// app.use('/api/health', HealthRouter); // Now handled by Go gateway
+// app.use('/api/database', createAdminDatabaseRouter(pool)); // Now handled by Go gateway
+// app.use('/api/storage', createAdminStorageRouter(pool, s3Client)); // Now handled by Go gateway
 // app.use('/api/auth', createAdminAuthRouter(pool)); // Now handled by Go gateway
 // app.use('/api/backups', BackupRouter); // Now handled by Go gateway
-app.use('/api/payments', PaymentRouter);
-app.use('/api/payments/webhook', PaymentWebhookRouter);
-app.use('/api/request-logs', createRequestLogsRouter(pool));
+// app.use('/api/payments', PaymentRouter); // Now handled by Go gateway
+// app.use('/api/payments/webhook', PaymentWebhookRouter); // Now handled by Go gateway
+// app.use('/api/request-logs', createRequestLogsRouter(pool)); // Now handled by Go gateway
 // app.use('/api/migrations', createMigrationsRouter()); // Now handled by Go gateway
 
 // ============================================================================
@@ -361,37 +326,16 @@ app.use('/api/request-logs', createRequestLogsRouter(pool));
 // This automatically logs requests for projects with logging enabled
 app.use('/app-api', requestLoggingMiddleware);
 
-// SuperTokens middleware for app users at /app-api/auth (for session/refresh endpoints)
-// This allows SuperTokens SDK to call /app-api/auth/session/refresh
-app.use('/app-api/auth', (req, res, next) => {
-  // Only handle SuperTokens routes (session, signin, signup, etc.)
-  if (req.path.startsWith('/session/') ||
-    req.path === '/signin' ||
-    req.path === '/signup' ||
-    req.path === '/signout' ||
-    req.path.startsWith('/user/') ||
-    req.path === '/emailpassword/signin' ||
-    req.path === '/emailpassword/signup') {
-    // Proxy to SuperTokens middleware
-    return supertokensMiddleware()(req, res, next);
-  }
-  // Otherwise, pass to our auth router
-  next();
-});
 // Auth management routes for application users (project-specific)
 app.use('/app-api/auth', AuthManagementRouter);
-// Storage operations (supports both API key and SuperTokens via hybrid auth)
-app.use('/app-api/storage', createStorageRouter(pool));
-// Database operations (supports both API key and SuperTokens via hybrid auth)
-app.use('/app-api/database', createDatabaseRouter(pool));
+// app.use('/app-api/storage', createStorageRouter(pool)); // Now handled by Go gateway
+// app.use('/app-api/database', createDatabaseRouter(pool)); // Now handled by Go gateway
 // Communications operations (supports both API key and SuperTokens via hybrid auth)
 app.use('/app-api/communications', ClientCommunicationsRouter);
 // Payment operations (supports both API key and SuperTokens via hybrid auth)
 app.use('/app-api/payments', ClientPaymentRouter);
 // Request logging operations (supports both API key and SuperTokens via hybrid auth)
 app.use('/app-api/request-logs', createClientRequestLogsRouter(pool));
-// Client MCP operations (restricted tool set, MCP keys/API keys only)
-app.use('/app-api/mcp', ClientMCPRouter);
 
 // ============================================================================
 // PUBLIC API ROUTES (/app-api-2/*) - API Key / Access Token only (no user auth)
@@ -505,13 +449,11 @@ const startServer = async () => {
     console.log(`   🔐 Auth: http://localhost:${port}/api/auth`);
     console.log(`   📁 Projects: http://localhost:${port}/api/projects`);
     console.log(`   📄 Files: http://localhost:${port}/api/files`);
-    console.log(`   🔧 MCP: http://localhost:${port}/api/mcp`);
     console.log(`   🔬 GraphQL: http://localhost:${port}/api/graphql`);
     console.log('\n📱 Client-Facing API (API Key / App User JWT):');
     console.log(`   🔐 App Auth: http://localhost:${port}/app-api/auth`);
-    console.log(`   💾 Storage: http://localhost:${port}/app-api/storage`);
-    console.log(`   🗄️  Database: http://localhost:${port}/app-api/database`);
-    console.log(`   🔧 MCP: http://localhost:${port}/app-api/mcp`);
+    console.log(`   💾 Storage: http://localhost:${port}/app-api/storage (Go gateway)`);
+    console.log(`   🗄️  Database: http://localhost:${port}/app-api/database (Go gateway)`);
     console.log('\n🌍 Public API (API Key / Access Token only, GET & POST):');
     console.log(`   💾 Storage: http://localhost:${port}/app-api-2/storage`);
     console.log(`   🗄️  Database: http://localhost:${port}/app-api-2/database`);

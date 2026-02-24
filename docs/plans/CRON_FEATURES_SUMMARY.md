@@ -296,7 +296,7 @@ Potential improvements for future versions:
 - `/database/init/01-init.sql` - Added pg_cron extension
 - `/src/controllers/DatabaseController.ts` - Added 6 cron management methods
 - `/src/routers/DatabaseRouter.ts` - Added 6 cron routes
-- `/src/mcp/tools/databaseTools.ts` - Added 6 MCP tools for cron
+- `/go-services/internal/mcp/tools_database.go` - Added MCP tools for cron
 
 ### Frontend
 - `/frontend/src/components/database/CronManager.tsx` - New component (550+ lines)

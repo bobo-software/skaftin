@@ -30,12 +30,12 @@ src/controllers/GraphQLController.ts (71 lines)   - Apollo Server setup
 
 **Files Created:**
 ```
-src/mcp/tools/graphqlTools.ts        (700+ lines) - 15 MCP tools
+go-services/internal/mcp/tools_graphql.go - GraphQL MCP tools
 ```
 
 **Files Modified:**
 ```
-src/mcp/MCPServer.ts                 - Registered GraphQL tools
+go-services/internal/mcp/server.go   - Registered GraphQL tools
 src/Server.ts                        - Integrated GraphQL server
 ```
 
@@ -361,8 +361,10 @@ const client = new ApolloClient({
 {
   "mcpServers": {
     "skaftin": {
-      "command": "node",
-      "args": ["path/to/mcp-server.js"]
+      "url": "http://localhost:4006/app-api/mcp/protocol",
+      "headers": {
+        "x-api-key": "sk_your_project_api_key_here"
+      }
     }
   }
 }

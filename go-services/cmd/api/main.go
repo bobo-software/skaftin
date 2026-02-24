@@ -42,7 +42,8 @@ func main() {
 			nodePort = parts[2]
 		}
 
-		healthURL := cfg.NodeBackendURL + "/api/health"
+		// Probe Node root for readiness so Node-specific /api mounts can be removed safely.
+		healthURL := cfg.NodeBackendURL + "/"
 		nodeRunner = gateway.NewNodeRunner(cfg.NodeCommand, cfg.NodeWorkDir, nodePort, healthURL)
 
 		startCtx, startCancel := context.WithTimeout(context.Background(), 90*time.Second)

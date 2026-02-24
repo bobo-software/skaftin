@@ -466,7 +466,7 @@ curl -X POST http://localhost:4006/api/app-auth/2/settings/send-verification \
    - Implemented sendPasswordResetEmail with toggle check
    - Implemented testEmailProvider (was TODO)
 
-4. ✅ `src/mcp/tools/authTools.ts`
+4. ✅ `go-services/internal/mcp` auth tools
    - Updated update_auth_settings tool schema
    - Added email toggle parameters
    - Updated handler to process email toggles

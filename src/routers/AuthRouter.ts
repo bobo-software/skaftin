@@ -24,7 +24,10 @@ export function createAuthRouter(pool: Pool): Router {
   AuthSettingsController.initialize(pool);
 
   const middlewareBuilder = createMiddlewareBuilder(pool, false); // isAdmin = false
-  const routes = createAuthRouteDefinitions(false); // isAdmin = false
+  const routes = createAuthRouteDefinitions(false).filter((route) =>
+    // These legacy app-api compatibility endpoints are now handled by Go.
+    !(route.path === '/auth/login' || route.path === '/auth/logout')
+  ); // isAdmin = false
 
   // Split routes into public (app auth) and protected (management)
   const publicRoutes = routes.filter(r => !r.requiresAuth);

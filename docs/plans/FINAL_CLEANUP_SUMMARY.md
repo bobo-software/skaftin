@@ -28,7 +28,7 @@ src/services/
 src/controllers/
 ├── AuthController.ts            ✅ Login, Register, Verify
 ├── FilesController.ts           ✅ Upload, List, Download, Delete
-├── MCPController.ts             ✅ MCP tool operations
+├── (Go MCP)                     ✅ MCP tool operations
 ├── ProjectsController.ts        ✅ Full project CRUD
 └── UsersController.ts           ✅ User management
 ```
@@ -39,7 +39,7 @@ src/routers/
 ├── AuthRouter.ts                ✅ /api/auth/*
 ├── FilesRouter.ts               ✅ /api/files/*
 ├── HealthRouter.ts              ✅ /api/health/*
-├── MCPRouter.ts                 ✅ /api/mcp/*
+├── (Go MCP routes)              ✅ /api/mcp/*
 ├── ProjectsRouter.ts            ✅ /api/projects/*
 └── UsersRouter.ts               ✅ /api/users/*
 ```
@@ -118,9 +118,9 @@ const wsService = initializeWebSocketService(httpServer);
 - ✅ Room management
 - ✅ Connection handling
 
-#### 5. **MCPController**
+#### 5. **Go MCP Handler**
 ```typescript
-MCPController.initialize(pool, s3Client);
+Go MCP is initialized in `go-services/internal/mcp/server.go` and routed in `go-services/internal/server/routes_mcp.go`.
 ```
 - ✅ `listTools()` - List MCP tools
 - ✅ `callTool()` - Execute MCP tool
@@ -179,7 +179,7 @@ src/
 ├── controllers/                 ✅ Request handlers
 │   ├── AuthController.ts        - Authentication
 │   ├── FilesController.ts       - File operations
-│   ├── MCPController.ts         - MCP tools
+│   ├── (Go MCP handler)         - MCP tools
 │   ├── ProjectsController.ts    - Project management
 │   └── UsersController.ts       - User management
 │
@@ -187,7 +187,7 @@ src/
 │   ├── AuthRouter.ts            - Auth routes
 │   ├── FilesRouter.ts           - File routes
 │   ├── HealthRouter.ts          - Health routes
-│   ├── MCPRouter.ts             - MCP routes
+│   ├── (Go MCP routes)          - MCP routes
 │   ├── ProjectsRouter.ts        - Project routes
 │   └── UsersRouter.ts           - User routes
 │
