@@ -189,7 +189,10 @@ func (h *Handler) ExportDatabaseDump(w http.ResponseWriter, r *http.Request) {
 		// Primary keys
 		pkRows, _ := pc.Query(ctx, `
 			SELECT kcu.column_name FROM information_schema.table_constraints tc
-			JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+			JOIN information_schema.key_column_usage kcu
+				ON tc.constraint_name = kcu.constraint_name
+				AND tc.table_schema = kcu.table_schema
+				AND tc.table_name = kcu.table_name
 			WHERE tc.table_schema = $1 AND tc.table_name = $2 AND tc.constraint_type = 'PRIMARY KEY'
 			ORDER BY kcu.ordinal_position
 		`, schema, tableName)
@@ -241,8 +244,15 @@ func (h *Handler) ExportDatabaseDump(w http.ResponseWriter, r *http.Request) {
 		}
 		sql.WriteString(strings.Join(colDefs, ",\n"))
 		if len(pkCols) > 0 {
-			quoted := make([]string, len(pkCols))
-			for i, c := range pkCols { quoted[i] = fmt.Sprintf(`"%s"`, c) }
+			seen := make(map[string]bool, len(pkCols))
+			quoted := make([]string, 0, len(pkCols))
+			for _, c := range pkCols {
+				if seen[c] {
+					continue
+				}
+				seen[c] = true
+				quoted = append(quoted, fmt.Sprintf(`"%s"`, c))
+			}
 			sql.WriteString(fmt.Sprintf(",\n  PRIMARY KEY (%s)", strings.Join(quoted, ", ")))
 		}
 		sql.WriteString("\n);\n\n")
