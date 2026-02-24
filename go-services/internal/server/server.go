@@ -23,9 +23,11 @@ type Server struct {
 // New creates a configured Server ready to start.
 func New(cfg *config.Config, pool *pgxpool.Pool) (*Server, error) {
 	mux := http.NewServeMux()
+	requestLogger := middleware.NewRequestLogger(pool)
 
-	cleanup, err := RegisterRoutes(mux, cfg, pool)
+	cleanup, err := RegisterRoutes(mux, cfg, pool, requestLogger)
 	if err != nil {
+		requestLogger.Close()
 		return nil, err
 	}
 
@@ -44,7 +46,12 @@ func New(cfg *config.Config, pool *pgxpool.Pool) (*Server, error) {
 		httpServer: httpServer,
 		cfg:        cfg,
 		pool:       pool,
-		cleanup:    cleanup,
+		cleanup: func() {
+			requestLogger.Close()
+			if cleanup != nil {
+				cleanup()
+			}
+		},
 	}, nil
 }
 

@@ -27,6 +27,14 @@ func (svc *Service) GetSettings(ctx context.Context, projectID int) (*LogSetting
 	return svc.store.GetSettings(ctx, projectID)
 }
 
+func (svc *Service) IsLoggingEnabled(ctx context.Context, projectID int) (bool, error) {
+	return svc.store.IsLoggingEnabled(ctx, projectID)
+}
+
+func (svc *Service) CreateLog(ctx context.Context, input CreateLogInput) (int, error) {
+	return svc.store.CreateLog(ctx, input)
+}
+
 func (svc *Service) UpdateSettings(ctx context.Context, projectID int, enabled *bool, retention *string) (*LogSettings, error) {
 	if retention != nil && !validRetentions[*retention] {
 		return nil, fmt.Errorf("invalid retention")

@@ -16,6 +16,7 @@ import (
 	"github.com/skaftin/go-services/internal/gateway"
 	"github.com/skaftin/go-services/internal/health"
 	mcpserver "github.com/skaftin/go-services/internal/mcp"
+	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/orgs"
 	"github.com/skaftin/go-services/internal/payments"
 	"github.com/skaftin/go-services/internal/projects"
@@ -28,7 +29,7 @@ import (
 // RegisterRoutes wires all domain handlers and proxy routes onto the mux.
 // The returned function should be called during graceful shutdown to stop
 // background services (e.g. the backup scheduler).
-func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) (func(), error) {
+func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, requestLogger *middleware.RequestLogger) (func(), error) {
 	// ---- JWKS provider for JWT validation ----
 	jwks := auth.NewJWKSProvider(cfg.SuperTokensCoreURL)
 	slog.Info("JWKS provider initialized", "supertokensCoreURL", cfg.SuperTokensCoreURL)
@@ -78,20 +79,20 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	// ==================================================================
 	// GO-HANDLED DOMAIN ROUTES (JWT auth, registered before catch-all)
 	// ==================================================================
-	if err := registerDataRoutes(mux, cfg, pool, jwks, dbHandler, projectsHandler, orgsHandler, requestLogsHandler, storageHandler, analyticsHandler, credentialsHandler, usersHandler); err != nil {
+	if err := registerDataRoutes(mux, cfg, pool, jwks, requestLogger, dbHandler, projectsHandler, orgsHandler, requestLogsHandler, storageHandler, analyticsHandler, credentialsHandler, usersHandler); err != nil {
 		return nil, err
 	}
 
 	authMgmtHandler := authmanagement.NewHandler(pool, stClient, communicationsHandler.Service())
-	registerAuthAndAdminRoutes(mux, pool, jwks, authMgmtHandler, adminHandler)
-	registerMCPRoutes(mux, pool, jwks, mcpHandler, clientMCPHandler)
+	registerAuthAndAdminRoutes(mux, pool, jwks, requestLogger, authMgmtHandler, adminHandler)
+	registerMCPRoutes(mux, pool, jwks, requestLogger, mcpHandler, clientMCPHandler)
 
 	opsCleanup, err := registerOperationalRoutes(mux, pool, cfg, jwks, communicationsHandler, paymentsHandler, storageHandler.S3())
 	if err != nil {
 		return nil, err
 	}
 
-	registerProxyRoutes(mux, pool, jwks, nodeHandler)
+	registerProxyRoutes(mux, pool, jwks, requestLogger, nodeHandler)
 	return opsCleanup, nil
 }
 
