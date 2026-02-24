@@ -1,6 +1,7 @@
 package authmanagement
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -11,11 +12,16 @@ import (
 )
 
 type Handler struct {
-	service *Service
+	service   *Service
+	loginFunc func(ctx context.Context, projectID int, body map[string]any) (map[string]any, error)
 }
 
 func NewHandler(pool *pgxpool.Pool, st *supertokens.Client, comms *communications.Service) *Handler {
-	return &Handler{service: NewService(pool, st, comms)}
+	svc := NewService(pool, st, comms)
+	return &Handler{
+		service:   svc,
+		loginFunc: svc.Login,
+	}
 }
 
 // RegisterLegacyCompatibilityRoutes registers non-project legacy platform auth routes.
@@ -40,6 +46,12 @@ func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/{projectId}/auth/forgot-password", h.ForgotPassword)
 	mux.HandleFunc("POST /api/auth/{projectId}/auth/verify-forgot-password-otp", h.VerifyForgotPasswordOTP)
 	mux.HandleFunc("POST /api/auth/{projectId}/auth/reset-password", h.ResetPassword)
+}
+
+// RegisterAppAPICompatibilityRoutes registers app-api compatibility routes that
+// preserve legacy client URL shape while being handled in Go.
+func (h *Handler) RegisterAppAPICompatibilityRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /app-api/auth/auth/login", h.LoginFromAppAPI)
 }
 
 // RegisterProtectedRoutes registers JWT + project access routes.

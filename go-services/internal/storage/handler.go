@@ -61,6 +61,29 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/storage/{projectId}/{bucketName}/folders/{folderPath...}", h.DeleteFolder)
 }
 
+// RegisterAppAPIRoutes registers client-facing storage routes that rely on
+// API key middleware for project resolution.
+func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
+	// Non-project routes (bucket/path in body or query).
+	mux.HandleFunc("GET /app-api/storage/files/download", h.DownloadFileFromQuery)
+	mux.HandleFunc("POST /app-api/storage/files", h.UploadFileFromForm)
+	mux.HandleFunc("DELETE /app-api/storage/files", h.DeleteFileFromBody)
+
+	// Project-scoped routes (project resolved from auth context).
+	mux.HandleFunc("GET /app-api/storage/buckets", h.ListBuckets)
+	mux.HandleFunc("GET /app-api/storage/{bucketName}/files", h.ListFiles)
+	mux.HandleFunc("POST /app-api/storage/{bucketName}/search", h.SearchFiles)
+	mux.HandleFunc("POST /app-api/storage/{bucketName}/upload", h.UploadFile)
+	mux.HandleFunc("POST /app-api/storage/{bucketName}/upload-multipart", h.UploadFileMultipart)
+	mux.HandleFunc("PUT /app-api/storage/{bucketName}/folders/rename", h.RenameFolder)
+
+	// Wildcard routes for file download, delete, metadata, and folder delete
+	mux.HandleFunc("GET /app-api/storage/{bucketName}/download/{filePath...}", h.DownloadFile)
+	mux.HandleFunc("GET /app-api/storage/{bucketName}/files/{rest...}", h.FilePathDispatch)
+	mux.HandleFunc("DELETE /app-api/storage/{bucketName}/files/{filePath...}", h.DeleteFile)
+	mux.HandleFunc("DELETE /app-api/storage/{bucketName}/folders/{folderPath...}", h.DeleteFolder)
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -97,16 +120,34 @@ func isNotFound(err error) bool {
 	return strings.Contains(s, "not found") || strings.Contains(s, "NoSuchKey") || strings.Contains(s, "NotFound") || strings.Contains(s, "The specified key does not exist")
 }
 
+// requireAuth allows both JWT user context and API key auth context.
+func requireAuth(w http.ResponseWriter, r *http.Request) bool {
+	if auth.GetUserContext(r) != nil || auth.GetAuthContext(r) != nil {
+		return true
+	}
+	httputil.WriteError(w, http.StatusUnauthorized, "Unauthorized")
+	return false
+}
+
+// projectID resolves project ID from API-key auth context first, then falls
+// back to path-based projectId for existing /api/storage/{projectId}/... routes.
+func projectID(w http.ResponseWriter, r *http.Request) (int, bool) {
+	if authCtx := auth.GetAuthContext(r); authCtx != nil && authCtx.ProjectID > 0 {
+		return authCtx.ProjectID, true
+	}
+	return httputil.ProjectID(w, r)
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
 // ListBuckets handles GET /api/storage/{projectId}/buckets
 func (h *Handler) ListBuckets(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
-	pid, ok := httputil.ProjectID(w, r)
+	pid, ok := projectID(w, r)
 	if !ok {
 		return
 	}
@@ -132,10 +173,10 @@ func (h *Handler) ListBuckets(w http.ResponseWriter, r *http.Request) {
 
 // ListFiles handles GET /api/storage/{projectId}/{bucketName}/files
 func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
-	pid, ok := httputil.ProjectID(w, r)
+	pid, ok := projectID(w, r)
 	if !ok {
 		return
 	}
@@ -165,10 +206,10 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 
 // SearchFiles handles POST /api/storage/{projectId}/{bucketName}/search
 func (h *Handler) SearchFiles(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
-	pid, ok := httputil.ProjectID(w, r)
+	pid, ok := projectID(w, r)
 	if !ok {
 		return
 	}
@@ -202,10 +243,10 @@ func (h *Handler) SearchFiles(w http.ResponseWriter, r *http.Request) {
 
 // UploadFile handles POST /api/storage/{projectId}/{bucketName}/upload (base64 body)
 func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
-	pid, ok := httputil.ProjectID(w, r)
+	pid, ok := projectID(w, r)
 	if !ok {
 		return
 	}
@@ -260,10 +301,10 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 // UploadFileMultipart handles POST /api/storage/{projectId}/{bucketName}/upload-multipart
 func (h *Handler) UploadFileMultipart(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
-	pid, ok := httputil.ProjectID(w, r)
+	pid, ok := projectID(w, r)
 	if !ok {
 		return
 	}
@@ -304,7 +345,7 @@ func (h *Handler) UploadFileMultipart(w http.ResponseWriter, r *http.Request) {
 
 // UploadFileFromForm handles POST /api/storage/files (multipart with bucket/path in form)
 func (h *Handler) UploadFileFromForm(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
 
@@ -358,7 +399,7 @@ func (h *Handler) UploadFileFromForm(w http.ResponseWriter, r *http.Request) {
 
 // DownloadFileFromQuery handles GET /api/storage/files/download?bucket=...&path=...
 func (h *Handler) DownloadFileFromQuery(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
 
@@ -405,10 +446,10 @@ func (h *Handler) DownloadFileFromQuery(w http.ResponseWriter, r *http.Request) 
 
 // DownloadFile handles GET /api/storage/{projectId}/{bucketName}/download/{filePath...}
 func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
-	pid, ok := httputil.ProjectID(w, r)
+	pid, ok := projectID(w, r)
 	if !ok {
 		return
 	}
@@ -449,7 +490,7 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 // DeleteFileFromBody handles DELETE /api/storage/files (bucket/path in JSON body)
 func (h *Handler) DeleteFileFromBody(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
 
@@ -488,10 +529,10 @@ func (h *Handler) DeleteFileFromBody(w http.ResponseWriter, r *http.Request) {
 
 // DeleteFile handles DELETE /api/storage/{projectId}/{bucketName}/files/{filePath...}
 func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
-	pid, ok := httputil.ProjectID(w, r)
+	pid, ok := projectID(w, r)
 	if !ok {
 		return
 	}
@@ -541,10 +582,10 @@ func (h *Handler) FilePathDispatch(w http.ResponseWriter, r *http.Request) {
 
 // getFileMetadata is the inner handler for file metadata retrieval.
 func (h *Handler) getFileMetadata(w http.ResponseWriter, r *http.Request, filePath string) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
-	pid, ok := httputil.ProjectID(w, r)
+	pid, ok := projectID(w, r)
 	if !ok {
 		return
 	}
@@ -576,10 +617,10 @@ func (h *Handler) getFileMetadata(w http.ResponseWriter, r *http.Request, filePa
 
 // RenameFolder handles PUT /api/storage/{projectId}/{bucketName}/folders/rename
 func (h *Handler) RenameFolder(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
-	pid, ok := httputil.ProjectID(w, r)
+	pid, ok := projectID(w, r)
 	if !ok {
 		return
 	}
@@ -616,10 +657,10 @@ func (h *Handler) RenameFolder(w http.ResponseWriter, r *http.Request) {
 
 // DeleteFolder handles DELETE /api/storage/{projectId}/{bucketName}/folders/{folderPath...}
 func (h *Handler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
-	if auth.RequireUser(w, r) == nil {
+	if !requireAuth(w, r) {
 		return
 	}
-	pid, ok := httputil.ProjectID(w, r)
+	pid, ok := projectID(w, r)
 	if !ok {
 		return
 	}

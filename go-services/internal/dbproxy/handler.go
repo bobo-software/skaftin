@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
@@ -22,58 +23,71 @@ func NewHandler(pool *pgxpool.Pool) *Handler {
 // RegisterRoutes registers all database routes on the given mux.
 // Paths are relative to /api/database/ which is the prefix set in routes.go.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	h.registerRoutesWithBase(mux, "/api/database/{projectId}")
+}
+
+// RegisterAppAPIRoutes registers client-facing database routes that rely on
+// API key middleware for project resolution.
+func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
+	h.registerRoutesWithBase(mux, "/app-api/database")
+}
+
+func (h *Handler) registerRoutesWithBase(mux *http.ServeMux, base string) {
 	// Tables
-	mux.HandleFunc("GET /api/database/{projectId}/tables", h.ListTables)
-	mux.HandleFunc("GET /api/database/{projectId}/tables/{tableName}/schema", h.GetTableSchema)
-	mux.HandleFunc("GET /api/database/{projectId}/tables/{tableName}/select", h.SelectDataGet)
-	mux.HandleFunc("POST /api/database/{projectId}/tables/create", h.CreateTable)
-	mux.HandleFunc("POST /api/database/{projectId}/tables/{tableName}/rename", h.RenameTable)
-	mux.HandleFunc("POST /api/database/{projectId}/tables/{tableName}/select", h.SelectData)
-	mux.HandleFunc("POST /api/database/{projectId}/tables/{tableName}/insert", h.InsertData)
-	mux.HandleFunc("POST /api/database/{projectId}/tables/{tableName}/bulk-insert", h.BulkInsertData)
-	mux.HandleFunc("PUT /api/database/{projectId}/tables/{tableName}/update", h.UpdateData)
-	mux.HandleFunc("DELETE /api/database/{projectId}/tables/{tableName}/delete", h.DeleteData)
-	mux.HandleFunc("DELETE /api/database/{projectId}/tables/{tableName}", h.DropTable)
+	mux.HandleFunc("GET "+base+"/tables", h.ListTables)
+	mux.HandleFunc("GET "+base+"/tables/{tableName}/schema", h.GetTableSchema)
+	mux.HandleFunc("GET "+base+"/tables/{tableName}/select", h.SelectDataGet)
+	mux.HandleFunc("POST "+base+"/tables/create", h.CreateTable)
+	mux.HandleFunc("POST "+base+"/tables/{tableName}/rename", h.RenameTable)
+	mux.HandleFunc("POST "+base+"/tables/{tableName}/select", h.SelectData)
+	mux.HandleFunc("POST "+base+"/tables/{tableName}/insert", h.InsertData)
+	mux.HandleFunc("POST "+base+"/tables/{tableName}/bulk-insert", h.BulkInsertData)
+	mux.HandleFunc("PUT "+base+"/tables/{tableName}/update", h.UpdateData)
+	mux.HandleFunc("DELETE "+base+"/tables/{tableName}/delete", h.DeleteData)
+	mux.HandleFunc("DELETE "+base+"/tables/{tableName}", h.DropTable)
 
 	// Columns
-	mux.HandleFunc("POST /api/database/{projectId}/tables/{tableName}/columns", h.AddColumn)
-	mux.HandleFunc("PUT /api/database/{projectId}/tables/{tableName}/columns/{columnName}", h.AlterColumn)
-	mux.HandleFunc("DELETE /api/database/{projectId}/tables/{tableName}/columns/{columnName}", h.DropColumn)
+	mux.HandleFunc("POST "+base+"/tables/{tableName}/columns", h.AddColumn)
+	mux.HandleFunc("PUT "+base+"/tables/{tableName}/columns/{columnName}", h.AlterColumn)
+	mux.HandleFunc("DELETE "+base+"/tables/{tableName}/columns/{columnName}", h.DropColumn)
 
 	// Constraints
-	mux.HandleFunc("GET /api/database/{projectId}/tables/{tableName}/constraints", h.ListConstraints)
-	mux.HandleFunc("GET /api/database/{projectId}/tables/{tableName}/foreign-keys", h.ListForeignKeys)
-	mux.HandleFunc("POST /api/database/{projectId}/tables/{tableName}/constraints/foreign-key", h.CreateForeignKey)
-	mux.HandleFunc("POST /api/database/{projectId}/tables/{tableName}/constraints/unique", h.CreateUniqueConstraint)
-	mux.HandleFunc("POST /api/database/{projectId}/tables/{tableName}/constraints/primary-key", h.CreatePrimaryKeyConstraint)
-	mux.HandleFunc("POST /api/database/{projectId}/tables/{tableName}/constraints/check", h.CreateCheckConstraint)
-	mux.HandleFunc("DELETE /api/database/{projectId}/tables/{tableName}/constraints/{constraintName}", h.DropConstraint)
+	mux.HandleFunc("GET "+base+"/tables/{tableName}/constraints", h.ListConstraints)
+	mux.HandleFunc("GET "+base+"/tables/{tableName}/foreign-keys", h.ListForeignKeys)
+	mux.HandleFunc("POST "+base+"/tables/{tableName}/constraints/foreign-key", h.CreateForeignKey)
+	mux.HandleFunc("POST "+base+"/tables/{tableName}/constraints/unique", h.CreateUniqueConstraint)
+	mux.HandleFunc("POST "+base+"/tables/{tableName}/constraints/primary-key", h.CreatePrimaryKeyConstraint)
+	mux.HandleFunc("POST "+base+"/tables/{tableName}/constraints/check", h.CreateCheckConstraint)
+	mux.HandleFunc("DELETE "+base+"/tables/{tableName}/constraints/{constraintName}", h.DropConstraint)
 
 	// Query
-	mux.HandleFunc("POST /api/database/{projectId}/query", h.ExecuteQuery)
+	mux.HandleFunc("POST "+base+"/query", h.ExecuteQuery)
 
 	// Cron
-	mux.HandleFunc("GET /api/database/{projectId}/cron", h.ListCronJobs)
-	mux.HandleFunc("GET /api/database/{projectId}/cron/{jobId}/history", h.GetCronJobHistory)
-	mux.HandleFunc("POST /api/database/{projectId}/cron", h.CreateCronJob)
-	mux.HandleFunc("PUT /api/database/{projectId}/cron/{jobId}", h.UpdateCronJob)
-	mux.HandleFunc("PATCH /api/database/{projectId}/cron/{jobId}/toggle", h.ToggleCronJob)
-	mux.HandleFunc("DELETE /api/database/{projectId}/cron/{jobId}", h.DeleteCronJob)
+	mux.HandleFunc("GET "+base+"/cron", h.ListCronJobs)
+	mux.HandleFunc("GET "+base+"/cron/{jobId}/history", h.GetCronJobHistory)
+	mux.HandleFunc("POST "+base+"/cron", h.CreateCronJob)
+	mux.HandleFunc("PUT "+base+"/cron/{jobId}", h.UpdateCronJob)
+	mux.HandleFunc("PATCH "+base+"/cron/{jobId}/toggle", h.ToggleCronJob)
+	mux.HandleFunc("DELETE "+base+"/cron/{jobId}", h.DeleteCronJob)
 
 	// Import / Export
-	mux.HandleFunc("POST /api/database/{projectId}/import", h.ImportDatabaseDump)
-	mux.HandleFunc("POST /api/database/{projectId}/export", h.ExportDatabaseDump)
+	mux.HandleFunc("POST "+base+"/import", h.ImportDatabaseDump)
+	mux.HandleFunc("POST "+base+"/export", h.ExportDatabaseDump)
 
 	// Users
-	mux.HandleFunc("POST /api/database/{projectId}/users/select", h.SelectUsers)
-	mux.HandleFunc("POST /api/database/{projectId}/users/insert", h.CreateUser)
-	mux.HandleFunc("PUT /api/database/{projectId}/users/update", h.UpdateUser)
-	mux.HandleFunc("POST /api/database/{projectId}/users/change_password", h.ChangePassword)
-	mux.HandleFunc("DELETE /api/database/{projectId}/users/delete", h.DeleteUser)
+	mux.HandleFunc("POST "+base+"/users/select", h.SelectUsers)
+	mux.HandleFunc("POST "+base+"/users/insert", h.CreateUser)
+	mux.HandleFunc("PUT "+base+"/users/update", h.UpdateUser)
+	mux.HandleFunc("POST "+base+"/users/change_password", h.ChangePassword)
+	mux.HandleFunc("DELETE "+base+"/users/delete", h.DeleteUser)
 }
 
 // projectID extracts and parses the projectId path parameter.
 func projectID(r *http.Request) (int, bool) {
+	if authCtx := auth.GetAuthContext(r); authCtx != nil && authCtx.ProjectID > 0 {
+		return authCtx.ProjectID, true
+	}
 	id, err := strconv.Atoi(r.PathValue("projectId"))
 	if err != nil {
 		return 0, false

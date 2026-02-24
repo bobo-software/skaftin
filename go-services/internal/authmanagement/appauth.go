@@ -1,8 +1,10 @@
 package authmanagement
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
@@ -34,16 +36,67 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, 400, "Invalid request body")
 		return
 	}
-	result, err := h.service.Login(r.Context(), projectID, body)
+	result, err := h.loginFunc(r.Context(), projectID, body)
 	if err != nil {
-		if err.Error() == "invalid credentials" || err.Error() == "authentication is disabled" {
-			httputil.WriteError(w, 401, err.Error())
-			return
-		}
-		httputil.WriteError(w, 400, err.Error())
+		writeLoginError(w, err)
 		return
 	}
 	httputil.WriteSuccess(w, 200, "Login successful", result)
+}
+
+// LoginFromAppAPI handles legacy client login URL while serving from Go.
+// Expected path: POST /app-api/auth/auth/login (behind API key middleware).
+func (h *Handler) LoginFromAppAPI(w http.ResponseWriter, r *http.Request) {
+	authCtx := auth.GetAuthContext(r)
+	if authCtx == nil || authCtx.ProjectID <= 0 {
+		httputil.WriteError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	var body map[string]any
+	if err := httputil.ReadJSON(r, &body); err != nil {
+		httputil.WriteError(w, 400, "Invalid request body")
+		return
+	}
+
+	// Node handler expects username; Go login service accepts credential/email/phone.
+	compatibilityNormalizeLoginBody(body)
+
+	result, err := h.loginFunc(r.Context(), authCtx.ProjectID, body)
+	if err != nil {
+		writeLoginError(w, err)
+		return
+	}
+	httputil.WriteSuccess(w, 200, "Login successful", result)
+}
+
+func compatibilityNormalizeLoginBody(body map[string]any) {
+	if body == nil {
+		return
+	}
+	if _, hasCredential := body["credential"]; hasCredential {
+		return
+	}
+	if _, hasEmail := body["email"]; hasEmail {
+		return
+	}
+	if _, hasPhone := body["phone"]; hasPhone {
+		return
+	}
+	if username, ok := body["username"].(string); ok && username != "" {
+		body["credential"] = username
+	}
+}
+
+func writeLoginError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrInvalidCredentials), err.Error() == ErrInvalidCredentials.Error():
+		httputil.WriteError(w, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, ErrAuthenticationClosed), err.Error() == ErrAuthenticationClosed.Error():
+		httputil.WriteError(w, http.StatusForbidden, err.Error())
+	default:
+		httputil.WriteError(w, http.StatusBadRequest, err.Error())
+	}
 }
 
 func (h *Handler) SingleCredentialLogin(w http.ResponseWriter, r *http.Request) {
