@@ -53,12 +53,6 @@ func (c *Client) CreateSession(ctx context.Context, tenantID string, req CreateS
 	if req.SessionDataInDatabase != nil {
 		requestBody["sessionDataInDatabase"] = req.SessionDataInDatabase
 	}
-	if req.EnableAntiCsrf {
-		requestBody["enableAntiCsrf"] = true
-	}
-	if req.UseDynamicSigningKey {
-		requestBody["useDynamicSigningKey"] = true
-	}
 
 	var resp CreateSessionResponse
 	err := c.do(ctx, "POST", path, "session", requestBody, &resp)
@@ -72,12 +66,6 @@ func (c *Client) CreateSession(ctx context.Context, tenantID string, req CreateS
 		}
 		if req.SessionDataInDatabase != nil {
 			legacyBody["userDataInDatabase"] = req.SessionDataInDatabase
-		}
-		if req.EnableAntiCsrf {
-			legacyBody["enableAntiCsrf"] = true
-		}
-		if req.UseDynamicSigningKey {
-			legacyBody["useDynamicSigningKey"] = true
 		}
 		err = c.do(ctx, "POST", path, "session", legacyBody, &resp)
 	}
