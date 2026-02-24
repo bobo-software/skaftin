@@ -3,7 +3,6 @@ package supertokens
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 type CreateSessionRequest struct {
@@ -36,39 +35,34 @@ type TokenInfo struct {
 }
 
 // CreateSession creates a new session for the given user.
+// This uses the legacy-compatible session payload contract expected by
+// SuperTokens cores that validate CDI 2.14 request shapes.
 func (c *Client) CreateSession(ctx context.Context, tenantID string, req CreateSessionRequest) (*CreateSessionResponse, error) {
 	path := fmt.Sprintf("/%s/recipe/session", tenantID)
-	// Prefer modern payload key used by recent SuperTokens core/CDI.
+
 	payload := req.AccessTokenPayload
 	if payload == nil {
 		payload = req.UserDataInAccessToken
 	}
 
 	requestBody := map[string]any{
-		"userId": req.UserID,
+		"userId":               req.UserID,
+		"enableAntiCsrf":       req.EnableAntiCsrf,
+		"useDynamicSigningKey": req.UseDynamicSigningKey,
 	}
 	if payload != nil {
-		requestBody["accessTokenPayload"] = payload
+		requestBody["userDataInJWT"] = payload
 	}
+	// This core expects userDataInDatabase to be present for session creation,
+	// even when there is no DB session data to store.
 	if req.SessionDataInDatabase != nil {
-		requestBody["sessionDataInDatabase"] = req.SessionDataInDatabase
+		requestBody["userDataInDatabase"] = req.SessionDataInDatabase
+	} else {
+		requestBody["userDataInDatabase"] = map[string]any{}
 	}
 
 	var resp CreateSessionResponse
 	err := c.do(ctx, "POST", path, "session", requestBody, &resp)
-	if err != nil && strings.Contains(err.Error(), "Field name 'accessTokenPayload' is invalid") {
-		// Backward compatibility for older cores.
-		legacyBody := map[string]any{
-			"userId": req.UserID,
-		}
-		if payload != nil {
-			legacyBody["userDataInAccessToken"] = payload
-		}
-		if req.SessionDataInDatabase != nil {
-			legacyBody["userDataInDatabase"] = req.SessionDataInDatabase
-		}
-		err = c.do(ctx, "POST", path, "session", legacyBody, &resp)
-	}
 	return &resp, err
 }
 
