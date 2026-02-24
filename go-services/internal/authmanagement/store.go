@@ -60,13 +60,13 @@ func scanAuthSettings(row pgx.Row) (*AuthSettings, error) {
 
 func (s *Store) GetAuthSettings(ctx context.Context, projectID int) (*AuthSettings, error) {
 	row := s.pool.QueryRow(ctx,
-		`SELECT `+authSettingsCols+` FROM skaftin_system_auth_settings WHERE project_id = $1`, projectID)
+		`SELECT `+authSettingsCols+` FROM public.skaftin_system_auth_settings WHERE project_id = $1`, projectID)
 	return scanAuthSettings(row)
 }
 
 func (s *Store) UpsertAuthSettings(ctx context.Context, projectID int) (*AuthSettings, error) {
 	row := s.pool.QueryRow(ctx, `
-		INSERT INTO skaftin_system_auth_settings (project_id) VALUES ($1)
+		INSERT INTO public.skaftin_system_auth_settings (project_id) VALUES ($1)
 		ON CONFLICT (project_id) DO NOTHING
 		RETURNING `+authSettingsCols, projectID)
 
@@ -93,7 +93,7 @@ func (s *Store) UpdateAuthSettings(ctx context.Context, projectID int, fields ma
 		i++
 	}
 	args = append(args, projectID)
-	query := fmt.Sprintf(`UPDATE skaftin_system_auth_settings SET %s WHERE project_id = $%d
+	query := fmt.Sprintf(`UPDATE public.skaftin_system_auth_settings SET %s WHERE project_id = $%d
 		RETURNING `+authSettingsCols,
 		strings.Join(setClauses, ", "), i)
 
