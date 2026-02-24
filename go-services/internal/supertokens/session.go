@@ -1,8 +1,11 @@
 package supertokens
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 )
 
 type CreateSessionRequest struct {
@@ -32,6 +35,13 @@ type TokenInfo struct {
 	Token     string `json:"token"`
 	Expiry    int64  `json:"expiry"`
 	CreatedAt int64  `json:"createdTime"`
+}
+
+// SessionRefreshResult contains the raw HTTP response from SuperTokens refresh.
+type SessionRefreshResult struct {
+	StatusCode int
+	Headers    http.Header
+	Body       []byte
 }
 
 // CreateSession creates a new session for the given user.
@@ -90,6 +100,57 @@ func (c *Client) GetSession(ctx context.Context, accessToken string) (*CreateSes
 		"checkDatabase":  false,
 	}, &resp)
 	return &resp, err
+}
+
+// RefreshSession forwards cookie/anti-CSRF refresh context to SuperTokens core and
+// returns the raw response so callers can preserve status, body, and Set-Cookie headers.
+func (c *Client) RefreshSession(ctx context.Context, incoming http.Header) (*SessionRefreshResult, error) {
+	// SuperTokens Core expects valid JSON input; send an empty object.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/recipe/session/refresh", bytes.NewBufferString(`{}`))
+	if err != nil {
+		return nil, fmt.Errorf("create refresh request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("rid", "session")
+	req.Header.Set("cdi-version", "2.14")
+	if c.apiKey != "" {
+		req.Header.Set("api-key", c.apiKey)
+	}
+
+	// Forward only headers relevant to SuperTokens refresh semantics.
+	for _, h := range []string{
+		"Cookie",
+		"anti-csrf",
+		"fdi-version",
+		"st-auth-mode",
+		"x-client-type",
+		"x-request-id",
+	} {
+		if values := incoming.Values(h); len(values) > 0 {
+			req.Header.Del(h)
+			for _, v := range values {
+				req.Header.Add(h, v)
+			}
+		}
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("supertokens refresh request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read refresh response: %w", err)
+	}
+
+	return &SessionRefreshResult{
+		StatusCode: resp.StatusCode,
+		Headers:    resp.Header.Clone(),
+		Body:       body,
+	}, nil
 }
 
 // RevokeSession revokes a specific session by handle.

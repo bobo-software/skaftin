@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -513,6 +514,10 @@ func (s *Service) Logout(ctx context.Context, accessToken string) error {
 		return nil
 	}
 	return s.st.RevokeSession(ctx, sessionResp.Session.Handle)
+}
+
+func (s *Service) RefreshSession(ctx context.Context, requestHeaders http.Header) (*supertokens.SessionRefreshResult, error) {
+	return s.st.RefreshSession(ctx, requestHeaders)
 }
 
 func (s *Service) VerifyOTP(ctx context.Context, projectID int, body map[string]any) error {

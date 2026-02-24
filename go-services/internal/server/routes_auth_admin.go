@@ -37,6 +37,8 @@ func registerAuthAndAdminRoutes(
 	appAPICompatMux := http.NewServeMux()
 	authMgmtHandler.RegisterAppAPICompatibilityRoutes(appAPICompatMux)
 	mux.Handle("/app-api/auth/auth/login", auth.APIKey(pool)(appAPICompatMux))
+	mux.Handle("/app-api/auth/auth/logout", auth.APIKey(pool)(appAPICompatMux))
+	mux.Handle("/app-api/auth/session/refresh", auth.APIKey(pool)(appAPICompatMux))
 
 	// Admin: public email check + protected admin operations.
 	adminPublicMux := http.NewServeMux()

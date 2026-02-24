@@ -3,6 +3,7 @@ package authmanagement
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
@@ -68,6 +69,75 @@ func (h *Handler) LoginFromAppAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteSuccess(w, 200, "Login successful", result)
+}
+
+// LogoutFromAppAPI handles legacy client logout URL while serving from Go.
+// Expected path: POST /app-api/auth/auth/logout (behind API key middleware).
+func (h *Handler) LogoutFromAppAPI(w http.ResponseWriter, r *http.Request) {
+	authCtx := auth.GetAuthContext(r)
+	if authCtx == nil || authCtx.ProjectID <= 0 {
+		httputil.WriteError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	// Reuse existing logout token extraction + revoke behavior.
+	h.LogoutSession(w, r)
+}
+
+// RefreshFromAppAPI handles the legacy app-api refresh path by bridging directly
+// to SuperTokens Core and forwarding status/body/cookies transparently.
+// Expected path: POST /app-api/auth/session/refresh (behind API key middleware).
+func (h *Handler) RefreshFromAppAPI(w http.ResponseWriter, r *http.Request) {
+	authCtx := auth.GetAuthContext(r)
+	if authCtx == nil || authCtx.ProjectID <= 0 {
+		httputil.WriteError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	result, err := h.service.RefreshSession(r.Context(), r.Header)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "Session refresh unavailable")
+		return
+	}
+	if shouldReturnRefreshCompatibilitySuccess(result.StatusCode, result.Body) {
+		httputil.WriteSuccess(w, http.StatusOK, "Session refresh is handled automatically by SuperTokens", map[string]any{
+			"message": "No action needed - sessions are automatically refreshed",
+		})
+		return
+	}
+
+	copyRefreshResponseHeaders(w.Header(), result.Headers)
+	w.WriteHeader(result.StatusCode)
+	if len(result.Body) > 0 {
+		_, _ = w.Write(result.Body)
+	}
+}
+
+func copyRefreshResponseHeaders(dst, src http.Header) {
+	for _, h := range []string{
+		"Set-Cookie",
+		"Content-Type",
+		"front-token",
+		"anti-csrf",
+		"id-refresh-token",
+		"st-access-token",
+		"st-refresh-token",
+	} {
+		if values := src.Values(h); len(values) > 0 {
+			dst.Del(h)
+			for _, v := range values {
+				dst.Add(h, v)
+			}
+		}
+	}
+}
+
+func shouldReturnRefreshCompatibilitySuccess(statusCode int, body []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	msg := strings.ToLower(string(body))
+	return strings.Contains(msg, "field name 'refreshtoken' is invalid") ||
+		strings.Contains(msg, "invalid json input")
 }
 
 func compatibilityNormalizeLoginBody(body map[string]any) {
@@ -187,7 +257,7 @@ func (h *Handler) LogoutSession(w http.ResponseWriter, r *http.Request) {
 	if token != "" {
 		_ = h.service.Logout(r.Context(), token)
 	}
-	httputil.WriteSuccess(w, 200, "Logged out", nil)
+	httputil.WriteSuccess(w, 200, "Logged out", map[string]any{})
 }
 
 func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {

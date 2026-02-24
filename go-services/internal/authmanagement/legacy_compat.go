@@ -169,7 +169,7 @@ func (h *Handler) LegacyLogout(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusInternalServerError, "Failed to logout")
 		return
 	}
-	httputil.WriteSuccess(w, http.StatusOK, "Logged out successfully", nil)
+	httputil.WriteSuccess(w, http.StatusOK, "Logged out successfully", map[string]any{})
 }
 
 func extractLegacyToken(r *http.Request) string {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/model"
+	"github.com/skaftin/go-services/internal/supertokens"
 )
 
 func TestLoginFromAppAPI_Success(t *testing.T) {
@@ -97,5 +98,138 @@ func TestLoginFromAppAPI_LoginErrors(t *testing.T) {
 				t.Fatalf("status = %d, want %d. body=%s", rec.Code, tc.wantStatus, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestLogoutFromAppAPI_MissingAuthContext(t *testing.T) {
+	h := &Handler{}
+
+	req := httptest.NewRequest(http.MethodPost, "/app-api/auth/auth/logout", bytes.NewReader([]byte(`{}`)))
+	rec := httptest.NewRecorder()
+
+	h.LogoutFromAppAPI(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestLogoutFromAppAPI_SuccessWithoutToken(t *testing.T) {
+	h := &Handler{}
+
+	req := httptest.NewRequest(http.MethodPost, "/app-api/auth/auth/logout", bytes.NewReader([]byte(`{}`)))
+	req = req.WithContext(context.WithValue(req.Context(), auth.AuthContextKey, &model.AuthContext{ProjectID: 42}))
+	rec := httptest.NewRecorder()
+
+	h.LogoutFromAppAPI(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d. body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response JSON: %v", err)
+	}
+	data, ok := resp["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected data object, got %#v", resp["data"])
+	}
+	if len(data) != 0 {
+		t.Fatalf("expected empty data object, got %#v", data)
+	}
+}
+
+func TestRefreshFromAppAPI_MissingAuthContext(t *testing.T) {
+	h := &Handler{}
+
+	req := httptest.NewRequest(http.MethodPost, "/app-api/auth/session/refresh", nil)
+	rec := httptest.NewRecorder()
+
+	h.RefreshFromAppAPI(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestRefreshFromAppAPI_ForwardsSuperTokensResponse(t *testing.T) {
+	stCore := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/recipe/session/refresh" {
+			t.Fatalf("path = %s, want /recipe/session/refresh", r.URL.Path)
+		}
+		if got := r.Header.Get("rid"); got != "session" {
+			t.Fatalf("rid = %q, want session", got)
+		}
+		if got := r.Header.Get("Cookie"); got == "" {
+			t.Fatalf("expected Cookie header to be forwarded")
+		}
+		if got := r.Header.Get("anti-csrf"); got != "csrf-token" {
+			t.Fatalf("anti-csrf = %q, want csrf-token", got)
+		}
+
+		w.Header().Add("Set-Cookie", "sAccessToken=abc; Path=/; HttpOnly")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"OK"}`))
+	}))
+	defer stCore.Close()
+
+	h := &Handler{
+		service: &Service{
+			st: supertokens.NewClient(stCore.URL, ""),
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/app-api/auth/session/refresh", nil)
+	req.Header.Set("Cookie", "sRefreshToken=xyz")
+	req.Header.Set("anti-csrf", "csrf-token")
+	req = req.WithContext(context.WithValue(req.Context(), auth.AuthContextKey, &model.AuthContext{ProjectID: 2}))
+	rec := httptest.NewRecorder()
+
+	h.RefreshFromAppAPI(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d. body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if got := rec.Header().Get("Set-Cookie"); got == "" {
+		t.Fatalf("expected Set-Cookie to be forwarded")
+	}
+	if rec.Body.String() != `{"status":"OK"}` {
+		t.Fatalf("body = %s, want %s", rec.Body.String(), `{"status":"OK"}`)
+	}
+}
+
+func TestRefreshFromAppAPI_InvalidRefreshTokenPayloadFallsBackToCompatibilitySuccess(t *testing.T) {
+	stCore := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"message":"Field name 'refreshToken' is invalid in JSON input"}`))
+	}))
+	defer stCore.Close()
+
+	h := &Handler{
+		service: &Service{
+			st: supertokens.NewClient(stCore.URL, ""),
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/app-api/auth/session/refresh", nil)
+	req = req.WithContext(context.WithValue(req.Context(), auth.AuthContextKey, &model.AuthContext{ProjectID: 2}))
+	rec := httptest.NewRecorder()
+
+	h.RefreshFromAppAPI(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d. body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response JSON: %v", err)
+	}
+	if success, _ := resp["success"].(bool); !success {
+		t.Fatalf("expected success=true, got %#v", resp["success"])
 	}
 }

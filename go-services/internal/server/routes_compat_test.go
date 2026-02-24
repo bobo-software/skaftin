@@ -32,6 +32,58 @@ func TestAppAPILoginSpecificRouteWinsOverPrefix(t *testing.T) {
 	}
 }
 
+func TestAppAPILogoutSpecificRouteWinsOverPrefix(t *testing.T) {
+	mux := http.NewServeMux()
+
+	var specificHit, prefixHit bool
+
+	mux.HandleFunc("POST /app-api/auth/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+		specificHit = true
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefixHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/app-api/auth/auth/logout", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if !specificHit {
+		t.Fatalf("expected specific app-api logout route to handle request")
+	}
+	if prefixHit {
+		t.Fatalf("expected prefix /app-api/ route to not handle specific logout request")
+	}
+}
+
+func TestAppAPIRefreshSpecificRouteWinsOverPrefix(t *testing.T) {
+	mux := http.NewServeMux()
+
+	var specificHit, prefixHit bool
+
+	mux.HandleFunc("POST /app-api/auth/session/refresh", func(w http.ResponseWriter, r *http.Request) {
+		specificHit = true
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefixHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/app-api/auth/session/refresh", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if !specificHit {
+		t.Fatalf("expected specific app-api refresh route to handle request")
+	}
+	if prefixHit {
+		t.Fatalf("expected prefix /app-api/ route to not handle specific refresh request")
+	}
+}
+
 func TestOtherAppAPIRoutesStillUsePrefixHandler(t *testing.T) {
 	mux := http.NewServeMux()
 

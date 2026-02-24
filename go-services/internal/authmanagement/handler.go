@@ -52,6 +52,8 @@ func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 // preserve legacy client URL shape while being handled in Go.
 func (h *Handler) RegisterAppAPICompatibilityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /app-api/auth/auth/login", h.LoginFromAppAPI)
+	mux.HandleFunc("POST /app-api/auth/auth/logout", h.LogoutFromAppAPI)
+	mux.HandleFunc("POST /app-api/auth/session/refresh", h.RefreshFromAppAPI)
 }
 
 // RegisterProtectedRoutes registers JWT + project access routes.
