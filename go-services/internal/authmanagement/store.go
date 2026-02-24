@@ -20,6 +20,49 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
+func (s *Store) getUserRoleUserIDColumn(ctx context.Context, schema string) (string, error) {
+	var columnName string
+	err := s.pool.QueryRow(ctx, `
+		SELECT column_name
+		FROM information_schema.columns
+		WHERE table_schema = $1
+		  AND table_name = 'skaftin_system_user_roles'
+		  AND column_name IN ('app_user_id', 'user_id')
+		ORDER BY CASE WHEN column_name = 'app_user_id' THEN 0 ELSE 1 END
+		LIMIT 1
+	`, schema).Scan(&columnName)
+	if err == pgx.ErrNoRows {
+		return "", fmt.Errorf("skaftin_system_user_roles has no app_user_id/user_id column in schema %s", schema)
+	}
+	return columnName, err
+}
+
+func (s *Store) ensureCustomFieldsCompatibility(ctx context.Context, schema string) error {
+	tableIdent := fmt.Sprintf("%s.skaftin_system_user_custom_fields", pgx.Identifier{schema}.Sanitize())
+	_, err := s.pool.Exec(ctx, fmt.Sprintf(`
+		ALTER TABLE %s
+		ADD COLUMN IF NOT EXISTS field_label VARCHAR(255),
+		ADD COLUMN IF NOT EXISTS is_required BOOLEAN DEFAULT false,
+		ADD COLUMN IF NOT EXISTS default_value TEXT,
+		ADD COLUMN IF NOT EXISTS options JSONB,
+		ADD COLUMN IF NOT EXISTS reference_table VARCHAR(255),
+		ADD COLUMN IF NOT EXISTS reference_column VARCHAR(255),
+		ADD COLUMN IF NOT EXISTS validation_rules JSONB,
+		ADD COLUMN IF NOT EXISTS display_order INTEGER DEFAULT 0,
+		ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true
+	`, tableIdent))
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, fmt.Sprintf(`
+		UPDATE %s
+		SET field_label = COALESCE(field_label, field_name),
+		    is_active = COALESCE(is_active, true),
+		    display_order = COALESCE(display_order, 0)
+	`, tableIdent))
+	return err
+}
+
 // ─── Schema ──────────────────────────────────────────────────────────
 
 func (s *Store) GetProjectSchema(ctx context.Context, projectID int) (string, error) {
@@ -105,15 +148,19 @@ func (s *Store) UpdateAuthSettings(ctx context.Context, projectID int, fields ma
 func (s *Store) ListRoles(ctx context.Context, schema string, includeUserCount bool) ([]Role, error) {
 	var query string
 	if includeUserCount {
+		userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+		if err != nil {
+			return nil, err
+		}
 		query = fmt.Sprintf(`
 			SELECT r.id, r.role_name, r.role_key, r.description, r.permissions,
 			       r.session_duration_minutes, r.is_system_role,
 			       r.organisation_field_name, r.organisation_lookup_table, r.organisation_lookup_field,
-			       r.created_at, r.updated_at, COUNT(DISTINCT ur.app_user_id)::int
+			       r.created_at, r.updated_at, COUNT(DISTINCT ur.%[2]s)::int
 			FROM %[1]s.skaftin_system_roles r
 			LEFT JOIN %[1]s.skaftin_system_user_roles ur ON r.id = ur.role_id
 			GROUP BY r.id ORDER BY r.is_system_role DESC, r.created_at ASC`,
-			pgx.Identifier{schema}.Sanitize())
+			pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
 	} else {
 		query = fmt.Sprintf(`
 			SELECT id, role_name, role_key, description, permissions,
@@ -153,18 +200,22 @@ func (s *Store) ListRoles(ctx context.Context, schema string, includeUserCount b
 }
 
 func (s *Store) GetRole(ctx context.Context, schema string, roleID int) (*Role, error) {
+	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(`
 		SELECT r.id, r.role_name, r.role_key, r.description, r.permissions,
 		       r.session_duration_minutes, r.is_system_role,
 		       r.organisation_field_name, r.organisation_lookup_table, r.organisation_lookup_field,
-		       r.created_at, r.updated_at, COUNT(DISTINCT ur.app_user_id)::int
+		       r.created_at, r.updated_at, COUNT(DISTINCT ur.%[2]s)::int
 		FROM %[1]s.skaftin_system_roles r
 		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON r.id = ur.role_id
 		WHERE r.id = $1 GROUP BY r.id`,
-		pgx.Identifier{schema}.Sanitize())
+		pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
 
 	var r Role
-	err := s.pool.QueryRow(ctx, query, roleID).Scan(
+	err = s.pool.QueryRow(ctx, query, roleID).Scan(
 		&r.ID, &r.RoleName, &r.RoleKey, &r.Description, &r.Permissions,
 		&r.SessionDurationMinutes, &r.IsSystemRole,
 		&r.OrganisationFieldName, &r.OrganisationLookupTable, &r.OrganisationLookupField,
@@ -293,6 +344,9 @@ func (s *Store) GetAllSessionDurations(ctx context.Context, schema string) ([]ma
 // ─── Custom Fields ───────────────────────────────────────────────────
 
 func (s *Store) ListCustomFields(ctx context.Context, schema string, includeInactive bool) ([]CustomField, error) {
+	if err := s.ensureCustomFieldsCompatibility(ctx, schema); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(`SELECT id, field_name, field_label, field_type, is_required, default_value,
 		options, reference_table, reference_column, validation_rules, display_order, is_active, created_at, updated_at
 		FROM %s.skaftin_system_user_custom_fields`, pgx.Identifier{schema}.Sanitize())
@@ -321,6 +375,9 @@ func (s *Store) ListCustomFields(ctx context.Context, schema string, includeInac
 }
 
 func (s *Store) GetCustomField(ctx context.Context, schema string, fieldID int) (*CustomField, error) {
+	if err := s.ensureCustomFieldsCompatibility(ctx, schema); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(`SELECT id, field_name, field_label, field_type, is_required, default_value,
 		options, reference_table, reference_column, validation_rules, display_order, is_active, created_at, updated_at
 		FROM %s.skaftin_system_user_custom_fields WHERE id = $1`, pgx.Identifier{schema}.Sanitize())
@@ -350,6 +407,9 @@ func (s *Store) CustomFieldExistsByName(ctx context.Context, schema, fieldName s
 }
 
 func (s *Store) CreateCustomField(ctx context.Context, schema string, f CustomField) (*CustomField, error) {
+	if err := s.ensureCustomFieldsCompatibility(ctx, schema); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_custom_fields
 		(field_name, field_label, field_type, is_required, default_value, options, reference_table, reference_column, validation_rules, display_order, is_active)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
@@ -366,6 +426,9 @@ func (s *Store) CreateCustomField(ctx context.Context, schema string, f CustomFi
 }
 
 func (s *Store) UpdateCustomField(ctx context.Context, schema string, fieldID int, fields map[string]any) (*CustomField, error) {
+	if err := s.ensureCustomFieldsCompatibility(ctx, schema); err != nil {
+		return nil, err
+	}
 	setClauses := make([]string, 0, len(fields))
 	args := make([]any, 0, len(fields)+1)
 	i := 1
@@ -393,6 +456,9 @@ func (s *Store) UpdateCustomField(ctx context.Context, schema string, fieldID in
 }
 
 func (s *Store) DeleteCustomField(ctx context.Context, schema string, fieldID int, permanent bool) (*CustomField, error) {
+	if err := s.ensureCustomFieldsCompatibility(ctx, schema); err != nil {
+		return nil, err
+	}
 	if permanent {
 		query := fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_custom_fields WHERE id = $1
 			RETURNING id, field_name, field_label, field_type, is_required, default_value,
@@ -479,6 +545,10 @@ func (s *Store) GetAvailableTables(ctx context.Context, schema string) ([]map[st
 // ─── Users ───────────────────────────────────────────────────────────
 
 func (s *Store) ListUsers(ctx context.Context, schema string, filters map[string]any, limit, offset int) ([]AppUser, int, error) {
+	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return nil, 0, err
+	}
 	baseQuery := fmt.Sprintf(`
 		SELECT u.id, u.supertokens_user_id, u.name, u.last_name, u.email, u.password, u.phone,
 		       u.metadata, u.organisation_id, u.is_active, u.email_verified, u.phone_verified,
@@ -487,9 +557,9 @@ func (s *Store) ListUsers(ctx context.Context, schema string, filters map[string
 		       COALESCE(json_agg(json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key))
 		         FILTER (WHERE r.id IS NOT NULL), '[]') as roles
 		FROM %[1]s.skaftin_system_users u
-		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.%[2]s
 		LEFT JOIN %[1]s.skaftin_system_roles r ON ur.role_id = r.id`,
-		pgx.Identifier{schema}.Sanitize())
+		pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
 
 	whereClauses := []string{}
 	args := []any{}
@@ -518,10 +588,10 @@ func (s *Store) ListUsers(ctx context.Context, schema string, filters map[string
 	}
 
 	countQuery := fmt.Sprintf(`SELECT COUNT(DISTINCT u.id) FROM %[1]s.skaftin_system_users u
-		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.app_user_id %s`,
-		pgx.Identifier{schema}.Sanitize(), where)
+		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.%[2]s %s`,
+		pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize(), where)
 	var total int
-	if err := s.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err = s.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -550,6 +620,10 @@ func (s *Store) ListUsers(ctx context.Context, schema string, filters map[string
 }
 
 func (s *Store) GetUser(ctx context.Context, schema string, userID int) (*AppUser, error) {
+	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(`
 		SELECT u.id, u.supertokens_user_id, u.name, u.last_name, u.email, u.password, u.phone,
 		       u.metadata, u.organisation_id, u.is_active, u.email_verified, u.phone_verified,
@@ -558,11 +632,11 @@ func (s *Store) GetUser(ctx context.Context, schema string, userID int) (*AppUse
 		       COALESCE(json_agg(json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key))
 		         FILTER (WHERE r.id IS NOT NULL), '[]') as roles
 		FROM %[1]s.skaftin_system_users u
-		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.%[2]s
 		LEFT JOIN %[1]s.skaftin_system_roles r ON ur.role_id = r.id
-		WHERE u.id = $1 GROUP BY u.id`, pgx.Identifier{schema}.Sanitize())
+		WHERE u.id = $1 GROUP BY u.id`, pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
 	var u AppUser
-	err := s.pool.QueryRow(ctx, query, userID).Scan(
+	err = s.pool.QueryRow(ctx, query, userID).Scan(
 		&u.ID, &u.SupertokensUserID, &u.Name, &u.LastName, &u.Email, &u.Password, &u.Phone,
 		&u.Metadata, &u.OrganisationID, &u.IsActive, &u.EmailVerified, &u.PhoneVerified,
 		&u.DeletionRequestedAt, &u.DeletionScheduledAt, &u.DeletionReason, &u.DeletedAt,
@@ -602,6 +676,10 @@ func (s *Store) GetUserByPhone(ctx context.Context, schema, phone string) (*AppU
 }
 
 func (s *Store) GetUserByCredential(ctx context.Context, schema, method, value string) (*AppUser, error) {
+	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return nil, err
+	}
 	var col string
 	switch method {
 	case "email":
@@ -623,12 +701,12 @@ func (s *Store) GetUserByCredential(ctx context.Context, schema, method, value s
 		         'organisation_lookup_field', r.organisation_lookup_field, 'session_duration_minutes', r.session_duration_minutes))
 		         FILTER (WHERE r.id IS NOT NULL), '[]') as roles
 		FROM %[1]s.skaftin_system_users u
-		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.%[3]s
 		LEFT JOIN %[1]s.skaftin_system_roles r ON ur.role_id = r.id
 		WHERE u.%[2]s = $1 GROUP BY u.id`,
-		pgx.Identifier{schema}.Sanitize(), pgx.Identifier{col}.Sanitize())
+		pgx.Identifier{schema}.Sanitize(), pgx.Identifier{col}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
 	var u AppUser
-	err := s.pool.QueryRow(ctx, query, value).Scan(
+	err = s.pool.QueryRow(ctx, query, value).Scan(
 		&u.ID, &u.SupertokensUserID, &u.Name, &u.Email, &u.Phone, &u.Password, &u.Metadata,
 		&u.CustomField1, &u.CustomField2, &u.IsActive, &u.EmailVerified, &u.PhoneVerified, &u.OrganisationID, &u.Roles)
 	if err == pgx.ErrNoRows {
@@ -638,17 +716,21 @@ func (s *Store) GetUserByCredential(ctx context.Context, schema, method, value s
 }
 
 func (s *Store) GetUserBySuperTokensID(ctx context.Context, schema, stID string) (*AppUser, error) {
+	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(`
 		SELECT u.id, u.supertokens_user_id, u.name, u.email, u.phone, u.metadata,
 		       u.custom_field_1, u.custom_field_2, u.is_active, u.email_verified, u.phone_verified, u.organisation_id,
 		       COALESCE(json_agg(json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key))
 		         FILTER (WHERE r.id IS NOT NULL), '[]') as roles
 		FROM %[1]s.skaftin_system_users u
-		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.%[2]s
 		LEFT JOIN %[1]s.skaftin_system_roles r ON ur.role_id = r.id
-		WHERE u.supertokens_user_id = $1 GROUP BY u.id`, pgx.Identifier{schema}.Sanitize())
+		WHERE u.supertokens_user_id = $1 GROUP BY u.id`, pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
 	var u AppUser
-	err := s.pool.QueryRow(ctx, query, stID).Scan(
+	err = s.pool.QueryRow(ctx, query, stID).Scan(
 		&u.ID, &u.SupertokensUserID, &u.Name, &u.Email, &u.Phone, &u.Metadata,
 		&u.CustomField1, &u.CustomField2, &u.IsActive, &u.EmailVerified, &u.PhoneVerified, &u.OrganisationID, &u.Roles)
 	if err == pgx.ErrNoRows {
@@ -700,9 +782,13 @@ func (s *Store) SoftDeleteUser(ctx context.Context, schema string, userID int) e
 }
 
 func (s *Store) HardDeleteUser(ctx context.Context, schema string, userID int) error {
-	_, err := s.pool.Exec(ctx,
-		fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE app_user_id = $1`,
-			pgx.Identifier{schema}.Sanitize()), userID)
+	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx,
+		fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE %s = $1`,
+			pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize()), userID)
 	if err != nil {
 		return err
 	}
@@ -770,10 +856,14 @@ func (s *Store) SetUserSuperTokensID(ctx context.Context, schema string, userID 
 }
 
 func (s *Store) GetUsersByRole(ctx context.Context, schema string, roleID int) ([]AppUser, error) {
+	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(`SELECT u.id, u.name, u.email, u.phone, u.is_active, u.created_at
 		FROM %[1]s.skaftin_system_users u
-		INNER JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.app_user_id
-		WHERE ur.role_id = $1 ORDER BY u.created_at DESC`, pgx.Identifier{schema}.Sanitize())
+		INNER JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.%[2]s
+		WHERE ur.role_id = $1 ORDER BY u.created_at DESC`, pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
 	rows, err := s.pool.Query(ctx, query, roleID)
 	if err != nil {
 		return nil, err
@@ -793,10 +883,14 @@ func (s *Store) GetUsersByRole(ctx context.Context, schema string, roleID int) (
 // ─── User Roles ──────────────────────────────────────────────────────
 
 func (s *Store) AssignRole(ctx context.Context, schema string, userID, roleID int, assignedBy string) error {
+	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return err
+	}
 	var existing int
-	err := s.pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT id FROM %s.skaftin_system_user_roles WHERE app_user_id = $1 AND role_id = $2`,
-			pgx.Identifier{schema}.Sanitize()), userID, roleID).Scan(&existing)
+	err = s.pool.QueryRow(ctx,
+		fmt.Sprintf(`SELECT id FROM %s.skaftin_system_user_roles WHERE %s = $1 AND role_id = $2`,
+			pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize()), userID, roleID).Scan(&existing)
 	if err == nil {
 		return nil
 	}
@@ -804,15 +898,19 @@ func (s *Store) AssignRole(ctx context.Context, schema string, userID, roleID in
 		return err
 	}
 	_, err = s.pool.Exec(ctx,
-		fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_roles (app_user_id, role_id, assigned_by) VALUES ($1, $2, $3)`,
-			pgx.Identifier{schema}.Sanitize()), userID, roleID, assignedBy)
+		fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_roles (%s, role_id, assigned_by) VALUES ($1, $2, $3)`,
+			pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize()), userID, roleID, assignedBy)
 	return err
 }
 
 func (s *Store) RemoveRole(ctx context.Context, schema string, userID, roleID int) (bool, error) {
+	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return false, err
+	}
 	tag, err := s.pool.Exec(ctx,
-		fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE app_user_id = $1 AND role_id = $2`,
-			pgx.Identifier{schema}.Sanitize()), userID, roleID)
+		fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE %s = $1 AND role_id = $2`,
+			pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize()), userID, roleID)
 	if err != nil {
 		return false, err
 	}
@@ -820,12 +918,16 @@ func (s *Store) RemoveRole(ctx context.Context, schema string, userID, roleID in
 }
 
 func (s *Store) GetUserRoles(ctx context.Context, schema string, userID int) ([]Role, error) {
+	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(`
 		SELECT r.id, r.role_name, r.role_key, r.description, r.permissions, r.session_duration_minutes, r.is_system_role,
 		       r.organisation_field_name, r.organisation_lookup_table, r.organisation_lookup_field, r.created_at, r.updated_at
 		FROM %[1]s.skaftin_system_roles r
 		INNER JOIN %[1]s.skaftin_system_user_roles ur ON r.id = ur.role_id
-		WHERE ur.app_user_id = $1`, pgx.Identifier{schema}.Sanitize())
+		WHERE ur.%[2]s = $1`, pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
 	rows, err := s.pool.Query(ctx, query, userID)
 	if err != nil {
 		return nil, err

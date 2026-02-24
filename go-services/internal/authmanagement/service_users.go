@@ -4,12 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/skaftin/go-services/internal/supertokens"
 	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	blockCommentPattern   = regexp.MustCompile(`(?s)/\*.*?\*/`)
+	userRolesInsertRE     = regexp.MustCompile(`(?i)\bINSERT\s+INTO\s+skaftin_system_user_roles\b`)
+	appUserIDColumnNameRE = regexp.MustCompile(`(?i)\bapp_user_id\b`)
+	userIDColumnNameRE    = regexp.MustCompile(`(?i)\buser_id\b`)
 )
 
 func (s *Service) ListUsers(ctx context.Context, projectID int, filters map[string]any, limit, offset int) ([]AppUser, int, error) {
@@ -282,72 +290,282 @@ func (s *Service) ImportUsers(ctx context.Context, projectID int, sqlContent str
 	}
 
 	if clearExisting {
-		tx.Exec(ctx, "DELETE FROM skaftin_system_user_roles")
-		tx.Exec(ctx, "DELETE FROM skaftin_system_otp_verifications")
-		tx.Exec(ctx, "DELETE FROM skaftin_system_users")
+		tablesToClear := []string{
+			"skaftin_system_user_roles",
+			"skaftin_system_otp_verifications",
+			"skaftin_system_user_custom_fields",
+			"skaftin_system_roles",
+			"skaftin_system_users",
+		}
+		for _, table := range tablesToClear {
+			exists, tableErr := tableExistsInSchema(ctx, tx, schema, table)
+			if tableErr != nil {
+				return nil, tableErr
+			}
+			if !exists {
+				continue
+			}
+			if _, execErr := tx.Exec(ctx, fmt.Sprintf("DELETE FROM %s", pgx.Identifier{table}.Sanitize())); execErr != nil {
+				return nil, execErr
+			}
+		}
 	}
 
-	statements := splitSQL(sqlContent)
+	statements := prepareImportStatements(sqlContent)
 	successCount := 0
 	errorCount := 0
 	var errors []string
 
-	for _, stmt := range statements {
-		stmt = strings.TrimSpace(stmt)
-		if stmt == "" || strings.HasPrefix(stmt, "--") {
-			continue
+	userRoleUserIDColumn, err := resolveUserRoleUserIDColumn(ctx, tx, schema)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, stmt := range statements {
+		stmt = rewriteUserRoleInsertStatement(stmt, userRoleUserIDColumn)
+		savepointName := fmt.Sprintf("import_stmt_%d", i)
+		if _, err := tx.Exec(ctx, fmt.Sprintf("SAVEPOINT %s", savepointName)); err != nil {
+			return nil, err
 		}
-		_, err := tx.Exec(ctx, stmt)
-		if err != nil {
+		_, execErr := tx.Exec(ctx, stmt)
+		if execErr != nil {
+			_, _ = tx.Exec(ctx, fmt.Sprintf("ROLLBACK TO SAVEPOINT %s", savepointName))
+			_, _ = tx.Exec(ctx, fmt.Sprintf("RELEASE SAVEPOINT %s", savepointName))
 			errorCount++
 			if len(errors) < 10 {
-				errors = append(errors, err.Error())
+				errors = append(errors, fmt.Sprintf("statement %d: %v", i+1, execErr))
 			}
-		} else {
-			successCount++
+			continue
 		}
+		if _, err := tx.Exec(ctx, fmt.Sprintf("RELEASE SAVEPOINT %s", savepointName)); err != nil {
+			return nil, err
+		}
+		successCount++
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 
+	message := fmt.Sprintf("Successfully imported %d SQL statements", successCount)
+	if errorCount > 0 {
+		message = fmt.Sprintf("Executed %d statements, %d failed", successCount, errorCount)
+	}
+
 	return map[string]any{
+		"successCount":  successCount,
+		"errorCount":    errorCount,
 		"success_count": successCount,
 		"error_count":   errorCount,
 		"errors":        errors,
+		"message":       message,
 	}, nil
+}
+
+func tableExistsInSchema(ctx context.Context, tx pgx.Tx, schema, table string) (bool, error) {
+	var exists bool
+	err := tx.QueryRow(
+		ctx,
+		`SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = $1 AND table_name = $2
+		)`,
+		schema,
+		table,
+	).Scan(&exists)
+	return exists, err
+}
+
+func resolveUserRoleUserIDColumn(ctx context.Context, tx pgx.Tx, schema string) (string, error) {
+	rows, err := tx.Query(
+		ctx,
+		`SELECT column_name
+		 FROM information_schema.columns
+		 WHERE table_schema = $1
+		   AND table_name = 'skaftin_system_user_roles'
+		   AND column_name IN ('app_user_id', 'user_id')`,
+		schema,
+	)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	columns := map[string]bool{}
+	for rows.Next() {
+		var column string
+		if scanErr := rows.Scan(&column); scanErr != nil {
+			return "", scanErr
+		}
+		columns[strings.ToLower(column)] = true
+	}
+	if rows.Err() != nil {
+		return "", rows.Err()
+	}
+	if columns["app_user_id"] {
+		return "app_user_id", nil
+	}
+	if columns["user_id"] {
+		return "user_id", nil
+	}
+	return "", nil
+}
+
+func rewriteUserRoleInsertStatement(stmt, userRoleUserIDColumn string) string {
+	if userRoleUserIDColumn == "" || !userRolesInsertRE.MatchString(stmt) {
+		return stmt
+	}
+	if userRoleUserIDColumn == "user_id" {
+		return appUserIDColumnNameRE.ReplaceAllString(stmt, "user_id")
+	}
+	return userIDColumnNameRE.ReplaceAllString(stmt, "app_user_id")
+}
+
+func shouldSkipImportStatement(stmt string) bool {
+	normalized := strings.ToUpper(strings.Join(strings.Fields(stmt), " "))
+	switch {
+	case normalized == "BEGIN":
+		return true
+	case normalized == "COMMIT":
+		return true
+	case normalized == "ROLLBACK":
+		return true
+	case strings.HasPrefix(normalized, "SAVEPOINT "):
+		return true
+	case strings.HasPrefix(normalized, "RELEASE SAVEPOINT "):
+		return true
+	case strings.HasPrefix(normalized, "ROLLBACK TO SAVEPOINT "):
+		return true
+	case strings.HasPrefix(normalized, "SET SEARCH_PATH "):
+		return true
+	default:
+		return false
+	}
+}
+
+func prepareImportStatements(sqlContent string) []string {
+	cleaned := stripLineCommentsOutsideQuotes(sqlContent)
+	cleaned = blockCommentPattern.ReplaceAllString(cleaned, "")
+
+	rawStatements := splitSQL(cleaned)
+	statements := make([]string, 0, len(rawStatements))
+	for _, stmt := range rawStatements {
+		trimmed := strings.TrimSpace(stmt)
+		if trimmed == "" || shouldSkipImportStatement(trimmed) {
+			continue
+		}
+		statements = append(statements, trimmed)
+	}
+
+	return statements
+}
+
+func stripLineCommentsOutsideQuotes(input string) string {
+	lines := strings.Split(input, "\n")
+	for idx, line := range lines {
+		inSingleQuote := false
+		inDoubleQuote := false
+		commentPos := -1
+		for i := 0; i < len(line)-1; i++ {
+			ch := line[i]
+			next := line[i+1]
+			if ch == '\'' && !inDoubleQuote {
+				if inSingleQuote && next == '\'' {
+					i++
+					continue
+				}
+				inSingleQuote = !inSingleQuote
+				continue
+			}
+			if ch == '"' && !inSingleQuote {
+				inDoubleQuote = !inDoubleQuote
+				continue
+			}
+			if ch == '-' && next == '-' && !inSingleQuote && !inDoubleQuote {
+				commentPos = i
+				break
+			}
+		}
+		if commentPos >= 0 {
+			lines[idx] = line[:commentPos]
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func splitSQL(content string) []string {
 	var stmts []string
 	var current strings.Builder
-	inQuote := false
-	var quoteChar rune
+	inSingleQuote := false
+	inDoubleQuote := false
+	inEscapeString := false
 
-	for _, ch := range content {
-		if inQuote {
-			current.WriteRune(ch)
-			if ch == quoteChar {
-				inQuote = false
+	for i := 0; i < len(content); i++ {
+		ch := content[i]
+		next := byte(0)
+		if i+1 < len(content) {
+			next = content[i+1]
+		}
+
+		if inEscapeString && ch == '\\' {
+			current.WriteByte(ch)
+			if next != 0 {
+				current.WriteByte(next)
+				i++
 			}
 			continue
 		}
-		if ch == '\'' || ch == '"' {
-			inQuote = true
-			quoteChar = ch
-			current.WriteRune(ch)
+
+		if !inSingleQuote && !inDoubleQuote && ch == 'E' && next == '\'' {
+			inEscapeString = true
+			inSingleQuote = true
+			current.WriteByte(ch)
+			current.WriteByte(next)
+			i++
 			continue
 		}
-		if ch == ';' {
-			stmts = append(stmts, current.String())
+
+		if ch == '\'' && !inDoubleQuote {
+			if inEscapeString && next == '\'' {
+				inEscapeString = false
+				inSingleQuote = false
+				current.WriteByte(ch)
+				current.WriteByte(next)
+				i++
+				continue
+			}
+			if !inEscapeString && inSingleQuote && next == '\'' {
+				current.WriteByte(ch)
+				current.WriteByte(next)
+				i++
+				continue
+			}
+			inSingleQuote = !inSingleQuote
+			current.WriteByte(ch)
+			continue
+		}
+
+		if ch == '"' && !inSingleQuote {
+			inDoubleQuote = !inDoubleQuote
+			current.WriteByte(ch)
+			continue
+		}
+
+		if ch == ';' && !inSingleQuote && !inDoubleQuote {
+			stmt := strings.TrimSpace(current.String())
+			if stmt != "" {
+				stmts = append(stmts, stmt)
+			}
 			current.Reset()
 			continue
 		}
-		current.WriteRune(ch)
+
+		current.WriteByte(ch)
 	}
-	if s := current.String(); strings.TrimSpace(s) != "" {
-		stmts = append(stmts, s)
+
+	if stmt := strings.TrimSpace(current.String()); stmt != "" {
+		stmts = append(stmts, stmt)
 	}
 	return stmts
 }

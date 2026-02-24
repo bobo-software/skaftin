@@ -94,6 +94,33 @@ class AuthUsersController {
   }
 
   /**
+   * Resolve the user foreign-key column in skaftin_system_user_roles.
+   * Some schemas still use user_id while newer ones use app_user_id.
+   */
+  private static async getUserRoleUserIdColumn(schemaName: string): Promise<'app_user_id' | 'user_id'> {
+    const result = await AuthUsersController.pool.query(
+      `
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = $1
+          AND table_name = 'skaftin_system_user_roles'
+          AND column_name IN ('app_user_id', 'user_id')
+      `,
+      [schemaName]
+    );
+
+    const availableColumns = new Set(result.rows.map((row: { column_name: string }) => row.column_name));
+    if (availableColumns.has('app_user_id')) {
+      return 'app_user_id';
+    }
+    if (availableColumns.has('user_id')) {
+      return 'user_id';
+    }
+
+    throw new Error(`Neither app_user_id nor user_id exists on ${schemaName}.skaftin_system_user_roles`);
+  }
+
+  /**
    * List all users for a project with filtering and pagination
    * GET /api/auth/:projectId/users (SuperTokens)
    * GET /app-api/auth/users (API key)
@@ -118,6 +145,7 @@ class AuthUsersController {
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const userRoleUserIdColumn = await AuthUsersController.getUserRoleUserIdColumn(schemaName);
 
       // Flatten nested query parameters (Express parses metadata.association_id as nested object)
       // Convert { metadata: { association_id: '1' } } to { 'metadata.association_id': '1' }
@@ -192,7 +220,7 @@ class AuthUsersController {
 
         whereConditions.push(`EXISTS (
           SELECT 1 FROM ${schemaName}.skaftin_system_user_roles ur 
-          WHERE ur.app_user_id = u.id AND ur.role_id = $${paramIndex}
+          WHERE ur.${userRoleUserIdColumn} = u.id AND ur.role_id = $${paramIndex}
         )`);
         queryParams.push(parseInt(role_id as string));
         paramIndex++;
@@ -333,7 +361,7 @@ class AuthUsersController {
             '[]'
           ) as roles
         FROM ${schemaName}.skaftin_system_users u
-        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${userRoleUserIdColumn}
         LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         ${whereClause}
         GROUP BY u.id
@@ -404,6 +432,7 @@ class AuthUsersController {
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const userRoleUserIdColumn = await AuthUsersController.getUserRoleUserIdColumn(schemaName);
 
       const userQuery = `
         SELECT 
@@ -420,7 +449,7 @@ class AuthUsersController {
             '[]'
           ) as roles
         FROM ${schemaName}.skaftin_system_users u
-        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${userRoleUserIdColumn}
         LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         WHERE u.id = $1
         GROUP BY u.id
@@ -464,6 +493,7 @@ class AuthUsersController {
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const userRoleUserIdColumn = await AuthUsersController.getUserRoleUserIdColumn(schemaName);
 
       // Get user password (only for admin users)
       const result = await AuthUsersController.pool.query(
@@ -689,6 +719,7 @@ class AuthUsersController {
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const userRoleUserIdColumn = await AuthUsersController.getUserRoleUserIdColumn(schemaName);
 
       // Check if duplicate emails are allowed (only if email is provided)
       if (email) {
@@ -759,7 +790,7 @@ class AuthUsersController {
             '[]'
           ) as roles
         FROM ${schemaName}.skaftin_system_users u
-        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${userRoleUserIdColumn}
         LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         WHERE u.id = $1
         GROUP BY u.id
@@ -802,6 +833,7 @@ class AuthUsersController {
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const userRoleUserIdColumn = await AuthUsersController.getUserRoleUserIdColumn(schemaName);
 
       // Check available columns in the users table
       const columnsResult = await AuthUsersController.pool.query(
@@ -928,7 +960,7 @@ class AuthUsersController {
             '[]'
           ) as roles
         FROM ${schemaName}.skaftin_system_users u
-        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${userRoleUserIdColumn}
         LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         WHERE u.id = $1
         GROUP BY u.id
@@ -969,6 +1001,7 @@ class AuthUsersController {
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const userRoleUserIdColumn = await AuthUsersController.getUserRoleUserIdColumn(schemaName);
 
       const isPermanent = permanent === 'true';
 
@@ -1022,6 +1055,7 @@ class AuthUsersController {
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const userRoleUserIdColumn = await AuthUsersController.getUserRoleUserIdColumn(schemaName);
 
       // Check if role exists
       const roleCheck = await AuthUsersController.pool.query(
@@ -1036,7 +1070,7 @@ class AuthUsersController {
       // Check if role assignment already exists
       const existingAssignment = await AuthUsersController.pool.query(
         `SELECT id FROM ${schemaName}.skaftin_system_user_roles 
-         WHERE app_user_id = $1 AND role_id = $2`,
+         WHERE ${userRoleUserIdColumn} = $1 AND role_id = $2`,
         [parseInt(userId), role_id]
       );
 
@@ -1047,7 +1081,7 @@ class AuthUsersController {
       // Assign role with error handling for sequence sync issues
       try {
         await AuthUsersController.pool.query(
-          `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id, assigned_by)
+          `INSERT INTO ${schemaName}.skaftin_system_user_roles (${userRoleUserIdColumn}, role_id, assigned_by)
            VALUES ($1, $2, $3)`,
           [parseInt(userId), role_id, req.user.userId]
         );
@@ -1068,7 +1102,7 @@ class AuthUsersController {
           // Check again if assignment exists (might have been created by another process)
           const recheckAssignment = await AuthUsersController.pool.query(
             `SELECT id FROM ${schemaName}.skaftin_system_user_roles 
-             WHERE app_user_id = $1 AND role_id = $2`,
+             WHERE ${userRoleUserIdColumn} = $1 AND role_id = $2`,
             [parseInt(userId), role_id]
           );
 
@@ -1078,7 +1112,7 @@ class AuthUsersController {
 
           // Retry the insert after fixing the sequence
           await AuthUsersController.pool.query(
-            `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id, assigned_by)
+            `INSERT INTO ${schemaName}.skaftin_system_user_roles (${userRoleUserIdColumn}, role_id, assigned_by)
              VALUES ($1, $2, $3)`,
             [parseInt(userId), role_id, req.user.userId]
           );
@@ -1115,11 +1149,12 @@ class AuthUsersController {
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const userRoleUserIdColumn = await AuthUsersController.getUserRoleUserIdColumn(schemaName);
 
       // Remove role
       const result = await AuthUsersController.pool.query(
         `DELETE FROM ${schemaName}.skaftin_system_user_roles 
-         WHERE app_user_id = $1 AND role_id = $2`,
+         WHERE ${userRoleUserIdColumn} = $1 AND role_id = $2`,
         [parseInt(userId), parseInt(roleId)]
       );
 
@@ -1154,11 +1189,12 @@ class AuthUsersController {
       if (!schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const userRoleUserIdColumn = await AuthUsersController.getUserRoleUserIdColumn(schemaName);
 
       const usersQuery = `
         SELECT u.*
         FROM ${schemaName}.skaftin_system_users u
-        INNER JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        INNER JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${userRoleUserIdColumn}
         WHERE ur.role_id = $1
         ORDER BY u.created_at DESC
       `;
@@ -1503,219 +1539,6 @@ class AuthUsersController {
     }
   }
 
-  /**
-   * Import users from SQL dump
-   * POST /api/auth/:projectId/users/import
-   */
-  static async importUsers(req: SuperTokensAuthenticatedRequest, res: Response) {
-    try {
-      const projectId = parseInt(req.params.projectId);
-      if (!projectId) {
-        return ResponseUtils.error(res, 'Project ID is required', null, null, 400);
-      }
-
-      const { sqlContent, clearExisting = false } = req.body;
-
-      if (!sqlContent || typeof sqlContent !== 'string') {
-        return ResponseUtils.error(res, 'SQL content is required', null, null, 400);
-      }
-
-      const schemaName = await AuthUsersController.getProjectSchema(projectId);
-      if (!schemaName) {
-        return ResponseUtils.error(res, 'Project not found', null, null, 404);
-      }
-
-      const client = await AuthUsersController.pool.connect();
-
-      let successCount = 0;
-      let errorCount = 0;
-      const errors: string[] = [];
-
-      try {
-        await client.query(`SET search_path TO ${schemaName}, public`);
-        await client.query('BEGIN');
-
-        // If clearExisting, delete all user data first
-        if (clearExisting) {
-          console.log('🗑️  Clearing existing user data...');
-          await client.query(`DELETE FROM "${schemaName}"."skaftin_system_user_roles"`);
-          await client.query(`DELETE FROM "${schemaName}"."skaftin_system_otp_verifications"`);
-          await client.query(`DELETE FROM "${schemaName}"."skaftin_system_users"`);
-          console.log('✅ Existing user data cleared');
-        }
-
-        // Clean and parse SQL content
-        // Remove SQL comments (--) but only if not inside quoted strings
-        let cleanedSql = sqlContent
-          .split('\n')
-          .map(line => {
-            // Remove inline comments (--) but only if not inside quotes
-            let inSingleQuote = false;
-            let inDoubleQuote = false;
-            let commentIndex = -1;
-
-            for (let i = 0; i < line.length - 1; i++) {
-              const char = line[i];
-              const nextChar = line[i + 1];
-
-              // Handle single quotes
-              if (char === "'" && !inDoubleQuote) {
-                // Check for escaped single quote ('')
-                if (inSingleQuote && nextChar === "'") {
-                  i++; // Skip the escaped quote
-                  continue;
-                }
-                inSingleQuote = !inSingleQuote;
-              }
-
-              // Handle double quotes
-              if (char === '"' && !inSingleQuote) {
-                inDoubleQuote = !inDoubleQuote;
-              }
-
-              // Found -- comment delimiter, but only if not inside quotes
-              if (char === '-' && nextChar === '-' && !inSingleQuote && !inDoubleQuote) {
-                commentIndex = i;
-                break;
-              }
-            }
-
-            if (commentIndex !== -1) {
-              return line.substring(0, commentIndex);
-            }
-            return line;
-          })
-          .join('\n');
-
-        cleanedSql = cleanedSql.replace(/\/\*[\s\S]*?\*\//g, '');
-
-        // Split SQL statements by semicolons, respecting quoted strings
-        const statements: string[] = [];
-        let currentStatement = '';
-        let inSingleQuote = false;
-        let inDoubleQuote = false;
-        let inEscapeString = false; // E'' syntax
-        let i = 0;
-
-        while (i < cleanedSql.length) {
-          const char = cleanedSql[i];
-          const nextChar = i + 1 < cleanedSql.length ? cleanedSql[i + 1] : '';
-
-          // Handle escape sequences in E'' strings
-          if (inEscapeString && char === '\\') {
-            currentStatement += char;
-            if (nextChar) {
-              currentStatement += nextChar;
-              i += 2;
-              continue;
-            }
-            i++;
-            continue;
-          }
-
-          // Handle E'' escape string syntax
-          if (!inSingleQuote && !inDoubleQuote && char === 'E' && nextChar === "'") {
-            inEscapeString = true;
-            inSingleQuote = true;
-            currentStatement += char + nextChar;
-            i += 2;
-            continue;
-          }
-
-          // Handle single quotes (for strings and E'' escape strings)
-          if (char === "'" && !inDoubleQuote) {
-            if (inEscapeString && nextChar === "'") {
-              // End of E'' string
-              inEscapeString = false;
-              inSingleQuote = false;
-              currentStatement += char + nextChar;
-              i += 2;
-              continue;
-            } else if (!inEscapeString) {
-              // Regular single-quoted string
-              if (inSingleQuote && nextChar === "'") {
-                // Escaped single quote ('')
-                currentStatement += char + nextChar;
-                i += 2;
-                continue;
-              } else {
-                // Toggle single quote state
-                inSingleQuote = !inSingleQuote;
-              }
-            }
-          }
-
-          // Handle double quotes (for identifiers)
-          if (char === '"' && !inSingleQuote) {
-            inDoubleQuote = !inDoubleQuote;
-          }
-
-          // Handle semicolons (only split if not inside quotes)
-          if (char === ';' && !inSingleQuote && !inDoubleQuote) {
-            const trimmed = currentStatement.trim();
-            if (trimmed.length > 0 && /\S/.test(trimmed)) {
-              statements.push(trimmed);
-            }
-            currentStatement = '';
-            i++;
-            continue;
-          }
-
-          currentStatement += char;
-          i++;
-        }
-
-        // Add the last statement if any
-        const trimmed = currentStatement.trim();
-        if (trimmed.length > 0 && /\S/.test(trimmed)) {
-          statements.push(trimmed);
-        }
-
-        console.log(`📝 Found ${statements.length} SQL statements to execute`);
-
-        for (let i = 0; i < statements.length; i++) {
-          const statement = statements[i];
-          try {
-            await client.query(statement);
-            successCount++;
-
-            if ((i + 1) % 10 === 0) {
-              console.log(`✅ Executed ${i + 1}/${statements.length} statements`);
-            }
-          } catch (err: any) {
-            errorCount++;
-            const errorMsg = `Statement ${i + 1}: ${statement.substring(0, 100)}... Error: ${err.message}`;
-            errors.push(errorMsg);
-            console.error('❌ SQL execution error:', errorMsg);
-          }
-        }
-
-        await client.query('COMMIT');
-        client.release();
-
-        const responseData: any = {
-          successCount,
-          errorCount,
-        };
-
-        if (errorCount === 0) {
-          responseData.message = `Successfully imported ${successCount} SQL statements`;
-          ResponseUtils.success(res, 'Users imported successfully', responseData);
-        } else {
-          responseData.errors = errors.slice(0, 10);
-          responseData.message = `Executed ${successCount} statements, ${errorCount} failed`;
-          ResponseUtils.success(res, 'Users imported with warnings', responseData);
-        }
-      } catch (error: any) {
-        await client.query('ROLLBACK');
-        client.release();
-        throw error;
-      }
-    } catch (error: any) {
-      console.error('Error in importUsers:', error);
-      ResponseUtils.error(res, 'Failed to import users', error);
-    }
-  }
 }
 
 export default AuthUsersController;

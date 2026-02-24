@@ -19,6 +19,26 @@ export interface CleanupResult {
 }
 
 export class AuthUtils {
+  private static async getUserRoleUserIdColumn(
+    client: PoolClient,
+    schemaName: string
+  ): Promise<'app_user_id' | 'user_id'> {
+    const result = await client.query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = $1
+         AND table_name = 'skaftin_system_user_roles'
+         AND column_name IN ('app_user_id', 'user_id')`,
+      [schemaName]
+    );
+
+    const columns = new Set<string>(result.rows.map((r: any) => r.column_name));
+    if (columns.has('app_user_id')) return 'app_user_id';
+    if (columns.has('user_id')) return 'user_id';
+
+    throw new Error(`Neither app_user_id nor user_id exists on ${schemaName}.skaftin_system_user_roles`);
+  }
+
   /**
    * Completely remove a user from SuperTokens and all project databases
    * This is a destructive operation that should be used carefully
@@ -126,10 +146,11 @@ export class AuthUtils {
       }
 
       const userId = userCheck.rows[0].id;
+      const roleUserIdColumn = await this.getUserRoleUserIdColumn(client, schemaName);
 
       // Delete role assignments
       const roleDeleteResult = await client.query(
-        `DELETE FROM ${schemaName}.skaftin_system_user_roles WHERE app_user_id = $1`,
+        `DELETE FROM ${schemaName}.skaftin_system_user_roles WHERE ${roleUserIdColumn} = $1`,
         [userId]
       );
 
@@ -246,14 +267,15 @@ export class AuthUtils {
       ]);
 
       const newUser = userResult.rows[0];
+      const roleUserIdColumn = await this.getUserRoleUserIdColumn(client, schemaName);
 
       // 4. Assign roles if provided
       if (userData.role_ids && userData.role_ids.length > 0) {
         for (const roleId of userData.role_ids) {
           await client.query(
-            `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
+            `INSERT INTO ${schemaName}.skaftin_system_user_roles (${roleUserIdColumn}, role_id)
              VALUES ($1, $2)
-             ON CONFLICT (app_user_id, role_id) DO NOTHING`,
+             ON CONFLICT (${roleUserIdColumn}, role_id) DO NOTHING`,
             [newUser.id, roleId]
           );
         }
@@ -331,9 +353,10 @@ export class AuthUtils {
       const superTokensUserIdsToDelete = new Set<string>();
 
       if (permanent) {
+        const roleUserIdColumn = await this.getUserRoleUserIdColumn(client, schemaName);
         // 2. Delete role assignments
         await client.query(
-          `DELETE FROM ${schemaName}.skaftin_system_user_roles WHERE app_user_id = $1`,
+          `DELETE FROM ${schemaName}.skaftin_system_user_roles WHERE ${roleUserIdColumn} = $1`,
           [userId]
         );
 

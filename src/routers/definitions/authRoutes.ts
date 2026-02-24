@@ -274,15 +274,6 @@ export function createAuthRouteDefinitions(isAdmin: boolean): RouteDefinition[] 
       requiresProject: true,
       requiresAuth: true,
     },
-    {
-      method: 'post',
-      path: createPath('/users/import', isAdmin),
-      handler: AuthUsersController.importUsers,
-      description: 'Import users from SQL dump',
-      requiresProject: true,
-      requiresAuth: true,
-    },
-
     // ============================================================================
     // ROLE MANAGEMENT ROUTES
     // ============================================================================

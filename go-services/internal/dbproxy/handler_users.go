@@ -1,6 +1,7 @@
 package dbproxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,39 @@ import (
 )
 
 // --- Phase 6: User Management ---
+
+func resolveUserRolesUserIDColumn(ctx context.Context, pc *ProjectConn, schemaName string) (string, error) {
+	rows, err := pc.Query(ctx, `
+		SELECT column_name
+		FROM information_schema.columns
+		WHERE table_schema = $1
+		  AND table_name = 'skaftin_system_user_roles'
+		  AND column_name IN ('app_user_id', 'user_id')
+	`, schemaName)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	seen := map[string]bool{}
+	for rows.Next() {
+		var col string
+		if err := rows.Scan(&col); err != nil {
+			return "", err
+		}
+		seen[col] = true
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	if seen["app_user_id"] {
+		return "app_user_id", nil
+	}
+	if seen["user_id"] {
+		return "user_id", nil
+	}
+	return "", fmt.Errorf("skaftin_system_user_roles has no app_user_id/user_id column in schema %s", schemaName)
+}
 
 func (h *Handler) SelectUsers(w http.ResponseWriter, r *http.Request) {
 	pc, pid := h.acquireConn(w, r)
@@ -36,6 +70,12 @@ func (h *Handler) SelectUsers(w http.ResponseWriter, r *http.Request) {
 	pc.QueryRow(r.Context(), `SELECT schema_name FROM skaftin_system_projects WHERE id = $1`, pid).Scan(&schemaName)
 	if schemaName == "" {
 		httputil.WriteError(w, http.StatusNotFound, "Project not found")
+		return
+	}
+	userRoleUserIDColumn, err := resolveUserRolesUserIDColumn(r.Context(), pc, schemaName)
+	if err != nil {
+		slog.Error("resolve user role user id column failed", "error", err, "schema", schemaName)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to read role schema")
 		return
 	}
 
@@ -88,7 +128,7 @@ func (h *Handler) SelectUsers(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if key == "role_id" {
-			whereClauses = append(whereClauses, fmt.Sprintf(`EXISTS (SELECT 1 FROM %s.skaftin_system_user_roles ur2 WHERE ur2.app_user_id = u.id AND ur2.role_id = $%d)`, schemaName, idx))
+			whereClauses = append(whereClauses, fmt.Sprintf(`EXISTS (SELECT 1 FROM %s.skaftin_system_user_roles ur2 WHERE ur2.%s = u.id AND ur2.role_id = $%d)`, schemaName, userRoleUserIDColumn, idx))
 			args = append(args, val)
 			idx++
 			continue
@@ -119,10 +159,10 @@ func (h *Handler) SelectUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := fmt.Sprintf(`SELECT %s FROM %s.skaftin_system_users u
-		LEFT JOIN %s.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+		LEFT JOIN %s.skaftin_system_user_roles ur ON u.id = ur.%s
 		LEFT JOIN %s.skaftin_system_roles r ON ur.role_id = r.id
 		%s GROUP BY u.id ORDER BY u."%s" %s`,
-		selectClause, schemaName, schemaName, schemaName, whereClause, orderBy, dir)
+		selectClause, schemaName, schemaName, userRoleUserIDColumn, schemaName, whereClause, orderBy, dir)
 
 	if body.Limit != nil {
 		query += fmt.Sprintf(" LIMIT $%d", idx)
@@ -183,6 +223,12 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	userRoleUserIDColumn, err := resolveUserRolesUserIDColumn(ctx, pc, schemaName)
+	if err != nil {
+		slog.Error("resolve user role user id column failed", "error", err, "schema", schemaName)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to read role schema")
+		return
+	}
 
 	metadataJSON := "{}"
 	if body.Metadata != nil {
@@ -207,7 +253,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	// Assign roles
 	for _, roleID := range body.RoleIDs {
-		pc.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_roles (app_user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, schemaName), userID, roleID)
+		pc.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_roles (%s, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, schemaName, userRoleUserIDColumn), userID, roleID)
 	}
 
 	// Fetch the user with roles
@@ -216,10 +262,10 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 			COALESCE(json_agg(json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key))
 			FILTER (WHERE r.id IS NOT NULL), '[]') as roles
 		FROM %s.skaftin_system_users u
-		LEFT JOIN %s.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+		LEFT JOIN %s.skaftin_system_user_roles ur ON u.id = ur.%s
 		LEFT JOIN %s.skaftin_system_roles r ON ur.role_id = r.id
 		WHERE u.id = $1 GROUP BY u.id
-	`, schemaName, schemaName, schemaName), userID)
+	`, schemaName, schemaName, userRoleUserIDColumn, schemaName), userID)
 	if rows != nil {
 		defer rows.Close()
 		result := collectRows(rows)
@@ -259,6 +305,12 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	pc.QueryRow(r.Context(), `SELECT schema_name FROM skaftin_system_projects WHERE id = $1`, pid).Scan(&schemaName)
 
 	ctx := r.Context()
+	userRoleUserIDColumn, err := resolveUserRolesUserIDColumn(ctx, pc, schemaName)
+	if err != nil {
+		slog.Error("resolve user role user id column failed", "error", err, "schema", schemaName)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to read role schema")
+		return
+	}
 
 	// Build dynamic UPDATE
 	if len(body.Data) > 0 {
@@ -279,7 +331,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			}
 			idx++
 		}
-		setClauses = append(setClauses, fmt.Sprintf(`updated_at = CURRENT_TIMESTAMP`))
+		setClauses = append(setClauses, `updated_at = CURRENT_TIMESTAMP`)
 
 		args = append(args, userID)
 		query := fmt.Sprintf(`UPDATE %s.skaftin_system_users SET %s WHERE id = $%d`,
@@ -294,9 +346,9 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	// Update roles if provided
 	if body.RoleIDs != nil {
-		pc.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE app_user_id = $1`, schemaName), userID)
+		pc.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE %s = $1`, schemaName, userRoleUserIDColumn), userID)
 		for _, roleID := range body.RoleIDs {
-			pc.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_roles (app_user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, schemaName), userID, roleID)
+			pc.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_roles (%s, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, schemaName, userRoleUserIDColumn), userID, roleID)
 		}
 	}
 
@@ -373,10 +425,16 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	pc.QueryRow(r.Context(), `SELECT schema_name FROM skaftin_system_projects WHERE id = $1`, pid).Scan(&schemaName)
 
 	ctx := r.Context()
+	userRoleUserIDColumn, err := resolveUserRolesUserIDColumn(ctx, pc, schemaName)
+	if err != nil {
+		slog.Error("resolve user role user id column failed", "error", err, "schema", schemaName)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to read role schema")
+		return
+	}
 
 	if body.Permanent {
 		// Delete user roles first
-		pc.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE app_user_id = $1`, schemaName), userID)
+		pc.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE %s = $1`, schemaName, userRoleUserIDColumn), userID)
 		if err := pc.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.skaftin_system_users WHERE id = $1`, schemaName), userID); err != nil {
 			slog.Error("permanent delete user failed", "error", err)
 			httputil.WriteError(w, http.StatusInternalServerError, "Failed to delete user")

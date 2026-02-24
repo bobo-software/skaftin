@@ -97,6 +97,24 @@ class DatabaseController {
     }
   }
 
+  private static async getUserRoleUserIdColumn(
+    client: any,
+    schemaName: string
+  ): Promise<'app_user_id' | 'user_id'> {
+    const result = await client.query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = $1
+         AND table_name = 'skaftin_system_user_roles'
+         AND column_name IN ('app_user_id', 'user_id')`,
+      [schemaName]
+    );
+    const columns = new Set<string>(result.rows.map((r: any) => r.column_name));
+    if (columns.has('app_user_id')) return 'app_user_id';
+    if (columns.has('user_id')) return 'user_id';
+    throw new Error(`Neither app_user_id nor user_id exists on ${schemaName}.skaftin_system_user_roles`);
+  }
+
   /**
    * Get column names that are auto-increment (SERIAL / nextval default).
    * These should be omitted from INSERT so the DB generates values.
@@ -561,6 +579,7 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
       const schemaName = schemaResult.rows[0].schema_name;
+      const roleUserIdColumn = await DatabaseController.getUserRoleUserIdColumn(client, schemaName);
 
       // Get available columns in the users table for validation
       const columnsResult = await client.query(`
@@ -618,7 +637,7 @@ class DatabaseController {
       if (where.role_id !== undefined && where.role_id !== null) {
         whereConditions.push(`EXISTS (
           SELECT 1 FROM ${schemaName}.skaftin_system_user_roles ur 
-          WHERE ur.app_user_id = u.id AND ur.role_id = $${paramIndex}
+          WHERE ur.${roleUserIdColumn} = u.id AND ur.role_id = $${paramIndex}
         )`);
         values.push(typeof where.role_id === 'string' ? parseInt(where.role_id) : where.role_id);
         paramIndex++;
@@ -697,7 +716,7 @@ class DatabaseController {
       const whereClause = whereConditions.length > 0 ? ` WHERE ${whereConditions.join(' AND ')}` : '';
       let query = `SELECT ${selectClause} 
         FROM ${schemaName}.skaftin_system_users u
-        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${roleUserIdColumn}
         LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         ${whereClause}
         GROUP BY u.id`;
@@ -860,6 +879,7 @@ class DatabaseController {
       `, [schemaName]);
 
       const columns = columnsResult.rows.map((row: any) => `u."${row.column_name}"`).join(', ');
+      const roleUserIdColumn = await DatabaseController.getUserRoleUserIdColumn(client, schemaName);
 
       const userWithRoles = await client.query(
         `
@@ -872,7 +892,7 @@ class DatabaseController {
             '[]'
           ) as roles
         FROM ${schemaName}.skaftin_system_users u
-        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${roleUserIdColumn}
         LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         WHERE u.id = $1
         GROUP BY u.id
@@ -941,6 +961,7 @@ class DatabaseController {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
       const schemaName = schemaResult.rows[0].schema_name;
+      const roleUserIdColumn = await DatabaseController.getUserRoleUserIdColumn(client, schemaName);
 
       // Check if user exists
       const userCheck = await client.query(
@@ -1094,7 +1115,7 @@ class DatabaseController {
 
         // Get current roles for the user
         const currentRolesResult = await client.query(
-          `SELECT role_id FROM ${schemaName}.skaftin_system_user_roles WHERE app_user_id = $1`,
+          `SELECT role_id FROM ${schemaName}.skaftin_system_user_roles WHERE ${roleUserIdColumn} = $1`,
           [parseInt(userId)]
         );
         const currentRoleIds = currentRolesResult.rows.map((row: any) => row.role_id);
@@ -1114,7 +1135,7 @@ class DatabaseController {
           const removePlaceholder = rolesToRemove.map((_: any, i: number) => `$${i + 2}`).join(', ');
           await client.query(
             `DELETE FROM ${schemaName}.skaftin_system_user_roles 
-             WHERE app_user_id = $1 AND role_id IN (${removePlaceholder})`,
+             WHERE ${roleUserIdColumn} = $1 AND role_id IN (${removePlaceholder})`,
             [parseInt(userId), ...rolesToRemove]
           );
         }
@@ -1124,9 +1145,9 @@ class DatabaseController {
           for (const roleId of rolesToAdd) {
             try {
               await client.query(
-                `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id, assigned_by)
+                `INSERT INTO ${schemaName}.skaftin_system_user_roles (${roleUserIdColumn}, role_id, assigned_by)
                  VALUES ($1, $2, $3)
-                 ON CONFLICT (app_user_id, role_id) DO NOTHING`,
+                 ON CONFLICT (${roleUserIdColumn}, role_id) DO NOTHING`,
                 [parseInt(userId), roleId, assignedBy]
               );
             } catch (insertError: any) {
@@ -1146,14 +1167,14 @@ class DatabaseController {
                 // Check again if assignment exists
                 const recheckAssignment = await client.query(
                   `SELECT id FROM ${schemaName}.skaftin_system_user_roles 
-                   WHERE app_user_id = $1 AND role_id = $2`,
+                   WHERE ${roleUserIdColumn} = $1 AND role_id = $2`,
                   [parseInt(userId), roleId]
                 );
 
                 if (recheckAssignment.rows.length === 0) {
                   // Retry the insert after fixing the sequence
                   await client.query(
-                    `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id, assigned_by)
+                    `INSERT INTO ${schemaName}.skaftin_system_user_roles (${roleUserIdColumn}, role_id, assigned_by)
                      VALUES ($1, $2, $3)`,
                     [parseInt(userId), roleId, assignedBy]
                   );
@@ -1190,7 +1211,7 @@ class DatabaseController {
             '[]'
           ) as roles
         FROM ${schemaName}.skaftin_system_users u
-        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${roleUserIdColumn}
         LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
         WHERE u.id = $1
         GROUP BY u.id

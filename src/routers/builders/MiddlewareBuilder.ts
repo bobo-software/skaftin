@@ -173,6 +173,26 @@ export class MiddlewareBuilder {
         }
 
         const schemaName = schemaResult.rows[0].schema_name;
+        const roleUserIdColumnResult = await this.pool.query(
+          `SELECT column_name
+           FROM information_schema.columns
+           WHERE table_schema = $1
+             AND table_name = 'skaftin_system_user_roles'
+             AND column_name IN ('app_user_id', 'user_id')`,
+          [schemaName]
+        );
+        const roleUserIdColumns = new Set<string>(
+          roleUserIdColumnResult.rows.map((row: any) => row.column_name)
+        );
+        const roleUserIdColumn = roleUserIdColumns.has('app_user_id')
+          ? 'app_user_id'
+          : roleUserIdColumns.has('user_id')
+            ? 'user_id'
+            : null;
+        if (!roleUserIdColumn) {
+          console.log('  └─ ⚠️  user role link column not found in schema', schemaName);
+          return next();
+        }
 
         // Find app user by SuperTokens user ID (non-blocking - just log if not found)
         const userResult = await this.pool.query(
@@ -184,7 +204,7 @@ export class MiddlewareBuilder {
              '[]'
            ) as roles
            FROM ${schemaName}.skaftin_system_users u
-           LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+           LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${roleUserIdColumn}
            LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
            WHERE u.supertokens_user_id = $1
            GROUP BY u.id`,

@@ -42,6 +42,21 @@ class AppAuthController {
     }
   }
 
+  private static async getUserRoleUserIdColumn(schemaName: string): Promise<'app_user_id' | 'user_id'> {
+    const result = await AppAuthController.pool.query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = $1
+         AND table_name = 'skaftin_system_user_roles'
+         AND column_name IN ('app_user_id', 'user_id')`,
+      [schemaName]
+    );
+    const columns = new Set<string>(result.rows.map((r: any) => r.column_name));
+    if (columns.has('app_user_id')) return 'app_user_id';
+    if (columns.has('user_id')) return 'user_id';
+    throw new Error(`Neither app_user_id nor user_id exists on ${schemaName}.skaftin_system_user_roles`);
+  }
+
   /**
    * Generate OTP code with configurable length (4-6 digits)
    */
@@ -67,6 +82,7 @@ class AppAuthController {
       if (!projectId || !schemaName) {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
+      const roleUserIdColumn = await AppAuthController.getUserRoleUserIdColumn(schemaName);
 
       const { name, last_name, email, password, phone, metadata, custom_field_1, custom_field_2, role_id, role_key, otp_method } = req.body;
 
@@ -224,6 +240,7 @@ class AppAuthController {
       // Assign role if found
       let userRoles: any[] = [];
       if (roleToAssign) {
+        const roleUserIdColumn = await AppAuthController.getUserRoleUserIdColumn(schemaName);
         // Verify role exists
         const roleExistsResult = await AppAuthController.pool.query(
           `SELECT id FROM ${schemaName}.skaftin_system_roles WHERE id = $1`,
@@ -237,13 +254,13 @@ class AppAuthController {
         // Check if role assignment already exists (shouldn't happen during registration, but handle gracefully)
         const existingAssignment = await AppAuthController.pool.query(
           `SELECT id FROM ${schemaName}.skaftin_system_user_roles 
-           WHERE app_user_id = $1 AND role_id = $2`,
+           WHERE ${roleUserIdColumn} = $1 AND role_id = $2`,
           [user.id, roleToAssign]
         );
 
         if (existingAssignment.rows.length === 0) {
           await AppAuthController.pool.query(
-            `INSERT INTO ${schemaName}.skaftin_system_user_roles (app_user_id, role_id)
+            `INSERT INTO ${schemaName}.skaftin_system_user_roles (${roleUserIdColumn}, role_id)
            VALUES ($1, $2)`,
             [user.id, roleToAssign]
           );
@@ -452,6 +469,7 @@ class AppAuthController {
       if (!projectId || !schemaName) {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
+      const roleUserIdColumn = await AppAuthController.getUserRoleUserIdColumn(schemaName);
 
       const { username, password, method } = req.body;
 
@@ -516,7 +534,7 @@ class AppAuthController {
            '[]'
          ) as roles
         FROM ${schemaName}.skaftin_system_users u
-        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${roleUserIdColumn}
         LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
          WHERE ${whereClause}
          GROUP BY u.id`,
@@ -738,6 +756,7 @@ class AppAuthController {
       if (!projectId || !schemaName) {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
+      const roleUserIdColumn = await AppAuthController.getUserRoleUserIdColumn(schemaName);
 
       const { credential, method } = req.body;
 
@@ -802,7 +821,7 @@ class AppAuthController {
            '[]'
          ) as roles
         FROM ${schemaName}.skaftin_system_users u
-        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+        LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${roleUserIdColumn}
         LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
          WHERE ${whereClause}
          GROUP BY u.id`,
@@ -1005,6 +1024,7 @@ class AppAuthController {
       if (!projectId || !schemaName) {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
+      const roleUserIdColumn = await AppAuthController.getUserRoleUserIdColumn(schemaName);
 
       const { email, phone, otp: customOtp } = req.body;
 
@@ -1179,6 +1199,7 @@ class AppAuthController {
       if (!projectId || !schemaName) {
         return ResponseUtils.error(res, 'Project not found. Provide x-api-key, x-access-token, or projectId in URL.', null, null, 404);
       }
+      const roleUserIdColumn = await AppAuthController.getUserRoleUserIdColumn(schemaName);
 
       const { email, phone, code } = req.body;
 
@@ -1214,7 +1235,7 @@ class AppAuthController {
              '[]'
            ) as roles
           FROM ${schemaName}.skaftin_system_users u
-          LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+          LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${roleUserIdColumn}
           LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
            WHERE u.email = $1
            GROUP BY u.id`,
@@ -1237,7 +1258,7 @@ class AppAuthController {
              '[]'
            ) as roles
           FROM ${schemaName}.skaftin_system_users u
-          LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+          LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${roleUserIdColumn}
           LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
            WHERE u.phone = $1
            GROUP BY u.id`,
@@ -1504,6 +1525,7 @@ class AppAuthController {
       if (!projectId || !schemaName) {
         return ResponseUtils.error(res, 'Project not found', null, null, 404);
       }
+      const roleUserIdColumn = await AppAuthController.getUserRoleUserIdColumn(schemaName);
 
       // Use SuperTokens session verification middleware
       // This will be handled by the route middleware, but we need to get user info
@@ -1541,7 +1563,7 @@ class AppAuthController {
            '[]'
          ) as roles
          FROM ${schemaName}.skaftin_system_users u
-         LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.app_user_id
+         LEFT JOIN ${schemaName}.skaftin_system_user_roles ur ON u.id = ur.${roleUserIdColumn}
          LEFT JOIN ${schemaName}.skaftin_system_roles r ON ur.role_id = r.id
          WHERE u.supertokens_user_id = $1
          GROUP BY u.id`,

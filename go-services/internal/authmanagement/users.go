@@ -3,6 +3,7 @@ package authmanagement
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
@@ -364,8 +365,9 @@ func (h *Handler) ImportUsersHandler(w http.ResponseWriter, r *http.Request) {
 	if sql == "" {
 		sql = body.SQLContent
 	}
+	sql = strings.TrimSpace(sql)
 	if sql == "" {
-		httputil.WriteError(w, 400, "sql field is required")
+		httputil.WriteError(w, 400, "sql or sqlContent field is required")
 		return
 	}
 	clearExisting := body.ClearExisting || body.ClearExistingAlt
