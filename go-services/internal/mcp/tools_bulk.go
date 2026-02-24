@@ -10,7 +10,7 @@ import (
 	"github.com/skaftin/go-services/internal/dbproxy"
 )
 
-func registerBulkTools(srv *sdkmcp.Server, pool *pgxpool.Pool, dbSvc *dbproxy.Service) {
+func registerBulkTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy.Service) {
 	reg := &bulkTools{pool: pool, svc: dbSvc}
 
 	srv.AddTool(makeTool("bulk_create_app_users", "Create multiple application users in a single operation", map[string]prop{

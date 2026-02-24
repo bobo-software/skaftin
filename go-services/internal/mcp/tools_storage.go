@@ -9,7 +9,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func registerStorageTools(srv *sdkmcp.Server, pool *pgxpool.Pool) {
+func registerStorageTools(srv toolRegistrar, pool *pgxpool.Pool) {
 	reg := &storageTools{pool: pool}
 
 	srv.AddTool(makeTool("list_project_buckets", "List all buckets for a project", map[string]prop{

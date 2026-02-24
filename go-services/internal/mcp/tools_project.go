@@ -9,7 +9,7 @@ import (
 	"github.com/skaftin/go-services/internal/projects"
 )
 
-func registerProjectTools(srv *sdkmcp.Server, pool *pgxpool.Pool, store *projects.Store) {
+func registerProjectTools(srv toolRegistrar, pool *pgxpool.Pool, store *projects.Store) {
 	reg := &projectTools{pool: pool, store: store}
 
 	srv.AddTool(makeTool("list_projects", "List all projects accessible to the current user", map[string]prop{}, nil), reg.listProjects)

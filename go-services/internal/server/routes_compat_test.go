@@ -135,3 +135,55 @@ func TestAppAPIStorageRouteWinsOverAppAPIPrefix(t *testing.T) {
 		t.Fatalf("expected /app-api/ prefix route to not handle storage request")
 	}
 }
+
+func TestAppAPIMCPRouteWinsOverAppAPIPrefix(t *testing.T) {
+	mux := http.NewServeMux()
+
+	var mcpHit, prefixHit bool
+
+	mux.Handle("/app-api/mcp/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mcpHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefixHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/app-api/mcp/protocol", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if !mcpHit {
+		t.Fatalf("expected /app-api/mcp/ route to handle MCP request")
+	}
+	if prefixHit {
+		t.Fatalf("expected /app-api/ prefix route to not handle MCP request")
+	}
+}
+
+func TestAPIMCPRouteWinsOverAPIPrefix(t *testing.T) {
+	mux := http.NewServeMux()
+
+	var mcpHit, prefixHit bool
+
+	mux.Handle("/api/mcp/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mcpHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.Handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefixHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/mcp/tools", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if !mcpHit {
+		t.Fatalf("expected /api/mcp/ route to handle MCP request")
+	}
+	if prefixHit {
+		t.Fatalf("expected /api/ prefix route to not handle MCP request")
+	}
+}

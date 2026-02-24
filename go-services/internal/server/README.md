@@ -15,7 +15,9 @@ This package is the HTTP composition root for the Go API.
 Order is critical when using `http.ServeMux` path matching:
 
 1. Register specific `/app-api/...` compatibility routes first.
+   - `/app-api/mcp/`
 2. Register broad JWT/API domain routes next.
+   - `/api/mcp/`
 3. Register catch-all proxy routes last:
    - `/auth/`
    - `/api/`

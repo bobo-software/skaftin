@@ -15,7 +15,7 @@ import (
 	"github.com/skaftin/go-services/internal/dbproxy"
 )
 
-func registerDatabaseTools(srv *sdkmcp.Server, pool *pgxpool.Pool, dbSvc *dbproxy.Service) {
+func registerDatabaseTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy.Service) {
 	reg := &dbTools{pool: pool, svc: dbSvc}
 
 	srv.AddTool(makeTool("list_tables", "List all tables in a project schema", map[string]prop{

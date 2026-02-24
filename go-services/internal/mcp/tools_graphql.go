@@ -10,7 +10,7 @@ import (
 	"github.com/skaftin/go-services/internal/dbproxy"
 )
 
-func registerGraphQLTools(srv *sdkmcp.Server, pool *pgxpool.Pool, dbSvc *dbproxy.Service) {
+func registerGraphQLTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy.Service) {
 	reg := &graphqlTools{pool: pool, svc: dbSvc}
 
 	srv.AddTool(makeTool("graphql_query", "Execute a GraphQL query (via direct SQL - same result)", map[string]prop{

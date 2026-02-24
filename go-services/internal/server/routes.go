@@ -15,6 +15,7 @@ import (
 	"github.com/skaftin/go-services/internal/dbproxy"
 	"github.com/skaftin/go-services/internal/gateway"
 	"github.com/skaftin/go-services/internal/health"
+	mcpserver "github.com/skaftin/go-services/internal/mcp"
 	"github.com/skaftin/go-services/internal/orgs"
 	"github.com/skaftin/go-services/internal/payments"
 	"github.com/skaftin/go-services/internal/projects"
@@ -57,6 +58,9 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 	credentialsHandler := credentials.NewHandler(pool)
 	communicationsHandler := communications.NewHandler(pool)
 	paymentsHandler := payments.NewHandler(pool)
+	mcpSvc := mcpserver.New(pool)
+	mcpHandler := mcpserver.NewHTTPHandler(mcpSvc, false)
+	clientMCPHandler := mcpserver.NewHTTPHandler(mcpSvc, true)
 	stClient := supertokens.NewClient(cfg.SuperTokensCoreURL, cfg.SuperTokensAPIKey)
 	usersHandler := users.NewHandler(pool, stClient)
 	adminHandler := admin.NewHandler(pool, stClient)
@@ -80,6 +84,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool) 
 
 	authMgmtHandler := authmanagement.NewHandler(pool, stClient, communicationsHandler.Service())
 	registerAuthAndAdminRoutes(mux, pool, jwks, authMgmtHandler, adminHandler)
+	registerMCPRoutes(mux, pool, jwks, mcpHandler, clientMCPHandler)
 
 	opsCleanup, err := registerOperationalRoutes(mux, pool, cfg, jwks, communicationsHandler, paymentsHandler, storageHandler.S3())
 	if err != nil {

@@ -9,7 +9,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func registerCommunicationsTools(srv *sdkmcp.Server, pool *pgxpool.Pool) {
+func registerCommunicationsTools(srv toolRegistrar, pool *pgxpool.Pool) {
 	reg := &commsTools{pool: pool}
 
 	srv.AddTool(makeTool("list_skaftin_system_email_providers", "List all email providers configured for a project", map[string]prop{
