@@ -194,6 +194,8 @@ func writeLoginError(w http.ResponseWriter, err error) {
 		httputil.WriteError(w, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, ErrAuthenticationClosed), err.Error() == ErrAuthenticationClosed.Error():
 		httputil.WriteError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, ErrMissingLoginIdentity), err.Error() == ErrMissingLoginIdentity.Error():
+		httputil.WriteError(w, http.StatusBadRequest, err.Error())
 	default:
 		httputil.WriteError(w, http.StatusBadRequest, err.Error())
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/skaftin/go-services/internal/pkg/httputil"
+	"github.com/skaftin/go-services/internal/supertokens"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -112,6 +113,12 @@ func (h *Handler) SelectUsers(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusInternalServerError, "Failed to read role schema")
 		return
 	}
+	roleKeyColumn, err := resolveRoleKeyColumn(r.Context(), pc, schemaName)
+	if err != nil {
+		slog.Error("resolve role key column failed", "error", err, "schema", schemaName)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to read role schema")
+		return
+	}
 
 	// Get available columns
 	colRows, _ := pc.Query(r.Context(), `
@@ -167,6 +174,36 @@ func (h *Handler) SelectUsers(w http.ResponseWriter, r *http.Request) {
 			idx++
 			continue
 		}
+		if key == "role_key" {
+			whereClauses = append(whereClauses, fmt.Sprintf(
+				`EXISTS (SELECT 1 FROM %s.skaftin_system_user_roles ur2 JOIN %s.skaftin_system_roles r2 ON ur2.role_id = r2.id WHERE ur2.%s = u.id AND r2.%s = $%d)`,
+				schemaName, schemaName, userRoleUserIDColumn, roleKeyColumn, idx,
+			))
+			args = append(args, fmt.Sprint(val))
+			idx++
+			continue
+		}
+		if strings.HasPrefix(key, "metadata.") {
+			path := strings.TrimPrefix(key, "metadata.")
+			segments := strings.Split(path, ".")
+			if len(segments) == 0 {
+				continue
+			}
+			valid := true
+			for _, segment := range segments {
+				if segment == "" || !isSafeIdentifierSegment(segment) {
+					valid = false
+					break
+				}
+			}
+			if !valid {
+				continue
+			}
+			whereClauses = append(whereClauses, fmt.Sprintf(`u.metadata #>> '{%s}' = $%d`, strings.Join(segments, ","), idx))
+			args = append(args, fmt.Sprint(val))
+			idx++
+			continue
+		}
 		colName := key
 		if colName == "user_id" {
 			colName = "id"
@@ -218,6 +255,16 @@ func (h *Handler) SelectUsers(w http.ResponseWriter, r *http.Request) {
 
 	result := collectRows(rows)
 	httputil.WriteSuccess(w, http.StatusOK, "Users fetched successfully", result)
+}
+
+func isSafeIdentifierSegment(value string) bool {
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -671,6 +718,89 @@ func parseRoleKeys(raw any) ([]string, error) {
 	}
 }
 
+type userAuthIdentity struct {
+	SupertokensUserID *string
+	Email             *string
+	Phone             *string
+}
+
+func (h *Handler) syncUserPasswordWithSuperTokens(ctx context.Context, pc *ProjectConn, schemaName string, projectID, userID int, newPassword string) error {
+	if h.st == nil {
+		return fmt.Errorf("authentication service unavailable")
+	}
+
+	var identity userAuthIdentity
+	if err := pc.QueryRow(ctx, fmt.Sprintf(`SELECT supertokens_user_id, email, phone FROM %s.skaftin_system_users WHERE id = $1`, schemaName), userID).Scan(
+		&identity.SupertokensUserID, &identity.Email, &identity.Phone,
+	); err != nil {
+		return fmt.Errorf("failed to resolve user identity: %w", err)
+	}
+
+	var stEmail string
+	if identity.Email != nil && *identity.Email != "" {
+		stEmail = supertokens.CreateProjectScopedEmail(*identity.Email, projectID)
+	} else if identity.Phone != nil && *identity.Phone != "" {
+		stEmail = supertokens.CreatePhoneScopedEmail(*identity.Phone, projectID)
+	}
+	if stEmail == "" {
+		return fmt.Errorf("user must have email or phone configured for login")
+	}
+
+	var stUserID string
+	createdViaSignup := false
+	if identity.SupertokensUserID != nil && *identity.SupertokensUserID != "" {
+		stUserID = *identity.SupertokensUserID
+	} else {
+		users, err := h.st.ListUsersByAccountInfo(ctx, "public", stEmail)
+		if err != nil {
+			return fmt.Errorf("failed to look up auth identity: %w", err)
+		}
+		if len(users) > 0 {
+			stUserID = users[0].ID
+		} else {
+			resp, err := h.st.SignUp(ctx, "public", stEmail, newPassword)
+			if err != nil {
+				return fmt.Errorf("failed to provision auth identity: %w", err)
+			}
+			if resp == nil || resp.Status != "OK" || resp.User == nil {
+				return fmt.Errorf("failed to provision auth identity")
+			}
+			stUserID = resp.User.ID
+			createdViaSignup = true
+		}
+		if stUserID != "" {
+			if err := pc.Exec(ctx, fmt.Sprintf(`UPDATE %s.skaftin_system_users SET supertokens_user_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, schemaName), stUserID, userID); err != nil {
+				return fmt.Errorf("failed to persist auth identity: %w", err)
+			}
+		}
+	}
+
+	if !createdViaSignup {
+		if _, err := h.st.UpdateEmailOrPassword(ctx, supertokens.UpdatePasswordRequest{
+			RecipeUserID: stUserID,
+			Password:     newPassword,
+		}); err != nil {
+			// Compatibility fallback: some SuperTokens core deployments reject
+			// the update payload shape. Rotate identity by recreating credentials.
+			if delErr := h.st.DeleteUser(ctx, stUserID); delErr != nil {
+				return fmt.Errorf("failed to sync password with auth identity: %w", err)
+			}
+			resp, signUpErr := h.st.SignUp(ctx, "public", stEmail, newPassword)
+			if signUpErr != nil {
+				return fmt.Errorf("failed to sync password with auth identity: %w", signUpErr)
+			}
+			if resp == nil || resp.Status != "OK" || resp.User == nil {
+				return fmt.Errorf("failed to sync password with auth identity: signup status %v", resp.Status)
+			}
+			if err := pc.Exec(ctx, fmt.Sprintf(`UPDATE %s.skaftin_system_users SET supertokens_user_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, schemaName), resp.User.ID, userID); err != nil {
+				return fmt.Errorf("failed to persist recreated auth identity: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
 func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
@@ -699,6 +829,16 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	var schemaName string
 	pc.QueryRow(r.Context(), `SELECT schema_name FROM skaftin_system_projects WHERE id = $1`, pid).Scan(&schemaName)
+	if schemaName == "" {
+		httputil.WriteError(w, http.StatusNotFound, "Project not found")
+		return
+	}
+
+	if err := h.syncUserPasswordWithSuperTokens(r.Context(), pc, schemaName, pid, userID, body.NewPassword); err != nil {
+		slog.Error("change password sync with auth service failed", "error", err, "userId", userID, "projectId", pid)
+		httputil.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcrypt.DefaultCost)
 	if err != nil {

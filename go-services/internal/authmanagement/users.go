@@ -142,6 +142,35 @@ func (h *Handler) SetUserPasswordHandler(w http.ResponseWriter, r *http.Request)
 	httputil.WriteSuccess(w, 200, "Password updated", nil)
 }
 
+func (h *Handler) VerifyUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	userID, ok := parsePathInt(r, "userId")
+	if !ok {
+		httputil.WriteError(w, 400, "User ID is required")
+		return
+	}
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := httputil.ReadJSON(r, &body); err != nil || strings.TrimSpace(body.Password) == "" {
+		httputil.WriteError(w, 400, "password is required")
+		return
+	}
+
+	valid, hasPassword, err := h.service.VerifyUserPassword(r.Context(), projectID, userID, body.Password)
+	if err != nil {
+		httputil.WriteError(w, 500, err.Error())
+		return
+	}
+	httputil.WriteSuccess(w, 200, "Password verification completed", map[string]any{
+		"valid":        valid,
+		"has_password": hasPassword,
+	})
+}
+
 func (h *Handler) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := parseProjectID(w, r)
 	if !ok {

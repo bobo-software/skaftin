@@ -70,6 +70,7 @@ func (h *Handler) RegisterProtectedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/{projectId}/users/{userId}", h.GetUserHandler)
 	mux.HandleFunc("GET /api/auth/{projectId}/users/{userId}/password", h.GetUserPasswordHandler)
 	mux.HandleFunc("POST /api/auth/{projectId}/users/{userId}/password", h.SetUserPasswordHandler)
+	mux.HandleFunc("POST /api/auth/{projectId}/users/{userId}/password/verify", h.VerifyUserPasswordHandler)
 	mux.HandleFunc("POST /api/auth/{projectId}/users", h.CreateUserHandler)
 	mux.HandleFunc("PUT /api/auth/{projectId}/users/{userId}", h.UpdateUserHandler)
 	mux.HandleFunc("DELETE /api/auth/{projectId}/users/{userId}", h.DeleteUserHandler)

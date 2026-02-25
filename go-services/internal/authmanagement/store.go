@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Store struct {
@@ -758,16 +759,25 @@ func (s *Store) GetUserByCredential(ctx context.Context, schema, method, value s
 		col = "email"
 	}
 	query := fmt.Sprintf(`
+		WITH matched_user AS (
+			SELECT id, supertokens_user_id, name, email, phone, password, metadata,
+			       custom_field_1, custom_field_2, is_active, email_verified, phone_verified, organisation_id
+			FROM %[1]s.skaftin_system_users
+			WHERE %[2]s = $1
+			ORDER BY is_active DESC, updated_at DESC NULLS LAST, id DESC
+			LIMIT 1
+		)
 		SELECT u.id, u.supertokens_user_id, u.name, u.email, u.phone, u.password, u.metadata,
 		       u.custom_field_1, u.custom_field_2, u.is_active, u.email_verified, u.phone_verified, u.organisation_id,
-		       COALESCE(json_agg(json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key,
-		         'organisation_field_name', r.organisation_field_name, 'organisation_lookup_table', r.organisation_lookup_table,
-		         'organisation_lookup_field', r.organisation_lookup_field, 'session_duration_minutes', r.session_duration_minutes))
-		         FILTER (WHERE r.id IS NOT NULL), '[]') as roles
-		FROM %[1]s.skaftin_system_users u
-		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.%[3]s
-		LEFT JOIN %[1]s.skaftin_system_roles r ON ur.role_id = r.id
-		WHERE u.%[2]s = $1 GROUP BY u.id`,
+		       COALESCE((
+		       	SELECT json_agg(json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key,
+		       		'organisation_field_name', r.organisation_field_name, 'organisation_lookup_table', r.organisation_lookup_table,
+		       		'organisation_lookup_field', r.organisation_lookup_field, 'session_duration_minutes', r.session_duration_minutes))
+		       	FROM %[1]s.skaftin_system_user_roles ur
+		       	LEFT JOIN %[1]s.skaftin_system_roles r ON ur.role_id = r.id
+		       	WHERE ur.%[3]s = u.id
+		       ), '[]') AS roles
+		FROM matched_user u`,
 		pgx.Identifier{schema}.Sanitize(), pgx.Identifier{col}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
 	var u AppUser
 	err = s.pool.QueryRow(ctx, query, value).Scan(
@@ -973,6 +983,20 @@ func (s *Store) GetUserPassword(ctx context.Context, schema string, userID int) 
 		return nil, nil
 	}
 	return pw, err
+}
+
+func (s *Store) VerifyUserPassword(ctx context.Context, schema string, userID int, password string) (bool, bool, error) {
+	hash, err := s.GetUserPassword(ctx, schema, userID)
+	if err != nil {
+		return false, false, err
+	}
+	if hash == nil || *hash == "" {
+		return false, false, nil
+	}
+	if compareErr := bcrypt.CompareHashAndPassword([]byte(*hash), []byte(password)); compareErr != nil {
+		return false, true, nil
+	}
+	return true, true, nil
 }
 
 func (s *Store) SetUserPassword(ctx context.Context, schema string, userID int, hash string) error {
