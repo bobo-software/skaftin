@@ -236,6 +236,14 @@ func (s *Service) Login(ctx context.Context, projectID int, body map[string]any)
 	} else if user.Phone != nil && *user.Phone != "" {
 		stEmail = supertokens.CreatePhoneScopedEmail(*user.Phone, projectID)
 	}
+	if stEmail == "" {
+		slog.Warn("login denied due to missing email/phone identity",
+			"projectId", projectID,
+			"userId", user.ID,
+			"method", method,
+		)
+		return nil, ErrMissingLoginIdentity
+	}
 
 	signInResp, err := s.st.SignIn(ctx, "public", stEmail, password)
 	if err != nil || signInResp.Status == "WRONG_CREDENTIALS_ERROR" {

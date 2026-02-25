@@ -3,11 +3,12 @@ package supertokens
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type SignUpResponse struct {
-	Status string      `json:"status"`
-	User   *CoreUser   `json:"user,omitempty"`
+	Status string    `json:"status"`
+	User   *CoreUser `json:"user,omitempty"`
 }
 
 type SignInResponse struct {
@@ -56,6 +57,37 @@ type UpdatePasswordResponse struct {
 // UpdateEmailOrPassword updates the email or password for an EmailPassword user.
 func (c *Client) UpdateEmailOrPassword(ctx context.Context, req UpdatePasswordRequest) (*UpdatePasswordResponse, error) {
 	var resp UpdatePasswordResponse
-	err := c.do(ctx, "PUT", "/recipe/user", "emailpassword", req, &resp)
+	primaryBody := map[string]any{
+		"recipeUserId": req.RecipeUserID,
+	}
+	if req.Password != "" {
+		primaryBody["password"] = req.Password
+	}
+	if req.Email != "" {
+		primaryBody["email"] = req.Email
+	}
+
+	err := c.do(ctx, "PUT", "/recipe/user", "emailpassword", primaryBody, &resp)
+	if err == nil {
+		return &resp, nil
+	}
+
+	// Compatibility fallback for older/newer cores that expect userId.
+	// Retry only when the first request failed due to an unknown recipeUserId field.
+	if !strings.Contains(err.Error(), "Field name 'recipeUserId' is invalid") {
+		return &resp, err
+	}
+
+	fallbackBody := map[string]any{
+		"userId": req.RecipeUserID,
+	}
+	if req.Password != "" {
+		fallbackBody["password"] = req.Password
+	}
+	if req.Email != "" {
+		fallbackBody["email"] = req.Email
+	}
+
+	err = c.do(ctx, "PUT", "/recipe/user", "emailpassword", fallbackBody, &resp)
 	return &resp, err
 }

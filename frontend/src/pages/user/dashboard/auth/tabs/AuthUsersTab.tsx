@@ -780,11 +780,10 @@ const CreateUserModal = ({ projectId, roles, customFields, onClose, onSuccess }:
 
           <div>
             <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
-              Email *
+              Email
             </label>
             <input
               type="email"
-              required
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"
@@ -1161,7 +1160,6 @@ const EditUserModal = ({ projectId, user, roles, customFields, onClose, onSucces
             </label>
             <input
               type="email"
-              required
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white"

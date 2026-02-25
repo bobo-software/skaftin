@@ -72,6 +72,11 @@ export interface OTPStatus {
   created_at: string;
 }
 
+export interface UserPasswordStatus {
+  has_password: boolean;
+  password?: string;
+}
+
 class AuthUsersService {
   private getToken(): string {
     return localStorage.getItem('skaftin-token') || 'session-managed-by-supertokens';
@@ -138,7 +143,7 @@ class AuthUsersService {
   /**
    * Get user password (admin only - hidden feature)
    */
-  async getUserPassword(projectId: string, userId: string): Promise<string> {
+  async getUserPassword(projectId: string, userId: string): Promise<UserPasswordStatus> {
     try {
       const response = await RequestUtils.get(
         `/api/auth/${projectId}/users/${userId}/password`,
@@ -146,7 +151,10 @@ class AuthUsersService {
       );
 
       if (response.success) {
-        return response.data.password;
+        return {
+          has_password: !!response.data?.has_password || !!response.data?.password,
+          password: response.data?.password,
+        };
       }
 
       throw new Error(response.error || 'Failed to get user password');
@@ -173,6 +181,28 @@ class AuthUsersService {
     } catch (error: any) {
       console.error('Error setting user password:', error);
       throw new Error(error.message || 'Failed to set user password');
+    }
+  }
+
+  /**
+   * Verify a candidate password against a user's stored password hash.
+   */
+  async verifyUserPassword(projectId: string, userId: string, password: string): Promise<{ valid: boolean; has_password: boolean }> {
+    try {
+      const response = await RequestUtils.post(
+        `/api/auth/${projectId}/users/${userId}/password/verify`,
+        this.getToken(),
+        { password }
+      );
+
+      if (response.success) {
+        return response.data;
+      }
+
+      throw new Error(response.error || 'Failed to verify user password');
+    } catch (error: any) {
+      console.error('Error verifying user password:', error);
+      throw new Error(error.message || 'Failed to verify user password');
     }
   }
 

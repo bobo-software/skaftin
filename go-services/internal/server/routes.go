@@ -44,7 +44,8 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 
 	// ---- Domain handlers ----
 	healthHandler := health.NewHandler(pool)
-	dbHandler := dbproxy.NewHandler(pool)
+	stClient := supertokens.NewClient(cfg.SuperTokensCoreURL, cfg.SuperTokensAPIKey)
+	dbHandler := dbproxy.NewHandler(pool, stClient)
 	projectsHandler, err := projects.NewHandler(pool, cfg)
 	if err != nil {
 		return nil, err
@@ -62,7 +63,6 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	mcpSvc := mcpserver.New(pool)
 	mcpHandler := mcpserver.NewHTTPHandler(mcpSvc, false)
 	clientMCPHandler := mcpserver.NewHTTPHandler(mcpSvc, true)
-	stClient := supertokens.NewClient(cfg.SuperTokensCoreURL, cfg.SuperTokensAPIKey)
 	usersHandler := users.NewHandler(pool, stClient)
 	adminHandler := admin.NewHandler(pool, stClient)
 

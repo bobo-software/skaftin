@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Trash,
   Eye,
+  EyeOff,
   X,
   Copy
 } from 'lucide-react';
@@ -35,12 +36,33 @@ const UserDetailsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [password, setPassword] = useState<string | null>(null);
+  const [hasPassword, setHasPassword] = useState(false);
   const [loadingPassword, setLoadingPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [creatingPassword, setCreatingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [verifyPasswordInput, setVerifyPasswordInput] = useState('');
+  const [verifyingPassword, setVerifyingPassword] = useState(false);
+  const [verifyPasswordResult, setVerifyPasswordResult] = useState<'valid' | 'invalid' | 'no_password' | null>(null);
+  const [showVerifyPassword, setShowVerifyPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>([]);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    last_name: '',
+    email: '',
+    phone: '',
+    custom_field_1: '',
+    custom_field_2: '',
+    is_active: true,
+    metadataJson: '{}',
+  });
 
   useEffect(() => {
     if (projectId && userId) {
@@ -73,18 +95,26 @@ const UserDetailsPage = () => {
     
     setLoadingPassword(true);
     setPassword(null);
+    setHasPassword(false);
     setPasswordError(null);
     setNewPassword('');
     setConfirmPassword('');
     setIsChangingPassword(false);
+    setVerifyPasswordInput('');
+    setVerifyPasswordResult(null);
+    setShowVerifyPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
     setShowPasswordModal(true);
     
     try {
-      const userPassword = await AuthUsersService.getUserPassword(projectId, userId);
-      setPassword(userPassword);
+      const passwordStatus = await AuthUsersService.getUserPassword(projectId, userId);
+      setHasPassword(!!passwordStatus.has_password);
+      setPassword(passwordStatus.password || null);
     } catch (err: any) {
       // If password doesn't exist, that's okay - we'll show the creation form
       if (err.message?.includes('does not have a password set') || err.message?.includes('404')) {
+        setHasPassword(false);
         setPassword(null);
       } else {
         console.error('Error fetching password:', err);
@@ -156,6 +186,27 @@ const UserDetailsPage = () => {
     }
   };
 
+  const handleVerifyPassword = async () => {
+    if (!projectId || !userId || !verifyPasswordInput.trim()) return;
+
+    setVerifyingPassword(true);
+    setVerifyPasswordResult(null);
+    try {
+      const result = await AuthUsersService.verifyUserPassword(projectId, userId, verifyPasswordInput);
+      if (!result.has_password) {
+        setVerifyPasswordResult('no_password');
+      } else if (result.valid) {
+        setVerifyPasswordResult('valid');
+      } else {
+        setVerifyPasswordResult('invalid');
+      }
+    } catch (err: any) {
+      ToastUtils.error(err.message || 'Failed to verify password');
+    } finally {
+      setVerifyingPassword(false);
+    }
+  };
+
   const fetchRoles = async () => {
     if (!projectId) return;
     
@@ -183,10 +234,76 @@ const UserDetailsPage = () => {
   };
 
   const handleEdit = () => {
-    // Navigate back to users list with edit modal open
-    navigate(`/projects/${projectId}/auth/users`, { 
-      state: { editUserId: userId } 
+    if (!user) return;
+    setEditError(null);
+    setEditFormData({
+      name: user.name || '',
+      last_name: user.last_name || '',
+      email: user.email || '',
+      phone: user.phone || '',
+      custom_field_1: user.custom_field_1 || '',
+      custom_field_2: user.custom_field_2 || '',
+      is_active: user.is_active,
+      metadataJson: JSON.stringify(user.metadata || {}, null, 2),
     });
+    setSelectedRoleIds((user.roles || []).map(role => role.id));
+    setShowEditModal(true);
+  };
+
+  const handleRoleToggle = (roleId: number) => {
+    setSelectedRoleIds(prev => {
+      if (prev.includes(roleId)) {
+        return prev.filter(id => id !== roleId);
+      }
+      return [...prev, roleId];
+    });
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectId || !userId || !user) return;
+
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      let parsedMetadata: any = {};
+      const trimmedMetadata = editFormData.metadataJson.trim();
+      if (trimmedMetadata) {
+        parsedMetadata = JSON.parse(trimmedMetadata);
+      }
+
+      const updatedUser = await AuthUsersService.updateUser(projectId, userId, {
+        name: editFormData.name,
+        last_name: editFormData.last_name || undefined,
+        email: editFormData.email || undefined,
+        phone: editFormData.phone || undefined,
+        custom_field_1: editFormData.custom_field_1 || undefined,
+        custom_field_2: editFormData.custom_field_2 || undefined,
+        is_active: editFormData.is_active,
+        metadata: parsedMetadata,
+      });
+
+      // Sync role assignments from this details page as well.
+      const currentRoleIds = (user.roles || []).map(role => role.id);
+      const rolesToAdd = selectedRoleIds.filter(id => !currentRoleIds.includes(id));
+      const rolesToRemove = currentRoleIds.filter(id => !selectedRoleIds.includes(id));
+
+      for (const roleId of rolesToAdd) {
+        await AuthUsersService.assignRole(projectId, userId, roleId);
+      }
+      for (const roleId of rolesToRemove) {
+        await AuthUsersService.removeRole(projectId, userId, String(roleId));
+      }
+
+      setUser(updatedUser);
+      await fetchUserDetails();
+      setShowEditModal(false);
+      ToastUtils.success('User updated successfully');
+    } catch (err: any) {
+      setEditError(err.message || 'Failed to update user');
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -588,6 +705,173 @@ const UserDetailsPage = () => {
         )}
 
         {/* Password Modal */}
+        {showEditModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowEditModal(false)}>
+            <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6 max-w-2xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-dark-900 dark:text-white flex items-center">
+                  <Edit className="w-5 h-5 mr-2" />
+                  Edit User
+                </h3>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="p-1 rounded-md hover:bg-dark-100 dark:hover:bg-dark-700 text-dark-400 hover:text-dark-600 dark:hover:text-dark-300"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {editError && (
+                <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                  <p className="text-sm text-red-600 dark:text-red-400">{editError}</p>
+                </div>
+              )}
+
+              <form onSubmit={handleSaveEdit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">Last Name</label>
+                    <input
+                      type="text"
+                      value={editFormData.last_name}
+                      onChange={(e) => setEditFormData({ ...editFormData, last_name: e.target.value })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={editFormData.email}
+                      onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">Phone</label>
+                    <input
+                      type="text"
+                      value={editFormData.phone}
+                      onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">Custom Field 1</label>
+                    <input
+                      type="text"
+                      value={editFormData.custom_field_1}
+                      onChange={(e) => setEditFormData({ ...editFormData, custom_field_1: e.target.value })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">Custom Field 2</label>
+                    <input
+                      type="text"
+                      value={editFormData.custom_field_2}
+                      onChange={(e) => setEditFormData({ ...editFormData, custom_field_2: e.target.value })}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.is_active}
+                      onChange={(e) => setEditFormData({ ...editFormData, is_active: e.target.checked })}
+                      className="mr-2"
+                    />
+                    <span className="text-sm font-medium text-dark-700 dark:text-dark-300">Active</span>
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                    Metadata (JSON)
+                  </label>
+                  <textarea
+                    rows={8}
+                    value={editFormData.metadataJson}
+                    onChange={(e) => setEditFormData({ ...editFormData, metadataJson: e.target.value })}
+                    className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                    Roles
+                  </label>
+                  {roles.length > 0 ? (
+                    <div className="space-y-2 border border-dark-200 dark:border-dark-700 rounded-lg p-3 max-h-48 overflow-y-auto">
+                      {roles.map((role) => (
+                        <label
+                          key={role.id}
+                          className="flex items-center space-x-2 cursor-pointer hover:bg-dark-50 dark:hover:bg-dark-700/50 p-2 rounded"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedRoleIds.includes(role.id)}
+                            onChange={() => handleRoleToggle(role.id)}
+                            className="w-4 h-4 text-primary-600 border-dark-300 rounded focus:ring-primary-500"
+                          />
+                          <div className="flex items-center space-x-2 flex-1">
+                            <Shield className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+                            <span className="text-sm text-dark-700 dark:text-dark-300">
+                              {role.role_name}
+                            </span>
+                            {role.description && (
+                              <span className="text-xs text-dark-500 dark:text-dark-400">
+                                - {role.description}
+                              </span>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-dark-500 dark:text-dark-400">
+                      No roles available. Create roles in the Roles tab first.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <AppButton
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setShowEditModal(false)}
+                    disabled={editSaving}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </AppButton>
+                  <AppButton
+                    type="submit"
+                    disabled={editSaving}
+                    className="flex-1"
+                  >
+                    {editSaving ? 'Saving...' : 'Save Changes'}
+                  </AppButton>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Password Modal */}
         {showPasswordModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowPasswordModal(false)}>
             <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
@@ -609,19 +893,25 @@ const UserDetailsPage = () => {
                   <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-dark-600 dark:border-dark-400"></div>
                   <p className="mt-4 text-dark-500 dark:text-dark-400">Loading password...</p>
                 </div>
-              ) : password && !isChangingPassword ? (
+              ) : hasPassword && !isChangingPassword ? (
                 <div>
                   <div className="bg-dark-50 dark:bg-dark-900 rounded-md p-4 mb-4">
-                    <div className="flex items-center justify-between">
-                      <code className="text-sm font-mono text-dark-900 dark:text-white break-all">{password}</code>
-                      <button
-                        onClick={handleCopyPassword}
-                        className="ml-2 p-2 rounded-md hover:bg-dark-200 dark:hover:bg-dark-700 text-dark-500 hover:text-dark-700 dark:text-dark-400 dark:hover:text-dark-300 transition-colors flex-shrink-0"
-                        title="Copy password"
-                      >
-                        <Copy className="w-4 h-4" />
-                      </button>
-                    </div>
+                    {password ? (
+                      <div className="flex items-center justify-between">
+                        <code className="text-sm font-mono text-dark-900 dark:text-white break-all">{password}</code>
+                        <button
+                          onClick={handleCopyPassword}
+                          className="ml-2 p-2 rounded-md hover:bg-dark-200 dark:hover:bg-dark-700 text-dark-500 hover:text-dark-700 dark:text-dark-400 dark:hover:text-dark-300 transition-colors flex-shrink-0"
+                          title="Copy password"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-dark-700 dark:text-dark-300">
+                        Password is set for this user (hash is stored securely and cannot be viewed).
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center text-xs text-dark-500 dark:text-dark-400 mb-4">
                     <AlertTriangle className="w-4 h-4 mr-1" />
@@ -642,8 +932,52 @@ const UserDetailsPage = () => {
                       Close
                     </AppButton>
                   </div>
+
+                  <div className="mt-4 pt-4 border-t border-dark-200 dark:border-dark-700">
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                      Verify Password
+                    </label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type={showVerifyPassword ? 'text' : 'password'}
+                          value={verifyPasswordInput}
+                          onChange={(e) => {
+                            setVerifyPasswordInput(e.target.value);
+                            setVerifyPasswordResult(null);
+                          }}
+                          placeholder="Enter password to verify"
+                          className="w-full px-3 py-2 pr-10 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowVerifyPassword(!showVerifyPassword)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-dark-500 hover:text-dark-700 dark:hover:text-dark-300"
+                          title={showVerifyPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showVerifyPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <AppButton
+                        onClick={handleVerifyPassword}
+                        disabled={verifyingPassword || !verifyPasswordInput.trim()}
+                        variant="secondary"
+                      >
+                        {verifyingPassword ? 'Checking...' : 'Check'}
+                      </AppButton>
+                    </div>
+                    {verifyPasswordResult === 'valid' && (
+                      <p className="mt-2 text-sm text-green-600 dark:text-green-400">Password is correct.</p>
+                    )}
+                    {verifyPasswordResult === 'invalid' && (
+                      <p className="mt-2 text-sm text-red-600 dark:text-red-400">Password is incorrect.</p>
+                    )}
+                    {verifyPasswordResult === 'no_password' && (
+                      <p className="mt-2 text-sm text-orange-600 dark:text-orange-400">User does not have a password set.</p>
+                    )}
+                  </div>
                 </div>
-              ) : password && isChangingPassword ? (
+              ) : hasPassword && isChangingPassword ? (
                 <div>
                   <p className="text-dark-500 dark:text-dark-400 mb-4">Enter a new password for this user:</p>
                   
@@ -658,39 +992,59 @@ const UserDetailsPage = () => {
                       <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
                         New Password
                       </label>
-                      <input
-                        type="password"
-                        value={newPassword}
-                        onChange={(e) => {
-                          setNewPassword(e.target.value);
-                          setPasswordError(null);
-                        }}
-                        className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Enter new password (min 8 characters)"
-                        disabled={creatingPassword}
-                      />
+                      <div className="relative">
+                        <input
+                          type={showNewPassword ? 'text' : 'password'}
+                          value={newPassword}
+                          onChange={(e) => {
+                            setNewPassword(e.target.value);
+                            setPasswordError(null);
+                          }}
+                          className="w-full px-3 py-2 pr-10 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Enter new password (min 8 characters)"
+                          disabled={creatingPassword}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-dark-500 hover:text-dark-700 dark:hover:text-dark-300"
+                          title={showNewPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
                         Confirm Password
                       </label>
-                      <input
-                        type="password"
-                        value={confirmPassword}
-                        onChange={(e) => {
-                          setConfirmPassword(e.target.value);
-                          setPasswordError(null);
-                        }}
-                        className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Confirm new password"
-                        disabled={creatingPassword}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter' && !creatingPassword) {
-                            handleCreatePassword();
-                          }
-                        }}
-                      />
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          value={confirmPassword}
+                          onChange={(e) => {
+                            setConfirmPassword(e.target.value);
+                            setPasswordError(null);
+                          }}
+                          className="w-full px-3 py-2 pr-10 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Confirm new password"
+                          disabled={creatingPassword}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter' && !creatingPassword) {
+                              handleCreatePassword();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-dark-500 hover:text-dark-700 dark:hover:text-dark-300"
+                          title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex gap-2">
@@ -726,39 +1080,59 @@ const UserDetailsPage = () => {
                       <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
                         New Password
                       </label>
-                      <input
-                        type="password"
-                        value={newPassword}
-                        onChange={(e) => {
-                          setNewPassword(e.target.value);
-                          setPasswordError(null);
-                        }}
-                        className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Enter new password (min 8 characters)"
-                        disabled={creatingPassword}
-                      />
+                      <div className="relative">
+                        <input
+                          type={showNewPassword ? 'text' : 'password'}
+                          value={newPassword}
+                          onChange={(e) => {
+                            setNewPassword(e.target.value);
+                            setPasswordError(null);
+                          }}
+                          className="w-full px-3 py-2 pr-10 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Enter new password (min 8 characters)"
+                          disabled={creatingPassword}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-dark-500 hover:text-dark-700 dark:hover:text-dark-300"
+                          title={showNewPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
                         Confirm Password
                       </label>
-                      <input
-                        type="password"
-                        value={confirmPassword}
-                        onChange={(e) => {
-                          setConfirmPassword(e.target.value);
-                          setPasswordError(null);
-                        }}
-                        className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Confirm new password"
-                        disabled={creatingPassword}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter' && !creatingPassword) {
-                            handleCreatePassword();
-                          }
-                        }}
-                      />
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          value={confirmPassword}
+                          onChange={(e) => {
+                            setConfirmPassword(e.target.value);
+                            setPasswordError(null);
+                          }}
+                          className="w-full px-3 py-2 pr-10 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Confirm new password"
+                          disabled={creatingPassword}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter' && !creatingPassword) {
+                              handleCreatePassword();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-dark-500 hover:text-dark-700 dark:hover:text-dark-300"
+                          title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex gap-2">
@@ -777,6 +1151,50 @@ const UserDetailsPage = () => {
                         Cancel
                       </AppButton>
                     </div>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-dark-200 dark:border-dark-700">
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                      Verify Password
+                    </label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type={showVerifyPassword ? 'text' : 'password'}
+                          value={verifyPasswordInput}
+                          onChange={(e) => {
+                            setVerifyPasswordInput(e.target.value);
+                            setVerifyPasswordResult(null);
+                          }}
+                          placeholder="Enter password to verify"
+                          className="w-full px-3 py-2 pr-10 border border-dark-300 dark:border-dark-600 rounded-md bg-white dark:bg-dark-900 text-dark-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowVerifyPassword(!showVerifyPassword)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-dark-500 hover:text-dark-700 dark:hover:text-dark-300"
+                          title={showVerifyPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showVerifyPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <AppButton
+                        onClick={handleVerifyPassword}
+                        disabled={verifyingPassword || !verifyPasswordInput.trim()}
+                        variant="secondary"
+                      >
+                        {verifyingPassword ? 'Checking...' : 'Check'}
+                      </AppButton>
+                    </div>
+                    {verifyPasswordResult === 'valid' && (
+                      <p className="mt-2 text-sm text-green-600 dark:text-green-400">Password is correct.</p>
+                    )}
+                    {verifyPasswordResult === 'invalid' && (
+                      <p className="mt-2 text-sm text-red-600 dark:text-red-400">Password is incorrect.</p>
+                    )}
+                    {verifyPasswordResult === 'no_password' && (
+                      <p className="mt-2 text-sm text-orange-600 dark:text-orange-400">User does not have a password set.</p>
+                    )}
                   </div>
                 </div>
               )}

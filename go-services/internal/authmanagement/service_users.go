@@ -90,6 +90,14 @@ func (s *Service) SetUserPassword(ctx context.Context, projectID, userID int, pa
 	return nil
 }
 
+func (s *Service) VerifyUserPassword(ctx context.Context, projectID, userID int, password string) (bool, bool, error) {
+	schema, err := s.resolveSchema(ctx, projectID)
+	if err != nil {
+		return false, false, err
+	}
+	return s.store.VerifyUserPassword(ctx, schema, userID, password)
+}
+
 func (s *Service) CreateUserAdmin(ctx context.Context, projectID int, data map[string]any) (*AppUser, error) {
 	schema, err := s.resolveSchema(ctx, projectID)
 	if err != nil {
