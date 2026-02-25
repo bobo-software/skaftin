@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -46,6 +47,39 @@ func resolveUserRolesUserIDColumn(ctx context.Context, pc *ProjectConn, schemaNa
 		return "user_id", nil
 	}
 	return "", fmt.Errorf("skaftin_system_user_roles has no app_user_id/user_id column in schema %s", schemaName)
+}
+
+func resolveRoleKeyColumn(ctx context.Context, pc *ProjectConn, schemaName string) (string, error) {
+	rows, err := pc.Query(ctx, `
+		SELECT column_name
+		FROM information_schema.columns
+		WHERE table_schema = $1
+		  AND table_name = 'skaftin_system_roles'
+		  AND column_name IN ('role_key', 'key')
+	`, schemaName)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	seen := map[string]bool{}
+	for rows.Next() {
+		var col string
+		if err := rows.Scan(&col); err != nil {
+			return "", err
+		}
+		seen[col] = true
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	if seen["role_key"] {
+		return "role_key", nil
+	}
+	if seen["key"] {
+		return "key", nil
+	}
+	return "", fmt.Errorf("skaftin_system_roles has no role_key/key column in schema %s", schemaName)
 }
 
 func (h *Handler) SelectUsers(w http.ResponseWriter, r *http.Request) {
@@ -201,6 +235,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		Phone        string         `json:"phone"`
 		Metadata     map[string]any `json:"metadata"`
 		RoleIDs      []int          `json:"role_ids"`
+		RoleKeys     []string       `json:"role_keys"`
 		CustomField1 *string        `json:"custom_field_1"`
 		CustomField2 *string        `json:"custom_field_2"`
 	}
@@ -251,9 +286,23 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	roleIDsToAssign := body.RoleIDs
+	if len(body.RoleKeys) > 0 {
+		resolvedRoleIDs, resolveErr := getRoleIDsByKeys(ctx, pc, schemaName, body.RoleKeys)
+		if resolveErr != nil {
+			httputil.WriteError(w, http.StatusBadRequest, resolveErr.Error())
+			return
+		}
+		roleIDsToAssign = resolvedRoleIDs
+	}
+
 	// Assign roles
-	for _, roleID := range body.RoleIDs {
-		pc.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_roles (%s, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, schemaName, userRoleUserIDColumn), userID, roleID)
+	for _, roleID := range roleIDsToAssign {
+		if err := pc.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_roles (%s, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, schemaName, userRoleUserIDColumn), userID, roleID); err != nil {
+			slog.Error("assign user role on create failed", "error", err, "userID", userID, "roleID", roleID, "schema", schemaName)
+			httputil.WriteError(w, http.StatusBadRequest, fmt.Sprintf("failed to assign role %d", roleID))
+			return
+		}
 	}
 
 	// Fetch the user with roles
@@ -286,9 +335,10 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	defer pc.Release()
 
 	var body struct {
-		Where   map[string]any `json:"where"`
-		Data    map[string]any `json:"data"`
-		RoleIDs []int          `json:"role_ids"`
+		Where    map[string]any `json:"where"`
+		Data     map[string]any `json:"data"`
+		RoleIDs  []int          `json:"role_ids"`
+		RoleKeys []string       `json:"role_keys"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
@@ -310,6 +360,33 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		slog.Error("resolve user role user id column failed", "error", err, "schema", schemaName)
 		httputil.WriteError(w, http.StatusInternalServerError, "Failed to read role schema")
 		return
+	}
+
+	// Backward compatibility: some clients send role_ids inside "data".
+	// Roles are stored in skaftin_system_user_roles, not skaftin_system_users.
+	if body.Data != nil {
+		if rawRoleIDs, ok := body.Data["role_ids"]; ok {
+			if body.RoleIDs == nil {
+				parsedRoleIDs, parseErr := parseRoleIDs(rawRoleIDs)
+				if parseErr != nil {
+					httputil.WriteError(w, http.StatusBadRequest, "role_ids must be an array of numbers")
+					return
+				}
+				body.RoleIDs = parsedRoleIDs
+			}
+			delete(body.Data, "role_ids")
+		}
+		if rawRoleKeys, ok := body.Data["role_keys"]; ok {
+			if body.RoleKeys == nil {
+				parsedRoleKeys, parseErr := parseRoleKeys(rawRoleKeys)
+				if parseErr != nil {
+					httputil.WriteError(w, http.StatusBadRequest, "role_keys must be an array of strings")
+					return
+				}
+				body.RoleKeys = parsedRoleKeys
+			}
+			delete(body.Data, "role_keys")
+		}
 	}
 
 	// Build dynamic UPDATE
@@ -344,15 +421,254 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Update roles if provided
-	if body.RoleIDs != nil {
-		pc.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE %s = $1`, schemaName, userRoleUserIDColumn), userID)
-		for _, roleID := range body.RoleIDs {
-			pc.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_roles (%s, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, schemaName, userRoleUserIDColumn), userID, roleID)
+	roleIDsToAssign := body.RoleIDs
+	if len(body.RoleKeys) > 0 {
+		resolvedRoleIDs, resolveErr := getRoleIDsByKeys(ctx, pc, schemaName, body.RoleKeys)
+		if resolveErr != nil {
+			httputil.WriteError(w, http.StatusBadRequest, resolveErr.Error())
+			return
+		}
+		roleIDsToAssign = resolvedRoleIDs
+	}
+
+	// Update roles if provided (prefer role_keys over role_ids when both are supplied).
+	if body.RoleIDs != nil || body.RoleKeys != nil {
+		if err := applyUserRoleAssignments(ctx, pc, schemaName, userRoleUserIDColumn, userID, roleIDsToAssign); err != nil {
+			httputil.WriteError(w, http.StatusBadRequest, err.Error())
+			return
 		}
 	}
 
 	httputil.WriteSuccess(w, http.StatusOK, "User updated successfully", map[string]any{"id": userID})
+}
+
+func applyUserRoleAssignments(ctx context.Context, pc *ProjectConn, schemaName, userRoleUserIDColumn string, userID int, roleIDs []int) error {
+	normalizedRoleIDs := uniqueInts(roleIDs)
+	if len(normalizedRoleIDs) > 0 {
+		foundRoleIDs, err := getExistingRoleIDs(ctx, pc, schemaName, normalizedRoleIDs)
+		if err != nil {
+			return fmt.Errorf("failed to validate roles")
+		}
+		if len(foundRoleIDs) != len(normalizedRoleIDs) {
+			missingRoleIDs := differenceInts(normalizedRoleIDs, foundRoleIDs)
+			return fmt.Errorf("role does not exist: %v", missingRoleIDs)
+		}
+	}
+
+	if err := pc.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE %s = $1`, schemaName, userRoleUserIDColumn), userID); err != nil {
+		slog.Error("delete existing user roles failed", "error", err, "userID", userID, "schema", schemaName)
+		return fmt.Errorf("failed to update user roles")
+	}
+	for _, roleID := range normalizedRoleIDs {
+		if err := pc.Exec(ctx, fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_roles (%s, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, schemaName, userRoleUserIDColumn), userID, roleID); err != nil {
+			slog.Error("assign user role failed", "error", err, "userID", userID, "roleID", roleID, "schema", schemaName)
+			return fmt.Errorf("failed to assign role %d", roleID)
+		}
+	}
+
+	return nil
+}
+
+func getExistingRoleIDs(ctx context.Context, pc *ProjectConn, schemaName string, roleIDs []int) ([]int, error) {
+	if len(roleIDs) == 0 {
+		return []int{}, nil
+	}
+	placeholders := make([]string, 0, len(roleIDs))
+	args := make([]any, 0, len(roleIDs))
+	for i, roleID := range roleIDs {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		args = append(args, roleID)
+	}
+	query := fmt.Sprintf(
+		`SELECT id FROM %s.skaftin_system_roles WHERE id IN (%s)`,
+		schemaName,
+		strings.Join(placeholders, ", "),
+	)
+	rows, err := pc.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	found := make([]int, 0, len(roleIDs))
+	for rows.Next() {
+		var id int
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			return nil, scanErr
+		}
+		found = append(found, id)
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+	return found, nil
+}
+
+func getRoleIDsByKeys(ctx context.Context, pc *ProjectConn, schemaName string, roleKeys []string) ([]int, error) {
+	normalizedKeys := uniqueStrings(roleKeys)
+	if len(normalizedKeys) == 0 {
+		return []int{}, nil
+	}
+	roleKeyColumn, err := resolveRoleKeyColumn(ctx, pc, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate roles")
+	}
+
+	placeholders := make([]string, 0, len(normalizedKeys))
+	args := make([]any, 0, len(normalizedKeys))
+	for i, roleKey := range normalizedKeys {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		args = append(args, roleKey)
+	}
+	query := fmt.Sprintf(
+		`SELECT id, %s FROM %s.skaftin_system_roles WHERE %s IN (%s)`,
+		roleKeyColumn,
+		schemaName,
+		roleKeyColumn,
+		strings.Join(placeholders, ", "),
+	)
+	rows, err := pc.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate roles")
+	}
+	defer rows.Close()
+
+	foundIDs := make([]int, 0, len(normalizedKeys))
+	foundKeys := make([]string, 0, len(normalizedKeys))
+	for rows.Next() {
+		var roleID int
+		var roleKey string
+		if scanErr := rows.Scan(&roleID, &roleKey); scanErr != nil {
+			return nil, fmt.Errorf("failed to validate roles")
+		}
+		foundIDs = append(foundIDs, roleID)
+		foundKeys = append(foundKeys, roleKey)
+	}
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("failed to validate roles")
+	}
+	if len(foundIDs) != len(normalizedKeys) {
+		missingRoleKeys := differenceStrings(normalizedKeys, foundKeys)
+		return nil, fmt.Errorf("role does not exist: %v", missingRoleKeys)
+	}
+	return foundIDs, nil
+}
+
+func uniqueInts(values []int) []int {
+	if len(values) == 0 {
+		return values
+	}
+	seen := make(map[int]struct{}, len(values))
+	unique := make([]int, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		unique = append(unique, value)
+	}
+	return unique
+}
+
+func uniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return values
+	}
+	seen := make(map[string]struct{}, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		v := strings.TrimSpace(value)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		unique = append(unique, v)
+	}
+	return unique
+}
+
+func differenceInts(source, existing []int) []int {
+	existingSet := make(map[int]struct{}, len(existing))
+	for _, value := range existing {
+		existingSet[value] = struct{}{}
+	}
+	diff := make([]int, 0)
+	for _, value := range source {
+		if _, ok := existingSet[value]; !ok {
+			diff = append(diff, value)
+		}
+	}
+	sort.Ints(diff)
+	return diff
+}
+
+func differenceStrings(source, existing []string) []string {
+	existingSet := make(map[string]struct{}, len(existing))
+	for _, value := range existing {
+		existingSet[value] = struct{}{}
+	}
+	diff := make([]string, 0)
+	for _, value := range source {
+		if _, ok := existingSet[value]; !ok {
+			diff = append(diff, value)
+		}
+	}
+	sort.Strings(diff)
+	return diff
+}
+
+func parseRoleIDs(raw any) ([]int, error) {
+	switch v := raw.(type) {
+	case []int:
+		return v, nil
+	case []any:
+		out := make([]int, 0, len(v))
+		for _, item := range v {
+			switch idVal := item.(type) {
+			case int:
+				out = append(out, idVal)
+			case int32:
+				out = append(out, int(idVal))
+			case int64:
+				out = append(out, int(idVal))
+			case float64:
+				out = append(out, int(idVal))
+			case string:
+				parsed, err := strconv.Atoi(idVal)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, parsed)
+			default:
+				return nil, fmt.Errorf("invalid role id type")
+			}
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("role_ids is not an array")
+	}
+}
+
+func parseRoleKeys(raw any) ([]string, error) {
+	switch v := raw.(type) {
+	case []string:
+		return uniqueStrings(v), nil
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			key, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid role key type")
+			}
+			out = append(out, key)
+		}
+		return uniqueStrings(out), nil
+	default:
+		return nil, fmt.Errorf("role_keys is not an array")
+	}
 }
 
 func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {

@@ -244,14 +244,78 @@ func (s *Store) CreateRole(ctx context.Context, schema, roleName, roleKey string
 	if sessionDuration <= 0 {
 		sessionDuration = 10080
 	}
+
+	hasRoleNameCol, err := s.ColumnExists(ctx, schema, "skaftin_system_roles", "role_name")
+	if err != nil {
+		return nil, err
+	}
+	hasLegacyNameCol, err := s.ColumnExists(ctx, schema, "skaftin_system_roles", "name")
+	if err != nil {
+		return nil, err
+	}
+	hasRoleKeyCol, err := s.ColumnExists(ctx, schema, "skaftin_system_roles", "role_key")
+	if err != nil {
+		return nil, err
+	}
+	hasLegacyKeyCol, err := s.ColumnExists(ctx, schema, "skaftin_system_roles", "key")
+	if err != nil {
+		return nil, err
+	}
+
+	columns := []string{"description", "permissions", "session_duration_minutes", "is_system_role"}
+	values := []any{description, permissions, sessionDuration, false}
+	placeholders := []string{"$1", "$2", "$3", "$4"}
+	nextArg := 5
+
+	if hasRoleNameCol {
+		columns = append(columns, "role_name")
+		values = append(values, roleName)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", nextArg))
+		nextArg++
+	}
+	if hasLegacyNameCol {
+		columns = append(columns, "name")
+		values = append(values, roleName)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", nextArg))
+		nextArg++
+	}
+	if hasRoleKeyCol {
+		columns = append(columns, "role_key")
+		values = append(values, roleKey)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", nextArg))
+		nextArg++
+	}
+	if hasLegacyKeyCol {
+		columns = append(columns, "key")
+		values = append(values, roleKey)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", nextArg))
+		nextArg++
+	}
+
+	// Defensive fallback: if neither modern nor legacy columns are available,
+	// keep explicit modern names so DB returns a clear error.
+	if !hasRoleNameCol && !hasLegacyNameCol {
+		columns = append(columns, "role_name")
+		values = append(values, roleName)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", nextArg))
+		nextArg++
+	}
+	if !hasRoleKeyCol && !hasLegacyKeyCol {
+		columns = append(columns, "role_key")
+		values = append(values, roleKey)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", nextArg))
+	}
+
 	query := fmt.Sprintf(`
-		INSERT INTO %s.skaftin_system_roles (role_name, role_key, description, permissions, session_duration_minutes, is_system_role)
-		VALUES ($1, $2, $3, $4, $5, false)
+		INSERT INTO %s.skaftin_system_roles (%s)
+		VALUES (%s)
 		RETURNING id, role_name, role_key, description, permissions, session_duration_minutes, is_system_role,
 		          organisation_field_name, organisation_lookup_table, organisation_lookup_field, created_at, updated_at`,
-		pgx.Identifier{schema}.Sanitize())
+		pgx.Identifier{schema}.Sanitize(),
+		strings.Join(columns, ", "),
+		strings.Join(placeholders, ", "))
 	var r Role
-	err := s.pool.QueryRow(ctx, query, roleName, roleKey, description, permissions, sessionDuration).Scan(
+	err = s.pool.QueryRow(ctx, query, values...).Scan(
 		&r.ID, &r.RoleName, &r.RoleKey, &r.Description, &r.Permissions, &r.SessionDurationMinutes, &r.IsSystemRole,
 		&r.OrganisationFieldName, &r.OrganisationLookupTable, &r.OrganisationLookupField, &r.CreatedAt, &r.UpdatedAt)
 	return &r, err
@@ -782,26 +846,103 @@ func (s *Store) SoftDeleteUser(ctx context.Context, schema string, userID int) e
 }
 
 func (s *Store) HardDeleteUser(ctx context.Context, schema string, userID int) error {
-	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	referencingFKs, err := s.getForeignKeysReferencingUsers(ctx, schema)
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx,
-		fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE %s = $1`,
-			pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize()), userID)
+	for _, fk := range referencingFKs {
+		// Skip self-table reference handling; user row is deleted at the end.
+		if fk.TableName == "skaftin_system_users" {
+			continue
+		}
+		if _, execErr := s.pool.Exec(
+			ctx,
+			fmt.Sprintf(
+				`DELETE FROM %s.%s WHERE %s = $1`,
+				pgx.Identifier{schema}.Sanitize(),
+				pgx.Identifier{fk.TableName}.Sanitize(),
+				pgx.Identifier{fk.ColumnName}.Sanitize(),
+			),
+			userID,
+		); execErr != nil {
+			return execErr
+		}
+	}
+
+	userRolesExists, err := s.TableExists(ctx, schema, "skaftin_system_user_roles")
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx,
-		fmt.Sprintf(`DELETE FROM %s.skaftin_system_otp_verifications WHERE user_id = $1`,
-			pgx.Identifier{schema}.Sanitize()), userID)
+	if userRolesExists {
+		userRoleUserIDColumn, columnErr := s.getUserRoleUserIDColumn(ctx, schema)
+		if columnErr != nil {
+			return columnErr
+		}
+		if _, execErr := s.pool.Exec(ctx,
+			fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE %s = $1`,
+				pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize()), userID); execErr != nil {
+			return execErr
+		}
+	}
+
+	otpVerificationsExists, err := s.TableExists(ctx, schema, "skaftin_system_otp_verifications")
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx,
+	if otpVerificationsExists {
+		if _, execErr := s.pool.Exec(ctx,
+			fmt.Sprintf(`DELETE FROM %s.skaftin_system_otp_verifications WHERE user_id = $1`,
+				pgx.Identifier{schema}.Sanitize()), userID); execErr != nil {
+			return execErr
+		}
+	}
+
+	if _, err = s.pool.Exec(ctx,
 		fmt.Sprintf(`DELETE FROM %s.skaftin_system_users WHERE id = $1`,
-			pgx.Identifier{schema}.Sanitize()), userID)
-	return err
+			pgx.Identifier{schema}.Sanitize()), userID); err != nil {
+		return err
+	}
+	return nil
+}
+
+type userReferenceForeignKey struct {
+	TableName  string
+	ColumnName string
+}
+
+func (s *Store) getForeignKeysReferencingUsers(ctx context.Context, schema string) ([]userReferenceForeignKey, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT kcu.table_name, kcu.column_name
+		FROM information_schema.table_constraints tc
+		JOIN information_schema.key_column_usage kcu
+		  ON tc.constraint_name = kcu.constraint_name
+		 AND tc.table_schema = kcu.table_schema
+		JOIN information_schema.constraint_column_usage ccu
+		  ON ccu.constraint_name = tc.constraint_name
+		 AND ccu.table_schema = tc.table_schema
+		WHERE tc.constraint_type = 'FOREIGN KEY'
+		  AND tc.table_schema = $1
+		  AND ccu.table_schema = $1
+		  AND ccu.table_name = 'skaftin_system_users'
+		  AND ccu.column_name = 'id'
+	`, schema)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	refs := make([]userReferenceForeignKey, 0)
+	for rows.Next() {
+		var ref userReferenceForeignKey
+		if scanErr := rows.Scan(&ref.TableName, &ref.ColumnName); scanErr != nil {
+			return nil, scanErr
+		}
+		refs = append(refs, ref)
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+	return refs, nil
 }
 
 func (s *Store) EmailExistsInProject(ctx context.Context, schema, email string, excludeUserID *int) (bool, error) {
@@ -1015,6 +1156,16 @@ func (s *Store) MarkOTPFailed(ctx context.Context, schema string, otpID int) err
 }
 
 func (s *Store) GetUserOTPStatus(ctx context.Context, schema string, userID int) ([]OTPVerification, error) {
+	otpVerificationsExists, err := s.TableExists(ctx, schema, "skaftin_system_otp_verifications")
+	if err != nil {
+		return nil, err
+	}
+	if !otpVerificationsExists {
+		// Some project schemas may not have OTP tables yet.
+		// Treat this as "no OTP history" instead of a hard failure.
+		return []OTPVerification{}, nil
+	}
+
 	rows, err := s.pool.Query(ctx,
 		fmt.Sprintf(`SELECT id, user_id, otp_code, otp_method, destination, status, expires_at, verified_at, attempts, purpose, created_at
 			FROM %s.skaftin_system_otp_verifications WHERE user_id = $1 ORDER BY created_at DESC`,
