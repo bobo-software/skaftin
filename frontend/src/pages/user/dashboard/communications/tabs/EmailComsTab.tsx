@@ -5,6 +5,7 @@ import CommunicationsService, {
   EmailProvider,
   CreateEmailProviderRequest,
   UpdateEmailProviderRequest,
+  SendEmailRequest,
   EmailTemplate,
   CreateEmailTemplateRequest,
   UpdateEmailTemplateRequest,
@@ -31,6 +32,9 @@ const EmailComsTab = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingProvider, setEditingProvider] = useState<EmailProvider | null>(null);
+  const [showTestEmailModal, setShowTestEmailModal] = useState(false);
+  const [testingProvider, setTestingProvider] = useState<EmailProvider | null>(null);
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
   const [formData, setFormData] = useState<EmailProviderFormData>({
@@ -51,6 +55,9 @@ const EmailComsTab = () => {
     html_content: '',
     text_content: '',
     variables: [] as string[],
+  });
+  const [testEmailFormData, setTestEmailFormData] = useState({
+    to: '',
   });
 
   useEffect(() => {
@@ -192,26 +199,45 @@ const EmailComsTab = () => {
     }
   };
 
-  const handleTestConnection = async (providerId: number) => {
-    // Prompt user for test email address
-    const testEmail = prompt('Enter email address to send test email:');
-    
-    if (!testEmail) {
-      return; // User cancelled
-    }
+  const handleOpenTestEmailModal = (provider: EmailProvider) => {
+    setTestingProvider(provider);
+    setTestEmailFormData({
+      to: provider.from_email || '',
+    });
+    setShowTestEmailModal(true);
+  };
 
-    // Basic email validation
+  const handleCloseTestEmailModal = () => {
+    setShowTestEmailModal(false);
+    setTestingProvider(null);
+  };
+
+  const handleSendTestEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!testingProvider?.id) return;
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(testEmail)) {
+    if (!emailRegex.test(testEmailFormData.to.trim())) {
       ToastUtils.error('Please enter a valid email address');
       return;
     }
 
+    setSendingTestEmail(true);
     try {
-      await CommunicationsService.testConnection(projectId!, providerId.toString(), testEmail);
-      ToastUtils.success(`Test email sent to ${testEmail}!`);
+      const payload: SendEmailRequest = {
+        provider_id: testingProvider.id,
+        to: testEmailFormData.to.trim(),
+        subject: `Test email from ${testingProvider.name}`,
+        text: 'This is a test email sent from the communications settings.',
+        html: '<p>This is a test email sent from the communications settings.</p>',
+      };
+      await CommunicationsService.sendEmail(projectId!, payload);
+      ToastUtils.success(`Test email sent to ${testEmailFormData.to.trim()}!`);
+      handleCloseTestEmailModal();
     } catch (error: any) {
-      ToastUtils.error(error.message || 'Connection test failed');
+      ToastUtils.error(error.message || 'Failed to send test email');
+    } finally {
+      setSendingTestEmail(false);
     }
   };
 
@@ -469,9 +495,9 @@ const EmailComsTab = () => {
                       {provider.is_active ? <Power className="w-5 h-5" /> : <PowerOff className="w-5 h-5" />}
                     </button>
                     <button
-                      onClick={() => handleTestConnection(provider.id!)}
+                      onClick={() => handleOpenTestEmailModal(provider)}
                       className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                      title="Test Connection"
+                      title="Send Test Email"
                     >
                       <TestTube className="w-5 h-5" />
                     </button>
@@ -799,6 +825,64 @@ const EmailComsTab = () => {
                   className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
                 >
                   {editingProvider ? 'Update' : 'Create'} Provider
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Test Email Modal */}
+      {showTestEmailModal && testingProvider && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-dark-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-dark-200 dark:border-dark-700 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-dark-900 dark:text-white">
+                Send Test Email
+              </h2>
+              <button
+                onClick={handleCloseTestEmailModal}
+                className="p-2 text-dark-400 hover:text-dark-600 dark:hover:text-dark-300 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendTestEmail} className="p-6 space-y-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm">
+                <span className="font-medium text-blue-800 dark:text-blue-200">Provider:</span>{' '}
+                <span className="text-blue-700 dark:text-blue-300">{testingProvider.name}</span>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                  To *
+                </label>
+                <input
+                  type="email"
+                  value={testEmailFormData.to}
+                  onChange={(e) => setTestEmailFormData({ ...testEmailFormData, to: e.target.value })}
+                  className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
+                  required
+                  placeholder="recipient@example.com"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCloseTestEmailModal}
+                  className="flex-1 px-4 py-2 border border-dark-200 dark:border-dark-700 text-dark-700 dark:text-dark-300 rounded-lg hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors"
+                  disabled={sendingTestEmail}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-60"
+                  disabled={sendingTestEmail}
+                >
+                  {sendingTestEmail ? 'Sending...' : 'Send Test Email'}
                 </button>
               </div>
             </form>

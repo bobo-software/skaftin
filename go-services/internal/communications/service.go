@@ -3,15 +3,18 @@ package communications
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/smtp"
 	"net/textproto"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,20 +56,24 @@ func (s *Service) TestEmailProvider(ctx context.Context, projectID, providerID i
 	if err != nil || p == nil {
 		return false, err
 	}
-	conn, err := smtp.Dial(fmt.Sprintf("%s:%d", p.SMTPHost, p.SMTPPort))
+	client, conn, err := openSMTPClient(p, 20*time.Second)
 	if err != nil {
 		return false, err
 	}
 	defer conn.Close()
-	if err := conn.Hello("localhost"); err != nil {
+	defer client.Close()
+
+	if err := client.Hello("localhost"); err != nil {
 		return false, err
 	}
-	if ok, _ := conn.Extension("STARTTLS"); ok && p.SMTPSecure {
-		_ = conn.StartTLS(nil)
+	if shouldUseStartTLS(p, client) {
+		if err := client.StartTLS(&tls.Config{ServerName: p.SMTPHost}); err != nil {
+			return false, err
+		}
 	}
 	if p.SMTPUser != "" && p.SMTPPassword != "" {
 		auth := smtp.PlainAuth("", p.SMTPUser, p.SMTPPassword, p.SMTPHost)
-		if err := conn.Auth(auth); err != nil {
+		if err := client.Auth(auth); err != nil {
 			return false, err
 		}
 	}
@@ -91,15 +98,102 @@ func (s *Service) SendEmail(ctx context.Context, projectID int, providerID int, 
 		return nil, err
 	}
 
-	auth := smtp.PlainAuth("", p.SMTPUser, p.SMTPPassword, p.SMTPHost)
 	recipients := append([]string{}, to...)
 	recipients = append(recipients, cc...)
 	recipients = append(recipients, bcc...)
-	err = smtp.SendMail(fmt.Sprintf("%s:%d", p.SMTPHost, p.SMTPPort), auth, p.FromEmail, recipients, raw)
-	if err != nil {
+
+	if err := sendEmailWithSMTPTimeout(p, recipients, raw, 25*time.Second); err != nil {
 		return nil, err
 	}
+
 	return map[string]any{"messageId": messageID, "accepted": recipients, "rejected": []string{}}, nil
+}
+
+func openSMTPClient(p *EmailProvider, timeout time.Duration) (*smtp.Client, net.Conn, error) {
+	address := net.JoinHostPort(p.SMTPHost, strconv.Itoa(p.SMTPPort))
+	dialer := &net.Dialer{Timeout: timeout}
+	deadline := time.Now().Add(timeout)
+
+	// Port 465 typically requires implicit TLS from connect time.
+	if p.SMTPSecure && p.SMTPPort == 465 {
+		tlsConn, err := tls.DialWithDialer(dialer, "tcp", address, &tls.Config{ServerName: p.SMTPHost})
+		if err != nil {
+			return nil, nil, err
+		}
+		_ = tlsConn.SetDeadline(deadline)
+		client, err := smtp.NewClient(tlsConn, p.SMTPHost)
+		if err != nil {
+			tlsConn.Close()
+			return nil, nil, err
+		}
+		return client, tlsConn, nil
+	}
+
+	conn, err := dialer.Dial("tcp", address)
+	if err != nil {
+		return nil, nil, err
+	}
+	_ = conn.SetDeadline(deadline)
+	client, err := smtp.NewClient(conn, p.SMTPHost)
+	if err != nil {
+		conn.Close()
+		return nil, nil, err
+	}
+	return client, conn, nil
+}
+
+func shouldUseStartTLS(p *EmailProvider, client *smtp.Client) bool {
+	// For implicit TLS (465), TLS is already established at dial time.
+	if p.SMTPSecure && p.SMTPPort == 465 {
+		return false
+	}
+	ok, _ := client.Extension("STARTTLS")
+	return ok
+}
+
+func sendEmailWithSMTPTimeout(p *EmailProvider, recipients []string, raw []byte, timeout time.Duration) error {
+	client, conn, err := openSMTPClient(p, timeout)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	defer client.Close()
+
+	if err := client.Hello("localhost"); err != nil {
+		return err
+	}
+	if shouldUseStartTLS(p, client) {
+		if err := client.StartTLS(&tls.Config{ServerName: p.SMTPHost}); err != nil {
+			return err
+		}
+	}
+	if p.SMTPUser != "" && p.SMTPPassword != "" {
+		auth := smtp.PlainAuth("", p.SMTPUser, p.SMTPPassword, p.SMTPHost)
+		if err := client.Auth(auth); err != nil {
+			return err
+		}
+	}
+
+	if err := client.Mail(p.FromEmail); err != nil {
+		return err
+	}
+	for _, rcpt := range recipients {
+		if err := client.Rcpt(rcpt); err != nil {
+			return err
+		}
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := writer.Write(raw); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }
 
 func (s *Service) ListEmailTemplates(ctx context.Context, projectID int) ([]EmailTemplate, error) {
