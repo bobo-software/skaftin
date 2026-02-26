@@ -166,43 +166,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   urlencodedParser(req, res, next);
 });
 
-// ============================================================================
-// ROUTERS
-// ============================================================================
-
-// Projects routes are now handled by the Go gateway.
-// import { router as ProjectsRouter } from './routers/ProjectsRouter';
-// import { router as ProjectBucketsRouter } from './routers/ProjectBucketsRouter';
-// Files routes are now handled by the Go gateway.
-// import { router as FilesRouter } from './routers/FilesRouter';
-// Storage routes are now handled by the Go gateway.
-// import { createStorageRouter } from './routers/StorageRouter';
-// Users routes are now handled by the Go gateway.
-// import { router as UsersRouter } from './routers/UsersRouter';
-// Database routes are now handled by the Go gateway.
-// import { createDatabaseRouter } from './routers/DatabaseRouter';
-// Admin auth routes are now handled by the Go gateway.
-// import { createAdminAuthRouter } from './routers/AdminAuthRouter';
-import { createClientCommunicationsRouter } from './routers/ClientCommunicationsRouter';
-// Invitations routes are now handled by the Go gateway.
-// import { createInvitationsRouter } from './routers/InvitationsRouter';
-import { createClientPaymentRouter } from './routers/PaymentRouter';
-// Credentials routes are now handled by the Go gateway.
-// import { createCredentialsRouter } from './routers/CredentialsRouter';
-import { createAuthRouter } from './routers/AuthRouter';
-// Backups are now handled by the Go gateway.
-// import { router as BackupRouter } from './routers/BackupRouter';
-import { createClientRequestLogsRouter } from './routers/RequestLogsRouter';
-// Migrations routes are now handled by the Go gateway.
-// import { createMigrationsRouter } from './routers/MigrationsRouter';
-// import MigrationsController from './controllers/MigrationsController';
-import { initRequestLoggingMiddleware, requestLoggingMiddleware } from './middleware/requestLoggingMiddleware';
+// Platform API routing is handled by the Go gateway.
 // Backups are now handled by the Go gateway.
 // import BackupController from './controllers/BackupController';
 // import { BackupScheduler } from './services/BackupScheduler';
 import { AccountDeletionService } from './services/AccountDeletionService';
 import { RequestLogsCleanupService } from './services/RequestLogsCleanupService';
-import { initializeApiKeyMiddleware } from './middleware/apiKeyMiddleware';
 import { AnalyticsService } from './services/AnalyticsService';
 
 // ============================================================================
@@ -259,18 +228,6 @@ app.get('/', (req: Request, res: Response) => {
 // Initialize controllers
 // BackupController.initialize(pool, s3Client); // Now handled by Go gateway
 // MigrationsController.initialize(pool); // Now handled by Go gateway
-initRequestLoggingMiddleware(pool);
-
-// Initialize API key middleware
-initializeApiKeyMiddleware(pool);
-
-// Initialize hybrid auth middleware (for client apps + Skaftin UI)
-import { initializeHybridAuthMiddleware } from './middleware/hybridAuthMiddleware';
-initializeHybridAuthMiddleware(pool);
-
-// Initialize API key only middleware (for public endpoints)
-import { initializeApiKeyOnlyMiddleware } from './middleware/apiKeyOnlyMiddleware';
-initializeApiKeyOnlyMiddleware(pool);
 
 // Invitations routes are now handled by the Go gateway.
 // const InvitationsRouter = createInvitationsRouter(pool);
@@ -278,76 +235,15 @@ initializeApiKeyOnlyMiddleware(pool);
 // Credentials routes are now handled by the Go gateway.
 // const CredentialsRouter = createCredentialsRouter(pool);
 
-// Initialize Auth Management Router (for app user management)
-const AuthManagementRouter = createAuthRouter(pool);
-
-// Initialize Client Communications Router (for app-api routes)
-const ClientCommunicationsRouter = createClientCommunicationsRouter(pool);
-
-// Initialize Payment Router (client-facing only)
-const ClientPaymentRouter = createClientPaymentRouter(pool);
-
-// Initialize Public Routers (for app-api-2 routes - API key only, no user auth)
-import { createPublicDatabaseRouter } from './routers/PublicDatabaseRouter';
-import { createPublicStorageRouter } from './routers/PublicStorageRouter';
-const PublicDatabaseRouter = createPublicDatabaseRouter(pool);
-const PublicStorageRouter = createPublicStorageRouter(pool);
-
 // Initialize Analytics Service
 AnalyticsService.initialize(pool);
 
 // Register routers
 // Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
 
-// ============================================================================
-// PLATFORM ADMIN ROUTES (/api/*) - SuperTokens authentication
-// ============================================================================
-// Platform /api routes are handled by the Go gateway.
-// app.use('/api/files', FilesRouter); // Now handled by Go gateway
-// app.use('/api/users', UsersRouter); // Now handled by Go gateway
-// app.use('/api/communications', CommunicationsRouter); // Now handled by Go gateway
-// app.use('/api/invitations', InvitationsRouter); // Now handled by Go gateway
-// app.use('/api/credentials', CredentialsRouter); // Now handled by Go gateway
-// app.use('/api/analytics', AnalyticsRouter); // Now handled by Go gateway
-// app.use('/api/health', HealthRouter); // Now handled by Go gateway
-// app.use('/api/database', createAdminDatabaseRouter(pool)); // Now handled by Go gateway
-// app.use('/api/storage', createAdminStorageRouter(pool, s3Client)); // Now handled by Go gateway
-// app.use('/api/auth', createAdminAuthRouter(pool)); // Now handled by Go gateway
-// app.use('/api/backups', BackupRouter); // Now handled by Go gateway
-// app.use('/api/payments', PaymentRouter); // Now handled by Go gateway
-// app.use('/api/payments/webhook', PaymentWebhookRouter); // Now handled by Go gateway
-// app.use('/api/request-logs', createRequestLogsRouter(pool)); // Now handled by Go gateway
-// app.use('/api/migrations', createMigrationsRouter()); // Now handled by Go gateway
+// Platform and client API routes are handled by the Go gateway.
 
-// ============================================================================
-// CLIENT-FACING ROUTES (/app-api/*) - API Key / App User JWT authentication
-// ============================================================================
-// Apply request logging middleware to all client-facing routes
-// This automatically logs requests for projects with logging enabled
-app.use('/app-api', requestLoggingMiddleware);
-
-// Auth management routes for application users (project-specific)
-app.use('/app-api/auth', AuthManagementRouter);
-// app.use('/app-api/storage', createStorageRouter(pool)); // Now handled by Go gateway
-// app.use('/app-api/database', createDatabaseRouter(pool)); // Now handled by Go gateway
-// Communications operations (supports both API key and SuperTokens via hybrid auth)
-app.use('/app-api/communications', ClientCommunicationsRouter);
-// Payment operations (supports both API key and SuperTokens via hybrid auth)
-app.use('/app-api/payments', ClientPaymentRouter);
-// Request logging operations (supports both API key and SuperTokens via hybrid auth)
-app.use('/app-api/request-logs', createClientRequestLogsRouter(pool));
-
-// ============================================================================
-// PUBLIC API ROUTES (/app-api-2/*) - API Key / Access Token only (no user auth)
-// ============================================================================
-console.log('🔓 [Server] Registering public API routes at /app-api-2');
-// Apply request logging middleware to public API routes as well
-app.use('/app-api-2', requestLoggingMiddleware);
-// Public database operations (GET & POST only, API key/access token required)
-app.use('/app-api-2/database', PublicDatabaseRouter);
-// Public storage operations (GET & POST only, API key/access token required)
-app.use('/app-api-2/storage', PublicStorageRouter);
-console.log('✅ [Server] Public API routes registered');
+// Client-facing app-api and app-api-2 routes are handled by the Go gateway.
 
 // SuperTokens error handler - MUST come after your routes
 app.use(supertokensErrorHandler() as ErrorRequestHandler);

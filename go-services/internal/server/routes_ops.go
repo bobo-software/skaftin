@@ -11,6 +11,7 @@ import (
 	"github.com/skaftin/go-services/internal/communications"
 	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/invitations"
+	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/payments"
 	"github.com/skaftin/go-services/internal/projects"
 	"github.com/skaftin/go-services/internal/storage"
@@ -22,6 +23,7 @@ func registerOperationalRoutes(
 	pool *pgxpool.Pool,
 	cfg *config.Config,
 	jwks *auth.JWKSProvider,
+	requestLogger *middleware.RequestLogger,
 	communicationsHandler *communications.Handler,
 	paymentsHandler *payments.Handler,
 	s3Client *storage.S3Client,
@@ -48,6 +50,10 @@ func registerOperationalRoutes(
 	communicationsHandler.RegisterProjectRoutes(communicationsProjectMux)
 	mux.Handle("/api/communications/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/communications/")(communicationsProjectMux)))
 
+	communicationsAppMux := http.NewServeMux()
+	communicationsHandler.RegisterAppAPIRoutes(communicationsAppMux)
+	mux.Handle("/app-api/communications/", auth.APIKey(pool)(requestLogger.Middleware(communicationsAppMux)))
+
 	// Payments webhook routes are public and handled by Go.
 	paymentsWebhookMux := http.NewServeMux()
 	paymentsHandler.RegisterWebhookRoutes(paymentsWebhookMux)
@@ -60,6 +66,10 @@ func registerOperationalRoutes(
 	paymentsProjectMux := http.NewServeMux()
 	paymentsHandler.RegisterProjectRoutes(paymentsProjectMux)
 	mux.Handle("/api/payments/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/payments/")(paymentsProjectMux)))
+
+	paymentsAppMux := http.NewServeMux()
+	paymentsHandler.RegisterAppAPIRoutes(paymentsAppMux)
+	mux.Handle("/app-api/payments/", auth.APIKey(pool)(requestLogger.Middleware(paymentsAppMux)))
 
 	// Backups: project-scoped routes (JWT + project access) + restore route (JWT only)
 	projectsStore := projects.NewStore(pool)

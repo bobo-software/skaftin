@@ -32,6 +32,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/request-logs/{projectId}", h.Cleanup)
 }
 
+// RegisterAppAPIRoutes registers app-api compatibility routes.
+func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /app-api/request-logs/{projectId}", h.CreateLog)
+}
+
 func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	if auth.RequireUser(w, r) == nil {
 		return
@@ -201,6 +206,114 @@ func (h *Handler) Cleanup(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteSuccess(w, http.StatusOK, "Request logs cleaned up", map[string]any{
 		"deleted_count": deleted,
 		"cutoff_date":   cutoff.UTC().Format(time.RFC3339),
+	})
+}
+
+func (h *Handler) CreateLog(w http.ResponseWriter, r *http.Request) {
+	pid, ok := httputil.ProjectID(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Method         string `json:"method"`
+		URL            string `json:"url"`
+		StatusCode     *int   `json:"status_code"`
+		RequestPayload any    `json:"request_payload"`
+		ResponseData   any    `json:"response_data"`
+		ErrorMessage   string `json:"error_message"`
+		DurationMS     *int   `json:"duration_ms"`
+		UserID         *int   `json:"user_id"`
+		IPAddress      string `json:"ip_address"`
+		UserAgent      string `json:"user_agent"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if body.Method == "" || body.URL == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "Method and URL are required")
+		return
+	}
+
+	var requestPayload json.RawMessage
+	var responseData json.RawMessage
+	if body.RequestPayload != nil {
+		marshaled, err := json.Marshal(body.RequestPayload)
+		if err != nil {
+			httputil.WriteError(w, http.StatusBadRequest, "Invalid request_payload")
+			return
+		}
+		requestPayload = marshaled
+	}
+	if body.ResponseData != nil {
+		marshaled, err := json.Marshal(body.ResponseData)
+		if err != nil {
+			httputil.WriteError(w, http.StatusBadRequest, "Invalid response_data")
+			return
+		}
+		responseData = marshaled
+	}
+
+	var errorMessage *string
+	if body.ErrorMessage != "" {
+		errorMessage = &body.ErrorMessage
+	}
+	var ipAddress *string
+	if body.IPAddress != "" {
+		ipAddress = &body.IPAddress
+	} else if r.RemoteAddr != "" {
+		ra := r.RemoteAddr
+		ipAddress = &ra
+	}
+	var userAgent *string
+	if body.UserAgent != "" {
+		userAgent = &body.UserAgent
+	} else if ua := r.UserAgent(); ua != "" {
+		userAgent = &ua
+	}
+
+	input := CreateLogInput{
+		ProjectID:      pid,
+		Method:         body.Method,
+		URL:            body.URL,
+		StatusCode:     body.StatusCode,
+		RequestPayload: requestPayload,
+		ResponseData:   responseData,
+		ErrorMessage:   errorMessage,
+		DurationMs:     body.DurationMS,
+		UserID:         body.UserID,
+		IPAddress:      ipAddress,
+		UserAgent:      userAgent,
+	}
+
+	enabled, err := h.service.IsLoggingEnabled(r.Context(), pid)
+	if err != nil {
+		httputil.WriteSuccess(w, http.StatusOK, "Logging failed but continuing", map[string]any{
+			"logged": false,
+			"error":  err.Error(),
+		})
+		return
+	}
+	if !enabled {
+		httputil.WriteSuccess(w, http.StatusOK, "Logging disabled for this project", map[string]any{
+			"logged": false,
+		})
+		return
+	}
+
+	logID, err := h.service.CreateLog(r.Context(), input)
+	if err != nil {
+		// Keep request logging non-blocking for client apps.
+		httputil.WriteSuccess(w, http.StatusOK, "Logging failed but continuing", map[string]any{
+			"logged": false,
+			"error":  err.Error(),
+		})
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusCreated, "Request logged successfully", map[string]any{
+		"logged": true,
+		"log_id": logID,
 	})
 }
 

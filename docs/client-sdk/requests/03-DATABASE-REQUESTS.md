@@ -844,13 +844,23 @@ Update a user directly in the database.
 ```json
 {
   "data": {
-    "name": "Updated Name"
+    "name": "Updated Name",
+    "metadata": {
+      "department": "Engineering"
+    }
   },
   "where": {
     "id": 5
-  }
+  },
+  "role_keys": ["scholar_child"]
 }
 ```
+
+**Notes:**
+- `where` must include either `id` or `user_id`.
+- Role assignment can be sent as either `role_keys` (preferred) or `role_ids`.
+- `role_keys` takes precedence when both are provided.
+- For backward compatibility, `data.role_keys` and `data.role_ids` are also accepted.
 
 ---
 

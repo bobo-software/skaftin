@@ -7,6 +7,7 @@ This folder contains documentation for all API requests that client applications
 | API Type | Base URL | Authentication |
 |----------|----------|----------------|
 | Client API | `/app-api` | API Key or App User JWT |
+| Auth Management API | `/api/auth/{projectId}` | Bearer JWT |
 | Public API | `/app-api-2` | API Key only (no user auth) |
 | GraphQL | `/api/graphql` | SuperTokens session |
 
@@ -33,8 +34,8 @@ Authorization: Bearer <jwt-token>
 
 ### Authentication Flow
 ```
-1. Register → POST /app-api/auth/register
-2. Login → POST /app-api/auth/login
+1. Register → POST /api/auth/{projectId}/auth/register
+2. Login → POST /api/auth/{projectId}/auth/login
 3. Use JWT token in subsequent requests
 ```
 

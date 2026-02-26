@@ -23,20 +23,19 @@ This document tracks which API routes are handled by Go gateway vs Node backend.
 - `/api/migrations/*`
 - `/api/mcp/*`
 - `/app-api/mcp/*`
-- `/app-api/auth/auth/login`
-- `/app-api/auth/auth/logout`
-- `/app-api/auth/session/refresh`
+- `/app-api/auth/*` (all app auth compatibility routes except `/auth/*` SuperTokens)
 - `/app-api/storage/*`
 - `/app-api/database/*`
+- `/app-api-2/storage/*`
+- `/app-api-2/database/*`
+- `/app-api/communications/*`
+- `/app-api/payments/*`
+- `/app-api/request-logs/*`
 
 ## Node-owned routes (current)
 
 - `/auth/*` (SuperTokens middleware endpoints)
-- `/app-api/auth/*` (except Go compatibility routes listed above)
-- `/app-api/communications/*`
-- `/app-api/payments/*`
-- `/app-api/request-logs/*`
-- `/app-api-2/*`
+- `/socket.io/*` (realtime passthrough to Node)
 
 ## Removed from Node
 

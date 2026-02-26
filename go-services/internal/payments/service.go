@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -210,6 +211,271 @@ func (s *Service) InitiateFNBPayment(ctx context.Context, userID, description st
 		return FNBInitiateResult{}, err
 	}
 	return FNBInitiateResult{Success: true, URL: redirectURL, Reference: reference}, nil
+}
+
+func (s *Service) InitiatePayment(ctx context.Context, projectID int, req InitiatePaymentRequest) (InitiatePaymentResult, error) {
+	if req.Amount <= 0 || strings.TrimSpace(req.ItemName) == "" {
+		return InitiatePaymentResult{
+			Success:       false,
+			TransactionID: "",
+			PaymentURL:    "",
+			Error:         "Missing required fields: amount and item_name are required",
+		}, nil
+	}
+
+	var provider *PaymentProviderRecord
+	var err error
+	if req.ProviderID != nil && *req.ProviderID > 0 {
+		provider, err = s.GetProvider(ctx, projectID, *req.ProviderID)
+		if err != nil {
+			return InitiatePaymentResult{}, err
+		}
+	} else {
+		provider, err = s.getActiveProvider(ctx, projectID)
+		if err != nil {
+			return InitiatePaymentResult{}, err
+		}
+	}
+	if provider == nil || !provider.IsActive {
+		return InitiatePaymentResult{
+			Success:       false,
+			TransactionID: "",
+			PaymentURL:    "",
+			Error:         "No active payment provider configured for this project. Please configure a payment provider or specify provider_id.",
+		}, nil
+	}
+
+	transactionID := uuid.NewString()
+	paymentURL := ""
+
+	switch provider.ProviderType {
+	case ProviderTypePayFast:
+		paymentURL, err = generatePayFastPaymentURL(projectID, transactionID, provider, req)
+		if err != nil {
+			return InitiatePaymentResult{
+				Success:       false,
+				TransactionID: transactionID,
+				PaymentURL:    "",
+				Error:         err.Error(),
+			}, nil
+		}
+	case ProviderTypeFNBPay:
+		config := FNBProviderConfig{
+			BaseURL:   stringMetadata(provider.Metadata, "fnb_base_url"),
+			APIKey3D:  stringMetadata(provider.Metadata, "fnb_api_key_3d"),
+			APIInst3D: stringMetadata(provider.Metadata, "fnb_api_inst_3d"),
+			SecretKey: stringMetadata(provider.Metadata, "fnb_secret_key"),
+		}
+		if req.ReturnURL != nil && strings.TrimSpace(*req.ReturnURL) != "" {
+			config.ReturnURL = strings.TrimSpace(*req.ReturnURL)
+		} else if provider.ReturnURL != nil {
+			config.ReturnURL = *provider.ReturnURL
+		}
+		paymentURL, err = callFNBPay(ctx, config, req.ItemName, int64(req.Amount*100), "fnb-"+transactionID, config.ReturnURL)
+		if err != nil {
+			return InitiatePaymentResult{
+				Success:       false,
+				TransactionID: transactionID,
+				PaymentURL:    "",
+				Error:         err.Error(),
+			}, nil
+		}
+	default:
+		return InitiatePaymentResult{
+			Success:       false,
+			TransactionID: transactionID,
+			PaymentURL:    "",
+			Error:         "Unsupported payment provider type",
+		}, nil
+	}
+
+	schema, err := s.store.ProjectSchema(ctx, projectID)
+	if err != nil {
+		return InitiatePaymentResult{}, err
+	}
+
+	paymentType := "once_off"
+	if req.PaymentType != nil && strings.TrimSpace(*req.PaymentType) != "" {
+		paymentType = strings.TrimSpace(*req.PaymentType)
+	}
+	metadataJSON, _ := json.Marshal(req.Metadata)
+	if len(metadataJSON) == 0 {
+		metadataJSON = []byte("{}")
+	}
+
+	err = s.store.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		_, qErr := tx.Exec(ctx, `
+			INSERT INTO skaftin_system_payment_transactions (
+				project_id, provider_id, transaction_id, amount, currency, item_name,
+				item_description, customer_email, customer_name, customer_phone, payment_type,
+				subscription_type, frequency, cycles, payment_url, return_url, cancel_url, metadata, status
+			) VALUES (
+				$1, $2, $3, $4, 'ZAR', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, 'processing'
+			)
+		`,
+			projectID, provider.ID, transactionID, req.Amount, req.ItemName,
+			req.ItemDescription, req.CustomerEmail, req.CustomerName, req.CustomerPhone, paymentType,
+			req.SubscriptionType, req.Frequency, req.Cycles, paymentURL, firstNonNilString(req.ReturnURL, provider.ReturnURL), firstNonNilString(req.CancelURL, provider.CancelURL), metadataJSON)
+		return qErr
+	})
+	if err != nil {
+		return InitiatePaymentResult{}, err
+	}
+
+	return InitiatePaymentResult{
+		Success:       true,
+		TransactionID: transactionID,
+		PaymentURL:    paymentURL,
+	}, nil
+}
+
+func (s *Service) CancelSubscription(ctx context.Context, projectID int, transactionID string) (bool, string, error) {
+	txRecord, err := s.GetTransaction(ctx, projectID, transactionID)
+	if err != nil {
+		return false, "", err
+	}
+	if txRecord == nil {
+		return false, "Transaction not found", nil
+	}
+	if txRecord.SubscriptionToken == nil || strings.TrimSpace(*txRecord.SubscriptionToken) == "" {
+		return false, "Transaction is not a subscription or has no token", nil
+	}
+
+	schema, err := s.store.ProjectSchema(ctx, projectID)
+	if err != nil {
+		return false, "", err
+	}
+	err = s.store.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		_, qErr := tx.Exec(ctx, `
+			UPDATE skaftin_system_payment_transactions
+			SET status = 'cancelled', status_message = 'Subscription cancelled', updated_at = CURRENT_TIMESTAMP
+			WHERE transaction_id = $1 AND project_id = $2
+		`, transactionID, projectID)
+		return qErr
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return true, "", nil
+}
+
+func (s *Service) getActiveProvider(ctx context.Context, projectID int) (*PaymentProviderRecord, error) {
+	providers, err := s.ListProviders(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range providers {
+		if providers[i].IsActive {
+			return &providers[i], nil
+		}
+	}
+	return nil, nil
+}
+
+func generatePayFastPaymentURL(projectID int, transactionID string, provider *PaymentProviderRecord, req InitiatePaymentRequest) (string, error) {
+	if provider.MerchantID == nil || strings.TrimSpace(*provider.MerchantID) == "" ||
+		provider.MerchantKey == nil || strings.TrimSpace(*provider.MerchantKey) == "" {
+		return "", errors.New("Missing merchant_id or merchant_key")
+	}
+	returnURL := firstNonNilString(req.ReturnURL, provider.ReturnURL)
+	cancelURL := firstNonNilString(req.CancelURL, provider.CancelURL)
+	notifyURL := firstNonNilString(req.NotifyURL, provider.NotifyURL)
+
+	data := [][2]string{
+		{"merchant_id", strings.TrimSpace(*provider.MerchantID)},
+		{"merchant_key", strings.TrimSpace(*provider.MerchantKey)},
+		{"return_url", returnURL},
+		{"cancel_url", cancelURL},
+		{"notify_url", notifyURL},
+		{"m_payment_id", transactionID},
+		{"amount", fmt.Sprintf("%.2f", req.Amount)},
+		{"item_name", trimTo(strings.TrimSpace(req.ItemName), 100)},
+		{"custom_str1", strconv.Itoa(projectID)},
+		{"custom_str2", transactionID},
+	}
+	if req.ItemDescription != nil {
+		data = append(data, [2]string{"item_description", trimTo(strings.TrimSpace(*req.ItemDescription), 255)})
+	}
+	if req.CustomerName != nil && strings.TrimSpace(*req.CustomerName) != "" {
+		nameParts := strings.Fields(strings.TrimSpace(*req.CustomerName))
+		first := nameParts[0]
+		last := ""
+		if len(nameParts) > 1 {
+			last = strings.Join(nameParts[1:], " ")
+		}
+		data = append(data, [2]string{"name_first", first})
+		data = append(data, [2]string{"name_last", last})
+	}
+	if req.CustomerEmail != nil && strings.TrimSpace(*req.CustomerEmail) != "" {
+		data = append(data, [2]string{"email_address", strings.TrimSpace(*req.CustomerEmail)})
+	}
+	if req.CustomerPhone != nil && strings.TrimSpace(*req.CustomerPhone) != "" {
+		data = append(data, [2]string{"cell_number", strings.TrimSpace(*req.CustomerPhone)})
+	}
+	if len(req.Metadata) > 0 {
+		metaRaw, _ := json.Marshal(req.Metadata)
+		data = append(data, [2]string{"custom_str3", trimTo(string(metaRaw), 255)})
+	}
+	if req.PaymentType != nil && *req.PaymentType == "subscription" {
+		if req.SubscriptionType != nil {
+			data = append(data, [2]string{"subscription_type", strconv.Itoa(*req.SubscriptionType)})
+		}
+		if req.Frequency != nil {
+			data = append(data, [2]string{"frequency", strconv.Itoa(*req.Frequency)})
+		}
+		if req.Cycles != nil {
+			data = append(data, [2]string{"cycles", strconv.Itoa(*req.Cycles)})
+		}
+		if req.BillingDate != nil {
+			data = append(data, [2]string{"billing_date", strings.TrimSpace(*req.BillingDate)})
+		}
+	}
+
+	signature := signPayFastPayload(data, provider.Passphrase)
+	data = append(data, [2]string{"signature", signature})
+	host := "www.payfast.co.za"
+	if provider.SandboxMode {
+		host = "sandbox.payfast.co.za"
+	}
+	params := make([]string, 0, len(data))
+	for _, kv := range data {
+		if strings.TrimSpace(kv[1]) == "" {
+			continue
+		}
+		params = append(params, kv[0]+"="+url.QueryEscape(strings.TrimSpace(kv[1])))
+	}
+	return "https://" + host + "/eng/process?" + strings.Join(params, "&"), nil
+}
+
+func signPayFastPayload(data [][2]string, passphrase *string) string {
+	parts := make([]string, 0, len(data)+1)
+	for _, kv := range data {
+		if strings.TrimSpace(kv[1]) == "" {
+			continue
+		}
+		parts = append(parts, kv[0]+"="+url.QueryEscape(strings.TrimSpace(kv[1])))
+	}
+	if passphrase != nil && strings.TrimSpace(*passphrase) != "" {
+		parts = append(parts, "passphrase="+url.QueryEscape(strings.TrimSpace(*passphrase)))
+	}
+	sum := md5.Sum([]byte(strings.Join(parts, "&")))
+	return hex.EncodeToString(sum[:])
+}
+
+func firstNonNilString(values ...*string) string {
+	for _, v := range values {
+		if v != nil && strings.TrimSpace(*v) != "" {
+			return strings.TrimSpace(*v)
+		}
+	}
+	return ""
+}
+
+func trimTo(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max]
 }
 
 func callFNBPay(ctx context.Context, cfg FNBProviderConfig, description string, amountCents int64, reference, returnURL string) (string, error) {

@@ -25,43 +25,52 @@ func NewHandler(pool *pgxpool.Pool) *Handler {
 func (h *Handler) Service() *Service { return h.service }
 
 func (h *Handler) RegisterProjectRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/communications/{projectId}/email/providers", h.ListEmailProviders)
-	mux.HandleFunc("GET /api/communications/{projectId}/email/providers/{providerId}", h.GetEmailProvider)
-	mux.HandleFunc("POST /api/communications/{projectId}/email/providers", h.CreateEmailProvider)
-	mux.HandleFunc("PUT /api/communications/{projectId}/email/providers/{providerId}", h.UpdateEmailProvider)
-	mux.HandleFunc("DELETE /api/communications/{projectId}/email/providers/{providerId}", h.DeleteEmailProvider)
-	mux.HandleFunc("POST /api/communications/{projectId}/email/providers/{providerId}/test", h.TestEmailProvider)
-	mux.HandleFunc("POST /api/communications/{projectId}/email/send", h.SendEmail)
-
-	mux.HandleFunc("GET /api/communications/{projectId}/email/templates", h.ListEmailTemplates)
-	mux.HandleFunc("GET /api/communications/{projectId}/email/templates/{templateId}", h.GetEmailTemplate)
-	mux.HandleFunc("POST /api/communications/{projectId}/email/templates", h.CreateEmailTemplate)
-	mux.HandleFunc("PUT /api/communications/{projectId}/email/templates/{templateId}", h.UpdateEmailTemplate)
-	mux.HandleFunc("DELETE /api/communications/{projectId}/email/templates/{templateId}", h.DeleteEmailTemplate)
-
-	mux.HandleFunc("GET /api/communications/{projectId}/sms/templates", h.ListSMSTemplates)
-	mux.HandleFunc("GET /api/communications/{projectId}/sms/templates/{templateId}", h.GetSMSTemplate)
-	mux.HandleFunc("POST /api/communications/{projectId}/sms/templates", h.CreateSMSTemplate)
-	mux.HandleFunc("PUT /api/communications/{projectId}/sms/templates/{templateId}", h.UpdateSMSTemplate)
-	mux.HandleFunc("DELETE /api/communications/{projectId}/sms/templates/{templateId}", h.DeleteSMSTemplate)
-
-	mux.HandleFunc("GET /api/communications/{projectId}/sms/providers", h.ListSMSProviders)
-	mux.HandleFunc("GET /api/communications/{projectId}/sms/providers/{providerId}", h.GetSMSProvider)
-	mux.HandleFunc("POST /api/communications/{projectId}/sms/providers", h.CreateSMSProvider)
-	mux.HandleFunc("PUT /api/communications/{projectId}/sms/providers/{providerId}", h.UpdateSMSProvider)
-	mux.HandleFunc("DELETE /api/communications/{projectId}/sms/providers/{providerId}", h.DeleteSMSProvider)
-
-	mux.HandleFunc("POST /api/communications/{projectId}/sms/send", h.SendSMS)
-	mux.HandleFunc("POST /api/communications/{projectId}/sms/send-basic", h.SendSMSBasic)
-	mux.HandleFunc("POST /api/communications/{projectId}/sms/check-status", h.CheckSMSStatus)
-
-	mux.HandleFunc("POST /api/communications/{projectId}/whatsapp/send", h.SendWhatsApp)
-	mux.HandleFunc("POST /api/communications/{projectId}/whatsapp/send-basic", h.SendWhatsAppBasic)
-	mux.HandleFunc("POST /api/communications/{projectId}/whatsapp/template", h.SendWhatsAppTemplate)
+	h.registerProjectRoutesWithBase(mux, "/api/communications/{projectId}")
 }
 
 func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/communications/{projectId}/sms/webhook", h.SMSWebhook)
+}
+
+func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
+	h.registerProjectRoutesWithBase(mux, "/app-api/communications/{projectId}")
+	mux.HandleFunc("POST /app-api/communications/{projectId}/sms/webhook", h.SMSWebhook)
+}
+
+func (h *Handler) registerProjectRoutesWithBase(mux *http.ServeMux, base string) {
+	mux.HandleFunc("GET "+base+"/email/providers", h.ListEmailProviders)
+	mux.HandleFunc("GET "+base+"/email/providers/{providerId}", h.GetEmailProvider)
+	mux.HandleFunc("POST "+base+"/email/providers", h.CreateEmailProvider)
+	mux.HandleFunc("PUT "+base+"/email/providers/{providerId}", h.UpdateEmailProvider)
+	mux.HandleFunc("DELETE "+base+"/email/providers/{providerId}", h.DeleteEmailProvider)
+	mux.HandleFunc("POST "+base+"/email/providers/{providerId}/test", h.TestEmailProvider)
+	mux.HandleFunc("POST "+base+"/email/send", h.SendEmail)
+
+	mux.HandleFunc("GET "+base+"/email/templates", h.ListEmailTemplates)
+	mux.HandleFunc("GET "+base+"/email/templates/{templateId}", h.GetEmailTemplate)
+	mux.HandleFunc("POST "+base+"/email/templates", h.CreateEmailTemplate)
+	mux.HandleFunc("PUT "+base+"/email/templates/{templateId}", h.UpdateEmailTemplate)
+	mux.HandleFunc("DELETE "+base+"/email/templates/{templateId}", h.DeleteEmailTemplate)
+
+	mux.HandleFunc("GET "+base+"/sms/templates", h.ListSMSTemplates)
+	mux.HandleFunc("GET "+base+"/sms/templates/{templateId}", h.GetSMSTemplate)
+	mux.HandleFunc("POST "+base+"/sms/templates", h.CreateSMSTemplate)
+	mux.HandleFunc("PUT "+base+"/sms/templates/{templateId}", h.UpdateSMSTemplate)
+	mux.HandleFunc("DELETE "+base+"/sms/templates/{templateId}", h.DeleteSMSTemplate)
+
+	mux.HandleFunc("GET "+base+"/sms/providers", h.ListSMSProviders)
+	mux.HandleFunc("GET "+base+"/sms/providers/{providerId}", h.GetSMSProvider)
+	mux.HandleFunc("POST "+base+"/sms/providers", h.CreateSMSProvider)
+	mux.HandleFunc("PUT "+base+"/sms/providers/{providerId}", h.UpdateSMSProvider)
+	mux.HandleFunc("DELETE "+base+"/sms/providers/{providerId}", h.DeleteSMSProvider)
+
+	mux.HandleFunc("POST "+base+"/sms/send", h.SendSMS)
+	mux.HandleFunc("POST "+base+"/sms/send-basic", h.SendSMSBasic)
+	mux.HandleFunc("POST "+base+"/sms/check-status", h.CheckSMSStatus)
+
+	mux.HandleFunc("POST "+base+"/whatsapp/send", h.SendWhatsApp)
+	mux.HandleFunc("POST "+base+"/whatsapp/send-basic", h.SendWhatsAppBasic)
+	mux.HandleFunc("POST "+base+"/whatsapp/template", h.SendWhatsAppTemplate)
 }
 
 func parseProjectID(w http.ResponseWriter, r *http.Request) (int, bool) {

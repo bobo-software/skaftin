@@ -35,12 +35,10 @@ func registerAuthAndAdminRoutes(
 	authMgmtHandler.RegisterProtectedRoutes(authProtectedMux)
 	mux.Handle("/api/auth/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/auth/")(authProtectedMux)))
 
-	// App API compatibility route: keep legacy login URL but serve from Go.
+	// App API auth routes: keep legacy URL shapes and serve from Go.
 	appAPICompatMux := http.NewServeMux()
-	authMgmtHandler.RegisterAppAPICompatibilityRoutes(appAPICompatMux)
-	mux.Handle("/app-api/auth/auth/login", auth.APIKey(pool)(requestLogger.Middleware(appAPICompatMux)))
-	mux.Handle("/app-api/auth/auth/logout", auth.APIKey(pool)(requestLogger.Middleware(appAPICompatMux)))
-	mux.Handle("/app-api/auth/session/refresh", auth.APIKey(pool)(requestLogger.Middleware(appAPICompatMux)))
+	authMgmtHandler.RegisterAppAPIRoutes(appAPICompatMux)
+	mux.Handle("/app-api/auth/", auth.APIKey(pool)(requestLogger.Middleware(appAPICompatMux)))
 
 	// Admin: public email check + protected admin operations.
 	adminPublicMux := http.NewServeMux()
