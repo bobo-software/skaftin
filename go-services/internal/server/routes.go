@@ -87,7 +87,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	registerAuthAndAdminRoutes(mux, pool, jwks, requestLogger, authMgmtHandler, adminHandler)
 	registerMCPRoutes(mux, pool, jwks, requestLogger, mcpHandler, clientMCPHandler)
 
-	opsCleanup, err := registerOperationalRoutes(mux, pool, cfg, jwks, communicationsHandler, paymentsHandler, storageHandler.S3())
+	opsCleanup, err := registerOperationalRoutes(mux, pool, cfg, jwks, requestLogger, communicationsHandler, paymentsHandler, storageHandler.S3())
 	if err != nil {
 		return nil, err
 	}

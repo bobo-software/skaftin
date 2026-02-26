@@ -1,10 +1,10 @@
 # Authentication Requests
 
-All authentication endpoints are available at `/app-api/auth`.
+All authentication endpoints are available at `/api/auth/{projectId}/auth`.
 
 ## Base URL
 ```
-/app-api/auth
+/api/auth/{projectId}/auth
 ```
 
 ## Authentication Methods
@@ -21,7 +21,7 @@ The login endpoints support 4 different identifier methods:
 
 Create a new user account.
 
-**Endpoint:** `POST /app-api/auth/register`
+**Endpoint:** `POST /api/auth/{projectId}/auth/register`
 
 **Headers:**
 ```
@@ -96,7 +96,7 @@ x-api-key: your-api-key
 
 Authenticate with username and password.
 
-**Endpoint:** `POST /app-api/auth/login`
+**Endpoint:** `POST /api/auth/{projectId}/auth/login`
 
 **Headers:**
 ```
@@ -172,7 +172,7 @@ x-api-key: your-api-key
 
 Login without a password using just the identifier.
 
-**Endpoint:** `POST /app-api/auth/single-credential-login`
+**Endpoint:** `POST /api/auth/{projectId}/auth/single-credential-login`
 
 **Headers:**
 ```
@@ -205,7 +205,7 @@ A two-step passwordless login flow where the user receives an OTP via email or S
 
 Request an OTP code to be sent to the user's email or phone.
 
-**Endpoint:** `POST /app-api/auth/otp-login`
+**Endpoint:** `POST /api/auth/{projectId}/auth/otp-login`
 
 **Headers:**
 ```
@@ -256,7 +256,7 @@ x-api-key: your-api-key
 
 Verify the OTP code and receive login credentials.
 
-**Endpoint:** `POST /app-api/auth/verify-otp-login`
+**Endpoint:** `POST /api/auth/{projectId}/auth/verify-otp-login`
 
 **Headers:**
 ```
@@ -346,7 +346,7 @@ x-api-key: your-api-key
 
 Verify if a JWT token is valid.
 
-**Endpoint:** `POST /app-api/auth/verify`
+**Endpoint:** `POST /api/auth/{projectId}/auth/verify`
 
 **Headers:**
 ```
@@ -377,7 +377,7 @@ Authorization: Bearer <jwt-token>
 
 End the user's session.
 
-**Endpoint:** `POST /app-api/auth/logout`
+**Endpoint:** `POST /api/auth/{projectId}/auth/logout`
 
 **Headers:**
 ```
@@ -398,7 +398,7 @@ Authorization: Bearer <jwt-token>
 
 Verify an OTP code sent during registration.
 
-**Endpoint:** `POST /app-api/auth/verify-otp`
+**Endpoint:** `POST /api/auth/{projectId}/auth/verify-otp`
 
 **Headers:**
 ```
@@ -434,7 +434,7 @@ x-api-key: your-api-key
 
 Request a password reset OTP. Supports both email and phone number as identifiers.
 
-**Endpoint:** `POST /app-api/auth/forgot-password`
+**Endpoint:** `POST /api/auth/{projectId}/auth/forgot-password`
 
 **Headers:**
 ```
@@ -506,7 +506,7 @@ x-api-key: your-api-key
 
 Verify the password reset OTP. Use the same identifier (email or phone) used in the forgot password request.
 
-**Endpoint:** `POST /app-api/auth/verify-forgot-password-otp`
+**Endpoint:** `POST /api/auth/{projectId}/auth/verify-forgot-password-otp`
 
 **Headers:**
 ```
@@ -563,7 +563,7 @@ x-api-key: your-api-key
 
 Set a new password after OTP verification. Use the same identifier (email or phone) and the reset token from the verify step.
 
-**Endpoint:** `POST /app-api/auth/reset-password`
+**Endpoint:** `POST /api/auth/{projectId}/auth/reset-password`
 
 **Headers:**
 ```
@@ -619,7 +619,7 @@ x-api-key: your-api-key
 
 Request password change for logged-in users.
 
-**Endpoint:** `POST /app-api/auth/change-password-request`
+**Endpoint:** `POST /api/auth/{projectId}/auth/change-password-request`
 
 **Headers:**
 ```
@@ -648,7 +648,7 @@ Authorization: Bearer <jwt-token>
 
 Verify OTP and change password.
 
-**Endpoint:** `POST /app-api/auth/verify-password-change-otp`
+**Endpoint:** `POST /api/auth/{projectId}/auth/verify-password-change-otp`
 
 **Headers:**
 ```
@@ -678,7 +678,7 @@ Authorization: Bearer <jwt-token>
 
 Request to delete the user's account.
 
-**Endpoint:** `POST /app-api/auth/request-account-deletion`
+**Endpoint:** `POST /api/auth/{projectId}/auth/request-account-deletion`
 
 **Headers:**
 ```
@@ -706,7 +706,7 @@ Authorization: Bearer <jwt-token>
 
 Confirm account deletion with OTP.
 
-**Endpoint:** `POST /app-api/auth/verify-account-deletion-otp`
+**Endpoint:** `POST /api/auth/{projectId}/auth/verify-account-deletion-otp`
 
 **Headers:**
 ```
@@ -734,7 +734,7 @@ Authorization: Bearer <jwt-token>
 
 Cancel a pending account deletion.
 
-**Endpoint:** `POST /app-api/auth/cancel-account-deletion`
+**Endpoint:** `POST /api/auth/{projectId}/auth/cancel-account-deletion`
 
 **Headers:**
 ```

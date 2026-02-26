@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/communications"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 	"github.com/skaftin/go-services/internal/supertokens"
@@ -54,6 +55,82 @@ func (h *Handler) RegisterAppAPICompatibilityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /app-api/auth/auth/login", h.LoginFromAppAPI)
 	mux.HandleFunc("POST /app-api/auth/auth/logout", h.LogoutFromAppAPI)
 	mux.HandleFunc("POST /app-api/auth/session/refresh", h.RefreshFromAppAPI)
+}
+
+// RegisterAppAPIRoutes registers the full app-api auth surface in Go.
+// Routes keep legacy shapes (no projectId in URL) and resolve project context
+// from API-key authentication middleware.
+func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
+	// Legacy compatibility endpoints (already used by clients)
+	h.RegisterAppAPICompatibilityRoutes(mux)
+
+	// App user public auth endpoints
+	mux.HandleFunc("POST /app-api/auth/auth/register", h.withAppAPIProject(h.Register))
+	mux.HandleFunc("POST /app-api/auth/auth/single-credential-login", h.withAppAPIProject(h.SingleCredentialLogin))
+	mux.HandleFunc("POST /app-api/auth/auth/otp-login", h.withAppAPIProject(h.RequestOTPLogin))
+	mux.HandleFunc("POST /app-api/auth/auth/verify-otp-login", h.withAppAPIProject(h.VerifyOTPLogin))
+	mux.HandleFunc("POST /app-api/auth/auth/verify", h.withAppAPIProject(h.VerifySession))
+	mux.HandleFunc("POST /app-api/auth/auth/verify-otp", h.withAppAPIProject(h.VerifyOTP))
+	mux.HandleFunc("POST /app-api/auth/auth/forgot-password", h.withAppAPIProject(h.ForgotPassword))
+	mux.HandleFunc("POST /app-api/auth/auth/verify-forgot-password-otp", h.withAppAPIProject(h.VerifyForgotPasswordOTP))
+	mux.HandleFunc("POST /app-api/auth/auth/reset-password", h.withAppAPIProject(h.ResetPassword))
+
+	// App user protected auth endpoints
+	mux.HandleFunc("POST /app-api/auth/auth/change-password-request", h.withAppAPIProject(h.ChangePasswordRequest))
+	mux.HandleFunc("POST /app-api/auth/auth/verify-password-change-otp", h.withAppAPIProject(h.VerifyPasswordChangeOTP))
+	mux.HandleFunc("POST /app-api/auth/auth/request-account-deletion", h.withAppAPIProject(h.RequestAccountDeletion))
+	mux.HandleFunc("POST /app-api/auth/auth/verify-account-deletion-otp", h.withAppAPIProject(h.VerifyAccountDeletionOTP))
+	mux.HandleFunc("POST /app-api/auth/auth/cancel-account-deletion", h.withAppAPIProject(h.CancelAccountDeletion))
+
+	// Users
+	mux.HandleFunc("GET /app-api/auth/users", h.withAppAPIProject(h.ListUsers))
+	mux.HandleFunc("GET /app-api/auth/users/by-role/{roleId}", h.withAppAPIProject(h.GetUsersByRole))
+	mux.HandleFunc("GET /app-api/auth/users/{userId}", h.withAppAPIProject(h.GetUserHandler))
+	mux.HandleFunc("GET /app-api/auth/users/{userId}/password", h.withAppAPIProject(h.GetUserPasswordHandler))
+	mux.HandleFunc("POST /app-api/auth/users/{userId}/password", h.withAppAPIProject(h.SetUserPasswordHandler))
+	mux.HandleFunc("POST /app-api/auth/users/{userId}/password/verify", h.withAppAPIProject(h.VerifyUserPasswordHandler))
+	mux.HandleFunc("POST /app-api/auth/users", h.withAppAPIProject(h.CreateUserHandler))
+	mux.HandleFunc("PUT /app-api/auth/users/{userId}", h.withAppAPIProject(h.UpdateUserHandler))
+	mux.HandleFunc("DELETE /app-api/auth/users/{userId}", h.withAppAPIProject(h.DeleteUserHandler))
+	mux.HandleFunc("GET /app-api/auth/users/{userId}/otp-status", h.withAppAPIProject(h.GetUserOTPStatusHandler))
+	mux.HandleFunc("POST /app-api/auth/users/{userId}/resend-otp", h.withAppAPIProject(h.ResendOTPHandler))
+	mux.HandleFunc("POST /app-api/auth/users/{userId}/manual-verify", h.withAppAPIProject(h.ManuallyVerifyHandler))
+	mux.HandleFunc("POST /app-api/auth/users/{userId}/roles", h.withAppAPIProject(h.AssignRoleHandler))
+	mux.HandleFunc("DELETE /app-api/auth/users/{userId}/roles/{roleId}", h.withAppAPIProject(h.RemoveRoleHandler))
+	mux.HandleFunc("POST /app-api/auth/users/export", h.withAppAPIProject(h.ExportUsersHandler))
+
+	// Roles
+	mux.HandleFunc("GET /app-api/auth/roles", h.withAppAPIProject(h.ListRolesHandler))
+	mux.HandleFunc("GET /app-api/auth/roles/{roleId}", h.withAppAPIProject(h.GetRoleHandler))
+	mux.HandleFunc("POST /app-api/auth/roles", h.withAppAPIProject(h.CreateRoleHandler))
+	mux.HandleFunc("PUT /app-api/auth/roles/{roleId}", h.withAppAPIProject(h.UpdateRoleHandler))
+	mux.HandleFunc("DELETE /app-api/auth/roles/{roleId}", h.withAppAPIProject(h.DeleteRoleHandler))
+	mux.HandleFunc("GET /app-api/auth/roles/{roleId}/permissions", h.withAppAPIProject(h.GetRolePermissionsHandler))
+	mux.HandleFunc("PUT /app-api/auth/roles/{roleId}/permissions", h.withAppAPIProject(h.UpdateRolePermissionsHandler))
+	mux.HandleFunc("PUT /app-api/auth/roles/{roleId}/session-duration", h.withAppAPIProject(h.UpdateSessionDurationHandler))
+	mux.HandleFunc("GET /app-api/auth/roles/{roleId}/verify-org-context", h.withAppAPIProject(h.VerifyOrgContextHandler))
+
+	// Custom fields
+	mux.HandleFunc("GET /app-api/auth/fields/available-tables", h.withAppAPIProject(h.GetAvailableTablesHandler))
+	mux.HandleFunc("GET /app-api/auth/fields", h.withAppAPIProject(h.ListCustomFieldsHandler))
+	mux.HandleFunc("GET /app-api/auth/fields/{fieldId}", h.withAppAPIProject(h.GetCustomFieldHandler))
+	mux.HandleFunc("POST /app-api/auth/fields", h.withAppAPIProject(h.CreateCustomFieldHandler))
+	mux.HandleFunc("PUT /app-api/auth/fields/{fieldId}", h.withAppAPIProject(h.UpdateCustomFieldHandler))
+	mux.HandleFunc("DELETE /app-api/auth/fields/{fieldId}", h.withAppAPIProject(h.DeleteCustomFieldHandler))
+	mux.HandleFunc("POST /app-api/auth/fields/{fieldId}/apply", h.withAppAPIProject(h.ApplyCustomFieldHandler))
+
+	// Settings
+	mux.HandleFunc("GET /app-api/auth/settings/email-providers", h.withAppAPIProject(h.GetEmailProvidersHandler))
+	mux.HandleFunc("GET /app-api/auth/settings/sms-providers", h.withAppAPIProject(h.GetSmsProvidersHandler))
+	mux.HandleFunc("GET /app-api/auth/settings/session-durations", h.withAppAPIProject(h.GetAllSessionDurationsHandler))
+	mux.HandleFunc("GET /app-api/auth/settings/session-config/{roleId}", h.withAppAPIProject(h.GetSessionConfigHandler))
+	mux.HandleFunc("GET /app-api/auth/settings", h.withAppAPIProject(h.GetAuthSettingsHandler))
+	mux.HandleFunc("PUT /app-api/auth/settings", h.withAppAPIProject(h.UpdateAuthSettingsHandler))
+	mux.HandleFunc("POST /app-api/auth/settings/send-verification", h.withAppAPIProject(h.SendVerificationHandler))
+	mux.HandleFunc("POST /app-api/auth/settings/send-reset", h.withAppAPIProject(h.SendPasswordResetHandler))
+	mux.HandleFunc("POST /app-api/auth/settings/verify-otp", h.withAppAPIProject(h.VerifyOTPSettingsHandler))
+	mux.HandleFunc("POST /app-api/auth/settings/test-email-provider", h.withAppAPIProject(h.TestEmailProviderHandler))
+	mux.HandleFunc("POST /app-api/auth/settings/test-sms-provider", h.withAppAPIProject(h.TestSmsProviderHandler))
 }
 
 // RegisterProtectedRoutes registers JWT + project access routes.
@@ -140,4 +217,16 @@ func extractBearerToken(r *http.Request) string {
 		return auth[7:]
 	}
 	return ""
+}
+
+func (h *Handler) withAppAPIProject(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authCtx := auth.GetAuthContext(r)
+		if authCtx == nil || authCtx.ProjectID <= 0 {
+			httputil.WriteError(w, http.StatusUnauthorized, "Authentication required")
+			return
+		}
+		r.SetPathValue("projectId", strconv.Itoa(authCtx.ProjectID))
+		next(w, r)
+	}
 }

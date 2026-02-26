@@ -45,16 +45,21 @@ func registerDataRoutes(
 	appDBMux := http.NewServeMux()
 	dbHandler.RegisterAppAPIRoutes(appDBMux)
 	mux.Handle("/app-api/database/", auth.APIKey(pool)(requestLogger.Middleware(appDBMux)))
+	mux.Handle("/app-api-2/database/", auth.APIKey(pool)(requestLogger.Middleware(appDBMux)))
 
 	mountJWT(mux, "/api/projects/", jwks, projectsHandler.RegisterRoutes)
 	mountJWT(mux, "/api/organizations/", jwks, orgsHandler.RegisterRoutes)
 	mountJWT(mux, "/api/request-logs/", jwks, requestLogsHandler.RegisterRoutes)
+	appRequestLogsMux := http.NewServeMux()
+	requestLogsHandler.RegisterAppAPIRoutes(appRequestLogsMux)
+	mux.Handle("/app-api/request-logs/", auth.APIKey(pool)(requestLogger.Middleware(appRequestLogsMux)))
 	mountJWT(mux, "/api/storage/", jwks, storageHandler.RegisterRoutes)
 
 	// Client-facing storage routes (project from API-key auth context).
 	appStorageMux := http.NewServeMux()
 	storageHandler.RegisterAppAPIRoutes(appStorageMux)
 	mux.Handle("/app-api/storage/", auth.APIKey(pool)(requestLogger.Middleware(appStorageMux)))
+	mux.Handle("/app-api-2/storage/", auth.APIKey(pool)(requestLogger.Middleware(appStorageMux)))
 
 	mountJWT(mux, "/api/analytics/", jwks, analyticsHandler.RegisterRoutes)
 	mountJWT(mux, "/api/credentials/", jwks, credentialsHandler.RegisterRoutes)

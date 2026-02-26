@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -43,6 +44,12 @@ func (h *Handler) RegisterProjectRoutes(mux *http.ServeMux) {
 func (h *Handler) RegisterWebhookRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/payments/webhook/payfast/{projectId}", h.PayFastWebhook)
 	mux.HandleFunc("POST /api/payments/webhook/{providerType}/{projectId}", h.GenericWebhook)
+}
+
+func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /app-api/payments/initiate", h.InitiatePaymentFromAppAPI)
+	mux.HandleFunc("GET /app-api/payments/transaction/{transactionId}", h.GetTransactionStatusFromAppAPI)
+	mux.HandleFunc("POST /app-api/payments/subscription/cancel", h.CancelSubscriptionFromAppAPI)
 }
 
 func (h *Handler) ListProviders(w http.ResponseWriter, r *http.Request) {
@@ -528,6 +535,9 @@ func (h *Handler) GenericWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func parseProjectID(w http.ResponseWriter, r *http.Request) (int, bool) {
+	if authCtx := auth.GetAuthContext(r); authCtx != nil && authCtx.ProjectID > 0 {
+		return authCtx.ProjectID, true
+	}
 	id, err := strconv.Atoi(r.PathValue("projectId"))
 	if err != nil || id <= 0 {
 		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
@@ -537,4 +547,122 @@ func parseProjectID(w http.ResponseWriter, r *http.Request) (int, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+func (h *Handler) InitiatePaymentFromAppAPI(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	var req InitiatePaymentRequest
+	if err := httputil.DecodeBody(r, &req); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	result, err := h.service.InitiatePayment(r.Context(), projectID, req)
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"error":   "Failed to initiate payment",
+			"message": err.Error(),
+		})
+		return
+	}
+	if !result.Success {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   result.Error,
+		})
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
+		"success":       true,
+		"transactionId": result.TransactionID,
+		"paymentUrl":    result.PaymentURL,
+	})
+}
+
+func (h *Handler) GetTransactionStatusFromAppAPI(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	transactionID := r.PathValue("transactionId")
+	if transactionID == "" {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   "Transaction ID is required",
+		})
+		return
+	}
+	tx, err := h.service.GetTransaction(r.Context(), projectID, transactionID)
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"error":   "Failed to get transaction status",
+			"message": err.Error(),
+		})
+		return
+	}
+	if tx == nil {
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{
+			"success": false,
+			"error":   "Transaction not found",
+		})
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"data": map[string]any{
+			"transaction_id": tx.TransactionID,
+			"status":         tx.Status,
+			"amount":         tx.Amount,
+			"currency":       tx.Currency,
+			"item_name":      tx.ItemName,
+			"payment_type":   tx.PaymentType,
+			"paid_at":        tx.PaidAt,
+			"created_at":     tx.CreatedAt,
+		},
+	})
+}
+
+func (h *Handler) CancelSubscriptionFromAppAPI(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		TransactionID string `json:"transaction_id"`
+	}
+	if err := httputil.DecodeBody(r, &req); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.TransactionID) == "" {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   "transaction_id is required",
+		})
+		return
+	}
+	okResult, msg, err := h.service.CancelSubscription(r.Context(), projectID, strings.TrimSpace(req.TransactionID))
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"error":   "Failed to cancel subscription",
+			"message": err.Error(),
+		})
+		return
+	}
+	if !okResult {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   msg,
+		})
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Subscription cancelled successfully",
+	})
 }

@@ -69,6 +69,32 @@ type TransactionListOptions struct {
 	EndDate     *time.Time
 }
 
+type InitiatePaymentRequest struct {
+	ProviderID       *int           `json:"provider_id"`
+	Amount           float64        `json:"amount"`
+	ItemName         string         `json:"item_name"`
+	ItemDescription  *string        `json:"item_description,omitempty"`
+	CustomerEmail    *string        `json:"customer_email,omitempty"`
+	CustomerName     *string        `json:"customer_name,omitempty"`
+	CustomerPhone    *string        `json:"customer_phone,omitempty"`
+	PaymentType      *string        `json:"payment_type,omitempty"`
+	SubscriptionType *int           `json:"subscription_type,omitempty"`
+	Frequency        *int           `json:"frequency,omitempty"`
+	Cycles           *int           `json:"cycles,omitempty"`
+	BillingDate      *string        `json:"billing_date,omitempty"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
+	ReturnURL        *string        `json:"return_url,omitempty"`
+	CancelURL        *string        `json:"cancel_url,omitempty"`
+	NotifyURL        *string        `json:"notify_url,omitempty"`
+}
+
+type InitiatePaymentResult struct {
+	Success       bool   `json:"success"`
+	TransactionID string `json:"transactionId"`
+	PaymentURL    string `json:"paymentUrl"`
+	Error         string `json:"error,omitempty"`
+}
+
 type CreateProviderRequest struct {
 	ProjectID    int
 	Name         string
