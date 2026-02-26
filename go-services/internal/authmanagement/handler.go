@@ -84,7 +84,8 @@ func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 
 	// Users
 	mux.HandleFunc("GET /app-api/auth/users", h.withAppAPIProject(h.ListUsers))
-	mux.HandleFunc("GET /app-api/auth/users/by-role/{roleId}", h.withAppAPIProject(h.GetUsersByRole))
+	// Keep role-user lookup on /roles to avoid ServeMux overlap with /users/{userId}/password.
+	mux.HandleFunc("GET /app-api/auth/roles/{roleId}/users", h.withAppAPIProject(h.GetUsersByRole))
 	mux.HandleFunc("GET /app-api/auth/users/{userId}", h.withAppAPIProject(h.GetUserHandler))
 	mux.HandleFunc("GET /app-api/auth/users/{userId}/password", h.withAppAPIProject(h.GetUserPasswordHandler))
 	mux.HandleFunc("POST /app-api/auth/users/{userId}/password", h.withAppAPIProject(h.SetUserPasswordHandler))
