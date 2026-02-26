@@ -73,7 +73,7 @@ const DashboardNavbar = ({
             <AppText
               children={projectName}
               size="xs"
-              color="white"
+              color="default"
               weight="medium"
               align="left"
               truncate={true}
@@ -82,12 +82,12 @@ const DashboardNavbar = ({
             {/* Separator and Current Section (Desktop) */}
             <div className="hidden sm:flex items-center space-x-2">
               <ChevronRight className="w-4 h-4 text-dark-400 dark:text-dark-500 flex-shrink-0" />
-              <div className={`flex items-center space-x-2 ${currentSection.color}`}>
-                <SectionIcon className="w-4 h-4 flex-shrink-0" />
+              <div className="flex items-center space-x-2">
+                <SectionIcon className={`w-4 h-4 flex-shrink-0 ${currentSection.color}`} />
                 <AppText
                   children={currentSection.name}
                   size="xs"
-                  color="white"
+                  color="default"
                   weight="medium"
                   align="left"
                   truncate={true}
