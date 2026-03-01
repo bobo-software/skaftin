@@ -204,6 +204,31 @@ func (s *Store) GetProviderByType(ctx context.Context, projectID int, providerTy
 	return provider, err
 }
 
+func (s *Store) GetActiveProvider(ctx context.Context, projectID int, schema string) (*PaymentProviderRecord, error) {
+	var provider *PaymentProviderRecord
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			SELECT id, project_id, name, provider_type, merchant_id, merchant_key, passphrase,
+				api_key, api_secret, public_key, return_url, cancel_url, notify_url, sandbox_mode,
+				is_active, metadata, created_at, updated_at
+			FROM skaftin_system_payment_providers
+			WHERE project_id = $1 AND is_active = true
+			ORDER BY created_at ASC
+			LIMIT 1
+		`, projectID)
+		p, err := scanProvider(row)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			return err
+		}
+		provider = &p
+		return nil
+	})
+	return provider, err
+}
+
 func (s *Store) InsertProvider(ctx context.Context, req CreateProviderRequest, schema string) (*PaymentProviderRecord, error) {
 	var provider *PaymentProviderRecord
 	metaJSON, _ := json.Marshal(req.Metadata)
@@ -360,6 +385,86 @@ func (s *Store) GetTransaction(ctx context.Context, projectID int, transactionID
 		return nil
 	})
 	return txRecord, err
+}
+
+func (s *Store) InsertTransaction(ctx context.Context, projectID int, schema string, req InitiatePaymentRequest, provider *PaymentProviderRecord, transactionID string) error {
+	paymentType := "once_off"
+	if req.PaymentType != nil && strings.TrimSpace(*req.PaymentType) != "" {
+		paymentType = strings.TrimSpace(*req.PaymentType)
+	}
+	returnURL := provider.ReturnURL
+	if req.ReturnURL != nil {
+		returnURL = req.ReturnURL
+	}
+	cancelURL := provider.CancelURL
+	if req.CancelURL != nil {
+		cancelURL = req.CancelURL
+	}
+	metaJSON, _ := json.Marshal(req.Metadata)
+
+	return s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO skaftin_system_payment_transactions (
+				project_id, provider_id, transaction_id, amount, currency, item_name,
+				item_description, customer_email, customer_name, customer_phone,
+				payment_type, subscription_type, frequency, cycles, return_url,
+				cancel_url, metadata, status
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'pending')
+		`,
+			projectID,
+			provider.ID,
+			transactionID,
+			req.Amount,
+			"ZAR",
+			req.ItemName,
+			req.ItemDescription,
+			req.CustomerEmail,
+			req.CustomerName,
+			req.CustomerPhone,
+			paymentType,
+			req.SubscriptionType,
+			req.Frequency,
+			req.Cycles,
+			returnURL,
+			cancelURL,
+			metaJSON,
+		)
+		return err
+	})
+}
+
+func (s *Store) SetTransactionProcessing(ctx context.Context, schema, transactionID, paymentURL string) error {
+	return s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			UPDATE skaftin_system_payment_transactions
+			SET payment_url = $1, status = 'processing', updated_at = CURRENT_TIMESTAMP
+			WHERE transaction_id = $2
+		`, paymentURL, transactionID)
+		return err
+	})
+}
+
+func (s *Store) SetTransactionFailed(ctx context.Context, schema, transactionID, statusMessage string) error {
+	return s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			UPDATE skaftin_system_payment_transactions
+			SET status = 'failed', status_message = $1, updated_at = CURRENT_TIMESTAMP
+			WHERE transaction_id = $2
+		`, statusMessage, transactionID)
+		return err
+	})
+}
+
+func (s *Store) SetTransactionCancelled(ctx context.Context, schema, transactionID string) error {
+	return s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			UPDATE skaftin_system_payment_transactions
+			SET status = 'cancelled', status_message = 'Subscription cancelled', updated_at = CURRENT_TIMESTAMP
+			WHERE transaction_id = $1
+		`, transactionID)
+		return err
+	})
 }
 
 func (s *Store) ListTransactions(ctx context.Context, projectID int, schema string, opts TransactionListOptions) ([]PaymentTransactionRecord, int, error) {

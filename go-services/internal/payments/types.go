@@ -160,3 +160,36 @@ type WebhookValidationResult struct {
 	Error             string
 	RawData           map[string]any
 }
+
+type InitiatePaymentRequest struct {
+	ProviderID       *int
+	Amount           float64
+	ItemName         string
+	ItemDescription  *string
+	CustomerEmail    *string
+	CustomerName     *string
+	CustomerPhone    *string
+	PaymentType      *string
+	SubscriptionType *int
+	Frequency        *int
+	Cycles           *int
+	BillingDate      *int
+	Metadata         map[string]any
+	ReturnURL        *string
+	CancelURL        *string
+	NotifyURL        *string
+}
+
+type InitiatePaymentResult struct {
+	Success       bool
+	TransactionID string
+	PaymentURL    string
+	PaymentData   map[string]any
+	Error         string
+}
+
+type SubscriptionActionResult struct {
+	Success bool
+	Message string
+	Error   string
+}

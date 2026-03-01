@@ -14,6 +14,7 @@ import (
 	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/payments"
 	"github.com/skaftin/go-services/internal/projects"
+	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/storage"
 	"github.com/skaftin/go-services/internal/workflows"
 )

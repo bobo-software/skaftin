@@ -213,13 +213,13 @@ app.get('/', (req: Request, res: Response) => {
         app_user_auth: '/app-api/auth',
         storage: '/app-api/storage (Go gateway)',
         database: '/app-api/database (Go gateway)',
-        communications: '/app-api/communications',
-        payments: '/app-api/payments',
+        communications: '/app-api/communications (Go gateway)',
+        payments: '/app-api/payments (Go gateway)',
       },
       // Public API Routes (API Key / Access Token only, GET & POST, no user auth required)
       app_api_2: {
-        database: '/app-api-2/database',
-        storage: '/app-api-2/storage',
+        database: '/app-api-2/database (Go gateway)',
+        storage: '/app-api-2/storage (Go gateway)',
       },
     },
   });
