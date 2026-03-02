@@ -81,7 +81,7 @@ type InitiatePaymentRequest struct {
 	SubscriptionType *int           `json:"subscription_type,omitempty"`
 	Frequency        *int           `json:"frequency,omitempty"`
 	Cycles           *int           `json:"cycles,omitempty"`
-	BillingDate      *string        `json:"billing_date,omitempty"`
+	BillingDate      *int           `json:"billing_date,omitempty"`
 	Metadata         map[string]any `json:"metadata,omitempty"`
 	ReturnURL        *string        `json:"return_url,omitempty"`
 	CancelURL        *string        `json:"cancel_url,omitempty"`
@@ -89,10 +89,11 @@ type InitiatePaymentRequest struct {
 }
 
 type InitiatePaymentResult struct {
-	Success       bool   `json:"success"`
-	TransactionID string `json:"transactionId"`
-	PaymentURL    string `json:"paymentUrl"`
-	Error         string `json:"error,omitempty"`
+	Success       bool           `json:"success"`
+	TransactionID string         `json:"transactionId"`
+	PaymentURL    string         `json:"paymentUrl"`
+	PaymentData   map[string]any `json:"paymentData,omitempty"`
+	Error         string         `json:"error,omitempty"`
 }
 
 type CreateProviderRequest struct {
@@ -159,33 +160,6 @@ type WebhookValidationResult struct {
 	Amount            float64
 	Error             string
 	RawData           map[string]any
-}
-
-type InitiatePaymentRequest struct {
-	ProviderID       *int
-	Amount           float64
-	ItemName         string
-	ItemDescription  *string
-	CustomerEmail    *string
-	CustomerName     *string
-	CustomerPhone    *string
-	PaymentType      *string
-	SubscriptionType *int
-	Frequency        *int
-	Cycles           *int
-	BillingDate      *int
-	Metadata         map[string]any
-	ReturnURL        *string
-	CancelURL        *string
-	NotifyURL        *string
-}
-
-type InitiatePaymentResult struct {
-	Success       bool
-	TransactionID string
-	PaymentURL    string
-	PaymentData   map[string]any
-	Error         string
 }
 
 type SubscriptionActionResult struct {

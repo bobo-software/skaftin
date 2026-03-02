@@ -569,7 +569,7 @@ func (h *Handler) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := h.service.InitiatePayment(r.Context(), projectID, InitiatePaymentRequest{
+	result, err := h.service.InitiatePayment(r.Context(), projectID, InitiatePaymentRequest{
 		ProviderID:       req.ProviderID,
 		Amount:           req.Amount,
 		ItemName:         req.ItemName,
@@ -587,6 +587,13 @@ func (h *Handler) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		CancelURL:        req.CancelURL,
 		NotifyURL:        req.NotifyURL,
 	})
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
 	if !result.Success {
 		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
 			"success":       false,
@@ -670,17 +677,24 @@ func (h *Handler) CancelSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := h.service.CancelSubscription(r.Context(), projectID, req.TransactionID)
-	if !result.Success {
+	ok, msg, err := h.service.CancelSubscription(r.Context(), projectID, req.TransactionID)
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+	if !ok {
 		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
 			"success": false,
-			"error":   result.Error,
+			"error":   msg,
 		})
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"success": true,
-		"message": result.Message,
+		"message": "Subscription cancelled successfully",
 	})
 }
 
