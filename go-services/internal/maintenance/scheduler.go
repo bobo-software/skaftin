@@ -131,14 +131,14 @@ func (s *Scheduler) processPendingAccountDeletions(ctx context.Context) (account
 		for userRows.Next() {
 			var u user
 			if scanErr := userRows.Scan(&u.ID, &u.SupertokensUser); scanErr != nil {
-				_ = userRows.Close()
+				userRows.Close()
 				stats.Errors++
 				slog.Error("failed to scan pending deletion user", "projectId", p.ID, "schema", p.SchemaName, "error", scanErr)
 				continue
 			}
 			users = append(users, u)
 		}
-		_ = userRows.Close()
+		userRows.Close()
 
 		for _, u := range users {
 			updateQuery := fmt.Sprintf(`
