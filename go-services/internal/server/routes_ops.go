@@ -11,11 +11,12 @@ import (
 	"github.com/skaftin/go-services/internal/communications"
 	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/invitations"
+	"github.com/skaftin/go-services/internal/maintenance"
 	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/payments"
 	"github.com/skaftin/go-services/internal/projects"
-	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/storage"
+	"github.com/skaftin/go-services/internal/supertokens"
 	"github.com/skaftin/go-services/internal/workflows"
 )
 
@@ -25,6 +26,7 @@ func registerOperationalRoutes(
 	cfg *config.Config,
 	jwks *auth.JWKSProvider,
 	requestLogger *middleware.RequestLogger,
+	stClient *supertokens.Client,
 	communicationsHandler *communications.Handler,
 	paymentsHandler *payments.Handler,
 	s3Client *storage.S3Client,
@@ -102,9 +104,15 @@ func registerOperationalRoutes(
 		slog.Error("failed to load workflow schedules", "error", err)
 	}
 
+	maintenanceScheduler := maintenance.NewScheduler(pool, stClient)
+	if err := maintenanceScheduler.Start(); err != nil {
+		return nil, err
+	}
+
 	cleanup := func() {
 		backupScheduler.Stop()
 		workflowScheduler.Stop()
+		maintenanceScheduler.Stop()
 	}
 	return cleanup, nil
 }

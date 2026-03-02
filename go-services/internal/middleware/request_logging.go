@@ -42,8 +42,10 @@ type RequestLogger struct {
 	queue chan requestlogs.CreateLogInput
 	done  chan struct{}
 
-	cache   map[int]cachedRequestLogSetting
-	cacheMu sync.RWMutex
+	cache            map[int]cachedRequestLogSetting
+	cacheMu          sync.RWMutex
+	refreshing       map[int]struct{}
+	refreshingMu     sync.Mutex
 }
 
 // NewRequestLogger constructs request logging middleware backed by DB settings.
@@ -61,6 +63,7 @@ func newRequestLoggerWithService(svc requestLogService, queueSize int) *RequestL
 		queue:   make(chan requestlogs.CreateLogInput, queueSize),
 		done:    make(chan struct{}),
 		cache:   make(map[int]cachedRequestLogSetting),
+		refreshing: make(map[int]struct{}),
 	}
 	go rl.worker()
 	return rl
@@ -92,7 +95,38 @@ func shouldLogPath(path string) bool {
 	return false
 }
 
-func (rl *RequestLogger) loggingEnabled(ctx context.Context, projectID int) bool {
+func (rl *RequestLogger) refreshLoggingSettingAsync(projectID int) {
+	rl.refreshingMu.Lock()
+	if _, exists := rl.refreshing[projectID]; exists {
+		rl.refreshingMu.Unlock()
+		return
+	}
+	rl.refreshing[projectID] = struct{}{}
+	rl.refreshingMu.Unlock()
+
+	go func() {
+		defer func() {
+			rl.refreshingMu.Lock()
+			delete(rl.refreshing, projectID)
+			rl.refreshingMu.Unlock()
+		}()
+
+		enabled, err := rl.service.IsLoggingEnabled(context.Background(), projectID)
+		if err != nil {
+			slog.Warn("failed to refresh request logging settings", "projectId", projectID, "error", err)
+			return
+		}
+
+		rl.cacheMu.Lock()
+		rl.cache[projectID] = cachedRequestLogSetting{
+			enabled:   enabled,
+			timestamp: time.Now(),
+		}
+		rl.cacheMu.Unlock()
+	}()
+}
+
+func (rl *RequestLogger) loggingEnabled(projectID int) bool {
 	now := time.Now()
 
 	rl.cacheMu.RLock()
@@ -102,20 +136,12 @@ func (rl *RequestLogger) loggingEnabled(ctx context.Context, projectID int) bool
 		return cached.enabled
 	}
 
-	enabled, err := rl.service.IsLoggingEnabled(ctx, projectID)
-	if err != nil {
-		slog.Warn("failed to read request logging settings", "projectId", projectID, "error", err)
-		return false
+	// Never block request handling on settings I/O.
+	rl.refreshLoggingSettingAsync(projectID)
+	if ok {
+		return cached.enabled
 	}
-
-	rl.cacheMu.Lock()
-	rl.cache[projectID] = cachedRequestLogSetting{
-		enabled:   enabled,
-		timestamp: now,
-	}
-	rl.cacheMu.Unlock()
-
-	return enabled
+	return false
 }
 
 func parseUserID(r *http.Request) *int {
@@ -175,7 +201,7 @@ func (rl *RequestLogger) Middleware(next http.Handler) http.Handler {
 		}
 		projectID := authCtx.ProjectID
 
-		if !rl.loggingEnabled(r.Context(), projectID) {
+		if !rl.loggingEnabled(projectID) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -195,30 +221,39 @@ func (rl *RequestLogger) Middleware(next http.Handler) http.Handler {
 			statusCode = http.StatusOK
 		}
 
-		var errMsg *string
-		if statusCode >= 400 {
-			msg := "request failed"
-			if s := wrapped.errorMessage(); s != "" {
-				msg = s
+		method := r.Method
+		urlPath := r.URL.Path
+		userID := parseUserID(r)
+		ipAddress := stringPtr(r.RemoteAddr)
+		userAgent := stringPtr(r.UserAgent())
+		requestPayloadRaw := append([]byte(nil), bodyCapture.Bytes()...)
+		responsePayloadRaw := append([]byte(nil), wrapped.Bytes()...)
+
+		go func() {
+			var errMsg *string
+			if statusCode >= 400 {
+				msg := "request failed"
+				if s := extractErrorMessage(responsePayloadRaw); s != "" {
+					msg = s
+				}
+				errMsg = &msg
 			}
-			errMsg = &msg
-		}
 
-		entry := requestlogs.CreateLogInput{
-			ProjectID:      projectID,
-			Method:         r.Method,
-			URL:            r.URL.Path,
-			StatusCode:     &statusCode,
-			RequestPayload: sanitizeJSONPayload(bodyCapture.Bytes()),
-			ResponseData:   sanitizeJSONPayload(wrapped.Bytes()),
-			ErrorMessage:   errMsg,
-			DurationMs:     &duration,
-			UserID:         parseUserID(r),
-			IPAddress:      stringPtr(r.RemoteAddr),
-			UserAgent:      stringPtr(r.UserAgent()),
-		}
-
-		enqueueNonBlocking(rl.queue, entry)
+			entry := requestlogs.CreateLogInput{
+				ProjectID:      projectID,
+				Method:         method,
+				URL:            urlPath,
+				StatusCode:     &statusCode,
+				RequestPayload: sanitizeJSONPayload(requestPayloadRaw),
+				ResponseData:   sanitizeJSONPayload(responsePayloadRaw),
+				ErrorMessage:   errMsg,
+				DurationMs:     &duration,
+				UserID:         userID,
+				IPAddress:      ipAddress,
+				UserAgent:      userAgent,
+			}
+			enqueueNonBlocking(rl.queue, entry)
+		}()
 	})
 }
 
@@ -299,12 +334,12 @@ func (rw *responseCaptureWriter) Bytes() []byte {
 	return rw.body
 }
 
-func (rw *responseCaptureWriter) errorMessage() string {
-	if len(rw.body) == 0 {
+func extractErrorMessage(raw []byte) string {
+	if len(raw) == 0 {
 		return ""
 	}
 	var parsed map[string]any
-	if err := json.Unmarshal(rw.body, &parsed); err != nil {
+	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return ""
 	}
 	if msg, ok := parsed["message"].(string); ok && msg != "" {
