@@ -542,9 +542,7 @@ const SchemaEditor = ({
       if (!nullable && !primaryKey) {
         constraints.push('NOT NULL');
       }
-      if (defaultValue && !autoIncrement) {
-        constraints.push(`DEFAULT ${defaultValue}`);
-      }
+      // Default is sent separately in the request body to avoid duplicate DEFAULT clauses.
       
       // Build the full column definition
       const constraintString = constraints.length > 0 ? ` ${constraints.join(' ')}` : '';

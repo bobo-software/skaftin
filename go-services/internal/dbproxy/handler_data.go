@@ -8,13 +8,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/skaftin/go-services/internal/pkg/encryption"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
 // --- Phase 3: Data CRUD ---
 
 func (h *Handler) SelectDataGet(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -78,12 +79,30 @@ func (h *Handler) SelectDataGet(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	decryptFields := parseDecryptFieldsFromQuery(r.URL.Query().Get("decrypt"))
 	result := collectRows(rows)
+	if len(decryptFields) > 0 {
+		key, err := encryption.GetProjectFieldEncryptionKey(r.Context(), h.service.store.pool, pid)
+		if err != nil {
+			slog.Error("failed to get encryption key", "error", err, "projectId", pid)
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to fetch encryption key")
+			return
+		}
+		if strings.TrimSpace(key) == "" {
+			httputil.WriteError(w, http.StatusBadRequest, "No encryption key / secret found")
+			return
+		}
+		if err := encryption.DecryptFieldsInRows(result, decryptFields, key); err != nil {
+			slog.Error("failed to decrypt selected fields", "error", err, "table", tableName)
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to decrypt selected fields")
+			return
+		}
+	}
 	httputil.WriteSuccess(w, http.StatusOK, "Data fetched successfully", result)
 }
 
 func (h *Handler) SelectData(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -97,6 +116,7 @@ func (h *Handler) SelectData(w http.ResponseWriter, r *http.Request) {
 		Offset         int            `json:"offset"`
 		OrderBy        string         `json:"orderBy"`
 		OrderDirection string         `json:"orderDirection"`
+		Decrypt        []string       `json:"decrypt"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 
@@ -152,7 +172,39 @@ func (h *Handler) SelectData(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	result := collectRows(rows)
+	if len(body.Decrypt) > 0 {
+		key, err := encryption.GetProjectFieldEncryptionKey(r.Context(), h.service.store.pool, pid)
+		if err != nil {
+			slog.Error("failed to get encryption key", "error", err, "projectId", pid)
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to fetch encryption key")
+			return
+		}
+		if strings.TrimSpace(key) == "" {
+			httputil.WriteError(w, http.StatusBadRequest, "No encryption key / secret found")
+			return
+		}
+		if err := encryption.DecryptFieldsInRows(result, body.Decrypt, key); err != nil {
+			slog.Error("failed to decrypt selected fields", "error", err, "table", tableName)
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to decrypt selected fields")
+			return
+		}
+	}
 	httputil.WriteSuccess(w, http.StatusOK, "Data fetched successfully", result)
+}
+
+func parseDecryptFieldsFromQuery(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		field := strings.TrimSpace(p)
+		if field != "" {
+			out = append(out, field)
+		}
+	}
+	return out
 }
 
 func (h *Handler) InsertData(w http.ResponseWriter, r *http.Request) {
