@@ -214,6 +214,136 @@ func TestAppAPIMCPRouteWinsOverAppAPIPrefix(t *testing.T) {
 	}
 }
 
+func TestAppAPIRequestLogsRouteWinsOverAppAPIPrefix(t *testing.T) {
+	mux := http.NewServeMux()
+
+	var requestLogsHit, prefixHit bool
+
+	mux.Handle("/app-api/request-logs/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestLogsHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefixHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/app-api/request-logs/42", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if !requestLogsHit {
+		t.Fatalf("expected /app-api/request-logs/ route to handle request")
+	}
+	if prefixHit {
+		t.Fatalf("expected /app-api/ prefix route to not handle request logs request")
+	}
+}
+
+func TestAppAPICommunicationsRouteWinsOverAppAPIPrefix(t *testing.T) {
+	mux := http.NewServeMux()
+
+	var communicationsHit, prefixHit bool
+
+	mux.Handle("/app-api/communications/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		communicationsHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefixHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/app-api/communications/sms/send", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if !communicationsHit {
+		t.Fatalf("expected /app-api/communications/ route to handle request")
+	}
+	if prefixHit {
+		t.Fatalf("expected /app-api/ prefix route to not handle communications request")
+	}
+}
+
+func TestAppAPIPaymentsRouteWinsOverAppAPIPrefix(t *testing.T) {
+	mux := http.NewServeMux()
+
+	var paymentsHit, prefixHit bool
+
+	mux.Handle("/app-api/payments/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paymentsHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefixHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/app-api/payments/initiate", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if !paymentsHit {
+		t.Fatalf("expected /app-api/payments/ route to handle request")
+	}
+	if prefixHit {
+		t.Fatalf("expected /app-api/ prefix route to not handle payments request")
+	}
+}
+
+func TestAppAPI2DatabaseRouteWinsOverAppAPI2Prefix(t *testing.T) {
+	mux := http.NewServeMux()
+
+	var databaseHit, prefixHit bool
+
+	mux.Handle("/app-api-2/database/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		databaseHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.Handle("/app-api-2/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefixHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/app-api-2/database/tables", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if !databaseHit {
+		t.Fatalf("expected /app-api-2/database/ route to handle request")
+	}
+	if prefixHit {
+		t.Fatalf("expected /app-api-2/ prefix route to not handle database request")
+	}
+}
+
+func TestAppAPI2StorageRouteWinsOverAppAPI2Prefix(t *testing.T) {
+	mux := http.NewServeMux()
+
+	var storageHit, prefixHit bool
+
+	mux.Handle("/app-api-2/storage/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		storageHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.Handle("/app-api-2/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefixHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/app-api-2/storage/buckets", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if !storageHit {
+		t.Fatalf("expected /app-api-2/storage/ route to handle request")
+	}
+	if prefixHit {
+		t.Fatalf("expected /app-api-2/ prefix route to not handle storage request")
+	}
+}
+
 func TestAPIMCPRouteWinsOverAPIPrefix(t *testing.T) {
 	mux := http.NewServeMux()
 

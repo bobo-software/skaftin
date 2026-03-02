@@ -170,8 +170,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Backups are now handled by the Go gateway.
 // import BackupController from './controllers/BackupController';
 // import { BackupScheduler } from './services/BackupScheduler';
-import { AccountDeletionService } from './services/AccountDeletionService';
-import { RequestLogsCleanupService } from './services/RequestLogsCleanupService';
 import { AnalyticsService } from './services/AnalyticsService';
 
 // ============================================================================
@@ -213,13 +211,13 @@ app.get('/', (req: Request, res: Response) => {
         app_user_auth: '/app-api/auth',
         storage: '/app-api/storage (Go gateway)',
         database: '/app-api/database (Go gateway)',
-        communications: '/app-api/communications',
-        payments: '/app-api/payments',
+        communications: '/app-api/communications (Go gateway)',
+        payments: '/app-api/payments (Go gateway)',
       },
       // Public API Routes (API Key / Access Token only, GET & POST, no user auth required)
       app_api_2: {
-        database: '/app-api-2/database',
-        storage: '/app-api-2/storage',
+        database: '/app-api-2/database (Go gateway)',
+        storage: '/app-api-2/storage (Go gateway)',
       },
     },
   });
@@ -289,38 +287,7 @@ const startServer = async () => {
   // const backupScheduler = BackupScheduler.initialize(pool, s3Client);
   // await backupScheduler.loadScheduledBackups();
 
-  // Initialize Account Deletion Service (runs daily at 2 AM)
-  console.log('🗑️  Initializing account deletion service...');
-  const accountDeletionService = new AccountDeletionService(pool);
-  const cron = require('node-cron');
-
-  // Schedule daily deletion processing at 2 AM
-  cron.schedule('0 2 * * *', async () => {
-    console.log('🗑️  [CRON] Running scheduled account deletion processing...');
-    try {
-      const result = await accountDeletionService.processPendingDeletions();
-      console.log(`✅ [CRON] Account deletion completed: ${result.processed} processed, ${result.errors} errors`);
-    } catch (error) {
-      console.error('❌ [CRON] Error processing account deletions:', error);
-    }
-  });
-  console.log('✅ Account deletion service scheduled (daily at 2 AM)');
-
-  // Initialize Request Logs Cleanup Service (runs daily at 3 AM)
-  console.log('🧹 Initializing request logs cleanup service...');
-  const requestLogsCleanupService = new RequestLogsCleanupService(pool);
-
-  // Schedule daily request logs cleanup at 3 AM
-  cron.schedule('0 3 * * *', async () => {
-    console.log('🧹 [CRON] Running scheduled request logs cleanup...');
-    try {
-      const result = await requestLogsCleanupService.cleanupAllProjects();
-      console.log(`✅ [CRON] Request logs cleanup completed: ${result.processed} projects, ${result.deleted} logs deleted, ${result.errors} errors`);
-    } catch (error) {
-      console.error('❌ [CRON] Error during request logs cleanup:', error);
-    }
-  });
-  console.log('✅ Request logs cleanup service scheduled (daily at 3 AM)');
+  // Account deletion and request-log cleanup schedulers are now handled by the Go gateway.
 
   // Handle graceful shutdown
   const gracefulShutdown = () => {

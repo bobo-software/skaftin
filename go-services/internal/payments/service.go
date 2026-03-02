@@ -54,6 +54,146 @@ func (s *Service) GetProviderByType(ctx context.Context, projectID int, provider
 	return s.store.GetProviderByType(ctx, projectID, providerType, schema)
 }
 
+func (s *Service) InitiatePayment(ctx context.Context, projectID int, req InitiatePaymentRequest) InitiatePaymentResult {
+	var provider *PaymentProviderRecord
+	var err error
+
+	if req.ProviderID != nil {
+		provider, err = s.GetProvider(ctx, projectID, *req.ProviderID)
+		if err != nil {
+			return InitiatePaymentResult{Success: false, Error: err.Error()}
+		}
+		if provider == nil {
+			return InitiatePaymentResult{
+				Success: false,
+				Error:   fmt.Sprintf("Payment provider with ID %d not found for this project", *req.ProviderID),
+			}
+		}
+	} else {
+		schema, schemaErr := s.store.ProjectSchema(ctx, projectID)
+		if schemaErr != nil {
+			return InitiatePaymentResult{Success: false, Error: schemaErr.Error()}
+		}
+		provider, err = s.store.GetActiveProvider(ctx, projectID, schema)
+		if err != nil {
+			return InitiatePaymentResult{Success: false, Error: err.Error()}
+		}
+		if provider == nil {
+			return InitiatePaymentResult{
+				Success: false,
+				Error:   "No active payment provider configured for this project. Please configure a payment provider or specify provider_id.",
+			}
+		}
+	}
+
+	if !provider.IsActive {
+		return InitiatePaymentResult{Success: false, Error: "Payment provider is not active"}
+	}
+
+	schema, err := s.store.ProjectSchema(ctx, projectID)
+	if err != nil {
+		return InitiatePaymentResult{Success: false, Error: err.Error()}
+	}
+
+	transactionID := uuid.NewString()
+	if err := s.store.InsertTransaction(ctx, projectID, schema, req, provider, transactionID); err != nil {
+		return InitiatePaymentResult{Success: false, Error: err.Error()}
+	}
+
+	var paymentURL string
+	var paymentData map[string]any
+	switch provider.ProviderType {
+	case ProviderTypePayFast:
+		paymentURL, paymentData, err = buildPayFastPaymentURL(provider, req, transactionID)
+	case ProviderTypeFNBPay:
+		var fnbConfig FNBProviderConfig
+		fnbConfig.BaseURL = stringMetadata(provider.Metadata, "fnb_base_url")
+		fnbConfig.APIKey3D = stringMetadata(provider.Metadata, "fnb_api_key_3d")
+		fnbConfig.APIInst3D = stringMetadata(provider.Metadata, "fnb_api_inst_3d")
+		fnbConfig.SecretKey = stringMetadata(provider.Metadata, "fnb_secret_key")
+		if req.ReturnURL != nil {
+			fnbConfig.ReturnURL = *req.ReturnURL
+		} else if provider.ReturnURL != nil {
+			fnbConfig.ReturnURL = *provider.ReturnURL
+		}
+		if strings.TrimSpace(fnbConfig.ReturnURL) == "" {
+			err = errors.New("Return URL is required. Add it in payment provider settings.")
+		} else {
+			reference := "fnb-" + transactionID
+			amountCents := int64(req.Amount * 100)
+			returnURL := strings.TrimRight(fnbConfig.ReturnURL, "/") + "/thankyou/" + reference
+			paymentURL, err = callFNBPay(ctx, fnbConfig, req.ItemName, amountCents, reference, returnURL)
+			if err == nil {
+				paymentData = map[string]any{"reference": reference}
+			}
+		}
+	default:
+		err = fmt.Errorf("Unsupported payment provider type: %s", provider.ProviderType)
+	}
+
+	if err != nil {
+		_ = s.store.SetTransactionFailed(ctx, schema, transactionID, err.Error())
+		return InitiatePaymentResult{
+			Success:       false,
+			TransactionID: transactionID,
+			PaymentURL:    "",
+			Error:         err.Error(),
+		}
+	}
+
+	if err := s.store.SetTransactionProcessing(ctx, schema, transactionID, paymentURL); err != nil {
+		return InitiatePaymentResult{
+			Success:       false,
+			TransactionID: transactionID,
+			PaymentURL:    "",
+			Error:         err.Error(),
+		}
+	}
+
+	return InitiatePaymentResult{
+		Success:       true,
+		TransactionID: transactionID,
+		PaymentURL:    paymentURL,
+		PaymentData:   paymentData,
+	}
+}
+
+func (s *Service) CancelSubscription(ctx context.Context, projectID int, transactionID string) SubscriptionActionResult {
+	schema, err := s.store.ProjectSchema(ctx, projectID)
+	if err != nil {
+		return SubscriptionActionResult{Success: false, Error: err.Error()}
+	}
+	tx, err := s.store.GetTransaction(ctx, projectID, transactionID, schema)
+	if err != nil {
+		return SubscriptionActionResult{Success: false, Error: err.Error()}
+	}
+	if tx == nil {
+		return SubscriptionActionResult{Success: false, Error: "Transaction not found"}
+	}
+	if tx.SubscriptionToken == nil || strings.TrimSpace(*tx.SubscriptionToken) == "" {
+		return SubscriptionActionResult{Success: false, Error: "Transaction is not a subscription or has no token"}
+	}
+
+	provider, err := s.store.GetProvider(ctx, projectID, tx.ProviderID, schema)
+	if err != nil {
+		return SubscriptionActionResult{Success: false, Error: err.Error()}
+	}
+	if provider == nil {
+		return SubscriptionActionResult{Success: false, Error: "Provider not found"}
+	}
+	if provider.ProviderType != ProviderTypePayFast {
+		return SubscriptionActionResult{Success: false, Error: "Provider does not support subscription cancellation"}
+	}
+
+	if err := cancelPayFastSubscription(ctx, provider, *tx.SubscriptionToken); err != nil {
+		return SubscriptionActionResult{Success: false, Error: err.Error()}
+	}
+	if err := s.store.SetTransactionCancelled(ctx, schema, transactionID); err != nil {
+		return SubscriptionActionResult{Success: false, Error: err.Error()}
+	}
+	return SubscriptionActionResult{Success: true, Message: "Subscription cancelled successfully"}
+}
+
 func (s *Service) CreateProvider(ctx context.Context, req CreateProviderRequest) (*PaymentProviderRecord, error) {
 	schema, err := s.store.ProjectSchema(ctx, req.ProjectID)
 	if err != nil {
@@ -682,4 +822,195 @@ func validatePayFastSignature(rawBody string, parsedData map[string]string, pass
 
 	sum := md5.Sum([]byte(paramString))
 	return strings.EqualFold(signature, hex.EncodeToString(sum[:]))
+}
+
+type payFastParam struct {
+	Key   string
+	Value string
+}
+
+func buildPayFastPaymentURL(provider *PaymentProviderRecord, req InitiatePaymentRequest, transactionID string) (string, map[string]any, error) {
+	if provider.MerchantID == nil || strings.TrimSpace(*provider.MerchantID) == "" ||
+		provider.MerchantKey == nil || strings.TrimSpace(*provider.MerchantKey) == "" {
+		return "", nil, errors.New("Missing merchant_id or merchant_key")
+	}
+
+	returnURL := ""
+	if req.ReturnURL != nil {
+		returnURL = strings.TrimSpace(*req.ReturnURL)
+	} else if provider.ReturnURL != nil {
+		returnURL = strings.TrimSpace(*provider.ReturnURL)
+	}
+	cancelURL := ""
+	if req.CancelURL != nil {
+		cancelURL = strings.TrimSpace(*req.CancelURL)
+	} else if provider.CancelURL != nil {
+		cancelURL = strings.TrimSpace(*provider.CancelURL)
+	}
+	notifyURL := ""
+	if req.NotifyURL != nil {
+		notifyURL = strings.TrimSpace(*req.NotifyURL)
+	} else if provider.NotifyURL != nil {
+		notifyURL = strings.TrimSpace(*provider.NotifyURL)
+	}
+
+	for _, u := range []struct {
+		name  string
+		value string
+	}{
+		{"return_url", returnURL},
+		{"cancel_url", cancelURL},
+		{"notify_url", notifyURL},
+	} {
+		if u.value == "" {
+			continue
+		}
+		if !strings.HasPrefix(strings.ToLower(u.value), "http://") && !strings.HasPrefix(strings.ToLower(u.value), "https://") {
+			return "", nil, fmt.Errorf("%s must be a valid HTTP or HTTPS URL", u.name)
+		}
+	}
+
+	params := make([]payFastParam, 0, 24)
+	add := func(key, value string) {
+		if strings.TrimSpace(value) != "" {
+			params = append(params, payFastParam{Key: key, Value: value})
+		}
+	}
+
+	add("merchant_id", strings.TrimSpace(*provider.MerchantID))
+	add("merchant_key", strings.TrimSpace(*provider.MerchantKey))
+	add("return_url", returnURL)
+	add("cancel_url", cancelURL)
+	add("notify_url", notifyURL)
+
+	if req.CustomerName != nil && strings.TrimSpace(*req.CustomerName) != "" {
+		parts := strings.Fields(strings.TrimSpace(*req.CustomerName))
+		if len(parts) > 0 {
+			add("name_first", parts[0])
+			if len(parts) > 1 {
+				add("name_last", strings.Join(parts[1:], " "))
+			}
+		}
+	}
+	if req.CustomerEmail != nil {
+		add("email_address", strings.TrimSpace(*req.CustomerEmail))
+	}
+	if req.CustomerPhone != nil {
+		add("cell_number", strings.TrimSpace(*req.CustomerPhone))
+	}
+
+	add("m_payment_id", transactionID)
+	add("amount", fmt.Sprintf("%.2f", req.Amount))
+	itemName := req.ItemName
+	if len(itemName) > 100 {
+		itemName = itemName[:100]
+	}
+	add("item_name", itemName)
+	if req.ItemDescription != nil {
+		desc := *req.ItemDescription
+		if len(desc) > 255 {
+			desc = desc[:255]
+		}
+		add("item_description", desc)
+	}
+
+	add("custom_str1", strconv.Itoa(provider.ProjectID))
+	add("custom_str2", transactionID)
+	if req.Metadata != nil {
+		if raw, err := json.Marshal(req.Metadata); err == nil {
+			meta := string(raw)
+			if len(meta) > 255 {
+				meta = meta[:255]
+			}
+			add("custom_str3", meta)
+		}
+	}
+
+	if req.PaymentType != nil && *req.PaymentType == "subscription" {
+		subType := 1
+		if req.SubscriptionType != nil {
+			subType = *req.SubscriptionType
+		}
+		add("subscription_type", strconv.Itoa(subType))
+		if req.Frequency != nil {
+			add("frequency", strconv.Itoa(*req.Frequency))
+		}
+		if req.Cycles != nil {
+			add("cycles", strconv.Itoa(*req.Cycles))
+		}
+		if req.BillingDate != nil {
+			add("billing_date", strconv.Itoa(*req.BillingDate))
+		}
+	}
+
+	signature := generatePayFastPaymentSignature(params, provider.Passphrase)
+	add("signature", signature)
+
+	parts := make([]string, 0, len(params))
+	for _, p := range params {
+		parts = append(parts, p.Key+"="+url.QueryEscape(strings.TrimSpace(p.Value)))
+	}
+
+	host := "www.payfast.co.za"
+	if provider.SandboxMode {
+		host = "sandbox.payfast.co.za"
+	}
+	paymentURL := "https://" + host + "/eng/process?" + strings.Join(parts, "&")
+
+	paymentData := make(map[string]any, len(params))
+	for _, p := range params {
+		paymentData[p.Key] = p.Value
+	}
+	return paymentURL, paymentData, nil
+}
+
+func generatePayFastPaymentSignature(params []payFastParam, passphrase *string) string {
+	pieces := make([]string, 0, len(params)+1)
+	for _, p := range params {
+		if strings.TrimSpace(p.Value) == "" {
+			continue
+		}
+		encoded := strings.ReplaceAll(url.QueryEscape(strings.TrimSpace(p.Value)), "%20", "+")
+		pieces = append(pieces, p.Key+"="+encoded)
+	}
+	if passphrase != nil && strings.TrimSpace(*passphrase) != "" {
+		pieces = append(pieces, "passphrase="+strings.ReplaceAll(url.QueryEscape(strings.TrimSpace(*passphrase)), "%20", "+"))
+	}
+	sum := md5.Sum([]byte(strings.Join(pieces, "&")))
+	return hex.EncodeToString(sum[:])
+}
+
+func cancelPayFastSubscription(ctx context.Context, provider *PaymentProviderRecord, subscriptionToken string) error {
+	if provider.MerchantID == nil || strings.TrimSpace(*provider.MerchantID) == "" ||
+		provider.Passphrase == nil || strings.TrimSpace(*provider.Passphrase) == "" {
+		return errors.New("Missing merchant_id or passphrase")
+	}
+
+	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05")
+	headers := map[string]string{
+		"merchant-id": strings.TrimSpace(*provider.MerchantID),
+		"version":     "v1",
+		"timestamp":   timestamp,
+	}
+	headers["signature"] = signPayFastHeaders(headers, strings.TrimSpace(*provider.Passphrase))
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, "https://api.payfast.co.za/subscriptions/"+url.PathEscape(subscriptionToken)+"/cancel", nil)
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	msg := strings.TrimSpace(string(body))
+	if msg == "" {
+		msg = resp.Status
+	}
+	return errors.New(msg)
 }

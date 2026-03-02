@@ -534,6 +534,156 @@ func (h *Handler) GenericWebhook(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("OK"))
 }
 
+func (h *Handler) InitiatePayment(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		ProviderID      *int           `json:"provider_id"`
+		Amount          float64        `json:"amount"`
+		ItemName        string         `json:"item_name"`
+		ItemDescription *string        `json:"item_description"`
+		CustomerEmail   *string        `json:"customer_email"`
+		CustomerName    *string        `json:"customer_name"`
+		CustomerPhone   *string        `json:"customer_phone"`
+		PaymentType     *string        `json:"payment_type"`
+		SubscriptionType *int          `json:"subscription_type"`
+		Frequency       *int           `json:"frequency"`
+		Cycles          *int           `json:"cycles"`
+		BillingDate     *int           `json:"billing_date"`
+		Metadata        map[string]any `json:"metadata"`
+		ReturnURL       *string        `json:"return_url"`
+		CancelURL       *string        `json:"cancel_url"`
+		NotifyURL       *string        `json:"notify_url"`
+	}
+	if err := httputil.DecodeBody(r, &req); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if req.Amount <= 0 || req.ItemName == "" {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   "Missing required fields: amount and item_name are required",
+		})
+		return
+	}
+
+	result := h.service.InitiatePayment(r.Context(), projectID, InitiatePaymentRequest{
+		ProviderID:       req.ProviderID,
+		Amount:           req.Amount,
+		ItemName:         req.ItemName,
+		ItemDescription:  req.ItemDescription,
+		CustomerEmail:    req.CustomerEmail,
+		CustomerName:     req.CustomerName,
+		CustomerPhone:    req.CustomerPhone,
+		PaymentType:      req.PaymentType,
+		SubscriptionType: req.SubscriptionType,
+		Frequency:        req.Frequency,
+		Cycles:           req.Cycles,
+		BillingDate:      req.BillingDate,
+		Metadata:         req.Metadata,
+		ReturnURL:        req.ReturnURL,
+		CancelURL:        req.CancelURL,
+		NotifyURL:        req.NotifyURL,
+	})
+	if !result.Success {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success":       false,
+			"transactionId": result.TransactionID,
+			"paymentUrl":    result.PaymentURL,
+			"error":         result.Error,
+		})
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
+		"success":       true,
+		"transactionId": result.TransactionID,
+		"paymentUrl":    result.PaymentURL,
+		"paymentData":   result.PaymentData,
+	})
+}
+
+func (h *Handler) GetTransactionStatus(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	transactionID := r.PathValue("transactionId")
+	if transactionID == "" {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   "Transaction ID is required",
+		})
+		return
+	}
+
+	tx, err := h.service.GetTransaction(r.Context(), projectID, transactionID)
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"error":   "Failed to get transaction status",
+			"message": err.Error(),
+		})
+		return
+	}
+	if tx == nil {
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{
+			"success": false,
+			"error":   "Transaction not found",
+		})
+		return
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"data": map[string]any{
+			"transaction_id": tx.TransactionID,
+			"status":         tx.Status,
+			"amount":         tx.Amount,
+			"currency":       tx.Currency,
+			"item_name":      tx.ItemName,
+			"payment_type":   tx.PaymentType,
+			"paid_at":        tx.PaidAt,
+			"created_at":     tx.CreatedAt,
+		},
+	})
+}
+
+func (h *Handler) CancelSubscription(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		TransactionID string `json:"transaction_id"`
+	}
+	if err := httputil.DecodeBody(r, &req); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if req.TransactionID == "" {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   "transaction_id is required",
+		})
+		return
+	}
+
+	result := h.service.CancelSubscription(r.Context(), projectID, req.TransactionID)
+	if !result.Success {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   result.Error,
+		})
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": result.Message,
+	})
+}
+
 func parseProjectID(w http.ResponseWriter, r *http.Request) (int, bool) {
 	if authCtx := auth.GetAuthContext(r); authCtx != nil && authCtx.ProjectID > 0 {
 		return authCtx.ProjectID, true

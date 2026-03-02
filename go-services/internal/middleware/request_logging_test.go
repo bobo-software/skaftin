@@ -19,12 +19,16 @@ import (
 type stubRequestLogService struct {
 	mu sync.Mutex
 
-	enabled bool
-	blockCh chan struct{}
-	calls   []requestlogs.CreateLogInput
+	enabled        bool
+	enabledBlockCh chan struct{}
+	blockCh        chan struct{}
+	calls          []requestlogs.CreateLogInput
 }
 
 func (s *stubRequestLogService) IsLoggingEnabled(_ context.Context, _ int) (bool, error) {
+	if s.enabledBlockCh != nil {
+		<-s.enabledBlockCh
+	}
 	return s.enabled, nil
 }
 
@@ -60,6 +64,7 @@ func withAuthContext(req *http.Request, projectID int) *http.Request {
 func TestRequestLoggerLogsEnabledRoute(t *testing.T) {
 	svc := &stubRequestLogService{enabled: true}
 	rl := newRequestLoggerWithService(svc, 8)
+	rl.cache[42] = cachedRequestLogSetting{enabled: true, timestamp: time.Now()}
 	t.Cleanup(rl.Close)
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -104,6 +109,7 @@ func TestRequestLoggerLogsEnabledRoute(t *testing.T) {
 func TestRequestLoggerSkipsWhenDisabled(t *testing.T) {
 	svc := &stubRequestLogService{enabled: false}
 	rl := newRequestLoggerWithService(svc, 8)
+	rl.cache[99] = cachedRequestLogSetting{enabled: false, timestamp: time.Now()}
 	t.Cleanup(rl.Close)
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -127,6 +133,7 @@ func TestRequestLoggerQueueFullDoesNotBlockRequest(t *testing.T) {
 	block := make(chan struct{})
 	svc := &stubRequestLogService{enabled: true, blockCh: block}
 	rl := newRequestLoggerWithService(svc, 1)
+	rl.cache[1] = cachedRequestLogSetting{enabled: true, timestamp: time.Now()}
 	t.Cleanup(func() {
 		close(block)
 		rl.Close()
@@ -151,5 +158,31 @@ func TestRequestLoggerQueueFullDoesNotBlockRequest(t *testing.T) {
 
 	if elapsed > 100*time.Millisecond {
 		t.Fatalf("expected non-blocking request handling with full queue, took %s", elapsed)
+	}
+}
+
+func TestRequestLoggerDoesNotBlockOnSettingsLookup(t *testing.T) {
+	block := make(chan struct{})
+	svc := &stubRequestLogService{enabled: true, enabledBlockCh: block}
+	rl := newRequestLoggerWithService(svc, 8)
+	t.Cleanup(func() {
+		close(block)
+		rl.Close()
+	})
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"message":"ok"}`))
+	})
+
+	req := withAuthContext(httptest.NewRequest(http.MethodGet, "/app-api/storage/buckets", nil), 777)
+	rec := httptest.NewRecorder()
+
+	start := time.Now()
+	rl.Middleware(next).ServeHTTP(rec, req)
+	elapsed := time.Since(start)
+
+	if elapsed > 100*time.Millisecond {
+		t.Fatalf("expected request to remain non-blocking when settings lookup stalls, took %s", elapsed)
 	}
 }

@@ -3,8 +3,10 @@ package requestlogs
 import (
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,11 +34,143 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/request-logs/{projectId}", h.Cleanup)
 }
 
-// RegisterAppAPIRoutes registers app-api compatibility routes.
+// RegisterAppAPIRoutes registers client-facing request log routes.
 func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /app-api/request-logs/{projectId}", h.CreateLog)
 }
 
+func clientProjectID(r *http.Request) (int, bool) {
+	if authCtx := auth.GetAuthContext(r); authCtx != nil && authCtx.ProjectID > 0 {
+		return authCtx.ProjectID, true
+	}
+	id, err := strconv.Atoi(r.PathValue("projectId"))
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
+}
+
+func truncateJSONPayload(raw json.RawMessage, maxSize int) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	if len(raw) <= maxSize {
+		return raw
+	}
+	preview := string(raw[:maxSize])
+	meta := map[string]any{
+		"_truncated":     true,
+		"_original_size": len(raw),
+		"_preview":       preview,
+	}
+	out, err := json.Marshal(meta)
+	if err != nil {
+		return raw[:maxSize]
+	}
+	return out
+}
+
+func bestEffortClientIP(r *http.Request) *string {
+	xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+	if xff != "" {
+		parts := strings.Split(xff, ",")
+		ip := strings.TrimSpace(parts[0])
+		if ip != "" {
+			return &ip
+		}
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil && host != "" {
+		return &host
+	}
+	if strings.TrimSpace(r.RemoteAddr) != "" {
+		ip := strings.TrimSpace(r.RemoteAddr)
+		return &ip
+	}
+	return nil
+}
+
+func (h *Handler) CreateLog(w http.ResponseWriter, r *http.Request) {
+	pid, ok := clientProjectID(r)
+	if !ok {
+		httputil.WriteError(w, http.StatusBadRequest, "Project ID is required")
+		return
+	}
+
+	enabled, err := h.service.IsLoggingEnabled(r.Context(), pid)
+	if err != nil {
+		httputil.WriteSuccess(w, http.StatusOK, "Logging failed but continuing", map[string]any{
+			"logged": false,
+			"error":  err.Error(),
+		})
+		return
+	}
+	if !enabled {
+		httputil.WriteSuccess(w, http.StatusOK, "Logging disabled for this project", map[string]any{
+			"logged": false,
+		})
+		return
+	}
+
+	var body struct {
+		Method         string          `json:"method"`
+		URL            string          `json:"url"`
+		StatusCode     *int            `json:"status_code"`
+		RequestPayload json.RawMessage `json:"request_payload"`
+		ResponseData   json.RawMessage `json:"response_data"`
+		ErrorMessage   *string         `json:"error_message"`
+		DurationMs     *int            `json:"duration_ms"`
+		UserID         *int            `json:"user_id"`
+		IPAddress      *string         `json:"ip_address"`
+		UserAgent      *string         `json:"user_agent"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(body.Method) == "" || strings.TrimSpace(body.URL) == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "Method and URL are required")
+		return
+	}
+
+	ipAddress := body.IPAddress
+	if ipAddress == nil || strings.TrimSpace(*ipAddress) == "" {
+		ipAddress = bestEffortClientIP(r)
+	}
+	userAgent := body.UserAgent
+	if userAgent == nil || strings.TrimSpace(*userAgent) == "" {
+		ua := strings.TrimSpace(r.UserAgent())
+		if ua != "" {
+			userAgent = &ua
+		}
+	}
+
+	logID, err := h.service.CreateLog(r.Context(), CreateLogInput{
+		ProjectID:      pid,
+		Method:         strings.ToUpper(strings.TrimSpace(body.Method)),
+		URL:            body.URL,
+		StatusCode:     body.StatusCode,
+		RequestPayload: truncateJSONPayload(body.RequestPayload, 10000),
+		ResponseData:   truncateJSONPayload(body.ResponseData, 10000),
+		ErrorMessage:   body.ErrorMessage,
+		DurationMs:     body.DurationMs,
+		UserID:         body.UserID,
+		IPAddress:      ipAddress,
+		UserAgent:      userAgent,
+	})
+	if err != nil {
+		httputil.WriteSuccess(w, http.StatusOK, "Logging failed but continuing", map[string]any{
+			"logged": false,
+			"error":  err.Error(),
+		})
+		return
+	}
+
+	httputil.WriteSuccess(w, http.StatusCreated, "Request logged successfully", map[string]any{
+		"logged": true,
+		"log_id": logID,
+	})
+}
 func (h *Handler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	if auth.RequireUser(w, r) == nil {
 		return
@@ -209,111 +343,4 @@ func (h *Handler) Cleanup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handler) CreateLog(w http.ResponseWriter, r *http.Request) {
-	pid, ok := httputil.ProjectID(w, r)
-	if !ok {
-		return
-	}
-
-	var body struct {
-		Method         string `json:"method"`
-		URL            string `json:"url"`
-		StatusCode     *int   `json:"status_code"`
-		RequestPayload any    `json:"request_payload"`
-		ResponseData   any    `json:"response_data"`
-		ErrorMessage   string `json:"error_message"`
-		DurationMS     *int   `json:"duration_ms"`
-		UserID         *int   `json:"user_id"`
-		IPAddress      string `json:"ip_address"`
-		UserAgent      string `json:"user_agent"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-	if body.Method == "" || body.URL == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "Method and URL are required")
-		return
-	}
-
-	var requestPayload json.RawMessage
-	var responseData json.RawMessage
-	if body.RequestPayload != nil {
-		marshaled, err := json.Marshal(body.RequestPayload)
-		if err != nil {
-			httputil.WriteError(w, http.StatusBadRequest, "Invalid request_payload")
-			return
-		}
-		requestPayload = marshaled
-	}
-	if body.ResponseData != nil {
-		marshaled, err := json.Marshal(body.ResponseData)
-		if err != nil {
-			httputil.WriteError(w, http.StatusBadRequest, "Invalid response_data")
-			return
-		}
-		responseData = marshaled
-	}
-
-	var errorMessage *string
-	if body.ErrorMessage != "" {
-		errorMessage = &body.ErrorMessage
-	}
-	var ipAddress *string
-	if body.IPAddress != "" {
-		ipAddress = &body.IPAddress
-	} else if r.RemoteAddr != "" {
-		ra := r.RemoteAddr
-		ipAddress = &ra
-	}
-	var userAgent *string
-	if body.UserAgent != "" {
-		userAgent = &body.UserAgent
-	} else if ua := r.UserAgent(); ua != "" {
-		userAgent = &ua
-	}
-
-	input := CreateLogInput{
-		ProjectID:      pid,
-		Method:         body.Method,
-		URL:            body.URL,
-		StatusCode:     body.StatusCode,
-		RequestPayload: requestPayload,
-		ResponseData:   responseData,
-		ErrorMessage:   errorMessage,
-		DurationMs:     body.DurationMS,
-		UserID:         body.UserID,
-		IPAddress:      ipAddress,
-		UserAgent:      userAgent,
-	}
-
-	enabled, err := h.service.IsLoggingEnabled(r.Context(), pid)
-	if err != nil {
-		httputil.WriteSuccess(w, http.StatusOK, "Logging failed but continuing", map[string]any{
-			"logged": false,
-			"error":  err.Error(),
-		})
-		return
-	}
-	if !enabled {
-		httputil.WriteSuccess(w, http.StatusOK, "Logging disabled for this project", map[string]any{
-			"logged": false,
-		})
-		return
-	}
-
-	logID, err := h.service.CreateLog(r.Context(), input)
-	if err != nil {
-		// Keep request logging non-blocking for client apps.
-		httputil.WriteSuccess(w, http.StatusOK, "Logging failed but continuing", map[string]any{
-			"logged": false,
-			"error":  err.Error(),
-		})
-		return
-	}
-	httputil.WriteSuccess(w, http.StatusCreated, "Request logged successfully", map[string]any{
-		"logged": true,
-		"log_id": logID,
-	})
-}
 

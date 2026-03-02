@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
@@ -35,6 +36,23 @@ func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 	h.registerProjectRoutesWithBase(mux, "/app-api/communications/{projectId}")
 	mux.HandleFunc("POST /app-api/communications/{projectId}/sms/webhook", h.SMSWebhook)
+	mux.HandleFunc("POST /app-api/communications/email/send", h.SendEmail)
+	mux.HandleFunc("POST /app-api/communications/sms/send", h.SendSMS)
+	mux.HandleFunc("POST /app-api/communications/sms/send-basic", h.SendSMSBasic)
+	mux.HandleFunc("GET /app-api/communications/sms/providers", h.ListSMSProviders)
+	mux.HandleFunc("GET /app-api/communications/sms/providers/{providerId}", h.GetSMSProvider)
+	mux.HandleFunc("POST /app-api/communications/sms/providers", h.CreateSMSProvider)
+	mux.HandleFunc("PUT /app-api/communications/sms/providers/{providerId}", h.UpdateSMSProvider)
+	mux.HandleFunc("DELETE /app-api/communications/sms/providers/{providerId}", h.DeleteSMSProvider)
+	mux.HandleFunc("POST /app-api/communications/sms/check-status", h.CheckSMSStatus)
+	mux.HandleFunc("POST /app-api/communications/whatsapp/send", h.SendWhatsApp)
+	mux.HandleFunc("POST /app-api/communications/whatsapp/send-basic", h.SendWhatsAppBasic)
+	mux.HandleFunc("POST /app-api/communications/whatsapp/template", h.SendWhatsAppTemplate)
+	mux.HandleFunc("GET /app-api/communications/sms/templates", h.ListSMSTemplates)
+	mux.HandleFunc("GET /app-api/communications/sms/templates/{templateId}", h.GetSMSTemplate)
+	mux.HandleFunc("POST /app-api/communications/sms/templates", h.CreateSMSTemplate)
+	mux.HandleFunc("PUT /app-api/communications/sms/templates/{templateId}", h.UpdateSMSTemplate)
+	mux.HandleFunc("DELETE /app-api/communications/sms/templates/{templateId}", h.DeleteSMSTemplate)
 }
 
 func (h *Handler) registerProjectRoutesWithBase(mux *http.ServeMux, base string) {
@@ -74,6 +92,9 @@ func (h *Handler) registerProjectRoutesWithBase(mux *http.ServeMux, base string)
 }
 
 func parseProjectID(w http.ResponseWriter, r *http.Request) (int, bool) {
+	if authCtx := auth.GetAuthContext(r); authCtx != nil && authCtx.ProjectID > 0 {
+		return authCtx.ProjectID, true
+	}
 	id, err := strconv.Atoi(r.PathValue("projectId"))
 	if err != nil || id <= 0 {
 		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"success": false, "error": "Project ID is required"})

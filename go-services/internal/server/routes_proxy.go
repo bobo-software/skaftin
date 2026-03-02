@@ -24,6 +24,10 @@ func registerProxyRoutes(mux *http.ServeMux, pool *pgxpool.Pool, jwks *auth.JWKS
 	// Keep this catch-all LAST after specific /app-api/... Go routes.
 	mux.Handle("/app-api/", auth.APIKey(pool)(requestLogger.Middleware(nodeHandler)))
 
+	// Public client API routes: validate API key, then proxy to Node.js.
+	// Keep this catch-all LAST after specific /app-api-2/... Go routes.
+	mux.Handle("/app-api-2/", auth.APIKey(pool)(requestLogger.Middleware(nodeHandler)))
+
 	// Socket.IO: pass through (handles its own auth)
 	mux.Handle("/socket.io/", nodeHandler)
 }
