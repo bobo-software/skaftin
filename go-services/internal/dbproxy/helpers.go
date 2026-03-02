@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -23,7 +24,7 @@ func collectRows(rows pgx.Rows) []map[string]any {
 		}
 		row := make(map[string]any, len(descs))
 		for i, fd := range descs {
-			row[fd.Name] = values[i]
+			row[fd.Name] = normalizeUUIDValue(values[i])
 		}
 		result = append(result, row)
 	}
@@ -32,6 +33,25 @@ func collectRows(rows pgx.Rows) []map[string]any {
 		result = []map[string]any{}
 	}
 	return result
+}
+
+func normalizeUUIDValue(v any) any {
+	switch t := v.(type) {
+	case [16]byte:
+		if u, err := uuid.FromBytes(t[:]); err == nil {
+			return u.String()
+		}
+		return t
+	case []byte:
+		if len(t) == 16 {
+			if u, err := uuid.FromBytes(t); err == nil {
+				return u.String()
+			}
+		}
+		return t
+	default:
+		return v
+	}
 }
 
 // safeIdent validates and quotes an identifier. Returns empty string if invalid.
