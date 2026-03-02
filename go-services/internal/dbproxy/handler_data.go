@@ -208,7 +208,7 @@ func parseDecryptFieldsFromQuery(raw string) []string {
 }
 
 func (h *Handler) InsertData(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -216,7 +216,8 @@ func (h *Handler) InsertData(w http.ResponseWriter, r *http.Request) {
 
 	tableName := r.PathValue("tableName")
 	var body struct {
-		Data map[string]any `json:"data"`
+		Data    map[string]any `json:"data"`
+		Encrypt []string       `json:"encrypt"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Data == nil {
 		httputil.WriteError(w, http.StatusBadRequest, "Data is required")
@@ -226,6 +227,23 @@ func (h *Handler) InsertData(w http.ResponseWriter, r *http.Request) {
 	autoIncrCols := getAutoIncrementColumns(r.Context(), pc, tableName)
 	insertData := filterAutoIncrement(body.Data, autoIncrCols)
 	syncSequencesToMax(r.Context(), pc, tableName, autoIncrCols)
+	if len(body.Encrypt) > 0 {
+		key, err := encryption.GetProjectFieldEncryptionKey(r.Context(), h.service.store.pool, pid)
+		if err != nil {
+			slog.Error("failed to get encryption key", "error", err, "projectId", pid)
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to fetch encryption key")
+			return
+		}
+		if strings.TrimSpace(key) == "" {
+			httputil.WriteError(w, http.StatusBadRequest, "No encryption key / secret found")
+			return
+		}
+		if err := encryption.EncryptFieldsInData(insertData, body.Encrypt, key); err != nil {
+			slog.Error("failed to encrypt selected fields", "error", err, "table", tableName)
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to encrypt selected fields")
+			return
+		}
+	}
 
 	columns := make([]string, 0, len(insertData))
 	values := make([]any, 0, len(insertData))
@@ -258,7 +276,7 @@ func (h *Handler) InsertData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) BulkInsertData(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -267,6 +285,7 @@ func (h *Handler) BulkInsertData(w http.ResponseWriter, r *http.Request) {
 	tableName := r.PathValue("tableName")
 	var body struct {
 		DataArray []map[string]any `json:"dataArray"`
+		Encrypt   []string         `json:"encrypt"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.DataArray) == 0 {
 		httputil.WriteError(w, http.StatusBadRequest, "Data array is required")
@@ -275,9 +294,30 @@ func (h *Handler) BulkInsertData(w http.ResponseWriter, r *http.Request) {
 
 	autoIncrCols := getAutoIncrementColumns(r.Context(), pc, tableName)
 	var inserted []map[string]any
+	var encKey string
+	if len(body.Encrypt) > 0 {
+		key, err := encryption.GetProjectFieldEncryptionKey(r.Context(), h.service.store.pool, pid)
+		if err != nil {
+			slog.Error("failed to get encryption key", "error", err, "projectId", pid)
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to fetch encryption key")
+			return
+		}
+		if strings.TrimSpace(key) == "" {
+			httputil.WriteError(w, http.StatusBadRequest, "No encryption key / secret found")
+			return
+		}
+		encKey = key
+	}
 
 	for _, data := range body.DataArray {
 		rowData := filterAutoIncrement(data, autoIncrCols)
+		if encKey != "" {
+			if err := encryption.EncryptFieldsInData(rowData, body.Encrypt, encKey); err != nil {
+				slog.Error("failed to encrypt selected fields", "error", err, "table", tableName)
+				httputil.WriteError(w, http.StatusInternalServerError, "Failed to encrypt selected fields")
+				return
+			}
+		}
 
 		columns := make([]string, 0, len(rowData))
 		values := make([]any, 0, len(rowData))

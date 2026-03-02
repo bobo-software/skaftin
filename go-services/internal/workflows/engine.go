@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -300,6 +301,7 @@ func (e *Engine) execDBSelect(ctx context.Context, conn *pgx.Conn, node Workflow
 	if err != nil {
 		return fail(node.ID, err.Error(), start)
 	}
+	data = normalizeRows(data)
 	cols := []any{}
 	if len(data) > 0 {
 		for k := range data[0] {
@@ -338,6 +340,7 @@ func (e *Engine) execDBInsert(ctx context.Context, conn *pgx.Conn, node Workflow
 	if err != nil {
 		return fail(node.ID, err.Error(), start)
 	}
+	inserted = normalizeRows(inserted)
 	var first map[string]any
 	if len(inserted) > 0 {
 		first = inserted[0]
@@ -395,6 +398,7 @@ func (e *Engine) execDBUpdate(ctx context.Context, conn *pgx.Conn, node Workflow
 	if err != nil {
 		return fail(node.ID, err.Error(), start)
 	}
+	updated = normalizeRows(updated)
 	return success(node.ID, map[string]any{"updated": updated, "updatedCount": len(updated)}, start)
 }
 
@@ -779,6 +783,7 @@ func getByPath(root any, path string) any {
 }
 
 func stringify(v any) string {
+	v = normalizeValue(v)
 	switch t := v.(type) {
 	case nil:
 		return ""
@@ -790,6 +795,48 @@ func stringify(v any) string {
 		s = strings.TrimPrefix(s, "\"")
 		s = strings.TrimSuffix(s, "\"")
 		return s
+	}
+}
+
+func normalizeRows(rows []map[string]any) []map[string]any {
+	for i := range rows {
+		rows[i] = normalizeMap(rows[i])
+	}
+	return rows
+}
+
+func normalizeMap(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = normalizeValue(v)
+	}
+	return out
+}
+
+func normalizeValue(v any) any {
+	switch t := v.(type) {
+	case [16]byte:
+		if u, err := uuid.FromBytes(t[:]); err == nil {
+			return u.String()
+		}
+		return t
+	case []byte:
+		if len(t) == 16 {
+			if u, err := uuid.FromBytes(t); err == nil {
+				return u.String()
+			}
+		}
+		return t
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = normalizeValue(item)
+		}
+		return out
+	case map[string]any:
+		return normalizeMap(t)
+	default:
+		return v
 	}
 }
 
