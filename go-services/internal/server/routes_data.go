@@ -45,7 +45,6 @@ func registerDataRoutes(
 	appDBMux := http.NewServeMux()
 	dbHandler.RegisterAppAPIRoutes(appDBMux)
 	mux.Handle("/app-api/database/", auth.APIKey(pool)(requestLogger.Middleware(appDBMux)))
-	mux.Handle("/app-api-2/database/", auth.APIKey(pool)(requestLogger.Middleware(appDBMux)))
 
 	// Public client-facing database routes (/app-api-2) (project from API-key auth context).
 	app2DBMux := http.NewServeMux()
@@ -66,7 +65,6 @@ func registerDataRoutes(
 	appStorageMux := http.NewServeMux()
 	storageHandler.RegisterAppAPIRoutes(appStorageMux)
 	mux.Handle("/app-api/storage/", auth.APIKey(pool)(requestLogger.Middleware(appStorageMux)))
-	mux.Handle("/app-api-2/storage/", auth.APIKey(pool)(requestLogger.Middleware(appStorageMux)))
 
 	// Public client-facing storage routes (/app-api-2) (project from API-key auth context).
 	app2StorageMux := http.NewServeMux()
