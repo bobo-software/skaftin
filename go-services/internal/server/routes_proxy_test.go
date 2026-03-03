@@ -7,23 +7,17 @@ import (
 	"testing"
 )
 
-func TestAppAPIFallbackProxyHandlerForwardsToNode(t *testing.T) {
-	var proxied bool
-	node := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		proxied = true
-		w.WriteHeader(http.StatusTeapot)
-	})
-
-	handler := appAPIFallbackProxyHandler(node, "/app-api/")
-	req := httptest.NewRequest(http.MethodGet, "/app-api/legacy-endpoint", nil)
+func TestAPIUnknownRouteReturnsContractError(t *testing.T) {
+	handler := appAPINotFoundHandler("/api/")
+	req := httptest.NewRequest(http.MethodGet, "/api/legacy-endpoint", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if !proxied {
-		t.Fatalf("expected request to be proxied to node fallback handler")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
 	}
-	if rec.Code != http.StatusTeapot {
-		t.Fatalf("expected proxied status %d, got %d", http.StatusTeapot, rec.Code)
+	if body := rec.Body.String(); !strings.Contains(body, "/api/legacy-endpoint") {
+		t.Fatalf("expected response body to include requested route, got %s", body)
 	}
 }
 

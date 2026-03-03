@@ -60,10 +60,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool) (*Server, error) {
 func (s *Server) Start() error {
 	slog.Info("Go gateway starting",
 		"port", s.cfg.Port,
-		"nodeBackend", s.cfg.NodeBackendURL,
 		"supertokensCore", s.cfg.SuperTokensCoreURL,
-		"autoStartNode", s.cfg.AutoStartNode,
-		"appAPIFallbackEnabled", s.cfg.AppAPIProxyFallbackEnabled,
 		"appAPI2FallbackEnabled", false,
 	)
 	return s.httpServer.ListenAndServe()

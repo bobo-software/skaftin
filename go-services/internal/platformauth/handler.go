@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -40,6 +41,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.Method == http.MethodPost && r.URL.Path == "/auth/session/refresh":
 		h.RefreshSession(w, r)
+		return
+	case (r.Method == http.MethodGet || r.Method == http.MethodPost) && r.URL.Path == "/auth/user/email/verify":
+		h.EmailVerify(w, r)
+		return
+	case r.Method == http.MethodPost && r.URL.Path == "/auth/user/email/verify/token":
+		h.EmailVerifyToken(w, r)
 		return
 	case r.Method == http.MethodGet && r.URL.Path == "/auth/user":
 		h.GetUser(w, r)
@@ -221,8 +228,16 @@ func (h *Handler) RefreshSession(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadGateway, "Session refresh unavailable")
 		return
 	}
+	if shouldReturnRefreshCompatibilitySuccess(resp.StatusCode, resp.Body) {
+		h.ensureFrontToken(w, r)
+		httputil.WriteSuccess(w, http.StatusOK, "Session refresh is handled automatically by SuperTokens", map[string]any{
+			"message": "No action needed - sessions are automatically refreshed",
+		})
+		return
+	}
 
 	copyRefreshHeaders(w.Header(), resp.Headers)
+	h.ensureFrontToken(w, r)
 	w.WriteHeader(resp.StatusCode)
 	if len(resp.Body) > 0 {
 		_, _ = w.Write(resp.Body)
@@ -257,6 +272,37 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 		},
 		"accessTokenPayload": claims,
 	})
+}
+
+func (h *Handler) EmailVerify(w http.ResponseWriter, r *http.Request) {
+	corePath := "/recipe/user/email/verify"
+	query := r.URL.Query()
+	needsUserID := query.Get("userId") == ""
+	needsEmail := query.Get("email") == ""
+
+	if needsUserID || needsEmail {
+		if token := extractAccessToken(r); token != "" {
+			if sessionResp, err := h.st.GetSession(r.Context(), token); err == nil && sessionResp != nil && sessionResp.Session.UserID != "" {
+				userID := sessionResp.Session.UserID
+				if needsUserID {
+					query.Set("userId", userID)
+				}
+				if needsEmail {
+					if user, userErr := h.st.GetUserByID(r.Context(), userID); userErr == nil && user != nil && len(user.Emails) > 0 && user.Emails[0] != "" {
+						query.Set("email", user.Emails[0])
+					}
+				}
+			}
+		}
+	}
+	if encoded := query.Encode(); encoded != "" {
+		corePath += "?" + encoded
+	}
+	h.proxyToSuperTokens(w, r, corePath, "emailverification")
+}
+
+func (h *Handler) EmailVerifyToken(w http.ResponseWriter, r *http.Request) {
+	h.proxyToSuperTokens(w, r, "/recipe/user/email/verify/token", "emailverification")
 }
 
 func getFormField(fields []struct {
@@ -300,6 +346,95 @@ func copyRefreshHeaders(dst, src http.Header) {
 	}
 }
 
+func copyPassthroughHeaders(dst, src http.Header) {
+	for k, values := range src {
+		switch strings.ToLower(k) {
+		case "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade", "content-length":
+			continue
+		}
+		dst.Del(k)
+		for _, v := range values {
+			dst.Add(k, v)
+		}
+	}
+}
+
+func shouldReturnRefreshCompatibilitySuccess(statusCode int, body []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	msg := strings.ToLower(string(body))
+	return strings.Contains(msg, "field name 'refreshtoken' is invalid") ||
+		strings.Contains(msg, "invalid json input")
+}
+
+func (h *Handler) proxyToSuperTokens(w http.ResponseWriter, r *http.Request, corePath, recipeID string) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	resp, err := h.st.ForwardRecipeRequest(r.Context(), r.Method, corePath, recipeID, r.Header, body)
+	if err != nil {
+		slog.Error("platform auth proxy failed", "path", corePath, "method", r.Method, "error", err)
+		httputil.WriteError(w, http.StatusBadGateway, "Auth service unavailable")
+		return
+	}
+
+	copyPassthroughHeaders(w.Header(), resp.Headers)
+	w.WriteHeader(resp.StatusCode)
+	if len(resp.Body) > 0 {
+		_, _ = w.Write(resp.Body)
+	}
+}
+
+func (h *Handler) ensureFrontToken(w http.ResponseWriter, r *http.Request) {
+	headers := w.Header()
+	if headers.Get("front-token") != "" {
+		return
+	}
+	if c, err := r.Cookie("sFrontToken"); err == nil && c.Value != "" {
+		headers.Set("front-token", c.Value)
+		return
+	}
+	token := extractAccessToken(r)
+	if token == "" {
+		return
+	}
+	sessionResp, err := h.st.GetSession(r.Context(), token)
+	if err != nil || sessionResp == nil || sessionResp.Session.UserID == "" {
+		return
+	}
+
+	now := time.Now()
+	accessExpiry := time.UnixMilli(sessionResp.AccessToken.Expiry)
+	if sessionResp.AccessToken.Expiry == 0 {
+		accessExpiry = now.Add(1 * time.Hour)
+	}
+	payload, _ := sessionResp.Session.UserDataInAccessToken.(map[string]any)
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	frontTokenPayload := map[string]any{
+		"uid": sessionResp.Session.UserID,
+		"up":  payload,
+		"ate": accessExpiry.UnixMilli(),
+	}
+	b, _ := json.Marshal(frontTokenPayload)
+	frontToken := base64.RawStdEncoding.EncodeToString(b)
+	headers.Set("front-token", frontToken)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "sFrontToken",
+		Value:    frontToken,
+		Path:     "/",
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  accessExpiry,
+	})
+}
+
 func setSessionCookiesAndHeaders(w http.ResponseWriter, session *supertokens.CreateSessionResponse, payload map[string]any) {
 	now := time.Now()
 	accessExpiry := time.UnixMilli(session.AccessToken.Expiry)
@@ -339,7 +474,7 @@ func setSessionCookiesAndHeaders(w http.ResponseWriter, session *supertokens.Cre
 	frontTokenPayload := map[string]any{
 		"uid": session.Session.UserID,
 		"up":  payload,
-		"ate": accessExpiry.Unix(),
+		"ate": accessExpiry.UnixMilli(),
 	}
 	b, _ := json.Marshal(frontTokenPayload)
 	w.Header().Set("front-token", base64.RawStdEncoding.EncodeToString(b))

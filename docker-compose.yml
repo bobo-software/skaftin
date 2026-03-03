@@ -88,7 +88,6 @@ services:
       - "4006:4006"
     environment:
       PORT: 4006
-      AUTO_START_NODE: "false"
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: skaftin_db
@@ -97,49 +96,18 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minio_user
       MINIO_SECRET_KEY: laksdflaksdjflk
-      NODE_BACKEND_URL: http://node-backend:4007
       SUPERTOKENS_CORE_URL: http://supertokens:3567
     networks:
       - skaftin-network
     depends_on:
       postgres:
         condition: service_healthy
-      node-backend:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:4006/api/v2/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # Node.js Backend (internal, proxied via Go gateway)
-  node-backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: skaftin-node-backend
-    expose:
-      - "4007"
-    environment:
-      BACKEND_PORT: 4007
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: skaftin_db
-      DB_USER: postgres
-      DB_PASSWORD: BLUcabish#25
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: minio_user
-      MINIO_SECRET_KEY: laksdflaksdjflk
-      SUPERTOKENS_CONNECTION_URI: http://supertokens:3567
-    networks:
-      - skaftin-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      supertokens:
-        condition: service_healthy
-    restart: unless-stopped
 
 networks:
   skaftin-network:

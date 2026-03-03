@@ -3,11 +3,33 @@
  * Run: npx tsx scripts/set-minio-buckets-public.ts
  */
 import { Pool } from 'pg';
-import { S3Client } from '@aws-sdk/client-s3';
+import { PutBucketPolicyCommand, S3Client } from '@aws-sdk/client-s3';
 import * as dotenv from 'dotenv';
-import { setBucketPublicRead } from '../src/utils/s3BucketPolicy';
 
 dotenv.config();
+
+const publicReadPolicy = (bucketName: string) =>
+  JSON.stringify({
+    Version: '2012-10-17',
+    Statement: [
+      {
+        Sid: 'PublicReadGetObject',
+        Effect: 'Allow',
+        Principal: '*',
+        Action: 's3:GetObject',
+        Resource: `arn:aws:s3:::${bucketName}/*`,
+      },
+    ],
+  });
+
+async function setBucketPublicRead(s3Client: S3Client, bucketName: string): Promise<void> {
+  await s3Client.send(
+    new PutBucketPolicyCommand({
+      Bucket: bucketName,
+      Policy: publicReadPolicy(bucketName),
+    }),
+  );
+}
 
 async function main() {
   const pool = new Pool({

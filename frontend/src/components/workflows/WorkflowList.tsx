@@ -36,8 +36,8 @@ const WorkflowList = ({ projectId, onSelectWorkflow, onCreateNew }: WorkflowList
     setError(null);
     try {
       const result = await listWorkflows(projectId);
-      if (result.success && result.workflows) {
-        setWorkflows(result.workflows);
+      if (result.success) {
+        setWorkflows(Array.isArray(result.workflows) ? result.workflows : []);
       } else {
         setError(result.error || 'Failed to load workflows');
       }

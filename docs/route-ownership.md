@@ -66,7 +66,7 @@ served by explicit Go registrations (not Node business handlers):
 
 ## Node-owned routes (current)
 
-- `/app-api/*` catch-all fallback only when `APP_API_PROXY_FALLBACK_ENABLED=true`
+- None (API fallback/proxy behavior removed for `/api/*` and `/app-api/*`)
 
 ## Removed from Node
 
@@ -83,12 +83,9 @@ served by explicit Go registrations (not Node business handlers):
   2. Add/adjust route precedence tests.
   3. Remove/disable Node mount only after Go parity is verified.
 
-## Rollback playbook (app-api cutover)
+## Strict no-fallback behavior
 
-If `/app-api/*` fallback to Node is disabled and unexpected client traffic
-breaks, re-enable `APP_API_PROXY_FALLBACK_ENABLED=true` and redeploy Go
-gateway. This restores proxy pass-through while gaps are addressed.
-
-For `/app-api-2/*`, rollback uses explicit Go route fixes only. There is no
-Node fallback path for app-api-2 unknown routes.
+- Unknown `/api/*` paths return Go `404`.
+- Unknown `/app-api/*` paths return Go `404`.
+- Unknown `/app-api-2/*` paths return Go `404`.
 

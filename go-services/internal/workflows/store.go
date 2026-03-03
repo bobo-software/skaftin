@@ -40,7 +40,7 @@ func (s *Store) listWorkflows(ctx context.Context, projectID int) ([]map[string]
 	}
 	defer rows.Close()
 
-	var out []map[string]any
+	out := make([]map[string]any, 0)
 	for rows.Next() {
 		var (
 			id, pid int

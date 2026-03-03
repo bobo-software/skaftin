@@ -6,13 +6,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/database"
-	"github.com/skaftin/go-services/internal/gateway"
 	"github.com/skaftin/go-services/internal/server"
 )
 
@@ -33,29 +31,6 @@ func main() {
 	}
 	defer pool.Close()
 	slog.Info("connected to PostgreSQL")
-
-	// Node.js child process (local dev only)
-	var nodeRunner *gateway.NodeRunner
-	if cfg.AutoStartNode {
-		nodePort := "4007"
-		if parts := strings.Split(cfg.NodeBackendURL, ":"); len(parts) == 3 {
-			nodePort = parts[2]
-		}
-
-		// Probe Node root for readiness so Node-specific /api mounts can be removed safely.
-		healthURL := cfg.NodeBackendURL + "/"
-		nodeRunner = gateway.NewNodeRunner(cfg.NodeCommand, cfg.NodeWorkDir, nodePort, healthURL)
-
-		startCtx, startCancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer startCancel()
-
-		if err := nodeRunner.Start(startCtx); err != nil {
-			slog.Error("failed to start Node.js backend", "error", err)
-			os.Exit(1)
-		}
-	} else {
-		slog.Info("AUTO_START_NODE=false, skipping Node.js child process")
-	}
 
 	srv, err := server.New(cfg, pool)
 	if err != nil {
@@ -81,10 +56,6 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server shutdown error", "error", err)
-	}
-
-	if nodeRunner != nil {
-		nodeRunner.Stop()
 	}
 
 	slog.Info("server stopped")

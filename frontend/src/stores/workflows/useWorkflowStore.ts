@@ -418,9 +418,14 @@ const useWorkflowStore = create<WorkflowStore>()(
           const response = await RequestUtils.get(url, token);
 
           if (response && response.success !== false) {
+            const workflows = Array.isArray((response as any).data)
+              ? (response as any).data
+              : Array.isArray(response)
+                ? response
+                : [];
             return {
               success: true,
-              workflows: (response as any).data || response,
+              workflows,
             };
           }
 
