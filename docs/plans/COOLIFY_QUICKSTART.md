@@ -132,19 +132,13 @@ SELECT user_id FROM projects LIMIT 1;
 
 ### 🔐 5. Update Code for Production
 
-#### Backend: `src/config/supertokens.ts`
+#### Backend: `go-services/internal/platformauth/handler.go`
 
 Change these lines for production:
 
 ```typescript
-Session.init({
-  cookieSameSite: "none",  // ← Change from "lax" (for cross-domain)
-  cookieSecure: true,      // ← Change from false (requires HTTPS)
-  cookieDomain: ".yourdomain.com",  // ← Change from undefined
-  sessionExpiredStatusCode: 401,
-  getTokenTransferMethod: () => "cookie",
-  // ... rest stays same
-}),
+Ensure Go platform auth cookie settings align with your domain strategy
+(`Secure`, `SameSite`, and cookie path/domain) before production cutover.
 ```
 
 #### Backend: `src/middleware/supertokensAuthMiddleware.ts`

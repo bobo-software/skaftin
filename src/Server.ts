@@ -1,21 +1,15 @@
-import express, { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
 import { createServer } from 'http';
 import { Pool } from 'pg';
 import { S3Client } from '@aws-sdk/client-s3';
-import supertokens from "supertokens-node";
-import { middleware as supertokensMiddleware, errorHandler as supertokensErrorHandler } from "supertokens-node/framework/express";
-import { initSuperTokens } from './config/supertokens';
 import { DatabaseInitializer } from './services/DatabaseInitializer';
 import { HealthCheckService } from './services/HealthCheckService';
 import { WorkflowScheduler } from './services/WorkflowScheduler';
 
 // Load environment variables
 dotenv.config();
-
-// Initialize SuperTokens
-initSuperTokens();
 
 // Initialize Express app and HTTP server
 const app = express();
@@ -118,15 +112,15 @@ app.use(
       "x-access-token",
       "x-project-id",
       "authorization",
-      ...supertokens.getAllCORSHeaders()
+      "rid",
+      "fdi-version",
+      "st-auth-mode",
+      "anti-csrf",
     ],
     credentials: true,
     exposedHeaders: ["content-disposition"], // For file downloads
   })
 );
-
-// SuperTokens middleware - MUST come before your routes
-app.use(supertokensMiddleware());
 
 // Body parser with increased size limit for file uploads
 // Base64 encoding increases file size by ~33%, so 10MB limit allows ~7.5MB original files
@@ -177,7 +171,7 @@ app.get('/', (req: Request, res: Response) => {
     endpoints: {
       // Platform Admin Routes (SuperTokens authentication)
       platform: {
-        supertokens_auth: '/auth',
+        supertokens_auth: '/auth (Go gateway)',
         platform_auth: '/api/auth (Go gateway)',
         organizations: '/api/organizations (Go gateway)',
         projects: '/api/projects (Go gateway)',
@@ -208,15 +202,9 @@ app.get('/', (req: Request, res: Response) => {
   });
 });
 
-// Register routers
-// Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
-
 // Platform and client API routes are handled by the Go gateway.
 
 // Client-facing app-api and app-api-2 routes are handled by the Go gateway.
-
-// SuperTokens error handler - MUST come after your routes
-app.use(supertokensErrorHandler() as ErrorRequestHandler);
 
 // ============================================================================
 // SERVER STARTUP

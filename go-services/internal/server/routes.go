@@ -19,6 +19,7 @@ import (
 	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/orgs"
 	"github.com/skaftin/go-services/internal/payments"
+	"github.com/skaftin/go-services/internal/platformauth"
 	"github.com/skaftin/go-services/internal/projects"
 	"github.com/skaftin/go-services/internal/realtime"
 	"github.com/skaftin/go-services/internal/requestlogs"
@@ -68,6 +69,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	clientMCPHandler := mcpserver.NewHTTPHandler(mcpSvc, true)
 	usersHandler := users.NewHandler(pool, stClient)
 	adminHandler := admin.NewHandler(pool, stClient)
+	platformAuthHandler := platformauth.NewHandler(pool, stClient)
 
 	// ==================================================================
 	// PUBLIC ROUTES (no auth required)
@@ -96,7 +98,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 		return nil, err
 	}
 
-	registerProxyRoutes(mux, cfg, pool, jwks, requestLogger, nodeHandler)
+	registerProxyRoutes(mux, cfg, pool, jwks, requestLogger, nodeHandler, platformAuthHandler)
 	return opsCleanup, nil
 }
 

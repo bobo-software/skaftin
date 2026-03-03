@@ -9,6 +9,7 @@ import (
 	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
+	"github.com/skaftin/go-services/internal/platformauth"
 )
 
 func registerAPIGatewayRoutes(mux *http.ServeMux, pool *pgxpool.Pool, jwks *auth.JWKSProvider, nodeHandler http.Handler) {
@@ -16,9 +17,17 @@ func registerAPIGatewayRoutes(mux *http.ServeMux, pool *pgxpool.Pool, jwks *auth
 	mux.Handle("/api/v2/", auth.APIKey(pool)(v2Mux))
 }
 
-func registerProxyRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, jwks *auth.JWKSProvider, requestLogger *middleware.RequestLogger, nodeHandler http.Handler) {
-	// Auth routes: pass through with NO auth check
-	mux.Handle("/auth/", nodeHandler)
+func registerProxyRoutes(
+	mux *http.ServeMux,
+	cfg *config.Config,
+	pool *pgxpool.Pool,
+	jwks *auth.JWKSProvider,
+	requestLogger *middleware.RequestLogger,
+	nodeHandler http.Handler,
+	platformAuthHandler *platformauth.Handler,
+) {
+	// Auth routes: owned by Go platform auth handlers.
+	mux.Handle("/auth/", platformAuthHandler)
 
 	// Platform API routes: validate JWT, then proxy to Node.js
 	mux.Handle("/api/", auth.JWTAuth(jwks)(nodeHandler))

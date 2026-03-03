@@ -13,7 +13,7 @@ Client / Frontend
    Go Gateway (:4007)
         |
         |-- /api/v2/*     --> Go handles directly (API key auth)
-        |-- /auth/*        --> Proxy to Node.js (no auth check, SuperTokens handles it)
+        |-- /auth/*       --> Go platform auth handler (SuperTokens Core-backed)
         |-- /api/*         --> JWT validation, then proxy to Node.js
         |-- /app-api/*     --> API key validation, then proxy to Node.js
         |-- /socket.io/*   --> Proxy to Node.js (WebSocket support)
@@ -26,7 +26,7 @@ Client / Frontend
 
 ### Phase 1: SuperTokens JWT Mode
 
-`src/config/supertokens.ts` -- Added `exposeAccessTokenToFrontendInCookieBasedAuth: true` to `Session.init()`. This makes SuperTokens issue standard JWTs that any service can verify using the JWKS endpoint at `{supertokensCore}/.well-known/jwks.json`.
+Go now owns `/auth/*` through `go-services/internal/platformauth/handler.go`, which creates and refreshes SuperTokens Core sessions while preserving JWT claims consumed by Go middleware.
 
 ### Phase 2: Go JWT Validation
 
@@ -40,10 +40,10 @@ New files in Go:
 New files:
 - `internal/proxy/reverse.go` -- Reverse proxy using `net/http/httputil.ReverseProxy` with full header pass-through (cookies, Set-Cookie, CORS), error handling, and WebSocket upgrade support for Socket.IO.
 
-Updated `cmd/api/main.go` route structure:
+Updated route structure:
 - `/api/v2/health` -- public, no auth
 - `/api/v2/*` -- API key/access token auth, Go handles directly
-- `/auth/*` -- no auth, proxied to Node.js
+- `/auth/*` -- handled by Go platform auth
 - `/api/*` -- JWT auth, proxied to Node.js
 - `/app-api/*` -- API key auth, proxied to Node.js
 - `/socket.io/*` -- proxied to Node.js (WebSocket-aware)
@@ -100,7 +100,7 @@ curl http://localhost:4007/api/health
 
 | Route | Auth Method | Handler |
 |-------|------------|---------|
-| `/auth/*` | None (SuperTokens handles internally) | Proxy to Node.js |
+| `/auth/*` | None (SuperTokens Core-backed platform auth) | Go handles directly |
 | `/api/*` | SuperTokens JWT (sAccessToken cookie or Bearer) | Proxy to Node.js |
 | `/api/v2/*` | API key / access token (X-API-Key or Bearer) | Go handles directly |
 | `/app-api/*` | API key / access token | Proxy to Node.js |
