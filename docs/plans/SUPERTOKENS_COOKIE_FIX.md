@@ -236,7 +236,7 @@ REFRESH_TOKEN_VALIDITY_SECONDS=8640000   # 100 days
 
 ## Related Configuration Files
 
-### SuperTokens Config: `src/config/supertokens.ts`
+### Platform Auth Handler: `go-services/internal/platformauth/handler.go`
 
 ```typescript
 const cookieSettings = {

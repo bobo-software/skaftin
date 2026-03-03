@@ -240,7 +240,7 @@ POST /api/app-auth/123/auth/register  # ← Use the ID here
 **Error:** "Email already exists" at `/api/auth/register`  
 **Fix:** Email exists in SuperTokens. Either:
 1. Use a different email
-2. Delete via: `npx ts-node scripts/cleanup-email-simple.ts <email>`
+2. Delete the stale user via database/admin tooling
 3. Or login instead of register
 
 **Error:** "Email already exists" at `/api/app-auth/:projectId/auth/register`  

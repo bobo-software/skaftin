@@ -1,7 +1,21 @@
-import { io, Socket } from 'socket.io-client';
-
 interface DatabaseEvent {
-  type: 'insert' | 'update' | 'delete' | 'create_table' | 'drop_table';
+  type:
+    | 'insert'
+    | 'update'
+    | 'delete'
+    | 'create_table'
+    | 'rename_table'
+    | 'drop_table'
+    | 'add_column'
+    | 'alter_column'
+    | 'drop_column'
+    | 'create_constraint'
+    | 'drop_constraint'
+    | 'create_cron_job'
+    | 'update_cron_job'
+    | 'delete_cron_job'
+    | 'toggle_cron_job'
+    | 'import_dump';
   projectId: string;
   tableName: string;
   data?: any;
@@ -17,95 +31,159 @@ interface ProjectEvent {
 }
 
 class SocketService {
-  private socket: Socket | null = null;
+  private socket: WebSocket | null = null;
   private isConnected = false;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private maxReconnectAttempts = 10;
   private reconnectDelay = 1000;
+  private reconnectTimer: number | null = null;
+  private manualDisconnect = false;
+  private activeProjects = new Set<string>();
+  private databaseListeners = new Set<(event: DatabaseEvent) => void>();
+  private projectListeners = new Set<(event: ProjectEvent) => void>();
 
   constructor() {
     this.connect();
   }
 
-  private connect() {
+  private getWebSocketUrl() {
     const serverUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:4006';
-    
-    this.socket = io(serverUrl, {
-      transports: ['websocket', 'polling'],
-      autoConnect: true,
-      reconnection: true,
-      reconnectionAttempts: this.maxReconnectAttempts,
-      reconnectionDelay: this.reconnectDelay,
-    });
+    const parsed = new URL(serverUrl);
+    parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+    parsed.pathname = '/ws';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  }
 
-    this.socket.on('connect', () => {
-      console.log('🔌 Connected to Socket.IO server');
+  private connect() {
+    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    const wsUrl = this.getWebSocketUrl();
+    this.socket = new WebSocket(wsUrl);
+
+    this.socket.addEventListener('open', () => {
+      console.log('🔌 Connected to WebSocket server');
       this.isConnected = true;
       this.reconnectAttempts = 0;
+      this.resubscribeProjects();
     });
 
-    this.socket.on('disconnect', (reason) => {
-      console.log('🔌 Disconnected from Socket.IO server:', reason);
+    this.socket.addEventListener('close', (event) => {
+      console.log('🔌 Disconnected from WebSocket server:', event.reason || `code=${event.code}`);
       this.isConnected = false;
+      if (!this.manualDisconnect) {
+        this.scheduleReconnect();
+      }
     });
 
-    this.socket.on('connect_error', (error) => {
-      console.error('🔌 Socket.IO connection error:', error);
+    this.socket.addEventListener('error', (error) => {
+      console.error('🔌 WebSocket connection error:', error);
+    });
+
+    this.socket.addEventListener('message', (event) => {
+      this.handleMessage(event.data);
+    });
+  }
+
+  private handleMessage(raw: string) {
+    try {
+      const message = JSON.parse(raw);
+
+      switch (message.type) {
+        case 'database-change': {
+          const payload = message.payload as DatabaseEvent;
+          if (!payload?.timestamp) {
+            payload.timestamp = new Date().toISOString();
+          }
+          this.databaseListeners.forEach((listener) => listener(payload));
+          return;
+        }
+        case 'project-event': {
+          const payload = message.payload as ProjectEvent;
+          if (!payload?.timestamp) {
+            payload.timestamp = new Date().toISOString();
+          }
+          this.projectListeners.forEach((listener) => listener(payload));
+          return;
+        }
+        case 'subscribed':
+        case 'unsubscribed':
+          return;
+        case 'error':
+          console.warn('🔌 WebSocket server error:', message.message);
+          return;
+        default:
+          return;
+      }
+    } catch (error) {
+      console.warn('🔌 Failed to parse WebSocket message:', error);
+    }
+  }
+
+  private scheduleReconnect() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('🔌 Failed to reconnect to WebSocket server');
+      return;
+    }
+    if (this.reconnectTimer) {
+      return;
+    }
+
+    const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts), 10000);
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null;
       this.reconnectAttempts++;
-    });
+      this.connect();
+    }, delay);
+  }
 
-    this.socket.on('reconnect', (attemptNumber) => {
-      console.log('🔌 Reconnected to Socket.IO server after', attemptNumber, 'attempts');
-      this.isConnected = true;
-    });
+  private sendMessage(payload: Record<string, unknown>) {
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify(payload));
+    }
+  }
 
-    this.socket.on('reconnect_failed', () => {
-      console.error('🔌 Failed to reconnect to Socket.IO server');
+  private resubscribeProjects() {
+    this.activeProjects.forEach((projectId) => {
+      this.sendMessage({ type: 'subscribe', projectId });
     });
   }
 
   // Join a project room to receive project-specific updates
   joinProject(projectId: string) {
-    if (this.socket && this.isConnected) {
-      this.socket.emit('join-project', projectId);
-      console.log(`📁 Joined project room: ${projectId}`);
-    }
+    this.activeProjects.add(projectId);
+    this.sendMessage({ type: 'subscribe', projectId });
+    console.log(`📁 Subscribed project stream: ${projectId}`);
   }
 
   // Leave a project room
   leaveProject(projectId: string) {
-    if (this.socket && this.isConnected) {
-      this.socket.emit('leave-project', projectId);
-      console.log(`📁 Left project room: ${projectId}`);
-    }
+    this.activeProjects.delete(projectId);
+    this.sendMessage({ type: 'unsubscribe', projectId });
+    console.log(`📁 Unsubscribed project stream: ${projectId}`);
   }
 
   // Listen for database change events
   onDatabaseChange(callback: (event: DatabaseEvent) => void) {
-    if (this.socket) {
-      this.socket.on('database-change', callback);
-    }
+    this.databaseListeners.add(callback);
   }
 
   // Listen for project events
   onProjectEvent(callback: (event: ProjectEvent) => void) {
-    if (this.socket) {
-      this.socket.on('project-event', callback);
-    }
+    this.projectListeners.add(callback);
   }
 
   // Remove database change listener
   offDatabaseChange(callback: (event: DatabaseEvent) => void) {
-    if (this.socket) {
-      this.socket.off('database-change', callback);
-    }
+    this.databaseListeners.delete(callback);
   }
 
   // Remove project event listener
   offProjectEvent(callback: (event: ProjectEvent) => void) {
-    if (this.socket) {
-      this.socket.off('project-event', callback);
-    }
+    this.projectListeners.delete(callback);
   }
 
   // Get connection status
@@ -113,14 +191,19 @@ class SocketService {
     return {
       isConnected: this.isConnected,
       reconnectAttempts: this.reconnectAttempts,
-      socketId: this.socket?.id || null
+      socketId: null
     };
   }
 
   // Disconnect from server
   disconnect() {
+    this.manualDisconnect = true;
+    if (this.reconnectTimer) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.socket) {
-      this.socket.disconnect();
+      this.socket.close();
       this.socket = null;
       this.isConnected = false;
     }
@@ -128,11 +211,13 @@ class SocketService {
 
   // Reconnect to server
   reconnect() {
+    this.manualDisconnect = false;
+    this.reconnectAttempts = 0;
     if (this.socket) {
-      this.socket.connect();
-    } else {
-      this.connect();
+      this.socket.close();
+      this.socket = null;
     }
+    this.connect();
   }
 }
 

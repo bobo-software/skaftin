@@ -8,7 +8,7 @@ This package is the HTTP composition root for the Go API.
 - `routes_data.go`: data-domain mounts (`database`, `storage`, `projects`, etc.).
 - `routes_auth_admin.go`: auth management and admin mounts.
 - `routes_ops.go`: invitations, communications, payments, backups, workflows.
-- `routes_proxy.go`: gateway-only mounts (`/api/v2`) and Node proxy catch-alls.
+- `routes_proxy.go`: gateway-only mounts (`/api/v2`) and strict fallback handlers.
 
 ## Route Ordering Guardrails
 
@@ -18,21 +18,19 @@ Order is critical when using `http.ServeMux` path matching:
    - `/app-api/mcp/`
 2. Register broad JWT/API domain routes next.
    - `/api/mcp/`
-3. Register catch-all proxy routes last:
+3. Register fallback routes last:
    - `/auth/`
    - `/api/`
-   - `/app-api/` (only when `APP_API_PROXY_FALLBACK_ENABLED=true`)
+   - `/app-api/`
+   - `/app-api-2/`
 
 If a new `/app-api/...` route is added, ensure it is mounted before `/app-api/`.
 
-## App-API Fallback Flag
+## Strict Fallback Behavior
 
-- `APP_API_PROXY_FALLBACK_ENABLED=false` (default): unknown `/app-api/*` paths
-  return a Go JSON `404` contract.
-- `APP_API_PROXY_FALLBACK_ENABLED=true`: unknown `/app-api/*` paths are proxied
-  to Node and fallback hits are emitted as structured warning logs.
-- `/app-api-2/*` is always Go-only. Unknown paths under `/app-api-2/*` always
-  return a Go JSON `404` contract and are never proxied to Node.
+- Unknown `/api/*` paths return a Go JSON `404` contract.
+- Unknown `/app-api/*` paths return a Go JSON `404` contract.
+- Unknown `/app-api-2/*` paths return a Go JSON `404` contract.
 
 ## Compatibility Migration Checklist
 

@@ -10,29 +10,16 @@ Comprehensive debug logging has been added throughout your application to help d
 
 ### **Backend Files:**
 
-1. **`src/config/supertokens.ts`**
-   - Added environment detection logging
-   - Shows cookie configuration on startup
-   - Logs all SuperTokens settings
+1. **`go-services/internal/platformauth/handler.go`**
+   - Go-owned `/auth/*` session handling and cookie/header behavior
+   - SuperTokens Core refresh forwarding and auth response shaping
 
 2. **`src/Server.ts`**
    - Added CORS origin logging
    - Added WebSocket CORS logging
    - Added request logging middleware (logs every incoming request)
 
-3. **`src/routers/AuthCompatibilityRouter.ts`**
-   - Login endpoint: Logs credentials, origin, cookies, session creation, Set-Cookie headers
-   - Register endpoint: Same detailed logging
-   - Verify endpoint: Logs session validation
-   - Refresh endpoint: Logs refresh attempts
-   - Logout endpoint: Logs session revocation
-
-4. **`src/middleware/supertokensAuthMiddleware.ts`**
-   - Logs user info attachment
-   - Logs project access verification
-   - Logs authorization checks
-
-5. **`src/services/WebSocketService.ts`**
+3. **`src/services/WebSocketService.ts`**
    - Logs WebSocket CORS configuration on startup
 
 ### **Frontend Files:**

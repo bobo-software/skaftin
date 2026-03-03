@@ -635,7 +635,7 @@ npm install supertokens-auth-react
 
 ### Step 2: Configure SuperTokens
 
-Create `src/config/supertokens.ts`:
+Create `frontend/src/config/supertokens.ts`:
 
 ```typescript
 /**

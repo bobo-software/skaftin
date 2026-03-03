@@ -1,3 +1,231 @@
+# WebSocket Integration (Native Go)
+
+This guide explains how to consume real-time events from the Go gateway using
+native WebSocket (RFC6455). Socket.IO is no longer used.
+
+## Overview
+
+- **Server endpoint:** `/ws`
+- **Transport:** native WebSocket only
+- **Subscription model:** client sends `subscribe` / `unsubscribe` messages per
+  `projectId`
+- **Broadcast channels:**
+  - `database-change`
+  - `project-event`
+
+## Connection URL
+
+Use your API base URL and replace protocol:
+
+- `http://localhost:4006` -> `ws://localhost:4006/ws`
+- `https://api.example.com` -> `wss://api.example.com/ws`
+
+## Message Protocol
+
+All messages are JSON objects.
+
+### Client -> Server
+
+Subscribe to a project stream:
+
+```json
+{
+  "type": "subscribe",
+  "projectId": "42"
+}
+```
+
+Unsubscribe from a project stream:
+
+```json
+{
+  "type": "unsubscribe",
+  "projectId": "42"
+}
+```
+
+### Server -> Client
+
+Subscribe acknowledgement:
+
+```json
+{
+  "type": "subscribed",
+  "projectId": "42"
+}
+```
+
+Unsubscribe acknowledgement:
+
+```json
+{
+  "type": "unsubscribed",
+  "projectId": "42"
+}
+```
+
+Protocol error:
+
+```json
+{
+  "type": "error",
+  "message": "projectId is required"
+}
+```
+
+Database change event:
+
+```json
+{
+  "type": "database-change",
+  "projectId": "42",
+  "payload": {
+    "type": "update",
+    "projectId": "42",
+    "tableName": "customers",
+    "data": {
+      "updatedCount": 1
+    },
+    "timestamp": "2026-03-03T10:20:30.123Z"
+  }
+}
+```
+
+Project event:
+
+```json
+{
+  "type": "project-event",
+  "projectId": "42",
+  "payload": {
+    "type": "table_renamed",
+    "projectId": "42",
+    "data": {
+      "oldName": "customers_old",
+      "newName": "customers"
+    },
+    "timestamp": "2026-03-03T10:20:30.123Z"
+  }
+}
+```
+
+## TypeScript Client Example
+
+```ts
+type IncomingEnvelope =
+  | { type: 'subscribed'; projectId: string }
+  | { type: 'unsubscribed'; projectId: string }
+  | { type: 'error'; message: string }
+  | { type: 'database-change'; projectId: string; payload: DatabaseEvent }
+  | { type: 'project-event'; projectId: string; payload: ProjectEvent };
+
+type DatabaseEvent = {
+  type:
+    | 'insert'
+    | 'update'
+    | 'delete'
+    | 'create_table'
+    | 'rename_table'
+    | 'drop_table'
+    | 'add_column'
+    | 'alter_column'
+    | 'drop_column'
+    | 'create_constraint'
+    | 'drop_constraint'
+    | 'create_cron_job'
+    | 'update_cron_job'
+    | 'delete_cron_job'
+    | 'toggle_cron_job'
+    | 'import_dump';
+  projectId: string;
+  tableName: string;
+  data?: unknown;
+  oldData?: unknown;
+  timestamp: string;
+};
+
+type ProjectEvent = {
+  type: string;
+  projectId: string;
+  data: unknown;
+  timestamp: string;
+};
+
+const ws = new WebSocket('ws://localhost:4006/ws');
+
+ws.addEventListener('open', () => {
+  ws.send(JSON.stringify({ type: 'subscribe', projectId: '42' }));
+});
+
+ws.addEventListener('message', (event) => {
+  const msg = JSON.parse(event.data) as IncomingEnvelope;
+  if (msg.type === 'database-change') {
+    console.log('database event', msg.payload);
+  }
+  if (msg.type === 'project-event') {
+    console.log('project event', msg.payload);
+  }
+});
+```
+
+## Reconnection and Resubscription
+
+Native WebSocket does not provide automatic reconnection. Your client should:
+
+1. reconnect with exponential backoff
+2. track subscribed `projectId`s
+3. replay subscriptions after reconnect
+
+Recommended backoff:
+
+- start at `1s`
+- double each retry
+- cap at `10s`
+- stop after a max retry threshold
+
+## Frontend Integration Notes
+
+In this codebase:
+
+- realtime service: `frontend/src/services/SocketService.ts`
+- store integration: `frontend/src/stores/state/useRealtimeStore.ts`
+- consumer UI: `frontend/src/components/database/TableViewer.tsx`
+
+The service already:
+
+- connects to `/ws`
+- sends `subscribe` / `unsubscribe`
+- routes `database-change` and `project-event` payloads to listeners
+- reconnects and resubscribes active project subscriptions
+
+## Troubleshooting
+
+### No events received
+
+- confirm connection URL uses `ws://` or `wss://`
+- confirm `subscribe` message includes `projectId`
+- check that server sends `subscribed` ack
+- check project IDs match the events being emitted
+
+### Frequent reconnect loops
+
+- verify gateway is reachable on `/ws`
+- verify TLS termination supports websocket upgrades
+- check browser/network proxies that may close idle websocket connections
+
+### Event shape mismatch
+
+- inspect raw inbound message JSON
+- ensure client handles envelope shape:
+  - top-level `type`, `projectId`
+  - event object under `payload`
+
+## Migration Notes
+
+- Socket.IO protocol and `/socket.io` endpoint are removed from active runtime.
+- Replace any `socket.io-client` usage with native `WebSocket`.
+- Replace event-emitter style handlers (`socket.on`) with message-envelope
+  dispatching.
 # Client SDK - WebSocket Real-Time Updates
 
 ## Overview

@@ -1,63 +1,39 @@
 package server
 
 import (
-	"log/slog"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/auth"
-	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
+	"github.com/skaftin/go-services/internal/platformauth"
 )
 
-func registerAPIGatewayRoutes(mux *http.ServeMux, pool *pgxpool.Pool, jwks *auth.JWKSProvider, nodeHandler http.Handler) {
+func registerAPIGatewayRoutes(mux *http.ServeMux, pool *pgxpool.Pool) {
 	v2Mux := http.NewServeMux()
 	mux.Handle("/api/v2/", auth.APIKey(pool)(v2Mux))
 }
 
-func registerProxyRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, jwks *auth.JWKSProvider, requestLogger *middleware.RequestLogger, nodeHandler http.Handler) {
-	// Auth routes: pass through with NO auth check
-	mux.Handle("/auth/", nodeHandler)
+func registerProxyRoutes(
+	mux *http.ServeMux,
+	pool *pgxpool.Pool,
+	requestLogger *middleware.RequestLogger,
+	platformAuthHandler *platformauth.Handler,
+) {
+	// Auth routes: owned by Go platform auth handlers.
+	mux.Handle("/auth/", platformAuthHandler)
 
-	// Platform API routes: validate JWT, then proxy to Node.js
-	mux.Handle("/api/", auth.JWTAuth(jwks)(nodeHandler))
+	// Platform API fallback: unknown paths return explicit Go 404.
+	mux.Handle("/api/", appAPINotFoundHandler("/api/"))
 
-	// Client API routes: route fallback behavior is feature-gated so Go-only
-	// cutovers can disable pass-through while still allowing quick rollback.
-	if cfg.AppAPIProxyFallbackEnabled {
-		mux.Handle("/app-api/", auth.APIKey(pool)(requestLogger.Middleware(appAPIFallbackProxyHandler(nodeHandler, "/app-api/"))))
-	} else {
-		mux.Handle("/app-api/", auth.APIKey(pool)(requestLogger.Middleware(appAPINotFoundHandler("/app-api/"))))
-	}
+	// Client API fallback: unknown paths return explicit Go 404.
+	mux.Handle("/app-api/", auth.APIKey(pool)(requestLogger.Middleware(appAPINotFoundHandler("/app-api/"))))
 
 	// Public client API v2 is Go-only: unknown paths return a standardized Go 404.
 	mux.Handle("/app-api-2/", auth.APIKey(pool)(requestLogger.Middleware(appAPINotFoundHandler("/app-api-2/"))))
 
-	// Socket.IO: pass through (handles its own auth)
-	mux.Handle("/socket.io/", nodeHandler)
 }
-
-func appAPIFallbackProxyHandler(nodeHandler http.Handler, routePrefix string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var projectID any = "unknown"
-		if authCtx := auth.GetAuthContext(r); authCtx != nil {
-			projectID = authCtx.ProjectID
-		}
-
-		slog.Warn("app-api fallback proxy hit",
-			"routePrefix", routePrefix,
-			"method", r.Method,
-			"path", r.URL.Path,
-			"projectId", projectID,
-			"userAgent", r.UserAgent(),
-			"remoteAddr", r.RemoteAddr,
-		)
-
-		nodeHandler.ServeHTTP(w, r)
-	})
-}
-
 func appAPINotFoundHandler(routePrefix string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(

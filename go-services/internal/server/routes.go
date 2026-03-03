@@ -13,13 +13,14 @@ import (
 	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/credentials"
 	"github.com/skaftin/go-services/internal/dbproxy"
-	"github.com/skaftin/go-services/internal/gateway"
 	"github.com/skaftin/go-services/internal/health"
 	mcpserver "github.com/skaftin/go-services/internal/mcp"
 	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/orgs"
 	"github.com/skaftin/go-services/internal/payments"
+	"github.com/skaftin/go-services/internal/platformauth"
 	"github.com/skaftin/go-services/internal/projects"
+	"github.com/skaftin/go-services/internal/realtime"
 	"github.com/skaftin/go-services/internal/requestlogs"
 	"github.com/skaftin/go-services/internal/storage"
 	"github.com/skaftin/go-services/internal/supertokens"
@@ -34,18 +35,12 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	jwks := auth.NewJWKSProvider(cfg.SuperTokensCoreURL)
 	slog.Info("JWKS provider initialized", "supertokensCoreURL", cfg.SuperTokensCoreURL)
 
-	// ---- Node.js reverse proxy ----
-	nodeProxy, err := gateway.NewReverseProxy(cfg.NodeBackendURL)
-	if err != nil {
-		return nil, err
-	}
-	nodeHandler := gateway.WebSocketAwareHandler(nodeProxy, cfg.NodeBackendURL)
-	slog.Info("reverse proxy initialized", "nodeBackendURL", cfg.NodeBackendURL)
-
 	// ---- Domain handlers ----
 	healthHandler := health.NewHandler(pool)
 	stClient := supertokens.NewClient(cfg.SuperTokensCoreURL, cfg.SuperTokensAPIKey)
-	dbHandler := dbproxy.NewHandler(pool, stClient)
+	realtimeHub := realtime.NewHub()
+	realtimeHandler := realtime.NewHandler(realtimeHub, []string{cfg.FrontendURL})
+	dbHandler := dbproxy.NewHandler(pool, stClient, realtimeHub)
 	projectsHandler, err := projects.NewHandler(pool, cfg)
 	if err != nil {
 		return nil, err
@@ -65,16 +60,18 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	clientMCPHandler := mcpserver.NewHTTPHandler(mcpSvc, true)
 	usersHandler := users.NewHandler(pool, stClient)
 	adminHandler := admin.NewHandler(pool, stClient)
+	platformAuthHandler := platformauth.NewHandler(pool, stClient)
 
 	// ==================================================================
 	// PUBLIC ROUTES (no auth required)
 	// ==================================================================
 	healthHandler.RegisterRoutes(mux)
+	mux.Handle("/ws", realtimeHandler)
 
 	// ==================================================================
 	// GO-HANDLED ROUTES (API key / access token auth)
 	// ==================================================================
-	registerAPIGatewayRoutes(mux, pool, jwks, nodeHandler)
+	registerAPIGatewayRoutes(mux, pool)
 
 	// ==================================================================
 	// GO-HANDLED DOMAIN ROUTES (JWT auth, registered before catch-all)
@@ -92,7 +89,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 		return nil, err
 	}
 
-	registerProxyRoutes(mux, cfg, pool, jwks, requestLogger, nodeHandler)
+	registerProxyRoutes(mux, pool, requestLogger, platformAuthHandler)
 	return opsCleanup, nil
 }
 

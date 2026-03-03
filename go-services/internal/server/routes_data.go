@@ -84,7 +84,7 @@ func registerDataRoutes(
 	filesHandler := files.NewHandler(storageHandler.S3(), cfg.MinioBucket)
 	mountJWT(mux, "/api/files/", jwks, filesHandler.RegisterRoutes)
 
-	migrationsDir := filepath.Join(cfg.NodeWorkDir, "migrations")
+	migrationsDir := filepath.Join(cfg.AppRootDir, "migrations")
 	migrationsHandler := migrations.NewHandler(pool, migrationsDir)
 	mountJWT(mux, "/api/migrations/", jwks, migrationsHandler.RegisterRoutes)
 	return nil

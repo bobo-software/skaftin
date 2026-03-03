@@ -1,4 +1,4 @@
-name: CI/CD Pipeline with Custom Docker Registry
+name: Build and Push Docker Images
 
 on:
   push:
@@ -33,18 +33,6 @@ jobs:
 
       - name: Extract version from commit SHA
         run: echo "VERSION=${GITHUB_SHA::7}" >> $GITHUB_ENV
-
-      - name: Build and push Backend Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          tags: |
-            dr.bobosoftware.co.za/skaftin-platform:latest
-            dr.bobosoftware.co.za/skaftin-platform:${{ env.VERSION }}
 
       - name: Build and push Frontend Docker image
         uses: docker/build-push-action@v5

@@ -855,9 +855,9 @@ if (result.success && result.user) {
 - `frontend/src/components/auth/ProtectedRoute.tsx` - Route protection
 
 ### Backend Files
-- `src/routers/AuthCompatibilityRouter.ts` - Authentication endpoints
-- `src/config/supertokens.ts` - SuperTokens configuration
-- `src/middleware/supertokensAuthMiddleware.ts` - Auth middleware
+- `go-services/internal/platformauth/handler.go` - Go-owned `/auth/*` SuperTokens-compatible endpoints
+- `go-services/internal/auth/jwt.go` - JWT validation middleware for protected routes
+- `go-services/internal/server/routes_proxy.go` - Route ownership and proxy registration
 
 ---
 

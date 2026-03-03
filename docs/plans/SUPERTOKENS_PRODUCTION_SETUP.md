@@ -68,7 +68,7 @@ MINIO_USE_SSL=true
 
 ### Step 3: Update Backend Configuration
 
-**File: `src/config/supertokens.ts`**
+**File: `go-services/internal/platformauth/handler.go`**
 
 ```typescript
 Session.init({
@@ -257,7 +257,7 @@ export const authenticateSession = verifySession({
 });
 ```
 
-**File: `src/config/supertokens.ts`**
+**File: `go-services/internal/platformauth/handler.go`**
 
 ```typescript
 Session.init({

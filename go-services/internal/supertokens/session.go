@@ -29,6 +29,7 @@ type SessionInfo struct {
 	Handle                string `json:"handle"`
 	UserID                string `json:"userId"`
 	UserDataInAccessToken any    `json:"userDataInAccessToken"`
+	UserDataInJWT         any    `json:"userDataInJWT,omitempty"`
 }
 
 type TokenInfo struct {

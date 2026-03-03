@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
+	"github.com/skaftin/go-services/internal/realtime"
 	"github.com/skaftin/go-services/internal/supertokens"
 )
 
@@ -15,11 +16,12 @@ import (
 type Handler struct {
 	service *Service
 	st      *supertokens.Client
+	rt      *realtime.Hub
 }
 
 // NewHandler creates a new dbproxy Handler.
-func NewHandler(pool *pgxpool.Pool, st *supertokens.Client) *Handler {
-	return &Handler{service: NewService(pool), st: st}
+func NewHandler(pool *pgxpool.Pool, st *supertokens.Client, rt *realtime.Hub) *Handler {
+	return &Handler{service: NewService(pool), st: st, rt: rt}
 }
 
 // RegisterRoutes registers all database routes on the given mux.
