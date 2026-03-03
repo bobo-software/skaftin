@@ -273,6 +273,7 @@ func (h *Handler) InsertData(w http.ResponseWriter, r *http.Request) {
 		row = result[0]
 	}
 	httputil.WriteSuccess(w, http.StatusCreated, "Data inserted successfully", row)
+	h.emitDatabaseEvent(pid, "insert", tableName, row, nil)
 }
 
 func (h *Handler) BulkInsertData(w http.ResponseWriter, r *http.Request) {
@@ -348,10 +349,13 @@ func (h *Handler) BulkInsertData(w http.ResponseWriter, r *http.Request) {
 
 	syncSequencesToMax(r.Context(), pc, tableName, autoIncrCols)
 	httputil.WriteSuccess(w, http.StatusCreated, fmt.Sprintf("%d rows inserted successfully", len(inserted)), inserted)
+	h.emitDatabaseEvent(pid, "insert", tableName, map[string]any{
+		"insertedCount": len(inserted),
+	}, nil)
 }
 
 func (h *Handler) UpdateData(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -408,10 +412,14 @@ func (h *Handler) UpdateData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteSuccess(w, http.StatusOK, fmt.Sprintf("%d row(s) updated successfully", len(result)), result)
+	h.emitDatabaseEvent(pid, "update", tableName, map[string]any{
+		"updatedCount": len(result),
+		"rows":         result,
+	}, nil)
 }
 
 func (h *Handler) DeleteData(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -461,4 +469,7 @@ func (h *Handler) DeleteData(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteSuccess(w, http.StatusOK, fmt.Sprintf("%d row(s) deleted successfully", len(result)), map[string]any{
 		"deletedCount": len(result),
 	})
+	h.emitDatabaseEvent(pid, "delete", tableName, map[string]any{
+		"deletedCount": len(result),
+	}, nil)
 }

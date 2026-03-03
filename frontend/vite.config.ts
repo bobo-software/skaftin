@@ -53,12 +53,6 @@ export default defineConfig({
         cookieDomainRewrite: 'localhost',
         cookiePathRewrite: '/',
       },
-      '/socket.io': {
-        target: 'http://localhost:4006',
-        changeOrigin: true,
-        secure: false,
-        ws: true,
-      },
     },
   },
   preview: {

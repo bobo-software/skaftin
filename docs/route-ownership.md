@@ -66,7 +66,6 @@ served by explicit Go registrations (not Node business handlers):
 ## Node-owned routes (current)
 
 - `/auth/*` (SuperTokens middleware endpoints)
-- `/socket.io/*` (realtime passthrough to Node)
 - `/app-api/*` catch-all fallback only when `APP_API_PROXY_FALLBACK_ENABLED=true`
 
 ## Removed from Node

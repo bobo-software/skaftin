@@ -7,7 +7,6 @@ import { S3Client } from '@aws-sdk/client-s3';
 import supertokens from "supertokens-node";
 import { middleware as supertokensMiddleware, errorHandler as supertokensErrorHandler } from "supertokens-node/framework/express";
 import { initSuperTokens } from './config/supertokens';
-import { initializeWebSocketService } from './services/WebSocketService';
 import { DatabaseInitializer } from './services/DatabaseInitializer';
 import { HealthCheckService } from './services/HealthCheckService';
 import { WorkflowScheduler } from './services/WorkflowScheduler';
@@ -243,9 +242,6 @@ const startServer = async () => {
   const healthCheck = new HealthCheckService(pool, s3Client, BUCKET_NAME, minioEndpoint);
   await healthCheck.performHealthChecks();
 
-  // Initialize WebSocket service
-  initializeWebSocketService(httpServer);
-
   // Initialize Workflow Scheduler (singleton)
   console.log('⏰ Initializing workflow scheduler...');
   const workflowScheduler = WorkflowScheduler.initialize(pool);
@@ -274,7 +270,6 @@ const startServer = async () => {
     console.log(`🌐 Server URL: http://localhost:${port}`);
     console.log('\n🧩 Node compatibility endpoints:');
     console.log(`   🔐 SuperTokens: http://localhost:${port}/auth`);
-    console.log(`\n🔌 WebSocket: ws://localhost:${port}`);
     console.log('='.repeat(60) + '\n');
   });
 };

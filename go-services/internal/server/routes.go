@@ -20,6 +20,7 @@ import (
 	"github.com/skaftin/go-services/internal/orgs"
 	"github.com/skaftin/go-services/internal/payments"
 	"github.com/skaftin/go-services/internal/projects"
+	"github.com/skaftin/go-services/internal/realtime"
 	"github.com/skaftin/go-services/internal/requestlogs"
 	"github.com/skaftin/go-services/internal/storage"
 	"github.com/skaftin/go-services/internal/supertokens"
@@ -45,7 +46,9 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	// ---- Domain handlers ----
 	healthHandler := health.NewHandler(pool)
 	stClient := supertokens.NewClient(cfg.SuperTokensCoreURL, cfg.SuperTokensAPIKey)
-	dbHandler := dbproxy.NewHandler(pool, stClient)
+	realtimeHub := realtime.NewHub()
+	realtimeHandler := realtime.NewHandler(realtimeHub, []string{cfg.FrontendURL})
+	dbHandler := dbproxy.NewHandler(pool, stClient, realtimeHub)
 	projectsHandler, err := projects.NewHandler(pool, cfg)
 	if err != nil {
 		return nil, err
@@ -70,6 +73,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	// PUBLIC ROUTES (no auth required)
 	// ==================================================================
 	healthHandler.RegisterRoutes(mux)
+	mux.Handle("/ws", realtimeHandler)
 
 	// ==================================================================
 	// GO-HANDLED ROUTES (API key / access token auth)

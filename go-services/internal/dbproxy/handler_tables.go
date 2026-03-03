@@ -14,7 +14,7 @@ import (
 // --- Phase 2: Table DDL ---
 
 func (h *Handler) CreateTable(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -23,10 +23,10 @@ func (h *Handler) CreateTable(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TableName string `json:"tableName"`
 		Columns   []struct {
-			Name         string `json:"name"`
-			Type         string `json:"type"`
-			PrimaryKey   bool   `json:"primaryKey"`
-			Nullable     bool   `json:"nullable"`
+			Name         string  `json:"name"`
+			Type         string  `json:"type"`
+			PrimaryKey   bool    `json:"primaryKey"`
+			Nullable     bool    `json:"nullable"`
 			DefaultValue *string `json:"defaultValue"`
 		} `json:"columns"`
 	}
@@ -89,10 +89,16 @@ func (h *Handler) CreateTable(w http.ResponseWriter, r *http.Request) {
 		"tableName": body.TableName,
 		"columns":   len(body.Columns),
 	})
+	h.emitDatabaseEvent(pid, "create_table", body.TableName, map[string]any{
+		"columnsCount": len(body.Columns),
+	}, nil)
+	h.emitProjectEvent(pid, "table_created", map[string]any{
+		"tableName": body.TableName,
+	})
 }
 
 func (h *Handler) RenameTable(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -140,10 +146,18 @@ func (h *Handler) RenameTable(w http.ResponseWriter, r *http.Request) {
 		"oldName": tableName,
 		"newName": body.NewTableName,
 	})
+	h.emitDatabaseEvent(pid, "rename_table", tableName, map[string]any{
+		"oldName": tableName,
+		"newName": body.NewTableName,
+	}, nil)
+	h.emitProjectEvent(pid, "table_renamed", map[string]any{
+		"oldName": tableName,
+		"newName": body.NewTableName,
+	})
 }
 
 func (h *Handler) DropTable(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -157,4 +171,8 @@ func (h *Handler) DropTable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httputil.WriteSuccess(w, http.StatusOK, fmt.Sprintf("Table %s dropped successfully", tableName), nil)
+	h.emitDatabaseEvent(pid, "drop_table", tableName, nil, nil)
+	h.emitProjectEvent(pid, "table_dropped", map[string]any{
+		"tableName": tableName,
+	})
 }

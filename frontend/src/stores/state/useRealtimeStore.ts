@@ -63,17 +63,25 @@ export const useRealtimeStore = create<RealtimeStoreType>()(
       },
 
       initialize: () => {
-        // Listen for database changes
-        socketService.onDatabaseChange((event: DatabaseEvent) => {
+        if ((get() as any).initialized) {
+          return;
+        }
+
+        const onDbChange = (event: DatabaseEvent) => {
           console.log('📡 Database change received:', event);
           get().addEvent(event);
-        });
+        };
 
-        // Listen for project events
-        socketService.onProjectEvent((event: ProjectEvent) => {
+        const onProjectEvent = (event: ProjectEvent) => {
           console.log('📡 Project event received:', event);
           get().addEvent(event);
-        });
+        };
+
+        // Listen for database changes
+        socketService.onDatabaseChange(onDbChange);
+
+        // Listen for project events
+        socketService.onProjectEvent(onProjectEvent);
 
         // Update connection status periodically
         const statusInterval = setInterval(() => {
@@ -82,6 +90,9 @@ export const useRealtimeStore = create<RealtimeStoreType>()(
 
         // Store interval ID for cleanup
         (get() as any).statusInterval = statusInterval;
+        (get() as any).dbListener = onDbChange;
+        (get() as any).projectListener = onProjectEvent;
+        (get() as any).initialized = true;
       },
 
       cleanup: () => {
@@ -91,8 +102,21 @@ export const useRealtimeStore = create<RealtimeStoreType>()(
           clearInterval(statusInterval);
         }
 
+        const dbListener = (get() as any).dbListener;
+        if (dbListener) {
+          socketService.offDatabaseChange(dbListener);
+        }
+        const projectListener = (get() as any).projectListener;
+        if (projectListener) {
+          socketService.offProjectEvent(projectListener);
+        }
+
         // Disconnect from socket
         socketService.disconnect();
+        (get() as any).initialized = false;
+        (get() as any).statusInterval = undefined;
+        (get() as any).dbListener = undefined;
+        (get() as any).projectListener = undefined;
         set({ isConnected: false, currentProject: null, recentEvents: [] });
       },
     }),

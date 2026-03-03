@@ -34,8 +34,6 @@ func registerProxyRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.P
 	// Public client API v2 is Go-only: unknown paths return a standardized Go 404.
 	mux.Handle("/app-api-2/", auth.APIKey(pool)(requestLogger.Middleware(appAPINotFoundHandler("/app-api-2/"))))
 
-	// Socket.IO: pass through (handles its own auth)
-	mux.Handle("/socket.io/", nodeHandler)
 }
 
 func appAPIFallbackProxyHandler(nodeHandler http.Handler, routePrefix string) http.Handler {
