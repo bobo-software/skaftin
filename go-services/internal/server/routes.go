@@ -92,7 +92,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 		return nil, err
 	}
 
-	registerProxyRoutes(mux, pool, jwks, requestLogger, nodeHandler)
+	registerProxyRoutes(mux, cfg, pool, jwks, requestLogger, nodeHandler)
 	return opsCleanup, nil
 }
 

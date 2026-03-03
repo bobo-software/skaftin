@@ -10,8 +10,6 @@ import { initSuperTokens } from './config/supertokens';
 import { initializeWebSocketService } from './services/WebSocketService';
 import { DatabaseInitializer } from './services/DatabaseInitializer';
 import { HealthCheckService } from './services/HealthCheckService';
-// GraphQL is now handled by the Go gateway.
-// import GraphQLController from './controllers/GraphQLController';
 import { WorkflowScheduler } from './services/WorkflowScheduler';
 
 // Load environment variables
@@ -143,11 +141,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   if (contentType.includes('multipart/form-data')) {
     return next();
   }
-  // Skip JSON for POST /app-api/storage/files so multer can parse form-data
-  // (some clients or proxies omit Content-Type for FormData)
-  if (req.method === 'POST' && req.path === '/app-api/storage/files') {
-    return next();
-  }
   // Apply JSON parser for other content types
   jsonParser(req, res, next);
 });
@@ -158,19 +151,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   if (contentType.includes('multipart/form-data')) {
     return next();
   }
-  // Skip urlencoded for POST /app-api/storage/files (same as above)
-  if (req.method === 'POST' && req.path === '/app-api/storage/files') {
-    return next();
-  }
   // Apply urlencoded parser for other content types
   urlencodedParser(req, res, next);
 });
 
 // Platform API routing is handled by the Go gateway.
 // Backups are now handled by the Go gateway.
-// import BackupController from './controllers/BackupController';
-// import { BackupScheduler } from './services/BackupScheduler';
-import { AnalyticsService } from './services/AnalyticsService';
 
 // ============================================================================
 // SERVICE INITIALIZATION
@@ -223,19 +209,6 @@ app.get('/', (req: Request, res: Response) => {
   });
 });
 
-// Initialize controllers
-// BackupController.initialize(pool, s3Client); // Now handled by Go gateway
-// MigrationsController.initialize(pool); // Now handled by Go gateway
-
-// Invitations routes are now handled by the Go gateway.
-// const InvitationsRouter = createInvitationsRouter(pool);
-
-// Credentials routes are now handled by the Go gateway.
-// const CredentialsRouter = createCredentialsRouter(pool);
-
-// Initialize Analytics Service
-AnalyticsService.initialize(pool);
-
 // Register routers
 // Note: SuperTokens auth routes are automatically registered at /auth by SuperTokens middleware
 
@@ -270,10 +243,6 @@ const startServer = async () => {
   const healthCheck = new HealthCheckService(pool, s3Client, BUCKET_NAME, minioEndpoint);
   await healthCheck.performHealthChecks();
 
-  // GraphQL is now handled by the Go gateway.
-  // console.log('🔧 Initializing GraphQL server...');
-  // await GraphQLController.initialize(pool, app);
-
   // Initialize WebSocket service
   initializeWebSocketService(httpServer);
 
@@ -281,11 +250,6 @@ const startServer = async () => {
   console.log('⏰ Initializing workflow scheduler...');
   const workflowScheduler = WorkflowScheduler.initialize(pool);
   await workflowScheduler.loadScheduledWorkflows();
-
-  // Backup scheduler is now handled by the Go gateway.
-  // console.log('📦 Initializing backup scheduler...');
-  // const backupScheduler = BackupScheduler.initialize(pool, s3Client);
-  // await backupScheduler.loadScheduledBackups();
 
   // Account deletion and request-log cleanup schedulers are now handled by the Go gateway.
 
@@ -308,18 +272,8 @@ const startServer = async () => {
     console.log('='.repeat(60));
     console.log(`✅ Skaftin Platform server is running!`);
     console.log(`🌐 Server URL: http://localhost:${port}`);
-    console.log('\n📡 Platform Admin API (SuperTokens):');
-    console.log(`   🔐 Auth: http://localhost:${port}/api/auth`);
-    console.log(`   📁 Projects: http://localhost:${port}/api/projects`);
-    console.log(`   📄 Files: http://localhost:${port}/api/files`);
-    console.log(`   🔬 GraphQL: http://localhost:${port}/api/graphql`);
-    console.log('\n📱 Client-Facing API (API Key / App User JWT):');
-    console.log(`   🔐 App Auth: http://localhost:${port}/app-api/auth`);
-    console.log(`   💾 Storage: http://localhost:${port}/app-api/storage (Go gateway)`);
-    console.log(`   🗄️  Database: http://localhost:${port}/app-api/database (Go gateway)`);
-    console.log('\n🌍 Public API (API Key / Access Token only, GET & POST):');
-    console.log(`   💾 Storage: http://localhost:${port}/app-api-2/storage`);
-    console.log(`   🗄️  Database: http://localhost:${port}/app-api-2/database`);
+    console.log('\n🧩 Node compatibility endpoints:');
+    console.log(`   🔐 SuperTokens: http://localhost:${port}/auth`);
     console.log(`\n🔌 WebSocket: ws://localhost:${port}`);
     console.log('='.repeat(60) + '\n');
   });

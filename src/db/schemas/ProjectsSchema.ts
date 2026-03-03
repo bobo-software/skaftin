@@ -10,7 +10,6 @@ export const projects = pgTable('skaftin_system_projects', {
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description'),
   schema_name: varchar('schema_name', { length: 255 }).notNull().unique(),
-  field_encryption_key: text('field_encryption_key'),
   created_at: timestamp('created_at').defaultNow(),
   updated_at: timestamp('updated_at').defaultNow(),
 });

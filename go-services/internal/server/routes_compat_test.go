@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -445,5 +446,122 @@ func TestAppAPIAuthRouteWinsOverAppAPIPrefix(t *testing.T) {
 	}
 	if prefixHit {
 		t.Fatalf("expected /app-api/ prefix route to not handle app-api auth request")
+	}
+}
+
+func TestKnownAppAPIEndpointsPreferExplicitGoRoutes(t *testing.T) {
+	testCases := []struct {
+		name           string
+		method         string
+		path           string
+		explicitPrefix string
+	}{
+		{
+			name:           "auth login",
+			method:         http.MethodPost,
+			path:           "/app-api/auth/auth/login",
+			explicitPrefix: "/app-api/auth/",
+		},
+		{
+			name:           "auth register",
+			method:         http.MethodPost,
+			path:           "/app-api/auth/auth/register",
+			explicitPrefix: "/app-api/auth/",
+		},
+		{
+			name:           "auth verify otp",
+			method:         http.MethodPost,
+			path:           "/app-api/auth/auth/verify-otp",
+			explicitPrefix: "/app-api/auth/",
+		},
+		{
+			name:           "storage upload form",
+			method:         http.MethodPost,
+			path:           "/app-api/storage/files",
+			explicitPrefix: "/app-api/storage/",
+		},
+		{
+			name:           "storage download query",
+			method:         http.MethodGet,
+			path:           "/app-api/storage/files/download",
+			explicitPrefix: "/app-api/storage/",
+		},
+		{
+			name:           "database tables",
+			method:         http.MethodGet,
+			path:           "/app-api/database/tables",
+			explicitPrefix: "/app-api/database/",
+		},
+		{
+			name:           "request logs create",
+			method:         http.MethodPost,
+			path:           "/app-api/request-logs/42",
+			explicitPrefix: "/app-api/request-logs/",
+		},
+		{
+			name:           "communications send sms",
+			method:         http.MethodPost,
+			path:           "/app-api/communications/sms/send",
+			explicitPrefix: "/app-api/communications/",
+		},
+		{
+			name:           "payments initiate",
+			method:         http.MethodPost,
+			path:           "/app-api/payments/initiate",
+			explicitPrefix: "/app-api/payments/",
+		},
+		{
+			name:           "client mcp tools",
+			method:         http.MethodGet,
+			path:           "/app-api/mcp/tools",
+			explicitPrefix: "/app-api/mcp/",
+		},
+		{
+			name:           "public db tables",
+			method:         http.MethodGet,
+			path:           "/app-api-2/database/tables",
+			explicitPrefix: "/app-api-2/database/",
+		},
+		{
+			name:           "public storage buckets",
+			method:         http.MethodGet,
+			path:           "/app-api-2/storage/buckets",
+			explicitPrefix: "/app-api-2/storage/",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			var explicitHit, prefixHit bool
+
+			mux.Handle(tc.explicitPrefix, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				explicitHit = true
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			if strings.HasPrefix(tc.explicitPrefix, "/app-api-2/") {
+				mux.Handle("/app-api-2/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					prefixHit = true
+					w.WriteHeader(http.StatusOK)
+				}))
+			} else {
+				mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					prefixHit = true
+					w.WriteHeader(http.StatusOK)
+				}))
+			}
+
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+
+			if !explicitHit {
+				t.Fatalf("expected explicit route %s to handle %s %s", tc.explicitPrefix, tc.method, tc.path)
+			}
+			if prefixHit {
+				t.Fatalf("expected catch-all prefix to not handle %s %s", tc.method, tc.path)
+			}
+		})
 	}
 }
