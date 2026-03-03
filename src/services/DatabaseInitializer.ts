@@ -350,24 +350,6 @@ export class DatabaseInitializer {
     }
 
     try {
-      // Add field_encryption_key column if it doesn't exist (for payload-driven field encryption)
-      await this.db.execute(sql`
-        DO $$ 
-        BEGIN
-          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                        WHERE table_schema='public' AND table_name='skaftin_system_projects' AND column_name='field_encryption_key') THEN
-            ALTER TABLE public.skaftin_system_projects ADD COLUMN field_encryption_key TEXT;
-            COMMENT ON COLUMN public.skaftin_system_projects.field_encryption_key IS 'Optional per-project key for encrypting/decrypting specified fields in user data (insert/update/select). Not returned in project API responses.';
-          END IF;
-        END $$;
-      `);
-    } catch (err: any) {
-      if (err.code !== '42710') {
-        console.error('❌ Projects field_encryption_key migration error:', err.message);
-      }
-    }
-
-    try {
       // Create indexes
       await this.db.execute(sql`
         CREATE INDEX IF NOT EXISTS idx_skaftin_system_projects_user_id ON public.skaftin_system_projects(user_id);

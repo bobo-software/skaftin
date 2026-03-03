@@ -21,9 +21,18 @@ Order is critical when using `http.ServeMux` path matching:
 3. Register catch-all proxy routes last:
    - `/auth/`
    - `/api/`
-   - `/app-api/`
+   - `/app-api/` (only when `APP_API_PROXY_FALLBACK_ENABLED=true`)
 
 If a new `/app-api/...` route is added, ensure it is mounted before `/app-api/`.
+
+## App-API Fallback Flag
+
+- `APP_API_PROXY_FALLBACK_ENABLED=false` (default): unknown `/app-api/*` paths
+  return a Go JSON `404` contract.
+- `APP_API_PROXY_FALLBACK_ENABLED=true`: unknown `/app-api/*` paths are proxied
+  to Node and fallback hits are emitted as structured warning logs.
+- `/app-api-2/*` is always Go-only. Unknown paths under `/app-api-2/*` always
+  return a Go JSON `404` contract and are never proxied to Node.
 
 ## Compatibility Migration Checklist
 
