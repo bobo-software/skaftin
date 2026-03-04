@@ -1,7 +1,7 @@
-import { ReactElement } from 'react';
-import { Navigate } from 'react-router-dom';
+import { ReactElement, useState } from 'react';
 import { SessionAuth, useSessionContext } from 'supertokens-auth-react/recipe/session';
 import { useAppStore } from '../stores/StoresIndex';
+import { bootstrapAuth } from '../services/AuthFlowService';
 
 interface ProtectedRouteProps {
   children: ReactElement;
@@ -16,10 +16,6 @@ const SessionHandler = ({ children }: { children: ReactElement }) => {
 
   if (session.loading === true) {
     return <LoadingScreen />;
-  }
-
-  if (session.doesSessionExist === false) {
-    return <Navigate to="/login" replace />;
   }
 
   return children;
@@ -62,20 +58,86 @@ const AccessDenied = ({ requiredRoles }: { requiredRoles: string[] }) => (
   </div>
 );
 
+const ProfileLoadError = ({ onRetry }: { onRetry: () => Promise<void> }) => {
+  const [retrying, setRetrying] = useState(false);
+
+  const handleRetry = async () => {
+    try {
+      setRetrying(true);
+      await onRetry();
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        fontSize: '18px',
+        gap: '12px',
+      }}
+    >
+      <h1>Unable to load your profile</h1>
+      <p>Please retry loading your session details.</p>
+      <button
+        type="button"
+        onClick={handleRetry}
+        disabled={retrying}
+        style={{
+          padding: '8px 16px',
+          borderRadius: '6px',
+          border: '1px solid #ccc',
+          cursor: retrying ? 'not-allowed' : 'pointer',
+        }}
+      >
+        {retrying ? 'Retrying...' : 'Retry'}
+      </button>
+    </div>
+  );
+};
+
 /**
  * Inner component that handles role checking after session is validated
  */
 const RoleChecker = ({ children, requiredRoles }: ProtectedRouteProps) => {
-  const { user, isLoading } = useAppStore();
+  const session = useSessionContext();
+  const { user, isLoading, setLoading, setUser } = useAppStore();
 
-  // Wait for user data to be loaded from API
-  if (isLoading) {
+  const authState: 'bootstrapping' | 'authenticated_no_profile' | 'ready' = (() => {
+    if (session.loading || isLoading) {
+      return 'bootstrapping';
+    }
+
+    if (!user) {
+      return 'authenticated_no_profile';
+    }
+
+    return 'ready';
+  })();
+
+  if (authState === 'bootstrapping') {
     return <LoadingScreen />;
   }
 
-  // If we have a session but user data hasn't loaded yet, wait
-  if (!user) {
-    return <LoadingScreen />;
+  if (authState === 'authenticated_no_profile') {
+    return (
+      <ProfileLoadError
+        onRetry={async () => {
+          setLoading(true);
+          try {
+            const bootstrap = await bootstrapAuth({ preloadOrganizations: true, force: true });
+            setUser(bootstrap.user);
+          } finally {
+            setLoading(false);
+          }
+        }}
+      />
+    );
   }
 
   // Check roles if required
@@ -105,6 +167,10 @@ export const ProtectedRoute = ({ children, requiredRoles }: ProtectedRouteProps)
   return (
     <SessionAuth requireAuth={true}>
       <SessionHandler>
+        {/*
+          SessionAuth handles unauthenticated redirects before this component renders.
+          RoleChecker focuses on profile bootstrap and role checks.
+        */}
         <RoleChecker requiredRoles={requiredRoles}>{children}</RoleChecker>
       </SessionHandler>
     </SessionAuth>

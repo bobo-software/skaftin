@@ -4,6 +4,7 @@ import { Mail, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
 import InvitationsService, { ProjectInvitation } from '../../services/InvitationsService';
 import { useAppStore } from '../../stores/StoresIndex';
 import ToastUtils from '../../utils/ToastUtils';
+import { storeLoginRedirect } from '../../services/AuthFlowService';
 
 const InviteAcceptPage = () => {
   const { inviteCode } = useParams<{ inviteCode: string }>();
@@ -36,7 +37,7 @@ const InviteAcceptPage = () => {
   const handleAccept = async () => {
     if (!user) {
       // Store invite code and redirect to login
-      sessionStorage.setItem('redirectAfterLogin', `/invite/${inviteCode}`);
+      storeLoginRedirect(`/invite/${inviteCode}`);
       navigate('/login', { state: { redirectTo: `/invite/${inviteCode}` } });
       return;
     }

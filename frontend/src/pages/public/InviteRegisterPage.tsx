@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, CheckCircle, Users, Sparkles, ArrowRight } from 'lucide-react';
 import InvitationsService, { ProjectInvitation } from '../../services/InvitationsService';
-import AuthService from '../../services/AuthService';
 import { useAppStore } from '../../stores/StoresIndex';
 import ToastUtils from '../../utils/ToastUtils';
+import { signUp } from '../../config/supertokens';
+import { bootstrapAuth } from '../../services/AuthFlowService';
 
 const InviteRegisterPage = () => {
   const { inviteCode } = useParams<{ inviteCode: string }>();
@@ -62,16 +63,16 @@ const InviteRegisterPage = () => {
       setSubmitting(true);
       setAppLoading(true);
 
-      // Register user
-      const response = await AuthService.register(formData.email, formData.password);
+      const response = await signUp({
+        formFields: [
+          { id: 'email', value: formData.email },
+          { id: 'password', value: formData.password },
+        ],
+      });
 
-      if (response.success && response.user) {
-        // Set user in store
-        setUser({
-          id: response.user.id,
-          email: response.user.email,
-          name: response.user.name,
-        });
+      if (response.status === 'OK') {
+        const bootstrap = await bootstrapAuth({ preloadOrganizations: true, force: true });
+        setUser(bootstrap.user);
 
         ToastUtils.success('Account created successfully!');
 
@@ -79,8 +80,13 @@ const InviteRegisterPage = () => {
         setTimeout(() => {
           navigate(`/invite/${inviteCode}`);
         }, 1000);
+      } else if (response.status === 'FIELD_ERROR') {
+        const fieldError = response.formFields?.find((field) => field.error);
+        setError(fieldError?.error || 'Invalid input');
+      } else if (response.status === 'SIGN_UP_NOT_ALLOWED') {
+        setError('An account with this email already exists');
       } else {
-        setError(response.error || 'Failed to create account');
+        setError('Failed to create account');
       }
     } catch (error: any) {
       console.error('Registration error:', error);

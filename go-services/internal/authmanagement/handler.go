@@ -3,6 +3,7 @@ package authmanagement
 import (
 	"context"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,9 +30,15 @@ func NewHandler(pool *pgxpool.Pool, st *supertokens.Client, comms *communication
 func (h *Handler) RegisterLegacyCompatibilityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/register", h.LegacyRegister)
 	mux.HandleFunc("POST /api/auth/login", h.LegacyLogin)
-	mux.HandleFunc("POST /api/auth/verify", h.LegacyVerify)
-	mux.HandleFunc("POST /api/auth/refresh", h.LegacyRefresh)
 	mux.HandleFunc("POST /api/auth/logout", h.LegacyLogout)
+
+	// Legacy verify/refresh overlap with canonical web flow:
+	// session via /auth/* and profile via /api/users/me.
+	// Keep opt-in support for old clients behind an env flag.
+	if os.Getenv("SKAFTIN_ENABLE_LEGACY_VERIFY_REFRESH") == "true" {
+		mux.HandleFunc("POST /api/auth/verify", h.LegacyVerify)
+		mux.HandleFunc("POST /api/auth/refresh", h.LegacyRefresh)
+	}
 }
 
 // RegisterPublicRoutes registers unauthenticated routes (app auth).

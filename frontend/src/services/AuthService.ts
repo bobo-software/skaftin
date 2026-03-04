@@ -57,6 +57,9 @@ class AuthService {
   async logout(): Promise<void> {
     try {
       await superTokensSignOut();
+      // Clear legacy client-side auth remnants so stale tokens are never reused.
+      localStorage.removeItem('skaftin-token');
+      sessionStorage.removeItem('redirectAfterLogin');
     } catch (error) {
       console.error('Logout error:', error);
     }

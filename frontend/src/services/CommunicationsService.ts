@@ -1,11 +1,13 @@
 import RequestUtils from '../utils/RequestUtils';
 import ApiRoutes from '../constants/ApiRoutes';
 
+export type EmailProviderType = 'nodemailer' | 'mailtrap' | 'simple';
+
 export interface EmailProvider {
   id?: number;
   project_id: string;
   name: string;
-  provider_type: 'nodemailer' | 'mailtrap';
+  provider_type: EmailProviderType;
   smtp_host: string;
   smtp_port: number;
   smtp_secure: boolean;
@@ -20,7 +22,7 @@ export interface EmailProvider {
 
 export interface CreateEmailProviderRequest {
   name: string;
-  provider_type: 'nodemailer' | 'mailtrap';
+  provider_type: EmailProviderType;
   smtp_host: string;
   smtp_port: number;
   smtp_secure: boolean;
@@ -33,7 +35,7 @@ export interface CreateEmailProviderRequest {
 
 export interface UpdateEmailProviderRequest {
   name?: string;
-  provider_type?: 'nodemailer' | 'mailtrap';
+  provider_type?: EmailProviderType;
   smtp_host?: string;
   smtp_port?: number;
   smtp_secure?: boolean;

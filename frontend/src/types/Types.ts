@@ -506,7 +506,7 @@ export interface OrganizationStore {
   currentOrganization: Organization | null;
   loading: boolean;
   error: string | null;
-  fetchOrganizations: () => Promise<void>;
+  fetchOrganizations: (_options?: { force?: boolean; skipIfFresh?: boolean }) => Promise<void>;
   getOrganizationById: (_id: number) => Promise<OrganizationWithMembers | null>;
   setCurrentOrganization: (_org: Organization | null) => void;
   createOrganization: (_data: CreateOrganizationDto) => Promise<Organization | null>;

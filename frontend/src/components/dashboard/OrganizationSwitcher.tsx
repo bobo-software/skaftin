@@ -10,11 +10,6 @@ const OrganizationSwitcher = () => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Fetch organizations on mount
-  useEffect(() => {
-    fetchOrganizations();
-  }, [fetchOrganizations]);
-
   // Set first organization as current if none selected
   useEffect(() => {
     if (!currentOrganization && organizations.length > 0) {

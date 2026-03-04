@@ -72,8 +72,8 @@ const loadUserProjects = useCallback(async () => {
 useEffect(() => {
   loadUserProjects();
   loadDashboardStats();
-  // Load organizations if not already loaded
-  fetchOrganizations();
+  // Only fetch if stale to avoid duplicate calls during auth bootstrap.
+  fetchOrganizations({ skipIfFresh: true });
 }, [loadUserProjects, loadDashboardStats, fetchOrganizations]);
 
 const handleCreateProject = () => {

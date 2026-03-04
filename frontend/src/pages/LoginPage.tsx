@@ -3,7 +3,11 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Database, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { useAppStore } from '../stores/StoresIndex';
 import { signIn, signUp, redirectToThirdPartyLogin } from '../config/supertokens';
-import OrganizationService from '../services/OrganizationService';
+import {
+  bootstrapAuth,
+  resolvePostLoginRedirect,
+  storeLoginRedirect,
+} from '../services/AuthFlowService';
 
 // Google icon SVG component
 const GoogleIcon = () => (
@@ -51,56 +55,8 @@ const LoginPage = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const redirect = params.get('redirect');
-    if (redirect) {
-      sessionStorage.setItem('redirectAfterLogin', redirect);
-    }
-
-    // Handle OAuth callback - check if user is now logged in after returning from OAuth
-    const checkOAuthCallback = async () => {
-      // Check if we're returning from OAuth (SuperTokens handles the token exchange)
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      try {
-        const response = await fetch(`${apiUrl}/api/users/me`, {
-          credentials: 'include',
-        });
-        
-        if (response.ok) {
-          const userData = await response.json();
-          if (userData.success && userData.data?.user) {
-            // User is logged in via OAuth, redirect them
-            setUser({
-              ...userData.data.user,
-              roles: userData.data.user.roles || [],
-            });
-            
-            const redirectTo = sessionStorage.getItem('redirectAfterLogin');
-            if (redirectTo) {
-              sessionStorage.removeItem('redirectAfterLogin');
-              navigate(redirectTo);
-            } else {
-              // Check organizations and redirect
-              const orgResult = await OrganizationService.getUserOrganizations();
-              if (orgResult.success && orgResult.organizations) {
-                if (orgResult.organizations.length > 1) {
-                  navigate('/organizations/select');
-                } else if (orgResult.organizations.length === 1) {
-                  navigate('/projects');
-                } else {
-                  navigate('/organizations/create');
-                }
-              } else {
-                navigate('/organizations/create');
-              }
-            }
-          }
-        }
-      } catch (err) {
-        // Not logged in, that's fine - user needs to log in
-      }
-    };
-
-    checkOAuthCallback();
-  }, [location, navigate, setUser]);
+    storeLoginRedirect(redirect);
+  }, [location.search]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,46 +89,11 @@ const LoginPage = () => {
           ]});
 
       if (response.status === 'OK') {
-        // Fetch user data from our API to get full user info including roles
-        const apiUrl = import.meta.env.VITE_API_URL || '';
-        const userResponse = await fetch(`${apiUrl}/api/users/me`, {
-          credentials: 'include',
-        });
+        const bootstrap = await bootstrapAuth({ preloadOrganizations: true, force: true });
+        setUser(bootstrap.user);
 
-        if (userResponse.ok) {
-          const userData = await userResponse.json();
-          if (userData.success && userData.data?.user) {
-            setUser({
-              ...userData.data.user,
-              roles: userData.data.user.roles || [],
-            });
-          }
-        }
-        
-        // Check for redirect from invite or location state
-        const redirectTo = (location.state as any)?.redirectTo || sessionStorage.getItem('redirectAfterLogin');
-        
-        if (redirectTo) {
-          sessionStorage.removeItem('redirectAfterLogin');
-          navigate(redirectTo);
-        } else {
-          // Check if user has organizations
-          const orgResult = await OrganizationService.getUserOrganizations();
-          
-          if (orgResult.success && orgResult.organizations) {
-            if (orgResult.organizations.length > 1) {
-              // User has multiple organizations, let them choose
-              navigate('/organizations/select');
-            } else {
-              // User has 0 or 1 organizations — go straight to projects
-              // Invited team members may not have their own org yet
-              navigate('/projects');
-            }
-          } else {
-            // Error fetching organizations — go to projects anyway
-            navigate('/projects');
-          }
-        }
+        const redirectTo = await resolvePostLoginRedirect((location.state as any)?.redirectTo);
+        navigate(redirectTo);
       } else if (response.status === 'FIELD_ERROR') {
         // Handle field-specific errors from SuperTokens
         const fieldError = response.formFields?.find((f: any) => f.error);

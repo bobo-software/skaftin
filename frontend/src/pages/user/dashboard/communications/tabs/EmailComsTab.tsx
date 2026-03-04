@@ -14,7 +14,7 @@ import ToastUtils from '../../../../../utils/ToastUtils';
 
 interface EmailProviderFormData {
   name: string;
-  provider_type: 'nodemailer' | 'mailtrap';
+  provider_type: 'nodemailer' | 'mailtrap' | 'simple';
   smtp_host: string;
   smtp_port: number;
   smtp_secure: boolean;
@@ -24,6 +24,18 @@ interface EmailProviderFormData {
   from_name: string;
   is_active: boolean;
 }
+
+const SES_REGIONS = [
+  { value: 'eu-west-2', label: 'EU (London) — eu-west-2' },
+  { value: 'eu-west-1', label: 'EU (Ireland) — eu-west-1' },
+  { value: 'us-east-1', label: 'US East (N. Virginia) — us-east-1' },
+  { value: 'us-west-2', label: 'US West (Oregon) — us-west-2' },
+  { value: 'ap-southeast-1', label: 'Asia Pacific (Singapore) — ap-southeast-1' },
+  { value: 'ap-southeast-2', label: 'Asia Pacific (Sydney) — ap-southeast-2' },
+  { value: 'ap-northeast-1', label: 'Asia Pacific (Tokyo) — ap-northeast-1' },
+  { value: 'ca-central-1', label: 'Canada (Central) — ca-central-1' },
+  { value: 'sa-east-1', label: 'South America (São Paulo) — sa-east-1' },
+];
 
 const EmailComsTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -255,7 +267,7 @@ const EmailComsTab = () => {
     }
   };
 
-  const applyProviderPreset = (type: 'nodemailer' | 'mailtrap') => {
+  const applyProviderPreset = (type: 'nodemailer' | 'mailtrap' | 'simple') => {
     if (type === 'mailtrap') {
       setFormData((prev) => ({
         ...prev,
@@ -263,6 +275,15 @@ const EmailComsTab = () => {
         smtp_host: 'sandbox.smtp.mailtrap.io',
         smtp_port: 2525,
         smtp_secure: false,
+      }));
+    } else if (type === 'simple') {
+      setFormData((prev) => ({
+        ...prev,
+        provider_type: 'simple',
+        smtp_host: 'eu-west-2',
+        smtp_port: 0,
+        smtp_secure: false,
+        smtp_user: '',
       }));
     } else {
       setFormData((prev) => ({
@@ -453,6 +474,8 @@ const EmailComsTab = () => {
                         className={`px-2 py-1 text-xs font-medium rounded-full ${
                           provider.provider_type === 'mailtrap'
                             ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
+                            : provider.provider_type === 'simple'
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300'
                             : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
                         }`}
                       >
@@ -469,13 +492,25 @@ const EmailComsTab = () => {
                       )}
                     </div>
                     <div className="space-y-1 text-sm text-dark-600 dark:text-dark-400">
-                      <p>
-                        <span className="font-medium">Host:</span> {provider.smtp_host}:
-                        {provider.smtp_port}
-                      </p>
-                      <p>
-                        <span className="font-medium">User:</span> {provider.smtp_user}
-                      </p>
+                      {provider.provider_type === 'simple' ? (
+                        <>
+                          <p>
+                            <span className="font-medium">Region:</span> {provider.smtp_host || 'eu-west-2'}
+                          </p>
+                          <p>
+                            <span className="font-medium">Access Key:</span> {provider.smtp_user}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p>
+                            <span className="font-medium">Host:</span> {provider.smtp_host}:{provider.smtp_port}
+                          </p>
+                          <p>
+                            <span className="font-medium">User:</span> {provider.smtp_user}
+                          </p>
+                        </>
+                      )}
                       <p>
                         <span className="font-medium">From:</span> {provider.from_name || provider.from_email}{' '}
                         {provider.from_name && `<${provider.from_email}>`}
@@ -630,7 +665,21 @@ const EmailComsTab = () => {
                 <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
                   Provider Type
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => applyProviderPreset('simple')}
+                    className={`p-4 border-2 rounded-lg transition-colors ${
+                      formData.provider_type === 'simple'
+                        ? 'border-primary-600 bg-primary-50 dark:bg-primary-900/20'
+                        : 'border-dark-200 dark:border-dark-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-dark-900 dark:text-white">AWS SES</div>
+                    <div className="text-xs text-dark-600 dark:text-dark-400 mt-1">
+                      IAM credentials
+                    </div>
+                  </button>
                   <button
                     type="button"
                     onClick={() => applyProviderPreset('nodemailer')}
@@ -677,95 +726,139 @@ const EmailComsTab = () => {
                 />
               </div>
 
-              {/* SMTP Host */}
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  SMTP Host *
-                </label>
-                <input
-                  type="text"
-                  value={formData.smtp_host}
-                  onChange={(e) => setFormData({ ...formData, smtp_host: e.target.value })}
-                  className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
-                  required
-                  placeholder="smtp.example.com"
-                />
-              </div>
+              {formData.provider_type === 'simple' ? (
+                <>
+                  {/* AWS SES info banner */}
+                  <div className="px-4 py-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-xs text-blue-800 dark:text-blue-300">
+                    Sends via <span className="font-medium">AWS SES</span> using IAM credentials. The sender address must be verified in your AWS SES console. Use IAM Access Key ID and Secret Access Key — not SMTP credentials.
+                  </div>
 
-              {/* SMTP Port & Secure */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                    SMTP Port *
-                  </label>
-                  <select
-                    value={formData.smtp_port}
-                    onChange={(e) => {
-                      const port = parseInt(e.target.value);
-                      setFormData({ 
-                        ...formData, 
-                        smtp_port: port,
-                        smtp_secure: port === 465 ? true : false
-                      });
-                    }}
-                    className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
-                    required
-                  >
-                    <option value={587}>587 (STARTTLS - Recommended)</option>
-                    <option value={465}>465 (SSL/TLS)</option>
-                    <option value={2525}>2525 (Alternative - Mailtrap)</option>
-                    <option value={25}>25 (Unencrypted - Often Blocked)</option>
-                  </select>
-                  <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                    {formData.smtp_port === 587 && 'Uses STARTTLS encryption'}
-                    {formData.smtp_port === 465 && 'Uses direct SSL/TLS encryption'}
-                    {formData.smtp_port === 2525 && 'Alternative port (common for testing)'}
-                    {formData.smtp_port === 25 && 'Unencrypted - may be blocked by ISP'}
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                    Use TLS/SSL
-                  </label>
-                  <label className="flex items-center gap-2 px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900">
+                  {/* AWS Region */}
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                      AWS Region *
+                    </label>
+                    <select
+                      value={formData.smtp_host || 'eu-west-2'}
+                      onChange={(e) => setFormData({ ...formData, smtp_host: e.target.value })}
+                      className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
+                      required
+                    >
+                      {SES_REGIONS.map((r) => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                      Must match the region where your sender identity is verified in SES.
+                    </p>
+                  </div>
+
+                  {/* AWS Access Key ID */}
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                      AWS Access Key ID *
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={formData.smtp_secure}
-                      onChange={(e) => setFormData({ ...formData, smtp_secure: e.target.checked })}
-                      className="w-4 h-4"
+                      type="text"
+                      value={formData.smtp_user}
+                      onChange={(e) => setFormData({ ...formData, smtp_user: e.target.value })}
+                      className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white font-mono"
+                      required
+                      placeholder="AKIAIOSFODNN7EXAMPLE"
                     />
-                    <span className="text-dark-900 dark:text-white">Secure Connection</span>
-                  </label>
-                </div>
-              </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Advanced mode: full SMTP fields */}
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                      SMTP Host *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.smtp_host}
+                      onChange={(e) => setFormData({ ...formData, smtp_host: e.target.value })}
+                      className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
+                      required
+                      placeholder="smtp.example.com"
+                    />
+                  </div>
 
-              {/* SMTP User */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                        SMTP Port *
+                      </label>
+                      <select
+                        value={formData.smtp_port}
+                        onChange={(e) => {
+                          const port = parseInt(e.target.value);
+                          setFormData({
+                            ...formData,
+                            smtp_port: port,
+                            smtp_secure: port === 465 ? true : false
+                          });
+                        }}
+                        className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
+                        required
+                      >
+                        <option value={587}>587 (STARTTLS - Recommended)</option>
+                        <option value={465}>465 (SSL/TLS)</option>
+                        <option value={2525}>2525 (Alternative - Mailtrap)</option>
+                        <option value={25}>25 (Unencrypted - Often Blocked)</option>
+                      </select>
+                      <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                        {formData.smtp_port === 587 && 'Uses STARTTLS encryption'}
+                        {formData.smtp_port === 465 && 'Uses direct SSL/TLS encryption'}
+                        {formData.smtp_port === 2525 && 'Alternative port (common for testing)'}
+                        {formData.smtp_port === 25 && 'Unencrypted - may be blocked by ISP'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                        Use TLS/SSL
+                      </label>
+                      <label className="flex items-center gap-2 px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900">
+                        <input
+                          type="checkbox"
+                          checked={formData.smtp_secure}
+                          onChange={(e) => setFormData({ ...formData, smtp_secure: e.target.checked })}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-dark-900 dark:text-white">Secure Connection</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                      SMTP Username *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.smtp_user}
+                      onChange={(e) => setFormData({ ...formData, smtp_user: e.target.value })}
+                      className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
+                      required
+                      placeholder="username or email"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Password / Secret Key */}
               <div>
                 <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  SMTP Username *
-                </label>
-                <input
-                  type="text"
-                  value={formData.smtp_user}
-                  onChange={(e) => setFormData({ ...formData, smtp_user: e.target.value })}
-                  className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
-                  required
-                  placeholder="username or email"
-                />
-              </div>
-
-              {/* SMTP Password */}
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  SMTP Password {editingProvider ? '' : '*'}
+                  {formData.provider_type === 'simple' ? 'AWS Secret Access Key' : 'SMTP Password'} {editingProvider ? '' : '*'}
                 </label>
                 <input
                   type="password"
                   value={formData.smtp_password}
                   onChange={(e) => setFormData({ ...formData, smtp_password: e.target.value })}
-                  className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white font-mono"
                   required={!editingProvider}
-                  placeholder={editingProvider ? 'Leave blank to keep current password' : ''}
+                  placeholder={editingProvider ? 'Leave blank to keep current key' : (formData.provider_type === 'simple' ? 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' : 'SMTP password')}
                 />
               </div>
 
@@ -780,8 +873,13 @@ const EmailComsTab = () => {
                   onChange={(e) => setFormData({ ...formData, from_email: e.target.value })}
                   className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
                   required
-                  placeholder="noreply@example.com"
+                  placeholder="noreply@yourdomain.com"
                 />
+                {formData.provider_type === 'simple' && (
+                  <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
+                    Must be a verified identity in AWS SES for the selected region.
+                  </p>
+                )}
               </div>
 
               {/* From Name */}

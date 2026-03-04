@@ -18,6 +18,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/sesv2"
+	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -56,6 +61,12 @@ func (s *Service) TestEmailProvider(ctx context.Context, projectID, providerID i
 	if err != nil || p == nil {
 		return false, err
 	}
+
+	if p.ProviderType == EmailProviderTypeSimple {
+		_, err := buildSESClient(ctx, p)
+		return err == nil, err
+	}
+
 	client, conn, err := openSMTPClient(p, 20*time.Second)
 	if err != nil {
 		return false, err
@@ -92,6 +103,10 @@ func (s *Service) SendEmail(ctx context.Context, projectID int, providerID int, 
 		return nil, errors.New("Email provider is not active")
 	}
 
+	if p.ProviderType == EmailProviderTypeSimple {
+		return s.sendEmailViaSES(ctx, p, to, subject, html, text)
+	}
+
 	messageID := fmt.Sprintf("<skaftin-%d@%s>", time.Now().UnixNano(), p.SMTPHost)
 	raw, err := buildEmailMessage(p.FromEmail, to, cc, subject, text, html, attachments, messageID)
 	if err != nil {
@@ -107,6 +122,75 @@ func (s *Service) SendEmail(ctx context.Context, projectID int, providerID int, 
 	}
 
 	return map[string]any{"messageId": messageID, "accepted": recipients, "rejected": []string{}}, nil
+}
+
+// buildSESClient creates an AWS SES v2 client using credentials stored on the provider.
+// smtp_host = AWS region, smtp_user = access key ID, smtp_password = secret access key.
+func buildSESClient(ctx context.Context, p *EmailProvider) (*sesv2.Client, error) {
+	region := p.SMTPHost
+	if region == "" {
+		region = "eu-west-2"
+	}
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion(region),
+		config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(p.SMTPUser, p.SMTPPassword, ""),
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return sesv2.NewFromConfig(cfg), nil
+}
+
+func (s *Service) sendEmailViaSES(ctx context.Context, p *EmailProvider, to []string, subject, htmlBody, textBody string) (map[string]any, error) {
+	client, err := buildSESClient(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+
+	if htmlBody == "" {
+		htmlBody = textBody
+	}
+	if textBody == "" {
+		textBody = htmlBody
+	}
+
+	input := &sesv2.SendEmailInput{
+		FromEmailAddress: aws.String(p.FromEmail),
+		Destination: &types.Destination{
+			ToAddresses: to,
+		},
+		Content: &types.EmailContent{
+			Simple: &types.Message{
+				Subject: &types.Content{
+					Data:    aws.String(subject),
+					Charset: aws.String("UTF-8"),
+				},
+				Body: &types.Body{
+					Html: &types.Content{
+						Data:    aws.String(htmlBody),
+						Charset: aws.String("UTF-8"),
+					},
+					Text: &types.Content{
+						Data:    aws.String(textBody),
+						Charset: aws.String("UTF-8"),
+					},
+				},
+			},
+		},
+	}
+
+	out, err := client.SendEmail(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	messageID := ""
+	if out.MessageId != nil {
+		messageID = *out.MessageId
+	}
+	return map[string]any{"messageId": messageID, "accepted": to, "rejected": []string{}}, nil
 }
 
 func openSMTPClient(p *EmailProvider, timeout time.Duration) (*smtp.Client, net.Conn, error) {

@@ -18,7 +18,7 @@ import AuthCallbackPage from './pages/AuthCallbackPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import { useAppStore } from './stores/StoresIndex';
-import { doesSessionExist } from './config/supertokens';
+import { bootstrapAuth } from './services/AuthFlowService';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import './App.css';
 
@@ -34,29 +34,11 @@ function App() {
     const checkSession = async () => {
       try {
         setLoading(true);
-
-        const sessionExists = await doesSessionExist();
-
-        if (sessionExists) {
-          const apiUrl = import.meta.env.VITE_API_URL || '';
-          const response = await fetch(`${apiUrl}/api/users/me`, {
-            credentials: 'include',
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success && data.data) {
-              // Include roles if provided by the API
-              const userData = {
-                ...data.data.user,
-                roles: data.data.user.roles || [],
-              };
-              setUser(userData);
-            }
-          }
-        }
+        const bootstrap = await bootstrapAuth({ preloadOrganizations: true });
+        setUser(bootstrap.user);
       } catch (error) {
         console.error('Session check error:', error);
+        setUser(null);
       } finally {
         setLoading(false);
       }

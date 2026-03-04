@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/skaftin/go-services/internal/model"
@@ -17,6 +18,8 @@ import (
 )
 
 const UserContextKey contextKey = "userContext"
+
+var jwtCoreFallbackCount int64
 
 // GetUserContext extracts the UserContext from the request context.
 func GetUserContext(r *http.Request) *model.UserContext {
@@ -54,6 +57,15 @@ func JWTAuth(jwks *JWKSProvider) func(http.Handler) http.Handler {
 
 			token, err := jwt.Parse(tokenStr, jwks.GetKey, jwt.WithValidMethods([]string{"RS256"}))
 			if err != nil {
+				if os.Getenv("SKAFTIN_ENABLE_JWT_CORE_FALLBACK") == "false" {
+					slog.Warn("JWT validation failed and core fallback disabled",
+						"error", err,
+						"path", r.URL.Path,
+					)
+					httputil.WriteError(w, http.StatusUnauthorized, "Invalid or expired session token")
+					return
+				}
+
 				// Compatibility fallback: some SuperTokens core/session versions can
 				// return access tokens that fail strict JWT parsing in this middleware.
 				// In that case, verify token directly with SuperTokens Core.
@@ -67,6 +79,12 @@ func JWTAuth(jwks *JWKSProvider) func(http.Handler) http.Handler {
 					httputil.WriteError(w, http.StatusUnauthorized, "Invalid or expired session token")
 					return
 				}
+
+				fallbackCount := atomic.AddInt64(&jwtCoreFallbackCount, 1)
+				slog.Warn("JWT parsed via SuperTokens core fallback",
+					"path", r.URL.Path,
+					"fallbackCount", fallbackCount,
+				)
 				ctx := context.WithValue(r.Context(), UserContextKey, userCtx)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return

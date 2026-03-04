@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Database, Loader2 } from 'lucide-react';
 import ThirdParty from 'supertokens-auth-react/recipe/thirdparty';
 import { useAppStore } from '../stores/StoresIndex';
-import OrganizationService from '../services/OrganizationService';
+import { bootstrapAuth, resolvePostLoginRedirect } from '../services/AuthFlowService';
 
 /**
  * OAuth Callback Page
@@ -29,44 +29,10 @@ const AuthCallbackPage = () => {
         const response = await ThirdParty.signInAndUp();
 
         if (response.status === 'OK') {
-          // Successfully signed in - fetch user data
-          const apiUrl = import.meta.env.VITE_API_URL || '';
-          const userResponse = await fetch(`${apiUrl}/api/users/me`, {
-            credentials: 'include',
-          });
-
-          if (userResponse.ok) {
-            const userData = await userResponse.json();
-            if (userData.success && userData.data?.user) {
-              setUser({
-                ...userData.data.user,
-                roles: userData.data.user.roles || [],
-              });
-            }
-          }
-
-          // Check for stored redirect
-          const redirectTo = sessionStorage.getItem('redirectAfterLogin');
-          if (redirectTo) {
-            sessionStorage.removeItem('redirectAfterLogin');
-            navigate(redirectTo);
-            return;
-          }
-
-          // Check organizations and redirect appropriately
-          const orgResult = await OrganizationService.getUserOrganizations();
-          if (orgResult.success && orgResult.organizations) {
-            if (orgResult.organizations.length > 1) {
-              navigate('/organizations/select');
-            } else {
-              // User has 0 or 1 organizations — go straight to projects
-              // Invited team members may not have their own org yet
-              navigate('/projects');
-            }
-          } else {
-            // Error fetching organizations — go to projects anyway
-            navigate('/projects');
-          }
+          const bootstrap = await bootstrapAuth({ preloadOrganizations: true, force: true });
+          setUser(bootstrap.user);
+          const redirectTo = await resolvePostLoginRedirect();
+          navigate(redirectTo);
         } else if (response.status === 'NO_EMAIL_GIVEN_BY_PROVIDER') {
           setError('The OAuth provider did not share your email address. Please try a different login method.');
         } else if (response.status === 'SIGN_IN_UP_NOT_ALLOWED') {

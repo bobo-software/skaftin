@@ -127,6 +127,8 @@ func (h *Handler) LegacyLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) LegacyVerify(w http.ResponseWriter, r *http.Request) {
+	setLegacyRouteDeprecationHeaders(w, "/api/users/me")
+
 	token := extractLegacyToken(r)
 	if token == "" {
 		httputil.WriteError(w, http.StatusUnauthorized, "Session not found")
@@ -154,6 +156,8 @@ func (h *Handler) LegacyVerify(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) LegacyRefresh(w http.ResponseWriter, r *http.Request) {
+	setLegacyRouteDeprecationHeaders(w, "/auth/session/refresh")
+
 	httputil.WriteSuccess(w, http.StatusOK, "Session refresh is handled automatically by SuperTokens", map[string]any{
 		"message": "No action needed - sessions are automatically refreshed",
 	})
@@ -202,4 +206,10 @@ func defaultName(name string) string {
 		return "User"
 	}
 	return name
+}
+
+func setLegacyRouteDeprecationHeaders(w http.ResponseWriter, replacementPath string) {
+	w.Header().Set("Deprecation", "true")
+	w.Header().Set("Sunset", "Tue, 31 Dec 2026 23:59:59 GMT")
+	w.Header().Set("Link", "<"+replacementPath+">; rel=\"successor-version\"")
 }

@@ -2,6 +2,12 @@ package communications
 
 import "time"
 
+const (
+	EmailProviderTypeSimple    = "simple"
+	EmailProviderTypeNodemailer = "nodemailer"
+	EmailProviderTypeMailtrap  = "mailtrap"
+)
+
 type EmailProvider struct {
 	ID           int       `json:"id"`
 	ProjectID    string    `json:"project_id"`

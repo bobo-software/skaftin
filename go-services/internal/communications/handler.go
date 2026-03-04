@@ -161,7 +161,8 @@ func (h *Handler) CreateEmailProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, 400, "Invalid request body")
 		return
 	}
-	if req.Name == "" || req.ProviderType == "" || req.SMTPHost == "" || req.SMTPPort == 0 || req.SMTPUser == "" || req.SMTPPassword == "" || req.FromEmail == "" {
+	smtpPortRequired := req.ProviderType != EmailProviderTypeSimple
+	if req.Name == "" || req.ProviderType == "" || req.SMTPHost == "" || (smtpPortRequired && req.SMTPPort == 0) || req.SMTPUser == "" || req.SMTPPassword == "" || req.FromEmail == "" {
 		httputil.WriteJSON(w, 400, map[string]any{"success": false, "error": "Missing required fields"})
 		return
 	}

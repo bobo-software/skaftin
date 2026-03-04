@@ -11,6 +11,15 @@ import {
   OrganizationStore as OrganizationStoreType,
 } from '../../types/Types';
 
+const ORGANIZATION_STALE_MS = 30_000;
+let inFlightFetchOrganizations: Promise<void> | null = null;
+let lastOrganizationsLoadedAt = 0;
+const traceOrganization = (...args: any[]) => {
+  if (import.meta.env.DEV) {
+    console.debug('[org-bootstrap]', ...args);
+  }
+};
+
 const useOrganizationStore = create<OrganizationStoreType>()(
   devtools(
     (set, get) => ({
@@ -21,29 +30,54 @@ const useOrganizationStore = create<OrganizationStoreType>()(
       error: null,
 
       // Fetch all organizations for the user
-      fetchOrganizations: async () => {
-        set({ loading: true, error: null });
-        try {
-          const result = await OrganizationService.getUserOrganizations();
-          
-          if (result.success && result.organizations) {
-            set({ 
-              organizations: result.organizations,
-              loading: false 
-            });
-          } else {
-            set({ 
-              error: result.error || 'Failed to fetch organizations',
-              loading: false 
-            });
-          }
-        } catch (error) {
-          console.error('Error fetching organizations:', error);
-          set({ 
-            error: 'Network error while fetching organizations',
-            loading: false 
-          });
+      fetchOrganizations: async (options = {}) => {
+        const { force = false, skipIfFresh = false } = options;
+        const hasOrganizations = get().organizations.length > 0;
+        const isFresh = Date.now() - lastOrganizationsLoadedAt < ORGANIZATION_STALE_MS;
+
+        if (!force && skipIfFresh && hasOrganizations && isFresh) {
+          traceOrganization('using cached organizations');
+          return;
         }
+
+        if (!force && inFlightFetchOrganizations) {
+          traceOrganization('joining in-flight organization request');
+          return inFlightFetchOrganizations;
+        }
+
+        inFlightFetchOrganizations = (async () => {
+          traceOrganization('fetch organizations start', { force, skipIfFresh });
+          set({ loading: true, error: null });
+          try {
+            const result = await OrganizationService.getUserOrganizations();
+
+            if (result.success && result.organizations) {
+              lastOrganizationsLoadedAt = Date.now();
+              traceOrganization('fetch organizations success', { count: result.organizations.length });
+              set({
+                organizations: result.organizations,
+                loading: false
+              });
+            } else {
+              traceOrganization('fetch organizations failed', result.error || 'unknown error');
+              set({
+                error: result.error || 'Failed to fetch organizations',
+                loading: false
+              });
+            }
+          } catch (error) {
+            console.error('Error fetching organizations:', error);
+            traceOrganization('fetch organizations network error');
+            set({
+              error: 'Network error while fetching organizations',
+              loading: false
+            });
+          } finally {
+            inFlightFetchOrganizations = null;
+          }
+        })();
+
+        return inFlightFetchOrganizations;
       },
 
       // Get a specific organization by ID
