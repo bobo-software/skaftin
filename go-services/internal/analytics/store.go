@@ -116,7 +116,7 @@ func dateTrunc(groupBy string) string {
 func (s *Store) GetAPIOverview(ctx context.Context, projectID int, start, end time.Time) (*APIOverview, error) {
 	row := s.pool.QueryRow(ctx, `
 		SELECT
-			COUNT(*)::int                                          AS total_requests,
+			COUNT(*)::int                                         AS total_requests,
 			COALESCE(AVG(response_time_ms), 0)                    AS avg_response_time,
 			COUNT(CASE WHEN status_code >= 400 THEN 1 END)::int   AS error_count,
 			COUNT(CASE WHEN status_code < 400 THEN 1 END)::int    AS success_count

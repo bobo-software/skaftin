@@ -21,16 +21,16 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 // Project represents a row from skaftin_system_projects.
 type Project struct {
-	ID                  int        `json:"id"`
-	Name                string     `json:"name"`
-	Description         *string    `json:"description"`
-	OrganizationID      *int       `json:"organization_id"`
-	UserID              string     `json:"user_id"`
-	SchemaName          string     `json:"schema_name"`
-	FieldEncryptionKey  *string    `json:"-"`
-	FieldEncryptionSet  bool       `json:"field_encryption_key_set"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           *time.Time `json:"updated_at"`
+	ID                 int        `json:"id"`
+	Name               string     `json:"name"`
+	Description        *string    `json:"description"`
+	OrganizationID     *int       `json:"organization_id"`
+	UserID             string     `json:"user_id"`
+	SchemaName         string     `json:"schema_name"`
+	FieldEncryptionKey *string    `json:"-"`
+	FieldEncryptionSet bool       `json:"field_encryption_key_set"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          *time.Time `json:"updated_at"`
 }
 
 // AccessResult holds the result of a project access check.
@@ -145,7 +145,8 @@ func (s *Store) GetUserOrgMembership(ctx context.Context, orgID int, userID stri
 	return role, nil
 }
 
-// ListUserProjects returns all projects a user can access (via org admin/dev + direct membership).
+// ListUserProjects returns all projects a user can access.
+// Access includes project ownership, organization membership, or direct project membership.
 func (s *Store) ListUserProjects(ctx context.Context, userID string) ([]Project, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT DISTINCT `+qualifiedProjectColumns+`
@@ -154,7 +155,8 @@ func (s *Store) ListUserProjects(ctx context.Context, userID string) ([]Project,
 			ON p.organization_id = om.organization_id AND om.user_id = $1
 		LEFT JOIN skaftin_system_project_members pm
 			ON p.id = pm.project_id AND pm.user_id = $1
-		WHERE (om.user_id IS NOT NULL AND om.role IN ('admin', 'dev'))
+		WHERE p.user_id = $1
+		   OR om.user_id IS NOT NULL
 		   OR pm.user_id IS NOT NULL
 		ORDER BY p.created_at
 	`, userID)

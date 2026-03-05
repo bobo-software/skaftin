@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4005';
+// Use empty string so requests go through the frontend proxy in development.
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export interface Backup {
   id: string;

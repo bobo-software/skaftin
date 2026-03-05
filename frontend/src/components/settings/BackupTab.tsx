@@ -61,9 +61,27 @@ const BackupTab = () => {
   const [retentionPolicy, setRetentionPolicy] = useState<'keep_all' | 'keep_count' | 'keep_days'>('keep_all');
   const [retentionValue, setRetentionValue] = useState<number | undefined>();
 
+  const simpleToCron = (selectedIntervalType: string, selectedFrequency: number): string => {
+    switch (selectedIntervalType) {
+      case 'minute':
+        return `*/${selectedFrequency} * * * *`;
+      case 'hour':
+        return `0 */${selectedFrequency} * * *`;
+      case 'day':
+        return `0 0 */${selectedFrequency} * *`;
+      case 'week':
+        return `0 0 */${selectedFrequency * 7} * *`;
+      case 'month':
+        return `0 0 1 */${selectedFrequency} *`;
+      default:
+        return '';
+    }
+  };
+
   useEffect(() => {
     if (projectId) {
       loadBackups();
+      loadSchedules();
     }
   }, [projectId]);
 
@@ -207,16 +225,20 @@ const BackupTab = () => {
     e.preventDefault();
     if (!projectId) return;
 
-    if (!scheduleName || !scheduleCron) {
+    const effectiveCron = scheduleMode === 'simple'
+      ? simpleToCron(intervalType, Math.max(1, frequency))
+      : scheduleCron.trim();
+
+    if (!scheduleName.trim() || !effectiveCron) {
       ToastUtils.error('Name and schedule are required');
       return;
     }
 
     try {
       const result = await BackupService.createSchedule(parseInt(projectId), {
-        name: scheduleName,
+        name: scheduleName.trim(),
         description: scheduleDescription || undefined,
-        schedule: scheduleCron,
+        schedule: effectiveCron,
         backupNamePrefix: schedulePrefix || undefined,
         retentionDays: retentionDays,
         backupType: scheduleBackupType,
@@ -241,11 +263,20 @@ const BackupTab = () => {
     e.preventDefault();
     if (!projectId || !editingSchedule) return;
 
+    const effectiveCron = scheduleMode === 'simple'
+      ? simpleToCron(intervalType, Math.max(1, frequency))
+      : scheduleCron.trim();
+
+    if (!scheduleName.trim() || !effectiveCron) {
+      ToastUtils.error('Name and schedule are required');
+      return;
+    }
+
     try {
       const result = await BackupService.updateSchedule(parseInt(projectId), editingSchedule.id, {
-        name: scheduleName,
+        name: scheduleName.trim(),
         description: scheduleDescription || undefined,
-        schedule: scheduleCron,
+        schedule: effectiveCron,
         backupNamePrefix: schedulePrefix || undefined,
         retentionDays: retentionDays,
         backupType: scheduleBackupType,
@@ -310,7 +341,7 @@ const BackupTab = () => {
   const resetScheduleForm = () => {
     setScheduleName('');
     setScheduleDescription('');
-    setScheduleCron('');
+    setScheduleCron(simpleToCron('day', 1));
     setSchedulePrefix('');
     setRetentionDays(undefined);
     setScheduleMode('simple');
@@ -347,23 +378,6 @@ const BackupTab = () => {
       resetScheduleForm();
     }
     setShowScheduleModal(true);
-  };
-
-  const simpleToCron = (intervalType: string, frequency: number): string => {
-    switch (intervalType) {
-      case 'minute':
-        return `*/${frequency} * * * *`;
-      case 'hour':
-        return `0 */${frequency} * * *`;
-      case 'day':
-        return `0 0 */${frequency} * *`;
-      case 'week':
-        return `0 0 */${frequency * 7} * *`;
-      case 'month':
-        return `0 0 1 */${frequency} *`;
-      default:
-        return '';
-    }
   };
 
   const parseCronToSimple = (cron: string): { intervalType: 'minute' | 'hour' | 'day' | 'week' | 'month' | null; frequency: number | null } => {
@@ -409,16 +423,26 @@ const BackupTab = () => {
   };
 
   useEffect(() => {
-    if (scheduleMode === 'simple' && frequency > 0) {
-      const cron = simpleToCron(intervalType, frequency);
+    if (!showScheduleModal || editingSchedule || scheduleMode !== 'simple' || frequency <= 0) {
+      return;
+    }
+
+    const cron = simpleToCron(intervalType, frequency);
+    if (cron && cron !== scheduleCron) {
       setScheduleCron(cron);
     }
-  }, [scheduleMode, intervalType, frequency]);
+  }, [showScheduleModal, editingSchedule, scheduleMode, intervalType, frequency, scheduleCron]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString();
   };
+
+  const requiresRetentionValue = retentionPolicy !== 'keep_all';
+  const hasValidRetentionValue = !requiresRetentionValue || (retentionValue !== undefined && retentionValue > 0);
+  const isScheduleSubmitDisabled = !scheduleName.trim()
+    || !hasValidRetentionValue
+    || (scheduleMode === 'advanced' ? !scheduleCron.trim() : frequency <= 0);
 
   return (
     <div className="space-y-6">
@@ -1049,7 +1073,7 @@ const BackupTab = () => {
                 <button
                   type="submit"
                   className="flex-1 btn-primary"
-                  disabled={!scheduleName || !scheduleCron}
+                  disabled={isScheduleSubmitDisabled}
                 >
                   {editingSchedule ? 'Update Schedule' : 'Create Schedule'}
                 </button>

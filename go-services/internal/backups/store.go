@@ -73,10 +73,67 @@ func (s *Store) GetProjectInfo(ctx context.Context, projectID int) (*ProjectInfo
 	return &p, nil
 }
 
-const scheduleColumns = `id, project_id, name, description, schedule, enabled,
-	backup_name_prefix, retention_days, created_at, updated_at, created_by,
-	last_run_at, next_run_at,
-	COALESCE(backup_type, 'database'), COALESCE(retention_policy, 'keep_all'), retention_value`
+type scheduleColumnSupport struct {
+	backupType      bool
+	retentionPolicy bool
+	retentionValue  bool
+}
+
+func (s *Store) getScheduleColumnSupport(ctx context.Context) (*scheduleColumnSupport, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT column_name
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		  AND table_name = 'skaftin_system_backup_schedules'
+		  AND column_name IN ('backup_type', 'retention_policy', 'retention_value')
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	support := &scheduleColumnSupport{}
+	for rows.Next() {
+		var column string
+		if err := rows.Scan(&column); err != nil {
+			return nil, err
+		}
+		switch column {
+		case "backup_type":
+			support.backupType = true
+		case "retention_policy":
+			support.retentionPolicy = true
+		case "retention_value":
+			support.retentionValue = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return support, nil
+}
+
+func scheduleColumnsForSupport(support *scheduleColumnSupport) string {
+	backupTypeExpr := `'database'::varchar`
+	if support.backupType {
+		backupTypeExpr = `COALESCE(backup_type, 'database')`
+	}
+
+	retentionPolicyExpr := `'keep_all'::varchar`
+	if support.retentionPolicy {
+		retentionPolicyExpr = `COALESCE(retention_policy, 'keep_all')`
+	}
+
+	retentionValueExpr := `NULL::integer`
+	if support.retentionValue {
+		retentionValueExpr = `retention_value`
+	}
+
+	return `id, project_id, name, description, schedule, enabled,
+		backup_name_prefix, retention_days, created_at, updated_at, created_by,
+		last_run_at, next_run_at,
+		` + backupTypeExpr + `, ` + retentionPolicyExpr + `, ` + retentionValueExpr
+}
 
 func scanSchedule(row pgx.Row) (*BackupSchedule, error) {
 	var bs BackupSchedule
@@ -93,6 +150,12 @@ func scanSchedule(row pgx.Row) (*BackupSchedule, error) {
 }
 
 func (s *Store) ListSchedules(ctx context.Context, projectID int) ([]BackupSchedule, error) {
+	support, err := s.getScheduleColumnSupport(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scheduleColumns := scheduleColumnsForSupport(support)
+
 	rows, err := s.pool.Query(ctx,
 		fmt.Sprintf(`SELECT %s FROM skaftin_system_backup_schedules WHERE project_id = $1 ORDER BY created_at`, scheduleColumns),
 		projectID,
@@ -114,6 +177,12 @@ func (s *Store) ListSchedules(ctx context.Context, projectID int) ([]BackupSched
 }
 
 func (s *Store) GetSchedule(ctx context.Context, scheduleID, projectID int) (*BackupSchedule, error) {
+	support, err := s.getScheduleColumnSupport(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scheduleColumns := scheduleColumnsForSupport(support)
+
 	row := s.pool.QueryRow(ctx,
 		fmt.Sprintf(`SELECT %s FROM skaftin_system_backup_schedules WHERE id = $1 AND project_id = $2`, scheduleColumns),
 		scheduleID, projectID,
@@ -122,6 +191,12 @@ func (s *Store) GetSchedule(ctx context.Context, scheduleID, projectID int) (*Ba
 }
 
 func (s *Store) GetScheduleByID(ctx context.Context, scheduleID int) (*BackupSchedule, error) {
+	support, err := s.getScheduleColumnSupport(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scheduleColumns := scheduleColumnsForSupport(support)
+
 	row := s.pool.QueryRow(ctx,
 		fmt.Sprintf(`SELECT %s FROM skaftin_system_backup_schedules WHERE id = $1`, scheduleColumns),
 		scheduleID,
@@ -130,6 +205,12 @@ func (s *Store) GetScheduleByID(ctx context.Context, scheduleID int) (*BackupSch
 }
 
 func (s *Store) GetEnabledSchedules(ctx context.Context) ([]BackupSchedule, error) {
+	support, err := s.getScheduleColumnSupport(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scheduleColumns := scheduleColumnsForSupport(support)
+
 	rows, err := s.pool.Query(ctx,
 		fmt.Sprintf(`SELECT %s FROM skaftin_system_backup_schedules WHERE enabled = true`, scheduleColumns),
 	)
@@ -163,6 +244,23 @@ type CreateScheduleParams struct {
 }
 
 func (s *Store) CreateSchedule(ctx context.Context, p CreateScheduleParams) (*BackupSchedule, error) {
+	support, err := s.getScheduleColumnSupport(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scheduleColumns := scheduleColumnsForSupport(support)
+
+	if !(support.backupType && support.retentionPolicy && support.retentionValue) {
+		row := s.pool.QueryRow(ctx,
+			fmt.Sprintf(`INSERT INTO skaftin_system_backup_schedules
+				(project_id, name, description, schedule, enabled, backup_name_prefix, retention_days, created_by)
+				VALUES ($1, $2, $3, $4, true, $5, $6, $7)
+				RETURNING %s`, scheduleColumns),
+			p.ProjectID, p.Name, p.Description, p.Schedule, p.BackupNamePrefix, p.RetentionDays, p.CreatedBy,
+		)
+		return scanSchedule(row)
+	}
+
 	row := s.pool.QueryRow(ctx,
 		fmt.Sprintf(`INSERT INTO skaftin_system_backup_schedules
 			(project_id, name, description, schedule, enabled, backup_name_prefix, retention_days,
@@ -188,6 +286,30 @@ type UpdateScheduleParams struct {
 }
 
 func (s *Store) UpdateSchedule(ctx context.Context, scheduleID int, p UpdateScheduleParams) (*BackupSchedule, error) {
+	support, err := s.getScheduleColumnSupport(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scheduleColumns := scheduleColumnsForSupport(support)
+
+	if !(support.backupType && support.retentionPolicy && support.retentionValue) {
+		row := s.pool.QueryRow(ctx,
+			fmt.Sprintf(`UPDATE skaftin_system_backup_schedules SET
+				name = COALESCE($2, name),
+				description = COALESCE($3, description),
+				schedule = COALESCE($4, schedule),
+				enabled = COALESCE($5, enabled),
+				backup_name_prefix = COALESCE($6, backup_name_prefix),
+				retention_days = COALESCE($7, retention_days),
+				updated_at = NOW()
+			WHERE id = $1
+			RETURNING %s`, scheduleColumns),
+			scheduleID, p.Name, p.Description, p.Schedule, p.Enabled,
+			p.BackupNamePrefix, p.RetentionDays,
+		)
+		return scanSchedule(row)
+	}
+
 	row := s.pool.QueryRow(ctx,
 		fmt.Sprintf(`UPDATE skaftin_system_backup_schedules SET
 			name = COALESCE($2, name),
