@@ -1,10 +1,11 @@
 import { Routes, Route, Navigate, NavLink, useParams } from 'react-router-dom';
-import { Users, Shield, Settings, MessageSquare, Lock, Sliders } from 'lucide-react';
+import { Users, Shield, Settings, MessageSquare, Lock, Sliders, Database } from 'lucide-react';
 import AuthUsersTab from './tabs/AuthUsersTab';
 import AuthRolesTab from './tabs/AuthRolesTab';
 import AuthCustomFieldsTab from './tabs/AuthCustomFieldsTab';
 import AuthEmailSettingsTab from './tabs/AuthEmailSettingsTab';
 import AuthGeneralSettingsTab from './tabs/AuthGeneralSettingsTab';
+import AuthSuperTokensTab from './tabs/AuthSuperTokensTab';
 import UserDetailsPage from './UserDetailsPage';
 
 const AuthTab = () => {
@@ -17,6 +18,7 @@ const AuthTab = () => {
     { path: 'messaging', icon: MessageSquare, label: 'Messaging' },
     { path: 'security', icon: Lock, label: 'Security' },
     { path: 'general', icon: Settings, label: 'General' },
+    { path: 'supertokens', icon: Database, label: 'SuperTokens' },
   ];
 
   return (
@@ -57,6 +59,7 @@ const AuthTab = () => {
           <Route path="messaging" element={<AuthEmailSettingsTab />} />
           <Route path="security" element={<SecurityPlaceholder />} />
           <Route path="general" element={<AuthGeneralSettingsTab />} />
+          <Route path="supertokens" element={<AuthSuperTokensTab />} />
           <Route path="*" element={<Navigate to="users" replace />} />
         </Routes>
       </div>

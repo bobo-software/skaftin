@@ -4,8 +4,10 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 	"github.com/skaftin/go-services/internal/supertokens"
 )
@@ -29,9 +31,29 @@ func (h *Handler) RegisterProtectedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/admin/users/{userId}", h.DeleteUserByID)
 	mux.HandleFunc("POST /api/admin/users/delete-by-email", h.DeleteUserByEmail)
 	mux.HandleFunc("POST /api/admin/users/complete-cleanup", h.CompleteCleanup)
+	mux.HandleFunc("GET /api/admin/supertokens/users", h.SearchSuperTokensUsers)
+	mux.HandleFunc("GET /api/admin/supertokens/users/{userId}", h.GetSuperTokensUserByID)
+	mux.HandleFunc("POST /api/admin/supertokens/users/{userId}/revoke-sessions", h.RevokeSuperTokensUserSessions)
+	mux.HandleFunc("DELETE /api/admin/supertokens/users/{userId}", h.DeleteSuperTokensUserByID)
+}
+
+func requireAdminUser(w http.ResponseWriter, r *http.Request) bool {
+	u := auth.RequireUser(w, r)
+	if u == nil {
+		return false
+	}
+	if u.Role != "admin" {
+		httputil.WriteError(w, http.StatusForbidden, "Admin access required")
+		return false
+	}
+	return true
 }
 
 func (h *Handler) SearchUsers(w http.ResponseWriter, r *http.Request) {
+	if !requireAdminUser(w, r) {
+		return
+	}
+
 	email := r.URL.Query().Get("email")
 	if email == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "Email query parameter is required")
@@ -75,6 +97,10 @@ func (h *Handler) CheckEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteUserByID(w http.ResponseWriter, r *http.Request) {
+	if !requireAdminUser(w, r) {
+		return
+	}
+
 	userID := r.PathValue("userId")
 	if userID == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "User ID is required")
@@ -90,6 +116,10 @@ func (h *Handler) DeleteUserByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteUserByEmail(w http.ResponseWriter, r *http.Request) {
+	if !requireAdminUser(w, r) {
+		return
+	}
+
 	var body struct {
 		Email   string `json:"email"`
 		Confirm bool   `json:"confirm"`
@@ -123,6 +153,10 @@ func (h *Handler) DeleteUserByEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CompleteCleanup(w http.ResponseWriter, r *http.Request) {
+	if !requireAdminUser(w, r) {
+		return
+	}
+
 	var body struct {
 		Email     string `json:"email"`
 		ProjectID any    `json:"projectId"`
@@ -159,6 +193,89 @@ func (h *Handler) CompleteCleanup(w http.ResponseWriter, r *http.Request) {
 		"deletedFromAppUsers":    result.DeletedFromAppUsers,
 		"deletedRoleAssignments": result.DeletedRoleAssignments,
 		"errors":                 result.Errors,
+	})
+}
+
+func (h *Handler) SearchSuperTokensUsers(w http.ResponseWriter, r *http.Request) {
+	if !requireAdminUser(w, r) {
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	users, err := h.service.SearchSuperTokensUsers(r.Context(), query)
+	if err != nil {
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to search SuperTokens users")
+		return
+	}
+
+	httputil.WriteSuccess(w, http.StatusOK, "SuperTokens users fetched successfully", users)
+}
+
+func (h *Handler) GetSuperTokensUserByID(w http.ResponseWriter, r *http.Request) {
+	if !requireAdminUser(w, r) {
+		return
+	}
+
+	userID := strings.TrimSpace(r.PathValue("userId"))
+	if userID == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "User ID is required")
+		return
+	}
+
+	user, err := h.service.GetSuperTokensUserByID(r.Context(), userID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			httputil.WriteError(w, http.StatusNotFound, "SuperTokens user not found")
+			return
+		}
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to fetch SuperTokens user")
+		return
+	}
+
+	httputil.WriteSuccess(w, http.StatusOK, "SuperTokens user fetched successfully", user)
+}
+
+func (h *Handler) RevokeSuperTokensUserSessions(w http.ResponseWriter, r *http.Request) {
+	if !requireAdminUser(w, r) {
+		return
+	}
+
+	userID := strings.TrimSpace(r.PathValue("userId"))
+	if userID == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "User ID is required")
+		return
+	}
+
+	result, err := h.service.RevokeUserSessions(r.Context(), userID)
+	if err != nil {
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to revoke sessions")
+		return
+	}
+
+	httputil.WriteSuccess(w, http.StatusOK, "Sessions revoked successfully", map[string]any{
+		"status":                result.Status,
+		"sessionHandlesRevoked": result.SessionHandlesRevoked,
+	})
+}
+
+func (h *Handler) DeleteSuperTokensUserByID(w http.ResponseWriter, r *http.Request) {
+	if !requireAdminUser(w, r) {
+		return
+	}
+
+	userID := strings.TrimSpace(r.PathValue("userId"))
+	if userID == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "User ID is required")
+		return
+	}
+
+	if err := h.service.DeleteUserByID(r.Context(), userID); err != nil {
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to delete SuperTokens user")
+		return
+	}
+
+	httputil.WriteSuccess(w, http.StatusOK, "SuperTokens user deleted successfully", map[string]any{
+		"userId": userID,
 	})
 }
 
