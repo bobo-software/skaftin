@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Plus, Search, RefreshCw, Edit, Trash2, Shield, Users, Clock, AlertCircle } from 'lucide-react';
+import { Plus, Search, RefreshCw, Edit, Trash2, Shield, Users, Clock, AlertCircle, Download, Upload, CheckCircle, XCircle } from 'lucide-react';
 import RolesService, { Role, CreateRoleRequest } from '../../../../../services/RolesService';
 import { AppButton } from '../../../../../components/ComponentsIndex';
 import RequestUtils from '../../../../../utils/RequestUtils';
@@ -13,6 +13,7 @@ const AuthRolesTab = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
 
   const fetchRoles = useCallback(async () => {
@@ -49,6 +50,26 @@ const AuthRolesTab = () => {
   const handleEditRole = (role: Role) => {
     setSelectedRole(role);
     setShowEditModal(true);
+  };
+
+  const handleExport = () => {
+    const exportData = roles.map(({ role_name, role_key, description, permissions, session_duration_minutes, organisation_field_name, organisation_lookup_table }) => ({
+      role_name,
+      role_key,
+      description,
+      permissions,
+      session_duration_minutes,
+      organisation_field_name,
+      organisation_lookup_table,
+    }));
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `roles-export-${Date.now()}.json`;
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const filteredRoles = roles.filter((role) =>
@@ -89,8 +110,26 @@ const AuthRolesTab = () => {
               <button
                 onClick={fetchRoles}
                 className="px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors"
+                title="Refresh"
               >
                 <RefreshCw className="w-5 h-5" />
+              </button>
+              <button
+                onClick={handleExport}
+                disabled={roles.length === 0}
+                className="px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                title="Export roles as JSON"
+              >
+                <Download className="w-5 h-5" />
+                Export
+              </button>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors flex items-center gap-2"
+                title="Import roles from JSON"
+              >
+                <Upload className="w-5 h-5" />
+                Import
               </button>
               <AppButton
                 onClick={() => setShowCreateModal(true)}
@@ -217,6 +256,19 @@ const AuthRolesTab = () => {
           onSuccess={() => {
             setShowEditModal(false);
             setSelectedRole(null);
+            fetchRoles();
+          }}
+        />
+      )}
+
+      {/* Import Roles Modal */}
+      {showImportModal && (
+        <ImportRolesModal
+          projectId={projectId!}
+          existingRoles={roles}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={() => {
+            setShowImportModal(false);
             fetchRoles();
           }}
         />
@@ -940,6 +992,233 @@ const EditRoleModal = ({ projectId, role, onClose, onSuccess }: { projectId: str
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+};
+
+// Import Roles Modal
+type ImportedRole = {
+  role_name: string;
+  role_key: string;
+  description?: string;
+  permissions?: any[];
+  session_duration_minutes?: number;
+  organisation_field_name?: string;
+  organisation_lookup_table?: string;
+  status: 'new' | 'existing';
+};
+
+const ImportRolesModal = ({
+  projectId,
+  existingRoles,
+  onClose,
+  onSuccess,
+}: {
+  projectId: string;
+  existingRoles: Role[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [step, setStep] = useState<'upload' | 'preview' | 'done'>('upload');
+  const [parsedRoles, setParsedRoles] = useState<ImportedRole[]>([]);
+  const [parseError, setParseError] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [results, setResults] = useState<{ role_key: string; success: boolean; error?: string }[]>([]);
+
+  const existingKeys = new Set(existingRoles.map((r) => r.role_key));
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParseError('');
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (!Array.isArray(json)) {
+          setParseError('Invalid format: expected a JSON array of roles.');
+          return;
+        }
+        const invalid = json.find((r: any) => !r.role_name || !r.role_key);
+        if (invalid) {
+          setParseError('Each role must have "role_name" and "role_key" fields.');
+          return;
+        }
+        const annotated: ImportedRole[] = json.map((r: any) => ({
+          ...r,
+          status: existingKeys.has(r.role_key) ? 'existing' : 'new',
+        }));
+        setParsedRoles(annotated);
+        setStep('preview');
+      } catch {
+        setParseError('Failed to parse JSON file. Please ensure the file is valid JSON.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImport = async () => {
+    const toImport = parsedRoles.filter((r) => r.status === 'new');
+    setImporting(true);
+    const importResults: typeof results = [];
+
+    for (const role of toImport) {
+      try {
+        await RolesService.createRole(projectId, {
+          role_name: role.role_name,
+          role_key: role.role_key,
+          description: role.description,
+          permissions: role.permissions,
+          session_duration_minutes: role.session_duration_minutes,
+          organisation_field_name: role.organisation_field_name,
+          organisation_lookup_table: role.organisation_lookup_table,
+        });
+        importResults.push({ role_key: role.role_key, success: true });
+      } catch (err: any) {
+        importResults.push({ role_key: role.role_key, success: false, error: err.message });
+      }
+    }
+
+    setResults(importResults);
+    setImporting(false);
+    setStep('done');
+    onSuccess();
+  };
+
+  const newCount = parsedRoles.filter((r) => r.status === 'new').length;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-dark-800 rounded-lg max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-xl font-bold text-dark-900 dark:text-white mb-4">Import Roles</h2>
+
+        {step === 'upload' && (
+          <div className="space-y-4">
+            <p className="text-sm text-dark-600 dark:text-dark-400">
+              Select a JSON file previously exported from Skaftin. Roles with matching keys will be skipped.
+            </p>
+            {parseError && (
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-red-600 dark:text-red-400 text-sm flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>{parseError}</span>
+              </div>
+            )}
+            <div
+              className="border-2 border-dashed border-dark-300 dark:border-dark-600 rounded-lg p-8 text-center cursor-pointer hover:border-primary-400 dark:hover:border-primary-500 transition-colors"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="w-8 h-8 text-dark-400 mx-auto mb-2" />
+              <p className="text-sm text-dark-600 dark:text-dark-400">Click to select a JSON file</p>
+              <p className="text-xs text-dark-400 mt-1">roles-export-*.json</p>
+            </div>
+            <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg hover:bg-dark-50 dark:hover:bg-dark-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'preview' && (
+          <div className="space-y-4">
+            <p className="text-sm text-dark-600 dark:text-dark-400">
+              Found <strong>{parsedRoles.length}</strong> role(s). <strong>{newCount}</strong> will be imported, {parsedRoles.length - newCount} already exist and will be skipped.
+            </p>
+            <div className="border border-dark-200 dark:border-dark-700 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-dark-50 dark:bg-dark-900/50">
+                  <tr>
+                    <th className="text-left px-4 py-2 text-dark-700 dark:text-dark-300 font-medium">Role Name</th>
+                    <th className="text-left px-4 py-2 text-dark-700 dark:text-dark-300 font-medium">Key</th>
+                    <th className="text-left px-4 py-2 text-dark-700 dark:text-dark-300 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-200 dark:divide-dark-700">
+                  {parsedRoles.map((role) => (
+                    <tr key={role.role_key} className="bg-white dark:bg-dark-800">
+                      <td className="px-4 py-2 text-dark-900 dark:text-white">{role.role_name}</td>
+                      <td className="px-4 py-2 text-dark-500 dark:text-dark-400 font-mono text-xs">{role.role_key}</td>
+                      <td className="px-4 py-2">
+                        {role.status === 'new' ? (
+                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">New</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-dark-100 dark:bg-dark-700 text-dark-500 dark:text-dark-400">Exists — skip</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg hover:bg-dark-50 dark:hover:bg-dark-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleImport}
+                disabled={importing || newCount === 0}
+                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+              >
+                {importing ? 'Importing...' : `Import ${newCount} Role${newCount !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'done' && (
+          <div className="space-y-4">
+            <div className="border border-dark-200 dark:border-dark-700 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-dark-50 dark:bg-dark-900/50">
+                  <tr>
+                    <th className="text-left px-4 py-2 text-dark-700 dark:text-dark-300 font-medium">Role Key</th>
+                    <th className="text-left px-4 py-2 text-dark-700 dark:text-dark-300 font-medium">Result</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-200 dark:divide-dark-700">
+                  {results.map((r) => (
+                    <tr key={r.role_key} className="bg-white dark:bg-dark-800">
+                      <td className="px-4 py-2 font-mono text-xs text-dark-500 dark:text-dark-400">{r.role_key}</td>
+                      <td className="px-4 py-2">
+                        {r.success ? (
+                          <span className="flex items-center gap-1 text-green-600 dark:text-green-400 text-xs">
+                            <CheckCircle className="w-4 h-4" /> Created
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-red-600 dark:text-red-400 text-xs">
+                            <XCircle className="w-4 h-4" /> {r.error}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
