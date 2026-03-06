@@ -3,6 +3,7 @@ import { useProjectStore, useRequestLogsStore } from '../../../../stores/StoresI
 import AnalyticsService, {
   DatabaseMetrics,
   StorageMetrics,
+  TimeSeriesDataPoint,
 } from '../../../../services/AnalyticsService';
 import {
   BarChart3,
@@ -13,7 +14,18 @@ import {
   TrendingDown,
   AlertCircle,
   Zap,
+  LineChart as LineChartIcon,
 } from 'lucide-react';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 import LoadingSpinner from '../../../../components/elements/LoadingSpinner';
 import ErrorMessage from '../../../../components/elements/ErrorMessage';
 import { RequestLogsListTab, RequestLogsStatsTab, RequestLogsSettingsTab } from '@components/ComponentsIndex';
@@ -29,8 +41,15 @@ const ProjectAnalyticsTab = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [timeRange, setTimeRange] = useState(7);
-  const [activeTab, setActiveTab] = useState<'overview' | 'api' | 'database' | 'storage'>('overview');
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [activeTab, setActiveTab] = useState<'overview' | 'graph' | 'api' | 'database' | 'storage'>('overview');
+
+  const timeRange = Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000));
   const [apiSubTab, setApiSubTab] = useState<'logs' | 'stats' | 'settings'>('logs');
 
   const [dbMetrics, setDbMetrics] = useState<DatabaseMetrics | null>(null);
@@ -47,7 +66,7 @@ const ProjectAnalyticsTab = () => {
     if (currentProject) {
       loadAnalytics();
     }
-  }, [currentProject, timeRange, activeTab]);
+  }, [currentProject, startDate, endDate, activeTab]);
 
   // Convert timeRange (days) to hours for API stats
   const getHoursFromDays = (days: number) => days * 24;
@@ -60,7 +79,7 @@ const ProjectAnalyticsTab = () => {
     setError('');
 
     try {
-      if (activeTab === 'overview') {
+      if (activeTab === 'overview' || activeTab === 'graph') {
         // Fetch API stats from request logs store
         await fetchApiStats(String(currentProject.id), getHoursFromDays(timeRange));
         
@@ -175,22 +194,31 @@ const ProjectAnalyticsTab = () => {
           <h2 className="text-xl font-bold text-dark-900 dark:text-white">Analytics</h2>
           <p className="text-xs text-dark-500 dark:text-dark-400">Monitor performance and usage</p>
         </div>
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(Number(e.target.value))}
-          className="px-2 py-1 text-xs border border-dark-200 dark:border-dark-700 rounded bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
-        >
-          <option value={1}>24h</option>
-          <option value={7}>7d</option>
-          <option value={30}>30d</option>
-          <option value={90}>90d</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={startDate}
+            max={endDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="px-2 py-1 text-xs border border-dark-200 dark:border-dark-700 rounded bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+          />
+          <span className="text-xs text-dark-400">to</span>
+          <input
+            type="date"
+            value={endDate}
+            min={startDate}
+            max={new Date().toISOString().split('T')[0]}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="px-2 py-1 text-xs border border-dark-200 dark:border-dark-700 rounded bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+          />
+        </div>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-dark-200 dark:border-dark-700">
         {[
           { id: 'overview', label: 'Overview', icon: Activity },
+          { id: 'graph', label: 'Graphs', icon: LineChartIcon },
           { id: 'api', label: 'API', icon: BarChart3 },
           { id: 'database', label: 'Database', icon: Database },
           { id: 'storage', label: 'Storage', icon: Cloud },
@@ -213,9 +241,9 @@ const ProjectAnalyticsTab = () => {
         })}
       </div>
 
-      {isOverviewLoading && activeTab === 'overview' ? (
+      {isOverviewLoading && (activeTab === 'overview' || activeTab === 'graph') ? (
         <LoadingSpinner text="Loading..." />
-      ) : loading && activeTab !== 'overview' ? (
+      ) : loading && activeTab !== 'overview' && activeTab !== 'graph' ? (
         <LoadingSpinner text="Loading..." />
       ) : error ? (
         <ErrorMessage message={error} />
@@ -360,16 +388,78 @@ const ProjectAnalyticsTab = () => {
             </div>
           )}
 
+          {/* Graphs Tab */}
+          {activeTab === 'graph' && (
+            <div className="space-y-4">
+              {/* DB Queries Chart */}
+              <div className="p-4 bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700">
+                <div className="flex items-center gap-2 mb-4">
+                  <Database className="w-4 h-4 text-green-600" />
+                  <h3 className="text-sm font-semibold text-dark-900 dark:text-white">Database Queries</h3>
+                </div>
+                {dbMetrics?.timeSeries?.length ? (
+                  <AnalyticsChart
+                    data={dbMetrics.timeSeries}
+                    series={[
+                      { key: 'queryCount', label: 'Queries', color: '#16a34a' },
+                      { key: 'avgExecutionTime', label: 'Avg Time (ms)', color: '#f59e0b' },
+                    ]}
+                  />
+                ) : (
+                  <p className="text-xs text-dark-500 py-8 text-center">No database data for this period</p>
+                )}
+              </div>
+
+              {/* Storage Chart */}
+              <div className="p-4 bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700">
+                <div className="flex items-center gap-2 mb-4">
+                  <Cloud className="w-4 h-4 text-purple-600" />
+                  <h3 className="text-sm font-semibold text-dark-900 dark:text-white">Storage Operations</h3>
+                </div>
+                {storageMetrics?.timeSeries?.length ? (
+                  <AnalyticsChart
+                    data={storageMetrics.timeSeries}
+                    series={[
+                      { key: 'uploadCount', label: 'Uploads', color: '#9333ea' },
+                      { key: 'downloadCount', label: 'Downloads', color: '#2563eb' },
+                    ]}
+                  />
+                ) : (
+                  <p className="text-xs text-dark-500 py-8 text-center">No storage data for this period</p>
+                )}
+              </div>
+
+              {/* Total Bytes Chart */}
+              <div className="p-4 bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700">
+                <div className="flex items-center gap-2 mb-4">
+                  <Cloud className="w-4 h-4 text-blue-600" />
+                  <h3 className="text-sm font-semibold text-dark-900 dark:text-white">Storage Bytes Transferred</h3>
+                </div>
+                {storageMetrics?.timeSeries?.length ? (
+                  <AnalyticsChart
+                    data={storageMetrics.timeSeries}
+                    series={[
+                      { key: 'totalBytes', label: 'Bytes', color: '#0ea5e9' },
+                    ]}
+                  />
+                ) : (
+                  <p className="text-xs text-dark-500 py-8 text-center">No storage data for this period</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Database Tab */}
           {activeTab === 'database' && dbMetrics && (
             <div className="space-y-3">
               <div className="p-3 bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700">
-                <h3 className="text-sm font-medium text-dark-900 dark:text-white mb-2">Query Trends</h3>
-                <SimpleBarChart
+                <h3 className="text-sm font-medium text-dark-900 dark:text-white mb-3">Query Trends</h3>
+                <AnalyticsChart
                   data={dbMetrics.timeSeries}
-                  valueKey="queryCount"
-                  labelKey="time"
-                  color="green"
+                  series={[
+                    { key: 'queryCount', label: 'Queries', color: '#16a34a' },
+                    { key: 'avgExecutionTime', label: 'Avg Time (ms)', color: '#f59e0b' },
+                  ]}
                 />
               </div>
 
@@ -426,12 +516,13 @@ const ProjectAnalyticsTab = () => {
           {activeTab === 'storage' && storageMetrics && (
             <div className="space-y-3">
               <div className="p-3 bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700">
-                <h3 className="text-sm font-medium text-dark-900 dark:text-white mb-2">Operation Trends</h3>
-                <SimpleBarChart
+                <h3 className="text-sm font-medium text-dark-900 dark:text-white mb-3">Operation Trends</h3>
+                <AnalyticsChart
                   data={storageMetrics.timeSeries}
-                  valueKey="operationCount"
-                  labelKey="time"
-                  color="purple"
+                  series={[
+                    { key: 'uploadCount', label: 'Uploads', color: '#9333ea' },
+                    { key: 'downloadCount', label: 'Downloads', color: '#2563eb' },
+                  ]}
                 />
               </div>
 
@@ -550,56 +641,76 @@ const StatRow = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-const SimpleBarChart = ({
+const AnalyticsChart = ({
   data,
-  valueKey,
-  labelKey,
-  color,
+  series,
 }: {
-  data: any[];
-  valueKey: string;
-  labelKey: string;
-  color: string;
+  data: TimeSeriesDataPoint[];
+  series: { key: keyof TimeSeriesDataPoint; label: string; color: string }[];
 }) => {
   if (data.length === 0) {
     return (
-      <div className="text-center py-4 text-dark-500 text-xs">
-        No data available
-      </div>
+      <div className="text-center py-8 text-dark-500 text-xs">No data available</div>
     );
   }
 
-  const maxValue = Math.max(...data.map((d) => d[valueKey] || 0));
-
-  const formatTime = (timeStr: string) => {
-    const date = new Date(timeStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  const barColor = color === 'blue' ? '#2563eb' : color === 'green' ? '#16a34a' : '#9333ea';
+  const formatted = data.map((d) => ({
+    ...d,
+    _label: new Date(d.time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  }));
 
   return (
-    <div className="space-y-1">
-      {data.slice(0, 8).map((item, idx) => {
-        const value = item[valueKey] || 0;
-        const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0;
-        return (
-          <div key={idx} className="flex items-center gap-2 text-xs">
-            <div className="w-16 text-[10px] text-dark-500 text-right truncate">
-              {formatTime(item[labelKey])}
-            </div>
-            <div className="flex-1 bg-dark-100 dark:bg-dark-700 rounded h-4 overflow-hidden">
-              <div
-                className="h-full rounded flex items-center justify-end pr-1.5"
-                style={{ width: `${Math.max(percentage, value > 0 ? 8 : 0)}%`, backgroundColor: barColor }}
-              >
-                {value > 0 && <span className="text-[9px] text-white font-medium">{value}</span>}
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+    <ResponsiveContainer width="100%" height={220}>
+      <AreaChart data={formatted} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+        <defs>
+          {series.map((s) => (
+            <linearGradient key={s.key as string} id={`grad-${s.key as string}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={s.color} stopOpacity={0.25} />
+              <stop offset="95%" stopColor={s.color} stopOpacity={0} />
+            </linearGradient>
+          ))}
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} />
+        <XAxis
+          dataKey="_label"
+          tick={{ fontSize: 10, fill: 'currentColor', opacity: 0.5 }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis
+          tick={{ fontSize: 10, fill: 'currentColor', opacity: 0.5 }}
+          axisLine={false}
+          tickLine={false}
+          width={40}
+        />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: 'var(--color-dark-800, #1e293b)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '6px',
+            fontSize: '11px',
+          }}
+          labelStyle={{ color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}
+          itemStyle={{ color: 'rgba(255,255,255,0.9)' }}
+        />
+        {series.length > 1 && (
+          <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8 }} />
+        )}
+        {series.map((s) => (
+          <Area
+            key={s.key as string}
+            type="monotone"
+            dataKey={s.key as string}
+            name={s.label}
+            stroke={s.color}
+            strokeWidth={2}
+            fill={`url(#grad-${s.key as string})`}
+            dot={false}
+            activeDot={{ r: 4, strokeWidth: 0 }}
+          />
+        ))}
+      </AreaChart>
+    </ResponsiveContainer>
   );
 };
 
