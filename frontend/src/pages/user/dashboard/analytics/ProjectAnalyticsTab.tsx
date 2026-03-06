@@ -79,10 +79,10 @@ const ProjectAnalyticsTab = () => {
     setError('');
 
     try {
-      if (activeTab === 'overview' || activeTab === 'graph') {
+      if (activeTab === 'overview') {
         // Fetch API stats from request logs store
         await fetchApiStats(String(currentProject.id), getHoursFromDays(timeRange));
-        
+
         // Fetch DB metrics for overview
         const dbResult = await AnalyticsService.getDatabaseMetrics(
           currentProject.id.toString(),
@@ -102,6 +102,21 @@ const ProjectAnalyticsTab = () => {
         if (storageResult.success && storageResult.data) {
           setStorageMetrics(storageResult.data);
         }
+      } else if (activeTab === 'graph') {
+        const [dbResult, storageResult] = await Promise.all([
+          AnalyticsService.getDatabaseMetrics(
+            currentProject.id.toString(),
+            timeRange,
+            timeRange <= 7 ? 'hour' : 'day'
+          ),
+          AnalyticsService.getStorageMetrics(
+            currentProject.id.toString(),
+            timeRange,
+            timeRange <= 7 ? 'hour' : 'day'
+          ),
+        ]);
+        if (dbResult.success && dbResult.data) setDbMetrics(dbResult.data);
+        if (storageResult.success && storageResult.data) setStorageMetrics(storageResult.data);
       } else if (activeTab === 'database') {
         const result = await AnalyticsService.getDatabaseMetrics(
           currentProject.id.toString(),
@@ -194,24 +209,6 @@ const ProjectAnalyticsTab = () => {
           <h2 className="text-xl font-bold text-dark-900 dark:text-white">Analytics</h2>
           <p className="text-xs text-dark-500 dark:text-dark-400">Monitor performance and usage</p>
         </div>
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            value={startDate}
-            max={endDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="px-2 py-1 text-xs border border-dark-200 dark:border-dark-700 rounded bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
-          />
-          <span className="text-xs text-dark-400">to</span>
-          <input
-            type="date"
-            value={endDate}
-            min={startDate}
-            max={new Date().toISOString().split('T')[0]}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="px-2 py-1 text-xs border border-dark-200 dark:border-dark-700 rounded bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
-          />
-        </div>
       </div>
 
       {/* Tabs */}
@@ -241,9 +238,7 @@ const ProjectAnalyticsTab = () => {
         })}
       </div>
 
-      {isOverviewLoading && (activeTab === 'overview' || activeTab === 'graph') ? (
-        <LoadingSpinner text="Loading..." />
-      ) : loading && activeTab !== 'overview' && activeTab !== 'graph' ? (
+      {(activeTab === 'overview' ? isOverviewLoading : (activeTab !== 'api' && loading)) ? (
         <LoadingSpinner text="Loading..." />
       ) : error ? (
         <ErrorMessage message={error} />
@@ -391,6 +386,25 @@ const ProjectAnalyticsTab = () => {
           {/* Graphs Tab */}
           {activeTab === 'graph' && (
             <div className="space-y-4">
+              {/* Date Range Picker */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={startDate}
+                  max={endDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="px-2 py-1 text-xs border border-dark-200 dark:border-dark-700 rounded bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                />
+                <span className="text-xs text-dark-400">to</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  min={startDate}
+                  max={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="px-2 py-1 text-xs border border-dark-200 dark:border-dark-700 rounded bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                />
+              </div>
               {/* DB Queries Chart */}
               <div className="p-4 bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700">
                 <div className="flex items-center gap-2 mb-4">
