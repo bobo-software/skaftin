@@ -59,6 +59,15 @@ const ApiRoutes = {
     LIST: '/api/users/list',
     CREATE: '/api/users/create',
   },
+
+  // Platform admin SuperTokens management routes
+  ADMIN_SUPERTOKENS: {
+    SEARCH_USERS: (query?: string) =>
+      `/api/admin/supertokens/users${query ? `?query=${encodeURIComponent(query)}` : ''}`,
+    GET_USER: (userId: string) => `/api/admin/supertokens/users/${userId}`,
+    REVOKE_USER_SESSIONS: (userId: string) => `/api/admin/supertokens/users/${userId}/revoke-sessions`,
+    DELETE_USER: (userId: string) => `/api/admin/supertokens/users/${userId}`,
+  },
   
   // Files/Storage routes (legacy - use STORAGE for new features)
   FILES: {

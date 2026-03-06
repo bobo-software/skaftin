@@ -42,7 +42,12 @@ type UsersByAccountInfoResponse struct {
 
 // ListUsersByAccountInfo finds users by email in a tenant.
 func (c *Client) ListUsersByAccountInfo(ctx context.Context, tenantID, email string) ([]CoreUser, error) {
-	path := fmt.Sprintf("/%s/users/by-accountinfo?email=%s", tenantID, url.QueryEscape(email))
+	// Some SuperTokens core versions require doUnionOfAccountInfo explicitly.
+	path := fmt.Sprintf(
+		"/%s/users/by-accountinfo?email=%s&doUnionOfAccountInfo=true",
+		tenantID,
+		url.QueryEscape(email),
+	)
 	var resp UsersByAccountInfoResponse
 	if err := c.do(ctx, "GET", path, "", nil, &resp); err != nil {
 		return nil, err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -24,6 +25,39 @@ func NewService(pool *pgxpool.Pool, st *supertokens.Client) *Service {
 
 func (s *Service) SearchUsersByEmail(ctx context.Context, email string) ([]supertokens.CoreUser, error) {
 	return s.st.ListUsersByAccountInfo(ctx, "public", email)
+}
+
+func (s *Service) SearchSuperTokensUsers(ctx context.Context, query string) ([]supertokens.CoreUser, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []supertokens.CoreUser{}, nil
+	}
+
+	// If it looks like an email, use account info search.
+	if strings.Contains(query, "@") {
+		return s.st.ListUsersByAccountInfo(ctx, "public", query)
+	}
+
+	// Otherwise treat the query as a user ID lookup.
+	user, err := s.st.GetUserByID(ctx, query)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			return []supertokens.CoreUser{}, nil
+		}
+		return nil, err
+	}
+	if user == nil {
+		return []supertokens.CoreUser{}, nil
+	}
+	return []supertokens.CoreUser{*user}, nil
+}
+
+func (s *Service) GetSuperTokensUserByID(ctx context.Context, userID string) (*supertokens.CoreUser, error) {
+	return s.st.GetUserByID(ctx, strings.TrimSpace(userID))
+}
+
+func (s *Service) RevokeUserSessions(ctx context.Context, userID string) (*supertokens.RevokeSessionsResponse, error) {
+	return s.st.RevokeAllSessionsForUser(ctx, strings.TrimSpace(userID))
 }
 
 func (s *Service) DeleteUserByID(ctx context.Context, userID string) error {
