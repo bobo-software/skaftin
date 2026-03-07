@@ -40,6 +40,9 @@ func (s *Service) resolveSchema(ctx context.Context, projectID int) (string, err
 	if schema == "" {
 		return "", fmt.Errorf("project not found")
 	}
+	if err := s.store.EnsureAuthSchemaCompatibility(ctx, schema); err != nil {
+		return "", fmt.Errorf("failed to ensure auth schema compatibility: %w", err)
+	}
 	return schema, nil
 }
 

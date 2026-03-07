@@ -38,6 +38,124 @@ func (s *Store) getUserRoleUserIDColumn(ctx context.Context, schema string) (str
 	return columnName, err
 }
 
+func (s *Store) EnsureAuthSchemaCompatibility(ctx context.Context, schema string) error {
+	roleTable := fmt.Sprintf("%s.skaftin_system_roles", pgx.Identifier{schema}.Sanitize())
+
+	_, err := s.pool.Exec(ctx, fmt.Sprintf(`
+		ALTER TABLE %s
+		ADD COLUMN IF NOT EXISTS role_name VARCHAR(100),
+		ADD COLUMN IF NOT EXISTS role_key VARCHAR(100),
+		ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb,
+		ADD COLUMN IF NOT EXISTS session_duration_minutes INTEGER DEFAULT 10080,
+		ADD COLUMN IF NOT EXISTS is_system_role BOOLEAN DEFAULT false,
+		ADD COLUMN IF NOT EXISTS organisation_field_name VARCHAR(255),
+		ADD COLUMN IF NOT EXISTS organisation_lookup_table VARCHAR(255),
+		ADD COLUMN IF NOT EXISTS organisation_lookup_field VARCHAR(255)
+	`, roleTable))
+	if err != nil {
+		return err
+	}
+
+	hasLegacyNameCol, err := s.ColumnExists(ctx, schema, "skaftin_system_roles", "name")
+	if err != nil {
+		return err
+	}
+	hasLegacyKeyCol, err := s.ColumnExists(ctx, schema, "skaftin_system_roles", "key")
+	if err != nil {
+		return err
+	}
+	hasLegacyDefaultCol, err := s.ColumnExists(ctx, schema, "skaftin_system_roles", "is_default")
+	if err != nil {
+		return err
+	}
+
+	if hasLegacyNameCol {
+		if _, err := s.pool.Exec(ctx, fmt.Sprintf(`
+			UPDATE %s
+			SET role_name = COALESCE(NULLIF(role_name, ''), name)
+			WHERE (role_name IS NULL OR role_name = '')
+			  AND name IS NOT NULL AND name <> ''
+		`, roleTable)); err != nil {
+			return err
+		}
+	}
+	if hasLegacyKeyCol {
+		if _, err := s.pool.Exec(ctx, fmt.Sprintf(`
+			UPDATE %s
+			SET role_key = COALESCE(NULLIF(role_key, ''), "key")
+			WHERE (role_key IS NULL OR role_key = '')
+			  AND "key" IS NOT NULL AND "key" <> ''
+		`, roleTable)); err != nil {
+			return err
+		}
+	}
+	if hasLegacyDefaultCol {
+		if _, err := s.pool.Exec(ctx, fmt.Sprintf(`
+			UPDATE %s
+			SET is_system_role = true
+			WHERE is_default = true AND COALESCE(is_system_role, false) = false
+		`, roleTable)); err != nil {
+			return err
+		}
+	}
+
+	if _, err := s.pool.Exec(ctx, fmt.Sprintf(`
+		UPDATE %s
+		SET role_key = regexp_replace(lower(trim(role_name)), '[^a-z0-9]+', '_', 'g')
+		WHERE (role_key IS NULL OR role_key = '')
+		  AND role_name IS NOT NULL
+		  AND role_name <> ''
+	`, roleTable)); err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, fmt.Sprintf(`
+		UPDATE %s
+		SET role_name = initcap(replace(role_key, '_', ' '))
+		WHERE (role_name IS NULL OR role_name = '')
+		  AND role_key IS NOT NULL
+		  AND role_key <> ''
+	`, roleTable)); err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, fmt.Sprintf(`
+		UPDATE %s
+		SET permissions = COALESCE(permissions, '[]'::jsonb),
+		    session_duration_minutes = CASE
+				WHEN session_duration_minutes IS NULL OR session_duration_minutes <= 0 THEN 10080
+				ELSE session_duration_minutes
+			END,
+		    is_system_role = COALESCE(is_system_role, false)
+	`, roleTable)); err != nil {
+		return err
+	}
+
+	if _, err := s.pool.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s (role_name, role_key, description, permissions, session_duration_minutes, is_system_role)
+		SELECT 'Admin', 'admin', 'System administrator role with full access', '[]'::jsonb, 60, true
+		WHERE NOT EXISTS (SELECT 1 FROM %s WHERE role_key = 'admin')
+	`, roleTable, roleTable)); err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s (role_name, role_key, description, permissions, session_duration_minutes, is_system_role)
+		SELECT 'User', 'user', 'Default application user role', '[]'::jsonb, 10080, true
+		WHERE NOT EXISTS (SELECT 1 FROM %s WHERE role_key = 'user')
+	`, roleTable, roleTable)); err != nil {
+		return err
+	}
+
+	_, err = s.pool.Exec(ctx, fmt.Sprintf(`
+		UPDATE public.skaftin_system_auth_settings aset
+		SET default_role_id = r.id
+		FROM public.skaftin_system_projects p
+		JOIN %s r ON r.role_key = 'user'
+		WHERE p.schema_name = $1
+		  AND aset.project_id = p.id
+		  AND aset.default_role_id IS NULL
+	`, roleTable), schema)
+	return err
+}
+
 func (s *Store) ensureCustomFieldsCompatibility(ctx context.Context, schema string) error {
 	tableIdent := fmt.Sprintf("%s.skaftin_system_user_custom_fields", pgx.Identifier{schema}.Sanitize())
 	_, err := s.pool.Exec(ctx, fmt.Sprintf(`

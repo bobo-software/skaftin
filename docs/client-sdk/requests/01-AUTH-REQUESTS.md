@@ -94,7 +94,7 @@ x-api-key: your-api-key
 
 ## 2. Login (with Password)
 
-Authenticate with username and password.
+Authenticate with credential and password.
 
 **Endpoint:** `POST /api/auth/{projectId}/auth/login`
 
@@ -107,7 +107,7 @@ x-api-key: your-api-key
 **Request Body:**
 ```json
 {
-  "username": "john.doe@example.com",
+  "credential": "john.doe@example.com",
   "password": "SecurePass123!",
   "method": "email"
 }
@@ -115,7 +115,7 @@ x-api-key: your-api-key
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| username | string | Yes | User identifier (email, phone, or custom field value) |
+| credential | string | Yes | User identifier (email, phone, or custom field value) |
 | password | string | Yes | User's password |
 | method | string | Yes | Identifier type: "email", "phone", "custom_field_1", "custom_field_2" |
 
@@ -124,21 +124,21 @@ x-api-key: your-api-key
 ```json
 // Login with email
 {
-  "username": "john.doe@example.com",
+  "credential": "john.doe@example.com",
   "password": "SecurePass123!",
   "method": "email"
 }
 
 // Login with phone
 {
-  "username": "+27821234567",
+  "credential": "+27821234567",
   "password": "SecurePass123!",
   "method": "phone"
 }
 
 // Login with employee ID
 {
-  "username": "EMP001",
+  "credential": "EMP001",
   "password": "SecurePass123!",
   "method": "custom_field_1"
 }
@@ -268,7 +268,7 @@ x-api-key: your-api-key
 ```json
 {
   "email": "john.doe@example.com",
-  "code": "123456"
+  "otp": "123456"
 }
 ```
 
@@ -276,7 +276,7 @@ x-api-key: your-api-key
 |-------|------|----------|-------------|
 | email | string | Conditional | User's email (required if phone not provided) |
 | phone | string | Conditional | User's phone number (required if email not provided) |
-| code | string | Yes | The OTP code received |
+| otp | string | Yes | The OTP code received (or `otp_code`) |
 
 **Examples:**
 
@@ -284,13 +284,13 @@ x-api-key: your-api-key
 // Verify with email
 {
   "email": "john.doe@example.com",
-  "code": "123456"
+  "otp": "123456"
 }
 
 // Verify with phone
 {
   "phone": "+27821234567",
-  "code": "123456"
+  "otp": "123456"
 }
 ```
 
@@ -409,7 +409,7 @@ x-api-key: your-api-key
 **Request Body:**
 ```json
 {
-  "email": "john.doe@example.com",
+  "user_id": 1,
   "otp": "123456"
 }
 ```
@@ -518,7 +518,7 @@ x-api-key: your-api-key
 ```json
 {
   "email": "john.doe@example.com",
-  "code": "123456"
+  "otp": "123456"
 }
 ```
 
@@ -526,7 +526,7 @@ x-api-key: your-api-key
 |-------|------|----------|-------------|
 | email | string | Conditional | User's email (required if phone not provided) |
 | phone | string | Conditional | User's phone number (required if email not provided) |
-| code | string | Yes | The OTP code received |
+| otp | string | Yes | The OTP code received (or `otp_code`) |
 
 **Examples:**
 
@@ -534,13 +534,13 @@ x-api-key: your-api-key
 // Verify with email
 {
   "email": "john.doe@example.com",
-  "code": "123456"
+  "otp": "123456"
 }
 
 // Verify with phone
 {
   "phone": "+27821234567",
-  "code": "123456"
+  "otp": "123456"
 }
 ```
 
@@ -630,7 +630,9 @@ Authorization: Bearer <jwt-token>
 **Request Body:**
 ```json
 {
-  "method": "email"
+  "app_user_id": 1,
+  "old_password": "CurrentPassword123!",
+  "new_password": "NewSecurePass123!"
 }
 ```
 
@@ -659,8 +661,8 @@ Authorization: Bearer <jwt-token>
 **Request Body:**
 ```json
 {
-  "otp": "123456",
-  "new_password": "NewSecurePass123!"
+  "app_user_id": 1,
+  "otp": "123456"
 }
 ```
 
@@ -688,7 +690,9 @@ Authorization: Bearer <jwt-token>
 **Request Body:**
 ```json
 {
-  "method": "email"
+  "app_user_id": 1,
+  "password": "CurrentPassword123!",
+  "reason": "No longer needed"
 }
 ```
 
@@ -716,6 +720,7 @@ Authorization: Bearer <jwt-token>
 **Request Body:**
 ```json
 {
+  "app_user_id": 1,
   "otp": "123456"
 }
 ```
@@ -739,6 +744,13 @@ Cancel a pending account deletion.
 **Headers:**
 ```
 Authorization: Bearer <jwt-token>
+```
+
+**Request Body:**
+```json
+{
+  "app_user_id": 1
+}
 ```
 
 **Response:**

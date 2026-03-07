@@ -147,7 +147,7 @@ query SelectData(
   $limit: Int
   $offset: Int
 ) {
-  selectData(
+  queryTable(
     projectId: $projectId
     tableName: $tableName
     columns: $columns
@@ -179,7 +179,7 @@ query SelectData(
 ```json
 {
   "data": {
-    "selectData": {
+    "queryTable": {
       "rows": [
         { "id": 1, "name": "John Doe", "email": "john@example.com", "created_at": "2024-01-15" },
         { "id": 2, "name": "Jane Smith", "email": "jane@example.com", "created_at": "2024-01-14" }
@@ -372,8 +372,8 @@ Create a new table.
 
 **Mutation:**
 ```graphql
-mutation CreateTable($projectId: Int!, $tableName: String!, $columns: [ColumnInput!]!) {
-  createTable(projectId: $projectId, tableName: $tableName, columns: $columns) {
+mutation CreateTable($projectId: Int!, $input: CreateTableInput!) {
+  createTable(projectId: $projectId, input: $input) {
     success
     message
   }
@@ -384,14 +384,16 @@ mutation CreateTable($projectId: Int!, $tableName: String!, $columns: [ColumnInp
 ```json
 {
   "projectId": 1,
-  "tableName": "orders",
-  "columns": [
-    { "name": "id", "type": "SERIAL", "primaryKey": true },
-    { "name": "customer_id", "type": "INTEGER", "nullable": false },
-    { "name": "total", "type": "DECIMAL(10,2)", "nullable": false },
-    { "name": "status", "type": "VARCHAR(50)", "defaultValue": "'pending'" },
-    { "name": "created_at", "type": "TIMESTAMP", "defaultValue": "NOW()" }
-  ]
+  "input": {
+    "tableName": "orders",
+    "columns": [
+      { "name": "id", "type": "SERIAL", "primaryKey": true },
+      { "name": "customer_id", "type": "INTEGER", "nullable": false },
+      { "name": "total", "type": "DECIMAL(10,2)", "nullable": false },
+      { "name": "status", "type": "VARCHAR(50)", "defaultValue": "'pending'" },
+      { "name": "created_at", "type": "TIMESTAMP", "defaultValue": "NOW()" }
+    ]
+  }
 }
 ```
 
@@ -422,18 +424,12 @@ Add a column to an existing table.
 mutation AddColumn(
   $projectId: Int!
   $tableName: String!
-  $columnName: String!
-  $columnType: String!
-  $nullable: Boolean
-  $defaultValue: String
+  $input: AddColumnInput!
 ) {
   addColumn(
     projectId: $projectId
     tableName: $tableName
-    columnName: $columnName
-    columnType: $columnType
-    nullable: $nullable
-    defaultValue: $defaultValue
+    input: $input
   ) {
     success
     message
@@ -446,10 +442,12 @@ mutation AddColumn(
 {
   "projectId": 1,
   "tableName": "customers",
-  "columnName": "loyalty_points",
-  "columnType": "INTEGER",
-  "nullable": true,
-  "defaultValue": "0"
+  "input": {
+    "columnName": "loyalty_points",
+    "columnType": "INTEGER",
+    "nullable": true,
+    "defaultValue": "0"
+  }
 }
 ```
 
@@ -464,12 +462,12 @@ Get all constraints for a table.
 **Query:**
 ```graphql
 query GetConstraints($projectId: Int!, $tableName: String!) {
-  constraints(projectId: $projectId, tableName: $tableName) {
+  tableConstraints(projectId: $projectId, tableName: $tableName) {
     constraint_name
     constraint_type
     column_name
-    references_table
-    references_column
+    referenced_table_name
+    referenced_column_name
   }
 }
 ```
@@ -485,20 +483,12 @@ Add a foreign key constraint.
 mutation CreateForeignKey(
   $projectId: Int!
   $tableName: String!
-  $columnName: String!
-  $referencedTable: String!
-  $referencedColumn: String!
-  $onDelete: String
-  $onUpdate: String
+  $input: CreateForeignKeyInput!
 ) {
   createForeignKey(
     projectId: $projectId
     tableName: $tableName
-    columnName: $columnName
-    referencedTable: $referencedTable
-    referencedColumn: $referencedColumn
-    onDelete: $onDelete
-    onUpdate: $onUpdate
+    input: $input
   ) {
     success
     message
@@ -511,11 +501,13 @@ mutation CreateForeignKey(
 {
   "projectId": 1,
   "tableName": "orders",
-  "columnName": "customer_id",
-  "referencedTable": "customers",
-  "referencedColumn": "id",
-  "onDelete": "CASCADE",
-  "onUpdate": "CASCADE"
+  "input": {
+    "columnName": "customer_id",
+    "referencedTable": "customers",
+    "referencedColumn": "id",
+    "onDelete": "CASCADE",
+    "onUpdate": "CASCADE"
+  }
 }
 ```
 
@@ -523,14 +515,43 @@ mutation CreateForeignKey(
 
 ## Input Types
 
-### ColumnInput
+### ColumnDefinitionInput
 ```graphql
-input ColumnInput {
+input ColumnDefinitionInput {
   name: String!
   type: String!
   primaryKey: Boolean
   nullable: Boolean
   defaultValue: String
+}
+```
+
+### CreateTableInput
+```graphql
+input CreateTableInput {
+  tableName: String!
+  columns: [ColumnDefinitionInput!]!
+}
+```
+
+### AddColumnInput
+```graphql
+input AddColumnInput {
+  columnName: String!
+  columnType: String!
+  nullable: Boolean
+  defaultValue: String
+}
+```
+
+### CreateForeignKeyInput
+```graphql
+input CreateForeignKeyInput {
+  columnName: String!
+  referencedTable: String!
+  referencedColumn: String!
+  onDelete: String
+  onUpdate: String
 }
 ```
 
@@ -551,7 +572,7 @@ Here's a complete example of querying customers with orders:
 **Query:**
 ```graphql
 query GetCustomersWithOrders($projectId: Int!) {
-  customers: selectData(
+  customers: queryTable(
     projectId: $projectId
     tableName: "customers"
     columns: ["id", "name", "email"]
@@ -563,7 +584,7 @@ query GetCustomersWithOrders($projectId: Int!) {
     rowCount
   }
   
-  recentOrders: selectData(
+  recentOrders: queryTable(
     projectId: $projectId
     tableName: "orders"
     columns: ["id", "customer_id", "total", "status", "created_at"]
@@ -582,7 +603,7 @@ curl -X POST "http://localhost:4006/api/graphql" \
   -H "Content-Type: application/json" \
   -b "sAccessToken=your-session-token" \
   -d '{
-    "query": "query GetCustomersWithOrders($projectId: Int!) { customers: selectData(projectId: $projectId, tableName: \"customers\", columns: [\"id\", \"name\", \"email\"], limit: 10) { rows rowCount } }",
+    "query": "query GetCustomersWithOrders($projectId: Int!) { customers: queryTable(projectId: $projectId, tableName: \"customers\", columns: [\"id\", \"name\", \"email\"], limit: 10) { rows rowCount } }",
     "variables": { "projectId": 1 }
   }'
 ```
@@ -600,7 +621,7 @@ GraphQL errors are returned in the `errors` array:
     {
       "message": "Table 'nonexistent' does not exist",
       "locations": [{ "line": 1, "column": 1 }],
-      "path": ["selectData"],
+      "path": ["queryTable"],
       "extensions": {
         "code": "TABLE_NOT_FOUND"
       }

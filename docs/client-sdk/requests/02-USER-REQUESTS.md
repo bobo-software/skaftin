@@ -8,9 +8,10 @@ All user management endpoints require authentication and are available at `/api/
 ```
 
 ## Authentication
-All endpoints require either:
-- `x-api-key` header with a valid API key
+All `/api/auth/{projectId}/...` endpoints in this document require:
 - `Authorization: Bearer <jwt-token>` header
+
+If you need API-key authentication, use the `/app-api/auth/...` compatibility routes.
 
 ---
 
@@ -34,7 +35,6 @@ Authorization: Bearer <jwt-token>
 | limit | number | Items per page (default: 50) |
 | search | string | Search by name or email |
 | role_id | number | Filter by role ID |
-| role_key | string | Filter by role key |
 | is_active | boolean | Filter by active status |
 
 **Example:**
@@ -523,7 +523,7 @@ Authorization: Bearer <jwt-token>
 **Request Body:**
 ```json
 {
-  "sql": "INSERT INTO users (name, email, ...) VALUES ...",
+  "sqlContent": "INSERT INTO users (name, email, ...) VALUES ...",
   "clear_existing": false
 }
 ```

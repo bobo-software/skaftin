@@ -27,7 +27,85 @@ func (s *Store) ProjectSchema(ctx context.Context, projectID int) (string, error
 	if err != nil {
 		return "", err
 	}
+	if err := s.EnsureProjectPaymentTables(ctx, schema); err != nil {
+		return "", err
+	}
 	return schema, nil
+}
+
+func (s *Store) EnsureProjectPaymentTables(ctx context.Context, schema string) error {
+	return s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		queries := []string{
+			`CREATE TABLE IF NOT EXISTS skaftin_system_payment_providers (
+				id SERIAL PRIMARY KEY,
+				project_id INTEGER NOT NULL,
+				name VARCHAR(255) NOT NULL,
+				provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('payfast', 'fnb_pay')),
+				merchant_id VARCHAR(255),
+				merchant_key VARCHAR(255),
+				passphrase TEXT,
+				api_key TEXT,
+				api_secret TEXT,
+				public_key TEXT,
+				return_url VARCHAR(500),
+				cancel_url VARCHAR(500),
+				notify_url VARCHAR(500),
+				sandbox_mode BOOLEAN DEFAULT true,
+				is_active BOOLEAN DEFAULT true,
+				metadata JSONB DEFAULT '{}',
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				UNIQUE(project_id, name)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_providers_project_id ON skaftin_system_payment_providers(project_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_providers_provider_type ON skaftin_system_payment_providers(provider_type)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_providers_is_active ON skaftin_system_payment_providers(is_active)`,
+			`CREATE TABLE IF NOT EXISTS skaftin_system_payment_transactions (
+				id SERIAL PRIMARY KEY,
+				project_id INTEGER NOT NULL,
+				provider_id INTEGER REFERENCES skaftin_system_payment_providers(id) ON DELETE SET NULL,
+				transaction_id VARCHAR(255) UNIQUE NOT NULL,
+				external_payment_id VARCHAR(255),
+				amount DECIMAL(12,2) NOT NULL,
+				currency VARCHAR(3) DEFAULT 'ZAR',
+				item_name VARCHAR(255) NOT NULL,
+				item_description TEXT,
+				customer_email VARCHAR(255),
+				customer_name VARCHAR(255),
+				customer_phone VARCHAR(50),
+				payment_type VARCHAR(20) DEFAULT 'once_off' CHECK (payment_type IN ('once_off', 'subscription')),
+				subscription_type INTEGER,
+				frequency INTEGER,
+				cycles INTEGER DEFAULT 0,
+				subscription_token VARCHAR(255),
+				status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'complete', 'failed', 'cancelled', 'refunded')),
+				status_message TEXT,
+				payment_url TEXT,
+				return_url VARCHAR(500),
+				cancel_url VARCHAR(500),
+				metadata JSONB DEFAULT '{}',
+				webhook_data JSONB,
+				paid_at TIMESTAMP,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_project_id ON skaftin_system_payment_transactions(project_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_provider_id ON skaftin_system_payment_transactions(provider_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_transaction_id ON skaftin_system_payment_transactions(transaction_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_external_payment_id ON skaftin_system_payment_transactions(external_payment_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON skaftin_system_payment_transactions(status)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_payment_type ON skaftin_system_payment_transactions(payment_type)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_customer_email ON skaftin_system_payment_transactions(customer_email)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_created_at ON skaftin_system_payment_transactions(created_at DESC)`,
+		}
+
+		for _, q := range queries {
+			if _, err := tx.Exec(ctx, q); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) withSchema(ctx context.Context, schema string, fn func(pgx.Tx) error) error {

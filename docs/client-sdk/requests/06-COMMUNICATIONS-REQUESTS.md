@@ -105,14 +105,14 @@ Authorization: Bearer <jwt-token>
 ```json
 {
   "destination": "+27821234567",
-  "content": "Your verification code is: 123456"
+  "message": "Your verification code is: 123456"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | destination | string | Yes | Phone number (E.164 format) |
-| content | string | Yes | SMS message content |
+| message | string | Yes | SMS message content |
 
 **Response:**
 ```json
@@ -832,7 +832,7 @@ curl -X POST "http://localhost:4006/app-api/communications/sms/send-basic" \
   -H "Authorization: Bearer <token>" \
   -d '{
     "destination": "+27821234567",
-    "content": "Your verification code is: 123456. Valid for 10 minutes."
+    "message": "Your verification code is: 123456. Valid for 10 minutes."
   }'
 ```
 

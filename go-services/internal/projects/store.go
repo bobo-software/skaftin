@@ -283,20 +283,97 @@ func (s *Store) InitializeProjectAuthTables(ctx context.Context, schemaName stri
 		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_skaftin_system_users_phone ON %s.skaftin_system_users(phone)`, schemaName),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.skaftin_system_roles (
 			id SERIAL PRIMARY KEY,
-			name VARCHAR(100) NOT NULL,
+			role_name VARCHAR(100) NOT NULL,
+			role_key VARCHAR(100) NOT NULL,
 			description TEXT,
-			is_default BOOLEAN DEFAULT false,
+			permissions JSONB DEFAULT '[]'::jsonb,
+			session_duration_minutes INTEGER DEFAULT 10080,
+			is_system_role BOOLEAN DEFAULT false,
+			organisation_field_name VARCHAR(255),
+			organisation_lookup_table VARCHAR(255),
+			organisation_lookup_field VARCHAR(255),
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE(name)
+			UNIQUE(role_key)
 		)`, schemaName),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.skaftin_system_user_roles (
 			id SERIAL PRIMARY KEY,
-			user_id INTEGER NOT NULL REFERENCES %s.skaftin_system_users(id) ON DELETE CASCADE,
+			app_user_id INTEGER NOT NULL REFERENCES %s.skaftin_system_users(id) ON DELETE CASCADE,
 			role_id INTEGER NOT NULL REFERENCES %s.skaftin_system_roles(id) ON DELETE CASCADE,
+			assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			assigned_by VARCHAR(255) DEFAULT 'system',
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE(user_id, role_id)
+			UNIQUE(app_user_id, role_id)
 		)`, schemaName, schemaName, schemaName),
+		fmt.Sprintf(`INSERT INTO %s.skaftin_system_roles
+			(role_name, role_key, description, permissions, session_duration_minutes, is_system_role)
+			SELECT 'Admin', 'admin', 'System administrator role with full access', '[]'::jsonb, 60, true
+			WHERE NOT EXISTS (SELECT 1 FROM %s.skaftin_system_roles WHERE role_key = 'admin')`, schemaName, schemaName),
+		fmt.Sprintf(`INSERT INTO %s.skaftin_system_roles
+			(role_name, role_key, description, permissions, session_duration_minutes, is_system_role)
+			SELECT 'User', 'user', 'Default application user role', '[]'::jsonb, 10080, true
+			WHERE NOT EXISTS (SELECT 1 FROM %s.skaftin_system_roles WHERE role_key = 'user')`, schemaName, schemaName),
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.skaftin_system_payment_providers (
+			id SERIAL PRIMARY KEY,
+			project_id INTEGER NOT NULL,
+			name VARCHAR(255) NOT NULL,
+			provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('payfast', 'fnb_pay')),
+			merchant_id VARCHAR(255),
+			merchant_key VARCHAR(255),
+			passphrase TEXT,
+			api_key TEXT,
+			api_secret TEXT,
+			public_key TEXT,
+			return_url VARCHAR(500),
+			cancel_url VARCHAR(500),
+			notify_url VARCHAR(500),
+			sandbox_mode BOOLEAN DEFAULT true,
+			is_active BOOLEAN DEFAULT true,
+			metadata JSONB DEFAULT '{}',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(project_id, name)
+		)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_payment_providers_project_id ON %s.skaftin_system_payment_providers(project_id)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_payment_providers_provider_type ON %s.skaftin_system_payment_providers(provider_type)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_payment_providers_is_active ON %s.skaftin_system_payment_providers(is_active)`, schemaName),
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.skaftin_system_payment_transactions (
+			id SERIAL PRIMARY KEY,
+			project_id INTEGER NOT NULL,
+			provider_id INTEGER REFERENCES %s.skaftin_system_payment_providers(id) ON DELETE SET NULL,
+			transaction_id VARCHAR(255) UNIQUE NOT NULL,
+			external_payment_id VARCHAR(255),
+			amount DECIMAL(12,2) NOT NULL,
+			currency VARCHAR(3) DEFAULT 'ZAR',
+			item_name VARCHAR(255) NOT NULL,
+			item_description TEXT,
+			customer_email VARCHAR(255),
+			customer_name VARCHAR(255),
+			customer_phone VARCHAR(50),
+			payment_type VARCHAR(20) DEFAULT 'once_off' CHECK (payment_type IN ('once_off', 'subscription')),
+			subscription_type INTEGER,
+			frequency INTEGER,
+			cycles INTEGER DEFAULT 0,
+			subscription_token VARCHAR(255),
+			status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'complete', 'failed', 'cancelled', 'refunded')),
+			status_message TEXT,
+			payment_url TEXT,
+			return_url VARCHAR(500),
+			cancel_url VARCHAR(500),
+			metadata JSONB DEFAULT '{}',
+			webhook_data JSONB,
+			paid_at TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`, schemaName, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_payment_transactions_project_id ON %s.skaftin_system_payment_transactions(project_id)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_payment_transactions_provider_id ON %s.skaftin_system_payment_transactions(provider_id)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_payment_transactions_transaction_id ON %s.skaftin_system_payment_transactions(transaction_id)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_payment_transactions_external_payment_id ON %s.skaftin_system_payment_transactions(external_payment_id)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_payment_transactions_status ON %s.skaftin_system_payment_transactions(status)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_payment_transactions_payment_type ON %s.skaftin_system_payment_transactions(payment_type)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_payment_transactions_customer_email ON %s.skaftin_system_payment_transactions(customer_email)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_payment_transactions_created_at ON %s.skaftin_system_payment_transactions(created_at DESC)`, schemaName),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.skaftin_system_user_custom_fields (
 			id SERIAL PRIMARY KEY,
 			user_id INTEGER NOT NULL REFERENCES %s.skaftin_system_users(id) ON DELETE CASCADE,
@@ -322,6 +399,23 @@ func (s *Store) CreateDefaultAuthSettings(ctx context.Context, projectID int) er
 		VALUES ($1, false, true, true)
 		ON CONFLICT (project_id) DO NOTHING
 	`, projectID)
+	if err != nil {
+		return err
+	}
+
+	var schemaName string
+	if err := s.pool.QueryRow(ctx, `SELECT schema_name FROM skaftin_system_projects WHERE id = $1`, projectID).Scan(&schemaName); err != nil {
+		return err
+	}
+
+	_, err = s.pool.Exec(ctx, fmt.Sprintf(`
+		UPDATE public.skaftin_system_auth_settings aset
+		SET default_role_id = r.id
+		FROM %s.skaftin_system_roles r
+		WHERE aset.project_id = $1
+		  AND aset.default_role_id IS NULL
+		  AND r.role_key = 'user'
+	`, pgx.Identifier{schemaName}.Sanitize()), projectID)
 	return err
 }
 

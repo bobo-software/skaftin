@@ -190,7 +190,7 @@ Authorization: Bearer <jwt-token>
 **Request Body:**
 ```json
 {
-  "newName": "inventory"
+  "newTableName": "inventory"
 }
 ```
 
@@ -218,7 +218,7 @@ DELETE /app-api/database/tables/old_products
 
 You can encrypt sensitive fields (e.g. card numbers, expiry) at rest. The project must have a **field encryption key** set in the project Settings (Field encryption). Then use `encrypt` on write and `decrypt` on read.
 
-- **Write:** Include `encrypt: ["field_a", "field_b"]` in insert/update payloads. Those fields in `data` are encrypted before being stored.
+- **Write:** Include `encrypt: ["field_a", "field_b"]` in insert/bulk-insert payloads. Those fields in `data` are encrypted before being stored.
 - **Read:** Include `decrypt: ["field_a", "field_b"]` in select payloads (or `decrypt` query param for GET). Those fields in the returned rows are decrypted.
 - **Error:** If you use `encrypt` or `decrypt` and the project has no encryption key set, the API returns **400** with message: `No encryption key / secret found`.
 
@@ -246,13 +246,11 @@ Authorization: Bearer <jwt-token>
 | where | string | JSON object for WHERE clause, e.g. `{"status":"active"}` |
 | limit | number | Maximum rows to return |
 | offset | number | Number of rows to skip |
-| orderBy | string | Column to sort by |
-| orderDirection | string | Sort direction: "ASC" or "DESC" |
 | decrypt | string | Comma-separated field names to decrypt in the response (requires project field encryption key) |
 
 **Example:**
 ```
-GET /app-api/database/tables/customers/select?columns=id,name,email&limit=10&orderBy=created_at&orderDirection=DESC
+GET /app-api/database/tables/customers/select?columns=id,name,email&limit=10&offset=0
 ```
 
 **Example with decryption:**
@@ -352,8 +350,7 @@ Authorization: Bearer <jwt-token>
     "user_card_number": "4111111111111111",
     "user_card_expiry": "12/28"
   },
-  "encrypt": ["user_card_number", "user_card_expiry"],
-  "decrypt": ["user_card_number", "user_card_expiry"]
+  "encrypt": ["user_card_number", "user_card_expiry"]
 }
 ```
 
@@ -361,7 +358,6 @@ Authorization: Bearer <jwt-token>
 |-------|------|-------------|
 | data | object | Key-value pairs for the row (required) |
 | encrypt | array | Field names to encrypt before storing. Those fields in `data` are encrypted at rest. Requires project field encryption key; if not set, returns 400 with `No encryption key / secret found`. |
-| decrypt | array | Field names to decrypt in the returned row. Optional; if present and key not set, returns 400. |
 
 **Response:**
 ```json
@@ -458,8 +454,7 @@ Authorization: Bearer <jwt-token>
   },
   "where": {
     "id": 15
-  },
-  "encrypt": ["user_card_expiry"]
+  }
 }
 ```
 
@@ -467,7 +462,6 @@ Authorization: Bearer <jwt-token>
 |-------|------|-------------|
 | data | object | Key-value pairs of columns to update |
 | where | object | Conditions to match rows (required) |
-| encrypt | array | Field names to encrypt before storing. Those fields in `data` are encrypted at rest. Requires project field encryption key; if not set, returns 400 with `No encryption key / secret found`. |
 
 **Response:**
 ```json
@@ -630,8 +624,8 @@ Authorization: Bearer <jwt-token>
 ```json
 {
   "columnName": "category_id",
-  "referencesTable": "categories",
-  "referencesColumn": "id",
+  "referencedTable": "categories",
+  "referencedColumn": "id",
   "onDelete": "CASCADE",
   "onUpdate": "CASCADE"
 }
@@ -640,8 +634,8 @@ Authorization: Bearer <jwt-token>
 | Field | Type | Description |
 |-------|------|-------------|
 | columnName | string | Column in current table |
-| referencesTable | string | Target table name |
-| referencesColumn | string | Target column name |
+| referencedTable | string | Target table name |
+| referencedColumn | string | Target column name |
 | onDelete | string | CASCADE, RESTRICT, SET NULL, SET DEFAULT, NO ACTION |
 | onUpdate | string | CASCADE, RESTRICT, SET NULL, SET DEFAULT, NO ACTION |
 
@@ -656,7 +650,7 @@ Add a unique constraint.
 **Request Body:**
 ```json
 {
-  "columns": ["email"],
+  "columnName": "email",
   "constraintName": "users_email_unique"
 }
 ```
@@ -672,7 +666,7 @@ Add a primary key constraint.
 **Request Body:**
 ```json
 {
-  "columns": ["id"]
+  "columnNames": ["id"]
 }
 ```
 
@@ -688,7 +682,7 @@ Add a check constraint.
 ```json
 {
   "constraintName": "price_positive",
-  "expression": "price > 0"
+  "checkExpression": "price > 0"
 }
 ```
 
@@ -760,7 +754,8 @@ Import SQL dump into the database.
 **Request Body:**
 ```json
 {
-  "sql": "CREATE TABLE IF NOT EXISTS ...; INSERT INTO ..."
+  "sqlContent": "CREATE TABLE IF NOT EXISTS ...; INSERT INTO ...",
+  "dropExisting": false
 }
 ```
 
@@ -776,8 +771,9 @@ Export database as SQL dump.
 ```json
 {
   "tables": ["customers", "orders"],
-  "includeData": true,
-  "includeSchema": true
+  "includeSystemTables": false,
+  "schemaOnly": false,
+  "skipSystemTableForeignKeys": true
 }
 ```
 
@@ -827,7 +823,8 @@ Create a user directly in the database.
 {
   "data": {
     "name": "New User",
-    "email": "newuser@example.com"
+    "email": "newuser@example.com",
+    "password": "SecurePass123!"
   }
 }
 ```
