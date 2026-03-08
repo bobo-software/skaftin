@@ -28,11 +28,60 @@ import (
 )
 
 const (
-	// General command deadline for SMTP stages.
-	smtpCommandTimeout = 25 * time.Second
-	// DATA close waits for server final acceptance; remote domains can take longer.
-	smtpDataCloseTimeout = 90 * time.Second
+	// Retry a profile once before attempting fallback profile.
+	smtpMaxAttemptsPerProfile = 2
+	// Handshake tests should fail faster than send operations.
+	smtpTestTimeout = 20 * time.Second
 )
+
+type smtpStageTimeouts struct {
+	connect   time.Duration
+	auth      time.Duration
+	command   time.Duration
+	dataClose time.Duration
+}
+
+func defaultSMTPSendTimeouts() smtpStageTimeouts {
+	return smtpStageTimeouts{
+		connect:   35 * time.Second,
+		auth:      40 * time.Second,
+		command:   25 * time.Second,
+		dataClose: 90 * time.Second,
+	}
+}
+
+type smtpStageError struct {
+	stage string
+	err   error
+}
+
+func (e *smtpStageError) Error() string {
+	return fmt.Sprintf("smtp %s failed: %v", e.stage, e.err)
+}
+
+func (e *smtpStageError) Unwrap() error {
+	return e.err
+}
+
+func smtpErrorStage(err error) string {
+	var stageErr *smtpStageError
+	if errors.As(err, &stageErr) {
+		return stageErr.stage
+	}
+	return ""
+}
+
+func isRetryableSMTPError(err error) bool {
+	if !isNetworkTimeout(err) {
+		return false
+	}
+	switch smtpErrorStage(err) {
+	case "connect", "auth":
+		return true
+	default:
+		return false
+	}
+}
 
 // Service contains business logic for email/SMS dispatch and template rendering.
 type Service struct {
@@ -75,7 +124,7 @@ func (s *Service) TestEmailProvider(ctx context.Context, projectID, providerID i
 		_, err := buildSESClient(ctx, p)
 		return err == nil, err
 	case EmailProviderTypeSMTP, EmailProviderTypeMailtrap:
-		err = sendSMTPHandshakeWithFailover(p, 20*time.Second)
+		err = sendSMTPHandshakeWithFailover(p, smtpTestTimeout)
 		return err == nil, err
 	default:
 		return false, fmt.Errorf("unsupported email provider_type: %s", p.ProviderType)
@@ -113,7 +162,7 @@ func (s *Service) SendEmail(ctx context.Context, projectID int, providerID int, 
 	recipients = append(recipients, cc...)
 	recipients = append(recipients, bcc...)
 
-	if err := sendEmailWithSMTPTimeout(p, recipients, raw, smtpCommandTimeout); err != nil {
+	if err := sendEmailWithSMTPTimeout(p, recipients, raw, defaultSMTPSendTimeouts()); err != nil {
 		return nil, err
 	}
 
@@ -189,10 +238,10 @@ func (s *Service) sendEmailViaSES(ctx context.Context, p *EmailProvider, to []st
 	return map[string]any{"messageId": messageID, "accepted": to, "rejected": []string{}}, nil
 }
 
-func openSMTPClient(p *EmailProvider, timeout time.Duration) (*smtp.Client, net.Conn, error) {
+func openSMTPClient(p *EmailProvider, connectTimeout time.Duration) (*smtp.Client, net.Conn, error) {
 	address := net.JoinHostPort(p.SMTPHost, strconv.Itoa(p.SMTPPort))
-	dialer := &net.Dialer{Timeout: timeout}
-	deadline := time.Now().Add(timeout)
+	dialer := &net.Dialer{Timeout: connectTimeout}
+	deadline := time.Now().Add(connectTimeout)
 
 	// Port 465 typically requires implicit TLS from connect time.
 	if p.SMTPSecure && p.SMTPPort == 465 {
@@ -300,7 +349,7 @@ func sendSMTPHandshakeWithFailover(p *EmailProvider, timeout time.Duration) erro
 	return err
 }
 
-func sendEmailWithSMTPTimeout(p *EmailProvider, recipients []string, raw []byte, timeout time.Duration) error {
+func sendEmailWithSMTPTimeout(p *EmailProvider, recipients []string, raw []byte, timeouts smtpStageTimeouts) error {
 	start := time.Now()
 	slog.Info("smtp send attempt started",
 		"host", p.SMTPHost,
@@ -309,24 +358,55 @@ func sendEmailWithSMTPTimeout(p *EmailProvider, recipients []string, raw []byte,
 		"recipientCount", len(recipients),
 	)
 
-	err := sendEmailWithSMTPTimeoutOnce(p, recipients, raw, timeout)
-	if err == nil || !isNetworkTimeout(err) {
-		if err == nil {
-			slog.Info("smtp send attempt succeeded",
-				"host", p.SMTPHost,
-				"port", p.SMTPPort,
-				"secure", p.SMTPSecure,
-				"durationMs", time.Since(start).Milliseconds(),
+	runProfile := func(label string, provider *EmailProvider) error {
+		var lastErr error
+		for attempt := 1; attempt <= smtpMaxAttemptsPerProfile; attempt++ {
+			attemptStart := time.Now()
+			lastErr = sendEmailWithSMTPTimeoutOnce(provider, recipients, raw, timeouts)
+			if lastErr == nil {
+				slog.Info("smtp send attempt succeeded",
+					"profile", label,
+					"attempt", attempt,
+					"host", provider.SMTPHost,
+					"port", provider.SMTPPort,
+					"secure", provider.SMTPSecure,
+					"durationMs", time.Since(attemptStart).Milliseconds(),
+				)
+				return nil
+			}
+			stage := smtpErrorStage(lastErr)
+			slog.Warn("smtp send attempt failed",
+				"profile", label,
+				"attempt", attempt,
+				"maxAttempts", smtpMaxAttemptsPerProfile,
+				"host", provider.SMTPHost,
+				"port", provider.SMTPPort,
+				"secure", provider.SMTPSecure,
+				"stage", stage,
+				"retryable", isRetryableSMTPError(lastErr),
+				"durationMs", time.Since(attemptStart).Milliseconds(),
+				"error", lastErr,
 			)
-		} else {
-			slog.Error("smtp send attempt failed without fallback",
-				"host", p.SMTPHost,
-				"port", p.SMTPPort,
-				"secure", p.SMTPSecure,
-				"durationMs", time.Since(start).Milliseconds(),
-				"error", err,
-			)
+			if attempt >= smtpMaxAttemptsPerProfile || !isRetryableSMTPError(lastErr) {
+				break
+			}
 		}
+		return lastErr
+	}
+
+	err := runProfile("primary", p)
+	if err == nil {
+		return nil
+	}
+	if !isNetworkTimeout(err) {
+		slog.Error("smtp send failed without fallback",
+			"host", p.SMTPHost,
+			"port", p.SMTPPort,
+			"secure", p.SMTPSecure,
+			"stage", smtpErrorStage(err),
+			"durationMs", time.Since(start).Milliseconds(),
+			"error", err,
+		)
 		return err
 	}
 
@@ -351,14 +431,8 @@ func sendEmailWithSMTPTimeout(p *EmailProvider, recipients []string, raw []byte,
 		"primaryError", err.Error(),
 	)
 
-	fallbackErr := sendEmailWithSMTPTimeoutOnce(fallback, recipients, raw, timeout)
+	fallbackErr := runProfile("fallback", fallback)
 	if fallbackErr == nil {
-		slog.Info("smtp send succeeded with fallback profile",
-			"host", fallback.SMTPHost,
-			"port", fallback.SMTPPort,
-			"secure", fallback.SMTPSecure,
-			"durationMs", time.Since(start).Milliseconds(),
-		)
 		return nil
 	}
 
@@ -374,70 +448,83 @@ func sendEmailWithSMTPTimeout(p *EmailProvider, recipients []string, raw []byte,
 		"durationMs", time.Since(start).Milliseconds(),
 	)
 
-	// Keep original timeout error for clearer diagnosis of primary profile failure.
-	return err
+	primaryStage := smtpErrorStage(err)
+	fallbackStage := smtpErrorStage(fallbackErr)
+	if fallbackStage != "" {
+		return fmt.Errorf(
+			"smtp send failed (primary stage=%s, fallback stage=%s): primary=%v; fallback=%v",
+			primaryStage, fallbackStage, err, fallbackErr,
+		)
+	}
+	return fmt.Errorf("smtp send failed after fallback: primary=%v; fallback=%v", err, fallbackErr)
 }
 
-func sendEmailWithSMTPTimeoutOnce(p *EmailProvider, recipients []string, raw []byte, timeout time.Duration) error {
-	client, conn, err := openSMTPClient(p, timeout)
+func sendEmailWithSMTPTimeoutOnce(p *EmailProvider, recipients []string, raw []byte, timeouts smtpStageTimeouts) error {
+	client, conn, err := openSMTPClient(p, timeouts.connect)
 	if err != nil {
-		return fmt.Errorf("smtp connect failed: %w", err)
+		return &smtpStageError{
+			stage: "connect",
+			err:   fmt.Errorf("connect to %s:%d failed: %w", p.SMTPHost, p.SMTPPort, err),
+		}
 	}
 	defer conn.Close()
 	defer client.Close()
 
-	setStageDeadline := func() {
-		_ = conn.SetDeadline(time.Now().Add(timeout))
+	setCommandDeadline := func() {
+		_ = conn.SetDeadline(time.Now().Add(timeouts.command))
+	}
+	setAuthDeadline := func() {
+		_ = conn.SetDeadline(time.Now().Add(timeouts.auth))
 	}
 	setCustomDeadline := func(d time.Duration) {
 		_ = conn.SetDeadline(time.Now().Add(d))
 	}
 
-	setStageDeadline()
+	setCommandDeadline()
 	if err := client.Hello("localhost"); err != nil {
-		return fmt.Errorf("smtp hello failed: %w", err)
+		return &smtpStageError{stage: "hello", err: err}
 	}
 	if shouldUseStartTLS(p, client) {
-		setStageDeadline()
+		setCommandDeadline()
 		if err := client.StartTLS(&tls.Config{ServerName: p.SMTPHost}); err != nil {
-			return fmt.Errorf("smtp starttls failed: %w", err)
+			return &smtpStageError{stage: "starttls", err: err}
 		}
 	}
 	if p.SMTPUser != "" && p.SMTPPassword != "" {
 		auth := smtp.PlainAuth("", p.SMTPUser, p.SMTPPassword, p.SMTPHost)
-		setStageDeadline()
+		setAuthDeadline()
 		if err := client.Auth(auth); err != nil {
-			return fmt.Errorf("smtp auth failed: %w", err)
+			return &smtpStageError{stage: "auth", err: err}
 		}
 	}
 
-	setStageDeadline()
+	setCommandDeadline()
 	if err := client.Mail(p.FromEmail); err != nil {
-		return fmt.Errorf("smtp mail from failed: %w", err)
+		return &smtpStageError{stage: "mail_from", err: err}
 	}
 	for _, rcpt := range recipients {
-		setStageDeadline()
+		setCommandDeadline()
 		if err := client.Rcpt(rcpt); err != nil {
-			return fmt.Errorf("smtp rcpt to %q failed: %w", rcpt, err)
+			return &smtpStageError{stage: "rcpt_to", err: fmt.Errorf("recipient %q: %w", rcpt, err)}
 		}
 	}
-	setStageDeadline()
+	setCommandDeadline()
 	writer, err := client.Data()
 	if err != nil {
-		return fmt.Errorf("smtp data open failed: %w", err)
+		return &smtpStageError{stage: "data_open", err: err}
 	}
-	setStageDeadline()
+	setCommandDeadline()
 	if _, err := writer.Write(raw); err != nil {
 		_ = writer.Close()
-		return fmt.Errorf("smtp data write failed: %w", err)
+		return &smtpStageError{stage: "data_write", err: err}
 	}
-	setCustomDeadline(smtpDataCloseTimeout)
+	setCustomDeadline(timeouts.dataClose)
 	if err := writer.Close(); err != nil {
-		return fmt.Errorf("smtp data close failed: %w", err)
+		return &smtpStageError{stage: "data_close", err: err}
 	}
-	setStageDeadline()
+	setCommandDeadline()
 	if err := client.Quit(); err != nil {
-		return fmt.Errorf("smtp quit failed: %w", err)
+		return &smtpStageError{stage: "quit", err: err}
 	}
 	return nil
 }

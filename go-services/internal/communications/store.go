@@ -76,6 +76,10 @@ func (s *Store) GetEmailProvider(ctx context.Context, projectID int, providerID 
 	passwordCol := "NULL::text"
 	if includePassword {
 		passwordCol = "smtp_password"
+	} else {
+		// Avoid scanning NULL into EmailProvider.SMTPPassword (string) when caller
+		// requested provider details without secrets.
+		passwordCol = "''::text"
 	}
 	row := s.pool.QueryRow(ctx, fmt.Sprintf(query, passwordCol), providerID, projectKey(projectID))
 	var p EmailProvider

@@ -6,13 +6,30 @@
 DO $$
 DECLARE
   r RECORD;
-  constraint_name TEXT;
+  c RECORD;
 BEGIN
   FOR r IN
     SELECT table_schema
     FROM information_schema.tables
     WHERE table_name = 'skaftin_system_email_providers'
   LOOP
+    -- Drop any provider_type check constraints first (name may vary).
+    FOR c IN
+      SELECT con.conname
+      FROM pg_constraint con
+      JOIN pg_class t ON con.conrelid = t.oid
+      JOIN pg_namespace n ON t.relnamespace = n.oid
+      WHERE t.relname = 'skaftin_system_email_providers'
+        AND n.nspname = r.table_schema
+        AND con.contype = 'c'
+        AND pg_get_constraintdef(con.oid) LIKE '%provider_type%'
+    LOOP
+      EXECUTE format(
+        'ALTER TABLE %I.skaftin_system_email_providers DROP CONSTRAINT IF EXISTS %I',
+        r.table_schema, c.conname
+      );
+    END LOOP;
+
     -- Normalize existing legacy values in this schema.
     EXECUTE format(
       'UPDATE %I.skaftin_system_email_providers SET provider_type = ''smtp'' WHERE provider_type = ''nodemailer''',
@@ -22,28 +39,6 @@ BEGIN
       'UPDATE %I.skaftin_system_email_providers SET provider_type = ''aws_ses'' WHERE provider_type = ''simple''',
       r.table_schema
     );
-
-    -- Find existing provider_type check constraint (name may vary).
-    SELECT c.conname INTO constraint_name
-    FROM pg_constraint c
-    JOIN pg_class t ON c.conrelid = t.oid
-    JOIN pg_namespace n ON t.relnamespace = n.oid
-    WHERE t.relname = 'skaftin_system_email_providers'
-      AND n.nspname = r.table_schema
-      AND c.contype = 'c'
-      AND pg_get_constraintdef(c.oid) LIKE '%provider_type%';
-
-    -- Drop old constraint(s).
-    EXECUTE format(
-      'ALTER TABLE %I.skaftin_system_email_providers DROP CONSTRAINT IF EXISTS skaftin_system_email_providers_provider_type_check',
-      r.table_schema
-    );
-    IF constraint_name IS NOT NULL AND constraint_name != 'skaftin_system_email_providers_provider_type_check' THEN
-      EXECUTE format(
-        'ALTER TABLE %I.skaftin_system_email_providers DROP CONSTRAINT IF EXISTS %I',
-        r.table_schema, constraint_name
-      );
-    END IF;
 
     -- Add strict constraint.
     EXECUTE format(
