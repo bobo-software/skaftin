@@ -9,7 +9,7 @@ export interface EmailProvider {
   id?: number;
   project_id: string;
   name: string;
-  provider_type: 'nodemailer' | 'mailtrap';
+  provider_type: 'smtp' | 'mailtrap' | 'aws_ses';
   smtp_host: string;
   smtp_port: number;
   smtp_secure: boolean;
@@ -39,7 +39,7 @@ export interface SmsProvider {
 
 export interface CreateEmailProviderRequest {
   name: string;
-  provider_type: 'nodemailer' | 'mailtrap';
+  provider_type: 'smtp' | 'mailtrap' | 'aws_ses';
   smtp_host: string;
   smtp_port: number;
   smtp_secure: boolean;
@@ -52,7 +52,7 @@ export interface CreateEmailProviderRequest {
 
 export interface UpdateEmailProviderRequest {
   name?: string;
-  provider_type?: 'nodemailer' | 'mailtrap';
+  provider_type?: 'smtp' | 'mailtrap' | 'aws_ses';
   smtp_host?: string;
   smtp_port?: number;
   smtp_secure?: boolean;

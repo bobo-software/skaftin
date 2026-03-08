@@ -6,6 +6,16 @@ This service sends transactional emails via **AWS Simple Email Service (SES)**
 using IAM credentials stored in `.env`. There is no custom SMTP server — all
 mail goes through SES.
 
+## Provider Type Mapping
+
+In the Go communications API, email provider types are strict:
+
+- `aws_ses` -> AWS SES API transport (IAM key/secret)
+- `smtp` -> custom SMTP transport
+- `mailtrap` -> Mailtrap SMTP transport
+
+Legacy values (`simple`, `nodemailer`) are no longer accepted.
+
 ---
 
 ## Provider: AWS SES

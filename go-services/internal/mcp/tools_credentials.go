@@ -15,44 +15,44 @@ func registerCredentialsTools(srv toolRegistrar, pool *pgxpool.Pool) {
 	reg := &credentialsTools{pool: pool}
 
 	srv.AddTool(makeTool("list_skaftin_system_api_credentials", "List all API credentials for a project", map[string]prop{
-		"projectId":        {Type: "string", Desc: "Project ID"},
+		"projectId":        {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"type":             {Type: "string", Desc: "Filter by type: api_key, access_token, mcp_key"},
 		"include_inactive": {Type: "boolean", Desc: "Include inactive credentials (default: false)"},
-	}, []string{"projectId"}), reg.listCredentials)
+	}, nil), reg.listCredentials)
 
 	srv.AddTool(makeTool("get_api_credential", "Get details of a specific API credential", map[string]prop{
-		"projectId":    {Type: "string", Desc: "Project ID"},
+		"projectId":    {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"credentialId": {Type: "string", Desc: "Credential ID"},
-	}, []string{"projectId", "credentialId"}), reg.getCredential)
+	}, []string{"credentialId"}), reg.getCredential)
 
 	srv.AddTool(makeTool("create_api_credential", "Create a new API credential", map[string]prop{
-		"projectId":       {Type: "string", Desc: "Project ID"},
+		"projectId":       {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"name":            {Type: "string", Desc: "Credential name/description"},
 		"type":            {Type: "string", Desc: "Credential type: api_key or access_token"},
 		"permissions":     {Type: "array", Desc: "Permission strings"},
 		"expires_in_days": {Type: "number", Desc: "Expiration in days (null = never)"},
-	}, []string{"projectId", "name", "type"}), reg.createCredential)
+	}, []string{"name", "type"}), reg.createCredential)
 
 	srv.AddTool(makeTool("update_api_credential", "Update an API credential", map[string]prop{
-		"projectId":    {Type: "string", Desc: "Project ID"},
+		"projectId":    {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"credentialId": {Type: "string", Desc: "Credential ID"},
 		"name":         {Type: "string", Desc: "Updated name"},
 		"permissions":  {Type: "array", Desc: "Updated permissions"},
 		"is_active":    {Type: "boolean", Desc: "Active status"},
-	}, []string{"projectId", "credentialId"}), reg.updateCredential)
+	}, []string{"credentialId"}), reg.updateCredential)
 
 	srv.AddTool(makeTool("delete_api_credential", "Delete an API credential", map[string]prop{
-		"projectId":    {Type: "string", Desc: "Project ID"},
+		"projectId":    {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"credentialId": {Type: "string", Desc: "Credential ID"},
-	}, []string{"projectId", "credentialId"}), reg.deleteCredential)
+	}, []string{"credentialId"}), reg.deleteCredential)
 
 	srv.AddTool(makeTool("get_mcp_key", "Get the MCP key for a project", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
-	}, []string{"projectId"}), reg.getMcpKey)
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
+	}, nil), reg.getMcpKey)
 
 	srv.AddTool(makeTool("regenerate_mcp_key", "Create or regenerate the MCP key for a project", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
-	}, []string{"projectId"}), reg.regenerateMcpKey)
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
+	}, nil), reg.regenerateMcpKey)
 
 	srv.AddTool(makeTool("get_credential_permissions", "Get list of available permissions for API credentials", map[string]prop{}, nil), reg.getPermissions)
 }
@@ -66,7 +66,7 @@ func (c *credentialsTools) listCredentials(ctx context.Context, req *sdkmcp.Call
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -98,7 +98,7 @@ func (c *credentialsTools) getCredential(ctx context.Context, req *sdkmcp.CallTo
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -121,7 +121,7 @@ func (c *credentialsTools) createCredential(ctx context.Context, req *sdkmcp.Cal
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -152,7 +152,7 @@ func (c *credentialsTools) updateCredential(ctx context.Context, req *sdkmcp.Cal
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -191,7 +191,7 @@ func (c *credentialsTools) deleteCredential(ctx context.Context, req *sdkmcp.Cal
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -212,7 +212,7 @@ func (c *credentialsTools) getMcpKey(ctx context.Context, req *sdkmcp.CallToolRe
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -234,7 +234,7 @@ func (c *credentialsTools) regenerateMcpKey(ctx context.Context, req *sdkmcp.Cal
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}

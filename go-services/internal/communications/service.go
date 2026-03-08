@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -24,6 +25,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const (
+	// General command deadline for SMTP stages.
+	smtpCommandTimeout = 25 * time.Second
+	// DATA close waits for server final acceptance; remote domains can take longer.
+	smtpDataCloseTimeout = 90 * time.Second
 )
 
 // Service contains business logic for email/SMS dispatch and template rendering.
@@ -62,33 +70,16 @@ func (s *Service) TestEmailProvider(ctx context.Context, projectID, providerID i
 		return false, err
 	}
 
-	if p.ProviderType == EmailProviderTypeSimple {
+	switch p.ProviderType {
+	case EmailProviderTypeAWSSES:
 		_, err := buildSESClient(ctx, p)
 		return err == nil, err
+	case EmailProviderTypeSMTP, EmailProviderTypeMailtrap:
+		err = sendSMTPHandshakeWithFailover(p, 20*time.Second)
+		return err == nil, err
+	default:
+		return false, fmt.Errorf("unsupported email provider_type: %s", p.ProviderType)
 	}
-
-	client, conn, err := openSMTPClient(p, 20*time.Second)
-	if err != nil {
-		return false, err
-	}
-	defer conn.Close()
-	defer client.Close()
-
-	if err := client.Hello("localhost"); err != nil {
-		return false, err
-	}
-	if shouldUseStartTLS(p, client) {
-		if err := client.StartTLS(&tls.Config{ServerName: p.SMTPHost}); err != nil {
-			return false, err
-		}
-	}
-	if p.SMTPUser != "" && p.SMTPPassword != "" {
-		auth := smtp.PlainAuth("", p.SMTPUser, p.SMTPPassword, p.SMTPHost)
-		if err := client.Auth(auth); err != nil {
-			return false, err
-		}
-	}
-	return true, nil
 }
 
 func (s *Service) SendEmail(ctx context.Context, projectID int, providerID int, to []string, cc []string, bcc []string, subject string, text, html string, attachments []EmailAttachment) (map[string]any, error) {
@@ -103,8 +94,13 @@ func (s *Service) SendEmail(ctx context.Context, projectID int, providerID int, 
 		return nil, errors.New("Email provider is not active")
 	}
 
-	if p.ProviderType == EmailProviderTypeSimple {
+	switch p.ProviderType {
+	case EmailProviderTypeAWSSES:
 		return s.sendEmailViaSES(ctx, p, to, subject, html, text)
+	case EmailProviderTypeSMTP, EmailProviderTypeMailtrap:
+		// Continue with SMTP send path below.
+	default:
+		return nil, fmt.Errorf("unsupported email provider_type: %s", p.ProviderType)
 	}
 
 	messageID := fmt.Sprintf("<skaftin-%d@%s>", time.Now().UnixNano(), p.SMTPHost)
@@ -117,7 +113,7 @@ func (s *Service) SendEmail(ctx context.Context, projectID int, providerID int, 
 	recipients = append(recipients, cc...)
 	recipients = append(recipients, bcc...)
 
-	if err := sendEmailWithSMTPTimeout(p, recipients, raw, 25*time.Second); err != nil {
+	if err := sendEmailWithSMTPTimeout(p, recipients, raw, smtpCommandTimeout); err != nil {
 		return nil, err
 	}
 
@@ -226,6 +222,34 @@ func openSMTPClient(p *EmailProvider, timeout time.Duration) (*smtp.Client, net.
 	return client, conn, nil
 }
 
+func isNetworkTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "i/o timeout")
+}
+
+func fallbackSMTPProvider(p *EmailProvider) *EmailProvider {
+	fallback := *p
+	if p.SMTPPort == 465 {
+		// 587 with STARTTLS is the most common fallback when implicit TLS is blocked.
+		fallback.SMTPPort = 587
+		fallback.SMTPSecure = false
+		return &fallback
+	}
+	if p.SMTPPort == 587 {
+		// Try implicit TLS when STARTTLS route is blocked.
+		fallback.SMTPPort = 465
+		fallback.SMTPSecure = true
+		return &fallback
+	}
+	return nil
+}
+
 func shouldUseStartTLS(p *EmailProvider, client *smtp.Client) bool {
 	// For implicit TLS (465), TLS is already established at dial time.
 	if p.SMTPSecure && p.SMTPPort == 465 {
@@ -235,7 +259,7 @@ func shouldUseStartTLS(p *EmailProvider, client *smtp.Client) bool {
 	return ok
 }
 
-func sendEmailWithSMTPTimeout(p *EmailProvider, recipients []string, raw []byte, timeout time.Duration) error {
+func sendSMTPHandshakeOnce(p *EmailProvider, timeout time.Duration) error {
 	client, conn, err := openSMTPClient(p, timeout)
 	if err != nil {
 		return err
@@ -257,27 +281,165 @@ func sendEmailWithSMTPTimeout(p *EmailProvider, recipients []string, raw []byte,
 			return err
 		}
 	}
+	return nil
+}
 
-	if err := client.Mail(p.FromEmail); err != nil {
+func sendSMTPHandshakeWithFailover(p *EmailProvider, timeout time.Duration) error {
+	err := sendSMTPHandshakeOnce(p, timeout)
+	if err == nil || !isNetworkTimeout(err) {
 		return err
 	}
-	for _, rcpt := range recipients {
-		if err := client.Rcpt(rcpt); err != nil {
-			return err
+	fallback := fallbackSMTPProvider(p)
+	if fallback == nil {
+		return err
+	}
+	fallbackErr := sendSMTPHandshakeOnce(fallback, timeout)
+	if fallbackErr == nil {
+		return nil
+	}
+	return err
+}
+
+func sendEmailWithSMTPTimeout(p *EmailProvider, recipients []string, raw []byte, timeout time.Duration) error {
+	start := time.Now()
+	slog.Info("smtp send attempt started",
+		"host", p.SMTPHost,
+		"port", p.SMTPPort,
+		"secure", p.SMTPSecure,
+		"recipientCount", len(recipients),
+	)
+
+	err := sendEmailWithSMTPTimeoutOnce(p, recipients, raw, timeout)
+	if err == nil || !isNetworkTimeout(err) {
+		if err == nil {
+			slog.Info("smtp send attempt succeeded",
+				"host", p.SMTPHost,
+				"port", p.SMTPPort,
+				"secure", p.SMTPSecure,
+				"durationMs", time.Since(start).Milliseconds(),
+			)
+		} else {
+			slog.Error("smtp send attempt failed without fallback",
+				"host", p.SMTPHost,
+				"port", p.SMTPPort,
+				"secure", p.SMTPSecure,
+				"durationMs", time.Since(start).Milliseconds(),
+				"error", err,
+			)
+		}
+		return err
+	}
+
+	fallback := fallbackSMTPProvider(p)
+	if fallback == nil {
+		slog.Error("smtp timeout and no fallback profile",
+			"host", p.SMTPHost,
+			"port", p.SMTPPort,
+			"secure", p.SMTPSecure,
+			"error", err,
+		)
+		return err
+	}
+
+	slog.Warn("smtp timeout detected, trying fallback profile",
+		"primaryHost", p.SMTPHost,
+		"primaryPort", p.SMTPPort,
+		"primarySecure", p.SMTPSecure,
+		"fallbackHost", fallback.SMTPHost,
+		"fallbackPort", fallback.SMTPPort,
+		"fallbackSecure", fallback.SMTPSecure,
+		"primaryError", err.Error(),
+	)
+
+	fallbackErr := sendEmailWithSMTPTimeoutOnce(fallback, recipients, raw, timeout)
+	if fallbackErr == nil {
+		slog.Info("smtp send succeeded with fallback profile",
+			"host", fallback.SMTPHost,
+			"port", fallback.SMTPPort,
+			"secure", fallback.SMTPSecure,
+			"durationMs", time.Since(start).Milliseconds(),
+		)
+		return nil
+	}
+
+	slog.Error("smtp send failed on primary and fallback profiles",
+		"primaryHost", p.SMTPHost,
+		"primaryPort", p.SMTPPort,
+		"primarySecure", p.SMTPSecure,
+		"primaryError", err,
+		"fallbackHost", fallback.SMTPHost,
+		"fallbackPort", fallback.SMTPPort,
+		"fallbackSecure", fallback.SMTPSecure,
+		"fallbackError", fallbackErr,
+		"durationMs", time.Since(start).Milliseconds(),
+	)
+
+	// Keep original timeout error for clearer diagnosis of primary profile failure.
+	return err
+}
+
+func sendEmailWithSMTPTimeoutOnce(p *EmailProvider, recipients []string, raw []byte, timeout time.Duration) error {
+	client, conn, err := openSMTPClient(p, timeout)
+	if err != nil {
+		return fmt.Errorf("smtp connect failed: %w", err)
+	}
+	defer conn.Close()
+	defer client.Close()
+
+	setStageDeadline := func() {
+		_ = conn.SetDeadline(time.Now().Add(timeout))
+	}
+	setCustomDeadline := func(d time.Duration) {
+		_ = conn.SetDeadline(time.Now().Add(d))
+	}
+
+	setStageDeadline()
+	if err := client.Hello("localhost"); err != nil {
+		return fmt.Errorf("smtp hello failed: %w", err)
+	}
+	if shouldUseStartTLS(p, client) {
+		setStageDeadline()
+		if err := client.StartTLS(&tls.Config{ServerName: p.SMTPHost}); err != nil {
+			return fmt.Errorf("smtp starttls failed: %w", err)
 		}
 	}
+	if p.SMTPUser != "" && p.SMTPPassword != "" {
+		auth := smtp.PlainAuth("", p.SMTPUser, p.SMTPPassword, p.SMTPHost)
+		setStageDeadline()
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("smtp auth failed: %w", err)
+		}
+	}
+
+	setStageDeadline()
+	if err := client.Mail(p.FromEmail); err != nil {
+		return fmt.Errorf("smtp mail from failed: %w", err)
+	}
+	for _, rcpt := range recipients {
+		setStageDeadline()
+		if err := client.Rcpt(rcpt); err != nil {
+			return fmt.Errorf("smtp rcpt to %q failed: %w", rcpt, err)
+		}
+	}
+	setStageDeadline()
 	writer, err := client.Data()
 	if err != nil {
-		return err
+		return fmt.Errorf("smtp data open failed: %w", err)
 	}
+	setStageDeadline()
 	if _, err := writer.Write(raw); err != nil {
 		_ = writer.Close()
-		return err
+		return fmt.Errorf("smtp data write failed: %w", err)
 	}
+	setCustomDeadline(smtpDataCloseTimeout)
 	if err := writer.Close(); err != nil {
-		return err
+		return fmt.Errorf("smtp data close failed: %w", err)
 	}
-	return client.Quit()
+	setStageDeadline()
+	if err := client.Quit(); err != nil {
+		return fmt.Errorf("smtp quit failed: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) ListEmailTemplates(ctx context.Context, projectID int) ([]EmailTemplate, error) {

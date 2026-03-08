@@ -24,7 +24,7 @@ func registerCommunicationsTools(srv toolRegistrar, pool *pgxpool.Pool) {
 	srv.AddTool(makeTool("create_email_provider", "Create a new email provider (SMTP configuration)", map[string]prop{
 		"projectId":     {Type: "string", Desc: "Project ID"},
 		"name":          {Type: "string", Desc: "Provider name"},
-		"provider_type": {Type: "string", Desc: "Provider type: nodemailer or mailtrap"},
+		"provider_type": {Type: "string", Desc: "Provider type: smtp, mailtrap, or aws_ses"},
 		"smtp_host":     {Type: "string", Desc: "SMTP host"},
 		"smtp_port":     {Type: "number", Desc: "SMTP port"},
 		"smtp_secure":   {Type: "boolean", Desc: "Use SSL/TLS"},
@@ -33,12 +33,13 @@ func registerCommunicationsTools(srv toolRegistrar, pool *pgxpool.Pool) {
 		"from_email":    {Type: "string", Desc: "From email address"},
 		"from_name":     {Type: "string", Desc: "From display name"},
 		"is_active":     {Type: "boolean", Desc: "Active status (default: true)"},
-	}, []string{"projectId", "name", "provider_type", "smtp_host", "smtp_port", "smtp_user", "smtp_password", "from_email"}), reg.createEmailProvider)
+	}, []string{"projectId", "name", "provider_type", "smtp_host", "smtp_user", "smtp_password", "from_email"}), reg.createEmailProvider)
 
 	srv.AddTool(makeTool("update_email_provider", "Update an email provider", map[string]prop{
 		"projectId":     {Type: "string", Desc: "Project ID"},
 		"providerId":    {Type: "string", Desc: "Provider ID"},
 		"name":          {Type: "string", Desc: "Updated name"},
+		"provider_type": {Type: "string", Desc: "Updated provider type: smtp, mailtrap, or aws_ses"},
 		"smtp_host":     {Type: "string", Desc: "Updated SMTP host"},
 		"smtp_port":     {Type: "number", Desc: "Updated SMTP port"},
 		"smtp_user":     {Type: "string", Desc: "Updated SMTP username"},
@@ -180,8 +181,18 @@ func (c *commsTools) createEmailProvider(ctx context.Context, req *sdkmcp.CallTo
 	if err != nil {
 		return errorResult(err.Error())
 	}
+	providerType := strings.ToLower(strings.TrimSpace(getString(args, "provider_type")))
+	if providerType != "smtp" && providerType != "mailtrap" && providerType != "aws_ses" {
+		return errorResult("provider_type must be one of: smtp, mailtrap, aws_ses")
+	}
+	defaultPort := 587
+	if providerType == "aws_ses" {
+		defaultPort = 0
+	}
+	smtpPort := getInt(args, "smtp_port", defaultPort)
+
 	rows, err := c.pool.Query(ctx, `INSERT INTO skaftin_system_email_providers (project_id, name, provider_type, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, from_email, from_name, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-		pid, getString(args, "name"), getString(args, "provider_type"), getString(args, "smtp_host"), getInt(args, "smtp_port", 587), getBool(args, "smtp_secure", false), getString(args, "smtp_user"), getString(args, "smtp_password"), getString(args, "from_email"), getString(args, "from_name"), getBool(args, "is_active", true))
+		pid, getString(args, "name"), providerType, getString(args, "smtp_host"), smtpPort, getBool(args, "smtp_secure", false), getString(args, "smtp_user"), getString(args, "smtp_password"), getString(args, "from_email"), getString(args, "from_name"), getBool(args, "is_active", true))
 	if err != nil {
 		return errorResult(fmt.Sprintf("Failed: %v", err))
 	}
@@ -203,8 +214,14 @@ func (c *commsTools) updateEmailProvider(ctx context.Context, req *sdkmcp.CallTo
 	var setClauses []string
 	var qArgs []any
 	idx := 1
-	for _, f := range []string{"name", "smtp_host", "smtp_user", "smtp_password", "from_email", "from_name"} {
+	for _, f := range []string{"name", "provider_type", "smtp_host", "smtp_user", "smtp_password", "from_email", "from_name"} {
 		if v := getString(args, f); v != "" {
+			if f == "provider_type" {
+				v = strings.ToLower(strings.TrimSpace(v))
+				if v != "smtp" && v != "mailtrap" && v != "aws_ses" {
+					return errorResult("provider_type must be one of: smtp, mailtrap, aws_ses")
+				}
+			}
 			setClauses = append(setClauses, fmt.Sprintf(`%s = $%d`, f, idx))
 			qArgs = append(qArgs, v)
 			idx++

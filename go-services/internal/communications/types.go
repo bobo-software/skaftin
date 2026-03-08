@@ -3,9 +3,9 @@ package communications
 import "time"
 
 const (
-	EmailProviderTypeSimple    = "simple"
-	EmailProviderTypeNodemailer = "nodemailer"
-	EmailProviderTypeMailtrap  = "mailtrap"
+	EmailProviderTypeSMTP     = "smtp"
+	EmailProviderTypeAWSSES   = "aws_ses"
+	EmailProviderTypeMailtrap = "mailtrap"
 )
 
 type EmailProvider struct {

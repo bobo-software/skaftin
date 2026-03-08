@@ -98,7 +98,7 @@ func registerDatabaseTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy
 		"projectId":      {Type: "string", Desc: "Project ID"},
 		"tableName":      {Type: "string", Desc: "Name of the table"},
 		"constraintName": {Type: "string", Desc: "Name of the constraint to drop"},
-	}, []string{"projectId", "tableName", "constraintName"}), reg.dropConstraint)
+	}, []string{"tableName", "constraintName"}), reg.dropConstraint)
 
 	srv.AddTool(makeTool("list_foreign_keys", "List all foreign keys for a table", map[string]prop{
 		"projectId": {Type: "string", Desc: "Project ID"},
@@ -132,7 +132,7 @@ func registerDatabaseTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy
 		"projectId":     {Type: "string", Desc: "Project ID"},
 		"migrationFile": {Type: "string", Desc: "SQL content to execute as a migration"},
 		"rollback":      {Type: "boolean", Desc: "Rollback the migration instead of applying it (default: false)"},
-	}, []string{"projectId", "migrationFile"}), reg.applyMigration)
+	}, []string{"migrationFile"}), reg.applyMigration)
 
 	srv.AddTool(makeTool("get_logs", "Retrieve database operation logs", map[string]prop{
 		"projectId": {Type: "string", Desc: "Project ID"},
@@ -149,13 +149,13 @@ func registerDatabaseTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy
 		"projectId":   {Type: "string", Desc: "Project ID"},
 		"schemaName":  {Type: "string", Desc: "Name of the schema to create"},
 		"description": {Type: "string", Desc: "Description of the schema"},
-	}, []string{"projectId", "schemaName"}), reg.createSchema)
+	}, []string{"schemaName"}), reg.createSchema)
 
 	srv.AddTool(makeTool("delete_schema", "Remove database schema", map[string]prop{
 		"projectId":  {Type: "string", Desc: "Project ID"},
 		"schemaName": {Type: "string", Desc: "Name of the schema to delete"},
 		"force":      {Type: "boolean", Desc: "Force deletion even if schema has dependencies (default: false)"},
-	}, []string{"projectId", "schemaName"}), reg.deleteSchema)
+	}, []string{"schemaName"}), reg.deleteSchema)
 
 	srv.AddTool(makeTool("list_cron_jobs", "List all scheduled cron jobs in the database", map[string]prop{
 		"projectId": {Type: "string", Desc: "Project ID"},
@@ -166,7 +166,7 @@ func registerDatabaseTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy
 		"jobName":   {Type: "string", Desc: "Name for the cron job"},
 		"schedule":  {Type: "string", Desc: "Cron schedule expression (e.g. '*/5 * * * *')"},
 		"command":   {Type: "string", Desc: "SQL command to execute"},
-	}, []string{"projectId", "jobName", "schedule", "command"}), reg.createCronJob)
+	}, []string{"jobName", "schedule", "command"}), reg.createCronJob)
 
 	srv.AddTool(makeTool("update_cron_job", "Update an existing cron job", map[string]prop{
 		"projectId": {Type: "string", Desc: "Project ID"},
@@ -174,24 +174,24 @@ func registerDatabaseTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy
 		"jobName":   {Type: "string", Desc: "New job name (optional)"},
 		"schedule":  {Type: "string", Desc: "New cron schedule expression (optional)"},
 		"command":   {Type: "string", Desc: "New SQL command (optional)"},
-	}, []string{"projectId", "jobId"}), reg.updateCronJob)
+	}, []string{"jobId"}), reg.updateCronJob)
 
 	srv.AddTool(makeTool("delete_cron_job", "Delete a cron job", map[string]prop{
 		"projectId": {Type: "string", Desc: "Project ID"},
 		"jobId":     {Type: "string", Desc: "Job ID to delete"},
-	}, []string{"projectId", "jobId"}), reg.deleteCronJob)
+	}, []string{"jobId"}), reg.deleteCronJob)
 
 	srv.AddTool(makeTool("toggle_cron_job", "Enable or disable a cron job", map[string]prop{
 		"projectId": {Type: "string", Desc: "Project ID"},
 		"jobId":     {Type: "string", Desc: "Job ID"},
 		"active":    {Type: "boolean", Desc: "Set to true to activate, false to deactivate"},
-	}, []string{"projectId", "jobId", "active"}), reg.toggleCronJob)
+	}, []string{"jobId", "active"}), reg.toggleCronJob)
 
 	srv.AddTool(makeTool("get_cron_job_history", "Get execution history for a cron job", map[string]prop{
 		"projectId": {Type: "string", Desc: "Project ID"},
 		"jobId":     {Type: "string", Desc: "Job ID"},
 		"limit":     {Type: "number", Desc: "Maximum number of history entries (default: 50)"},
-	}, []string{"projectId", "jobId"}), reg.getCronJobHistory)
+	}, []string{"jobId"}), reg.getCronJobHistory)
 }
 
 type dbTools struct {
@@ -200,7 +200,7 @@ type dbTools struct {
 }
 
 func (d *dbTools) acquireConn(ctx context.Context, args map[string]any) (*dbproxy.ProjectConn, error) {
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -927,7 +927,7 @@ func (d *dbTools) generateTypescriptTypes(ctx context.Context, req *sdkmcp.CallT
 		"integer": "number", "bigint": "number", "smallint": "number",
 		"decimal": "number", "numeric": "number", "real": "number", "double precision": "number",
 		"boolean": "boolean",
-		"text": "string", "varchar": "string", "character varying": "string", "char": "string",
+		"text":    "string", "varchar": "string", "character varying": "string", "char": "string",
 		"timestamp": "Date", "timestamp with time zone": "Date", "date": "Date",
 		"json": "any", "jsonb": "any",
 	}

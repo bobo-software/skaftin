@@ -2,8 +2,10 @@ package communications
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -117,6 +119,80 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
+func normalizeEmailProviderType(t string) string {
+	return strings.TrimSpace(strings.ToLower(t))
+}
+
+func isLegacyEmailProviderType(t string) bool {
+	return t == "nodemailer" || t == "simple"
+}
+
+func isAllowedEmailProviderType(t string) bool {
+	return t == EmailProviderTypeSMTP || t == EmailProviderTypeMailtrap || t == EmailProviderTypeAWSSES
+}
+
+func validateEmailProviderConfig(p EmailProvider) error {
+	pt := normalizeEmailProviderType(p.ProviderType)
+	if pt == "" {
+		return fmt.Errorf("provider_type is required")
+	}
+	if isLegacyEmailProviderType(pt) {
+		return fmt.Errorf("provider_type %q is deprecated; use %q for SMTP or %q for AWS SES", pt, EmailProviderTypeSMTP, EmailProviderTypeAWSSES)
+	}
+	if !isAllowedEmailProviderType(pt) {
+		return fmt.Errorf("invalid provider_type %q; allowed values are %q, %q, %q", pt, EmailProviderTypeSMTP, EmailProviderTypeMailtrap, EmailProviderTypeAWSSES)
+	}
+	if strings.TrimSpace(p.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+	if strings.TrimSpace(p.FromEmail) == "" {
+		return fmt.Errorf("from_email is required")
+	}
+
+	switch pt {
+	case EmailProviderTypeSMTP, EmailProviderTypeMailtrap:
+		if strings.TrimSpace(p.SMTPHost) == "" {
+			return fmt.Errorf("smtp_host is required for %s provider", pt)
+		}
+		if p.SMTPPort <= 0 {
+			return fmt.Errorf("smtp_port is required for %s provider", pt)
+		}
+		if strings.TrimSpace(p.SMTPUser) == "" {
+			return fmt.Errorf("smtp_user is required for %s provider", pt)
+		}
+		if strings.TrimSpace(p.SMTPPassword) == "" {
+			return fmt.Errorf("smtp_password is required for %s provider", pt)
+		}
+	case EmailProviderTypeAWSSES:
+		if strings.TrimSpace(p.SMTPHost) == "" {
+			return fmt.Errorf("smtp_host (AWS region) is required for aws_ses provider")
+		}
+		if strings.TrimSpace(p.SMTPUser) == "" {
+			return fmt.Errorf("smtp_user (AWS access key) is required for aws_ses provider")
+		}
+		if strings.TrimSpace(p.SMTPPassword) == "" {
+			return fmt.Errorf("smtp_password (AWS secret access key) is required for aws_ses provider")
+		}
+	}
+
+	return nil
+}
+
+func toInt(value any) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int32:
+		return int(v), true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	default:
+		return 0, false
+	}
+}
+
 func (h *Handler) ListEmailProviders(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := parseProjectID(w, r)
 	if !ok {
@@ -161,9 +237,10 @@ func (h *Handler) CreateEmailProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, 400, "Invalid request body")
 		return
 	}
-	smtpPortRequired := req.ProviderType != EmailProviderTypeSimple
-	if req.Name == "" || req.ProviderType == "" || req.SMTPHost == "" || (smtpPortRequired && req.SMTPPort == 0) || req.SMTPUser == "" || req.SMTPPassword == "" || req.FromEmail == "" {
-		httputil.WriteJSON(w, 400, map[string]any{"success": false, "error": "Missing required fields"})
+
+	req.ProviderType = normalizeEmailProviderType(req.ProviderType)
+	if err := validateEmailProviderConfig(req); err != nil {
+		httputil.WriteJSON(w, 400, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
 	if req.IsActive == false {
@@ -197,6 +274,15 @@ func (h *Handler) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, 400, "Invalid request body")
 		return
 	}
+	existing, err := h.service.GetEmailProvider(r.Context(), projectID, providerID)
+	if err != nil {
+		httputil.WriteJSON(w, 500, map[string]any{"success": false, "error": "Failed to load existing email provider", "message": err.Error()})
+		return
+	}
+	if existing == nil {
+		httputil.WriteJSON(w, 404, map[string]any{"success": false, "error": "Email provider not found"})
+		return
+	}
 	columnMap := map[string]string{
 		"name":          "name",
 		"provider_type": "provider_type",
@@ -212,6 +298,11 @@ func (h *Handler) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 	fields := map[string]any{}
 	for k, v := range body {
 		if col, ok := columnMap[k]; ok {
+			if col == "provider_type" {
+				if s, ok := v.(string); ok {
+					v = normalizeEmailProviderType(s)
+				}
+			}
 			fields[col] = v
 		}
 	}
@@ -219,6 +310,41 @@ func (h *Handler) UpdateEmailProvider(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSON(w, 400, map[string]any{"success": false, "error": "No fields to update"})
 		return
 	}
+	candidate := *existing
+	if v, ok := fields["name"].(string); ok {
+		candidate.Name = v
+	}
+	if v, ok := fields["provider_type"].(string); ok {
+		candidate.ProviderType = v
+	}
+	if v, ok := fields["smtp_host"].(string); ok {
+		candidate.SMTPHost = v
+	}
+	if v, ok := fields["smtp_port"]; ok {
+		if i, ok := toInt(v); ok {
+			candidate.SMTPPort = i
+		}
+	}
+	if v, ok := fields["smtp_secure"].(bool); ok {
+		candidate.SMTPSecure = v
+	}
+	if v, ok := fields["smtp_user"].(string); ok {
+		candidate.SMTPUser = v
+	}
+	if v, ok := fields["smtp_password"].(string); ok {
+		candidate.SMTPPassword = v
+	}
+	if v, ok := fields["from_email"].(string); ok {
+		candidate.FromEmail = v
+	}
+	if v, ok := fields["from_name"].(string); ok {
+		candidate.FromName = &v
+	}
+	if err := validateEmailProviderConfig(candidate); err != nil {
+		httputil.WriteJSON(w, 400, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+
 	updated, err := h.service.UpdateEmailProvider(r.Context(), projectID, providerID, fields)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -279,11 +405,11 @@ func (h *Handler) TestEmailProvider(w http.ResponseWriter, r *http.Request) {
 		if body.TestEmail != "" {
 			_, sendErr := h.service.SendEmail(r.Context(), projectID, providerID, []string{body.TestEmail}, nil, nil, "Test Email", "Connection test successful", "<p>Connection test successful</p>", nil)
 			if sendErr != nil {
-			httputil.WriteJSON(w, 500, map[string]any{
-				"success": false,
-				"error":   "Connection failed",
-				"message": sendErr.Error(),
-			})
+				httputil.WriteJSON(w, 500, map[string]any{
+					"success": false,
+					"error":   "Connection failed",
+					"message": sendErr.Error(),
+				})
 				return
 			}
 			httputil.WriteSuccess(w, 200, "Connection successful and test email sent to "+body.TestEmail, map[string]any{"emailSent": true})

@@ -14,7 +14,7 @@ import ToastUtils from '../../../../../utils/ToastUtils';
 
 interface EmailProviderFormData {
   name: string;
-  provider_type: 'nodemailer' | 'mailtrap' | 'simple';
+  provider_type: 'smtp' | 'mailtrap' | 'aws_ses';
   smtp_host: string;
   smtp_port: number;
   smtp_secure: boolean;
@@ -51,7 +51,7 @@ const EmailComsTab = () => {
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
   const [formData, setFormData] = useState<EmailProviderFormData>({
     name: '',
-    provider_type: 'nodemailer',
+    provider_type: 'smtp',
     smtp_host: '',
     smtp_port: 587,
     smtp_secure: false,
@@ -126,7 +126,7 @@ const EmailComsTab = () => {
       setEditingProvider(null);
       setFormData({
         name: '',
-        provider_type: 'nodemailer',
+        provider_type: 'smtp',
         smtp_host: '',
         smtp_port: 587,
         smtp_secure: false,
@@ -267,7 +267,7 @@ const EmailComsTab = () => {
     }
   };
 
-  const applyProviderPreset = (type: 'nodemailer' | 'mailtrap' | 'simple') => {
+  const applyProviderPreset = (type: 'smtp' | 'mailtrap' | 'aws_ses') => {
     if (type === 'mailtrap') {
       setFormData((prev) => ({
         ...prev,
@@ -276,10 +276,10 @@ const EmailComsTab = () => {
         smtp_port: 2525,
         smtp_secure: false,
       }));
-    } else if (type === 'simple') {
+    } else if (type === 'aws_ses') {
       setFormData((prev) => ({
         ...prev,
-        provider_type: 'simple',
+        provider_type: 'aws_ses',
         smtp_host: 'eu-west-2',
         smtp_port: 0,
         smtp_secure: false,
@@ -288,7 +288,7 @@ const EmailComsTab = () => {
     } else {
       setFormData((prev) => ({
         ...prev,
-        provider_type: 'nodemailer',
+        provider_type: 'smtp',
         smtp_host: '',
         smtp_port: 587,
         smtp_secure: false,
@@ -474,7 +474,7 @@ const EmailComsTab = () => {
                         className={`px-2 py-1 text-xs font-medium rounded-full ${
                           provider.provider_type === 'mailtrap'
                             ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
-                            : provider.provider_type === 'simple'
+                            : provider.provider_type === 'aws_ses'
                             ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300'
                             : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
                         }`}
@@ -492,7 +492,7 @@ const EmailComsTab = () => {
                       )}
                     </div>
                     <div className="space-y-1 text-sm text-dark-600 dark:text-dark-400">
-                      {provider.provider_type === 'simple' ? (
+                      {provider.provider_type === 'aws_ses' ? (
                         <>
                           <p>
                             <span className="font-medium">Region:</span> {provider.smtp_host || 'eu-west-2'}
@@ -668,9 +668,9 @@ const EmailComsTab = () => {
                 <div className="grid grid-cols-3 gap-3">
                   <button
                     type="button"
-                    onClick={() => applyProviderPreset('simple')}
+                    onClick={() => applyProviderPreset('aws_ses')}
                     className={`p-4 border-2 rounded-lg transition-colors ${
-                      formData.provider_type === 'simple'
+                      formData.provider_type === 'aws_ses'
                         ? 'border-primary-600 bg-primary-50 dark:bg-primary-900/20'
                         : 'border-dark-200 dark:border-dark-700'
                     }`}
@@ -682,14 +682,14 @@ const EmailComsTab = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => applyProviderPreset('nodemailer')}
+                    onClick={() => applyProviderPreset('smtp')}
                     className={`p-4 border-2 rounded-lg transition-colors ${
-                      formData.provider_type === 'nodemailer'
+                      formData.provider_type === 'smtp'
                         ? 'border-primary-600 bg-primary-50 dark:bg-primary-900/20'
                         : 'border-dark-200 dark:border-dark-700'
                     }`}
                   >
-                    <div className="font-semibold text-dark-900 dark:text-white">Nodemailer</div>
+                    <div className="font-semibold text-dark-900 dark:text-white">SMTP</div>
                     <div className="text-xs text-dark-600 dark:text-dark-400 mt-1">
                       Custom SMTP server
                     </div>
@@ -726,7 +726,7 @@ const EmailComsTab = () => {
                 />
               </div>
 
-              {formData.provider_type === 'simple' ? (
+              {formData.provider_type === 'aws_ses' ? (
                 <>
                   {/* AWS SES info banner */}
                   <div className="px-4 py-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-xs text-blue-800 dark:text-blue-300">
@@ -850,7 +850,7 @@ const EmailComsTab = () => {
               {/* Password / Secret Key */}
               <div>
                 <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  {formData.provider_type === 'simple' ? 'AWS Secret Access Key' : 'SMTP Password'} {editingProvider ? '' : '*'}
+                  {formData.provider_type === 'aws_ses' ? 'AWS Secret Access Key' : 'SMTP Password'} {editingProvider ? '' : '*'}
                 </label>
                 <input
                   type="password"
@@ -858,7 +858,7 @@ const EmailComsTab = () => {
                   onChange={(e) => setFormData({ ...formData, smtp_password: e.target.value })}
                   className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white font-mono"
                   required={!editingProvider}
-                  placeholder={editingProvider ? 'Leave blank to keep current key' : (formData.provider_type === 'simple' ? 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' : 'SMTP password')}
+                  placeholder={editingProvider ? 'Leave blank to keep current key' : (formData.provider_type === 'aws_ses' ? 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' : 'SMTP password')}
                 />
               </div>
 
@@ -875,7 +875,7 @@ const EmailComsTab = () => {
                   required
                   placeholder="noreply@yourdomain.com"
                 />
-                {formData.provider_type === 'simple' && (
+                {formData.provider_type === 'aws_ses' && (
                   <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
                     Must be a verified identity in AWS SES for the selected region.
                   </p>

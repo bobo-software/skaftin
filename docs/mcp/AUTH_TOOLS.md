@@ -10,6 +10,14 @@ The Auth Tools provide programmatic access to:
 - **Custom Fields**: Define and apply custom user fields
 - **Auth Settings**: Configure authentication settings per project
 
+### Client Endpoint Project Scoping
+
+For client MCP endpoint calls (`/app-api/mcp/*`), project context is resolved from the API key/Bearer token.
+
+- `projectId` can be omitted in client tool calls
+- If `projectId` is provided, it must match the token-bound project
+- Admin MCP endpoint (`/api/mcp/*`) still uses explicit `projectId`
+
 ## User Management Tools
 
 ### `list_app_users`

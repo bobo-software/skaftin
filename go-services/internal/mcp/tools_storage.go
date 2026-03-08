@@ -13,57 +13,57 @@ func registerStorageTools(srv toolRegistrar, pool *pgxpool.Pool) {
 	reg := &storageTools{pool: pool}
 
 	srv.AddTool(makeTool("list_project_buckets", "List all buckets for a project", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
-	}, []string{"projectId"}), reg.listProjectBuckets)
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
+	}, nil), reg.listProjectBuckets)
 
 	srv.AddTool(makeTool("list_buckets", "List available MinIO buckets (deprecated - use list_project_buckets)", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
-	}, []string{"projectId"}), reg.listProjectBuckets)
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
+	}, nil), reg.listProjectBuckets)
 
 	srv.AddTool(makeTool("create_project_bucket", "Create a new bucket for a project", map[string]prop{
-		"projectId":   {Type: "string", Desc: "Project ID"},
+		"projectId":   {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"bucketName":  {Type: "string", Desc: "Name of the bucket to create"},
 		"description": {Type: "string", Desc: "Optional bucket description"},
-	}, []string{"projectId", "bucketName"}), reg.createProjectBucket)
+	}, []string{"bucketName"}), reg.createProjectBucket)
 
 	srv.AddTool(makeTool("create_bucket", "Create new MinIO bucket (deprecated - use create_project_bucket)", map[string]prop{
-		"projectId":  {Type: "string", Desc: "Project ID"},
+		"projectId":  {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"bucketName": {Type: "string", Desc: "Name of the bucket to create"},
-	}, []string{"projectId", "bucketName"}), reg.createProjectBucket)
+	}, []string{"bucketName"}), reg.createProjectBucket)
 
 	srv.AddTool(makeTool("delete_bucket", "Delete a MinIO bucket", map[string]prop{
-		"projectId":  {Type: "string", Desc: "Project ID"},
+		"projectId":  {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"bucketName": {Type: "string", Desc: "Name of the bucket to delete"},
 		"force":      {Type: "boolean", Desc: "Force deletion even if bucket contains files (default: false)"},
-	}, []string{"projectId", "bucketName"}), reg.deleteBucket)
+	}, []string{"bucketName"}), reg.deleteBucket)
 
 	srv.AddTool(makeTool("list_files", "List files in a bucket", map[string]prop{
-		"projectId":  {Type: "string", Desc: "Project ID"},
+		"projectId":  {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"bucketName": {Type: "string", Desc: "Bucket name"},
 		"prefix":     {Type: "string", Desc: "Prefix to filter files"},
 		"maxKeys":    {Type: "number", Desc: "Maximum number of files to return (default: 1000)"},
-	}, []string{"projectId", "bucketName"}), reg.listFiles)
+	}, []string{"bucketName"}), reg.listFiles)
 
 	srv.AddTool(makeTool("search_bucket", "Search files in MinIO buckets", map[string]prop{
-		"projectId":  {Type: "string", Desc: "Project ID"},
+		"projectId":  {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"bucketName": {Type: "string", Desc: "Bucket name"},
 		"query":      {Type: "string", Desc: "Search query string"},
 		"fileType":   {Type: "string", Desc: "Filter by file extension (e.g. .txt, .json)"},
-	}, []string{"projectId", "bucketName", "query"}), reg.searchBucket)
+	}, []string{"bucketName", "query"}), reg.searchBucket)
 
 	srv.AddTool(makeTool("upload_file", "Upload files to MinIO", map[string]prop{
-		"projectId":   {Type: "string", Desc: "Project ID"},
+		"projectId":   {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"bucketName":  {Type: "string", Desc: "Bucket name"},
 		"filePath":    {Type: "string", Desc: "Path where the file should be stored"},
 		"fileContent": {Type: "string", Desc: "Base64 encoded file content"},
 		"contentType": {Type: "string", Desc: "MIME type of the file"},
-	}, []string{"projectId", "bucketName", "filePath", "fileContent"}), reg.uploadFile)
+	}, []string{"bucketName", "filePath", "fileContent"}), reg.uploadFile)
 
 	srv.AddTool(makeTool("download_file", "Download files from MinIO", map[string]prop{
-		"projectId":  {Type: "string", Desc: "Project ID"},
+		"projectId":  {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"bucketName": {Type: "string", Desc: "Bucket name"},
 		"filePath":   {Type: "string", Desc: "Path to the file to download"},
-	}, []string{"projectId", "bucketName", "filePath"}), reg.downloadFile)
+	}, []string{"bucketName", "filePath"}), reg.downloadFile)
 
 	srv.AddTool(makeTool("set_bucket_public_policy", "Set public read policy on a MinIO bucket", map[string]prop{
 		"bucketName": {Type: "string", Desc: "Name of the bucket to make public"},
@@ -79,7 +79,7 @@ func (s *storageTools) listProjectBuckets(ctx context.Context, req *sdkmcp.CallT
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -97,7 +97,7 @@ func (s *storageTools) createProjectBucket(ctx context.Context, req *sdkmcp.Call
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -131,7 +131,7 @@ func (s *storageTools) deleteBucket(ctx context.Context, req *sdkmcp.CallToolReq
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}

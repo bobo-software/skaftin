@@ -14,21 +14,21 @@ func registerAuthTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy.Ser
 	reg := &authTools{pool: pool, svc: dbSvc}
 
 	srv.AddTool(makeTool("list_app_users", "List application users for a project with optional filters", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"search":    {Type: "string", Desc: "Search by name or email"},
 		"role_id":   {Type: "string", Desc: "Filter by role ID"},
 		"is_active": {Type: "boolean", Desc: "Filter by active status"},
 		"page":      {Type: "number", Desc: "Page number (default: 1)"},
 		"limit":     {Type: "number", Desc: "Users per page (default: 50)"},
-	}, []string{"projectId"}), reg.listAppUsers)
+	}, nil), reg.listAppUsers)
 
 	srv.AddTool(makeTool("get_app_user", "Get a specific application user by ID", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"userId":    {Type: "string", Desc: "User ID"},
-	}, []string{"projectId", "userId"}), reg.getAppUser)
+	}, []string{"userId"}), reg.getAppUser)
 
 	srv.AddTool(makeTool("create_app_user", "Create a new application user", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"name":      {Type: "string", Desc: "User full name"},
 		"last_name": {Type: "string", Desc: "User last name"},
 		"email":     {Type: "string", Desc: "User email address"},
@@ -36,10 +36,10 @@ func registerAuthTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy.Ser
 		"phone":     {Type: "string", Desc: "User phone number"},
 		"metadata":  {Type: "object", Desc: "Custom metadata"},
 		"role_ids":  {Type: "array", Desc: "Role IDs to assign"},
-	}, []string{"projectId", "name", "email", "password"}), reg.createAppUser)
+	}, []string{"name", "email", "password"}), reg.createAppUser)
 
 	srv.AddTool(makeTool("update_app_user", "Update an existing application user", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"userId":    {Type: "string", Desc: "User ID"},
 		"name":      {Type: "string", Desc: "Updated name"},
 		"last_name": {Type: "string", Desc: "Updated last name"},
@@ -47,60 +47,60 @@ func registerAuthTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy.Ser
 		"phone":     {Type: "string", Desc: "Updated phone"},
 		"metadata":  {Type: "object", Desc: "Updated metadata"},
 		"is_active": {Type: "boolean", Desc: "Active status"},
-	}, []string{"projectId", "userId"}), reg.updateAppUser)
+	}, []string{"userId"}), reg.updateAppUser)
 
 	srv.AddTool(makeTool("delete_app_user", "Delete or deactivate an application user", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"userId":    {Type: "string", Desc: "User ID"},
 		"permanent": {Type: "boolean", Desc: "Permanently delete (true) or deactivate (false, default)"},
-	}, []string{"projectId", "userId"}), reg.deleteAppUser)
+	}, []string{"userId"}), reg.deleteAppUser)
 
 	srv.AddTool(makeTool("assign_user_role", "Assign a role to an application user", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"userId":    {Type: "string", Desc: "User ID"},
 		"roleId":    {Type: "number", Desc: "Role ID to assign"},
-	}, []string{"projectId", "userId", "roleId"}), reg.assignUserRole)
+	}, []string{"userId", "roleId"}), reg.assignUserRole)
 
 	srv.AddTool(makeTool("list_app_roles", "List all roles for a project", map[string]prop{
-		"projectId":          {Type: "string", Desc: "Project ID"},
+		"projectId":          {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"include_user_count": {Type: "boolean", Desc: "Include count of users per role (default: false)"},
-	}, []string{"projectId"}), reg.listAppRoles)
+	}, nil), reg.listAppRoles)
 
 	srv.AddTool(makeTool("get_app_role", "Get a specific role by ID", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"roleId":    {Type: "string", Desc: "Role ID"},
-	}, []string{"projectId", "roleId"}), reg.getAppRole)
+	}, []string{"roleId"}), reg.getAppRole)
 
 	srv.AddTool(makeTool("create_app_role", "Create a new role", map[string]prop{
-		"projectId":                {Type: "string", Desc: "Project ID"},
+		"projectId":                {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"role_name":                {Type: "string", Desc: "Role display name"},
 		"role_key":                 {Type: "string", Desc: "Role key (lowercase, alphanumeric + underscore)"},
 		"description":              {Type: "string", Desc: "Role description"},
 		"permissions":              {Type: "array", Desc: "Permission array"},
 		"session_duration_minutes": {Type: "number", Desc: "Session duration in minutes (default: 10080)"},
-	}, []string{"projectId", "role_name", "role_key"}), reg.createAppRole)
+	}, []string{"role_name", "role_key"}), reg.createAppRole)
 
 	srv.AddTool(makeTool("update_app_role", "Update an existing role", map[string]prop{
-		"projectId":                {Type: "string", Desc: "Project ID"},
+		"projectId":                {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"roleId":                   {Type: "string", Desc: "Role ID"},
 		"role_name":                {Type: "string", Desc: "Updated role name"},
 		"description":              {Type: "string", Desc: "Updated description"},
 		"permissions":              {Type: "array", Desc: "Updated permissions"},
 		"session_duration_minutes": {Type: "number", Desc: "Updated session duration"},
-	}, []string{"projectId", "roleId"}), reg.updateAppRole)
+	}, []string{"roleId"}), reg.updateAppRole)
 
 	srv.AddTool(makeTool("delete_app_role", "Delete a custom role", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"roleId":    {Type: "string", Desc: "Role ID"},
-	}, []string{"projectId", "roleId"}), reg.deleteAppRole)
+	}, []string{"roleId"}), reg.deleteAppRole)
 
 	srv.AddTool(makeTool("list_custom_fields", "List custom user fields for a project", map[string]prop{
-		"projectId":        {Type: "string", Desc: "Project ID"},
+		"projectId":        {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"include_inactive": {Type: "boolean", Desc: "Include inactive fields (default: false)"},
-	}, []string{"projectId"}), reg.listCustomFields)
+	}, nil), reg.listCustomFields)
 
 	srv.AddTool(makeTool("create_custom_field", "Create a custom user field", map[string]prop{
-		"projectId":        {Type: "string", Desc: "Project ID"},
+		"projectId":        {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"field_name":       {Type: "string", Desc: "Field name"},
 		"field_label":      {Type: "string", Desc: "Field display label"},
 		"field_type":       {Type: "string", Desc: "Field type: text, number, boolean, date, select, multi_select, reference"},
@@ -108,30 +108,30 @@ func registerAuthTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy.Ser
 		"options":          {Type: "array", Desc: "Options for select/multi_select fields"},
 		"reference_table":  {Type: "string", Desc: "Table name for reference fields"},
 		"reference_column": {Type: "string", Desc: "Column name for reference fields"},
-	}, []string{"projectId", "field_name", "field_label", "field_type"}), reg.createCustomField)
+	}, []string{"field_name", "field_label", "field_type"}), reg.createCustomField)
 
 	srv.AddTool(makeTool("apply_custom_field", "Apply a custom field (add column to users table)", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"fieldId":   {Type: "string", Desc: "Field ID"},
-	}, []string{"projectId", "fieldId"}), reg.applyCustomField)
+	}, []string{"fieldId"}), reg.applyCustomField)
 
 	srv.AddTool(makeTool("get_skaftin_system_auth_settings", "Get authentication settings for a project", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
-	}, []string{"projectId"}), reg.getAuthSettings)
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
+	}, nil), reg.getAuthSettings)
 
 	srv.AddTool(makeTool("update_skaftin_system_auth_settings", "Update authentication settings for a project", map[string]prop{
-		"projectId":                {Type: "string", Desc: "Project ID"},
-		"allow_duplicate_emails":   {Type: "boolean", Desc: "Allow users with same email"},
-		"require_email":            {Type: "boolean", Desc: "Require email for registration"},
-		"registration_enabled":     {Type: "boolean", Desc: "Enable user registration"},
-		"auth_enabled":             {Type: "boolean", Desc: "Enable/disable auth system"},
-		"default_role_id":          {Type: "number", Desc: "Default role ID for new users"},
-		"email_provider_id":        {Type: "number", Desc: "Email provider ID for auth emails"},
-		"send_registration_email":  {Type: "boolean", Desc: "Send registration email on signup"},
-		"send_verification_email":  {Type: "boolean", Desc: "Send email verification link"},
+		"projectId":                 {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
+		"allow_duplicate_emails":    {Type: "boolean", Desc: "Allow users with same email"},
+		"require_email":             {Type: "boolean", Desc: "Require email for registration"},
+		"registration_enabled":      {Type: "boolean", Desc: "Enable user registration"},
+		"auth_enabled":              {Type: "boolean", Desc: "Enable/disable auth system"},
+		"default_role_id":           {Type: "number", Desc: "Default role ID for new users"},
+		"email_provider_id":         {Type: "number", Desc: "Email provider ID for auth emails"},
+		"send_registration_email":   {Type: "boolean", Desc: "Send registration email on signup"},
+		"send_verification_email":   {Type: "boolean", Desc: "Send email verification link"},
 		"send_password_reset_email": {Type: "boolean", Desc: "Send password reset email"},
-		"send_welcome_email":       {Type: "boolean", Desc: "Send welcome email after registration"},
-	}, []string{"projectId"}), reg.updateAuthSettings)
+		"send_welcome_email":        {Type: "boolean", Desc: "Send welcome email after registration"},
+	}, nil), reg.updateAuthSettings)
 }
 
 type authTools struct {
@@ -140,7 +140,7 @@ type authTools struct {
 }
 
 func (a *authTools) acquireConn(ctx context.Context, args map[string]any) (*dbproxy.ProjectConn, error) {
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -561,7 +561,7 @@ func (a *authTools) getAuthSettings(ctx context.Context, req *sdkmcp.CallToolReq
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -583,7 +583,7 @@ func (a *authTools) updateAuthSettings(ctx context.Context, req *sdkmcp.CallTool
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := resolveProjectID(ctx, args, isClientEndpointContext(ctx))
 	if err != nil {
 		return errorResult(err.Error())
 	}

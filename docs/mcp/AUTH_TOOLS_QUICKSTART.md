@@ -8,6 +8,14 @@ This guide will help you get started using the MCP auth tools for application us
 - A project ID (you can get this from `list_projects` tool)
 - MCP client installed in your IDE (Cursor, Windsurf, etc.)
 
+## Client Endpoint Project Context
+
+For client MCP endpoint calls (`/app-api/mcp/*`), project context is derived from your API key/Bearer token.
+
+- `projectId` is optional in tool arguments
+- If provided, it must match the token-bound project
+- Mismatches are rejected for safety
+
 ## Basic Workflow
 
 ### 1. Check Auth Settings
@@ -16,7 +24,7 @@ First, check the current authentication settings for your project:
 
 ```typescript
 const settings = await mcpClient.callTool('get_auth_settings', {
-  projectId: '1'
+  // projectId optional on /app-api/mcp/*
 });
 ```
 
@@ -26,7 +34,6 @@ See what roles are available in your project:
 
 ```typescript
 const roles = await mcpClient.callTool('list_app_roles', {
-  projectId: '1',
   include_user_count: true
 });
 
@@ -39,7 +46,6 @@ Create a new application user:
 
 ```typescript
 const newUser = await mcpClient.callTool('create_app_user', {
-  projectId: '1',
   name: 'Jane Smith',
   email: 'jane@example.com',
   password: 'SecurePassword123!',

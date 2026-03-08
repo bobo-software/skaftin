@@ -39,6 +39,7 @@ func (h *HTTPHandler) listTools(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) callTool(w http.ResponseWriter, r *http.Request) {
+	ctx := withClientEndpointContext(r.Context(), h.clientEndpoint)
 	var req struct {
 		Name      string         `json:"name"`
 		Arguments map[string]any `json:"arguments"`
@@ -63,8 +64,21 @@ func (h *HTTPHandler) callTool(w http.ResponseWriter, r *http.Request) {
 	if req.Arguments == nil {
 		req.Arguments = map[string]any{}
 	}
+	if h.clientEndpoint {
+		if pid, err := resolveProjectID(ctx, req.Arguments, true); err == nil {
+			// Ensure tools receive a concrete projectId even when omitted by client callers.
+			req.Arguments["projectId"] = fmt.Sprintf("%d", pid)
+		} else {
+			writeJSON(w, http.StatusForbidden, map[string]any{
+				"status":  "error",
+				"message": err.Error(),
+				"data":    nil,
+			})
+			return
+		}
+	}
 
-	result, err := h.server.CallTool(r.Context(), req.Name, req.Arguments, h.clientEndpoint)
+	result, err := h.server.CallTool(ctx, req.Name, req.Arguments, h.clientEndpoint)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if h.clientEndpoint {
@@ -87,6 +101,7 @@ func (h *HTTPHandler) callTool(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) protocol(w http.ResponseWriter, r *http.Request) {
+	ctx := withClientEndpointContext(r.Context(), h.clientEndpoint)
 	var req struct {
 		JSONRPC string         `json:"jsonrpc"`
 		ID      any            `json:"id"`
@@ -136,8 +151,17 @@ func (h *HTTPHandler) protocol(w http.ResponseWriter, r *http.Request) {
 		if args == nil {
 			args = map[string]any{}
 		}
+		if h.clientEndpoint {
+			if pid, err := resolveProjectID(ctx, args, true); err == nil {
+				// Keep downstream tool handlers compatible by always setting projectId.
+				args["projectId"] = fmt.Sprintf("%d", pid)
+			} else {
+				writeJSON(w, http.StatusOK, jsonRPCError(req.ID, -32602, "Invalid params: "+err.Error(), nil))
+				return
+			}
+		}
 
-		result, err := h.server.CallTool(r.Context(), name, args, h.clientEndpoint)
+		result, err := h.server.CallTool(ctx, name, args, h.clientEndpoint)
 		if err != nil {
 			writeJSON(w, http.StatusOK, jsonRPCError(req.ID, -32000, err.Error(), nil))
 			return

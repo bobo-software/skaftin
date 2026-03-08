@@ -1,12 +1,19 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/skaftin/go-services/internal/auth"
+	"github.com/skaftin/go-services/internal/model"
 )
+
+type endpointContextKey string
+
+const clientEndpointContextKey endpointContextKey = "mcpClientEndpoint"
 
 func textResult(v any) (*sdkmcp.CallToolResult, error) {
 	b, err := json.MarshalIndent(v, "", "  ")
@@ -66,6 +73,45 @@ func parseProjectID(raw any) (int, error) {
 	default:
 		return 0, fmt.Errorf("invalid project ID type: %T", raw)
 	}
+}
+
+// resolveProjectID determines the effective project ID for a request.
+// For client endpoint calls, the authenticated token project is authoritative.
+// If projectId is supplied in args for client calls, it must match the token project.
+// For admin endpoint calls, projectId must be provided in args.
+func resolveProjectID(ctx context.Context, args map[string]any, clientEndpoint bool) (int, error) {
+	if !clientEndpoint {
+		return parseProjectID(args["projectId"])
+	}
+
+	authCtx, ok := ctx.Value(auth.AuthContextKey).(*model.AuthContext)
+	if !ok || authCtx == nil {
+		return 0, fmt.Errorf("authentication context not found for client MCP request")
+	}
+
+	tokenProjectID := authCtx.ProjectID
+	if rawProjectID, exists := args["projectId"]; exists {
+		requestProjectID, err := parseProjectID(rawProjectID)
+		if err != nil {
+			return 0, err
+		}
+		if requestProjectID != tokenProjectID {
+			return 0, fmt.Errorf("projectId mismatch: request projectId %d does not match token projectId %d", requestProjectID, tokenProjectID)
+		}
+	}
+
+	return tokenProjectID, nil
+}
+
+func withClientEndpointContext(ctx context.Context, clientEndpoint bool) context.Context {
+	return context.WithValue(ctx, clientEndpointContextKey, clientEndpoint)
+}
+
+func isClientEndpointContext(ctx context.Context) bool {
+	if v, ok := ctx.Value(clientEndpointContextKey).(bool); ok {
+		return v
+	}
+	return false
 }
 
 func getString(args map[string]any, key string) string {

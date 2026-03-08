@@ -1,7 +1,7 @@
 import RequestUtils from '../utils/RequestUtils';
 import ApiRoutes from '../constants/ApiRoutes';
 
-export type EmailProviderType = 'nodemailer' | 'mailtrap' | 'simple';
+export type EmailProviderType = 'smtp' | 'mailtrap' | 'aws_ses';
 
 export interface EmailProvider {
   id?: number;
