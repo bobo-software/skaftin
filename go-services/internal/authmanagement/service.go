@@ -603,7 +603,55 @@ func (s *Service) SendForgotPasswordOTP(ctx context.Context, projectID int, body
 		dest = phone
 	}
 	expiresAt := time.Now().Add(10 * time.Minute)
-	return s.store.CreateOTP(ctx, schema, user.ID, code, method, dest, expiresAt, "password_reset", nil)
+	if err := s.store.CreateOTP(ctx, schema, user.ID, code, method, dest, expiresAt, "password_reset", nil); err != nil {
+		return err
+	}
+
+	// Keep anti-enumeration behavior: delivery failures are logged, but we still
+	// return success so callers cannot infer account existence.
+	if s.comms == nil {
+		slog.Warn("forgot-password OTP delivery skipped: communications service unavailable",
+			"projectId", projectID,
+			"userId", user.ID,
+			"method", method,
+		)
+		return nil
+	}
+
+	expiresIn := "10 minutes"
+	switch method {
+	case "email":
+		if settings == nil || !settings.SendPasswordResetEmail || settings.EmailProviderID == nil {
+			return nil
+		}
+		subject := "Your password reset OTP"
+		textBody := fmt.Sprintf("Your password reset OTP is %s. It expires in %s.", code, expiresIn)
+		htmlBody := fmt.Sprintf("<p>Your password reset OTP is <strong>%s</strong>.</p><p>It expires in %s.</p>", code, expiresIn)
+		if _, err := s.comms.SendEmail(ctx, projectID, *settings.EmailProviderID, []string{dest}, nil, nil, subject, textBody, htmlBody, nil); err != nil {
+			slog.Warn("forgot-password OTP email delivery failed",
+				"projectId", projectID,
+				"userId", user.ID,
+				"email", dest,
+				"providerId", *settings.EmailProviderID,
+				"error", err,
+			)
+		}
+	case "sms":
+		if settings == nil || !settings.SendPasswordResetSMS {
+			return nil
+		}
+		smsBody := fmt.Sprintf("Your password reset OTP is %s. It expires in %s.", code, expiresIn)
+		if _, err := s.comms.SendSMS(ctx, projectID, []communications.SmsMessage{{Content: smsBody, Destination: dest}}); err != nil {
+			slog.Warn("forgot-password OTP SMS delivery failed",
+				"projectId", projectID,
+				"userId", user.ID,
+				"phone", dest,
+				"error", err,
+			)
+		}
+	}
+
+	return nil
 }
 
 func (s *Service) VerifyForgotPasswordOTP(ctx context.Context, projectID int, body map[string]any) (map[string]any, error) {
