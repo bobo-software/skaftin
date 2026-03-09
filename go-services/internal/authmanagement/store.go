@@ -144,6 +144,52 @@ func (s *Store) EnsureAuthSchemaCompatibility(ctx context.Context, schema string
 		return err
 	}
 
+	otpTable := fmt.Sprintf("%s.skaftin_system_otp_verifications", pgx.Identifier{schema}.Sanitize())
+	_, err = s.pool.Exec(ctx, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER NOT NULL REFERENCES %s.skaftin_system_users(id) ON DELETE CASCADE,
+			otp_code VARCHAR(20) NOT NULL,
+			otp_method VARCHAR(20) NOT NULL,
+			destination VARCHAR(255) NOT NULL,
+			status VARCHAR(20) NOT NULL DEFAULT 'pending',
+			expires_at TIMESTAMP NOT NULL,
+			verified_at TIMESTAMP,
+			attempts INTEGER NOT NULL DEFAULT 0,
+			purpose VARCHAR(100),
+			metadata JSONB DEFAULT '{}'::jsonb,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`, otpTable, pgx.Identifier{schema}.Sanitize()))
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, fmt.Sprintf(`
+		ALTER TABLE %s
+		ADD COLUMN IF NOT EXISTS purpose VARCHAR(100),
+		ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb,
+		ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	`, otpTable))
+	if err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, fmt.Sprintf(`
+		CREATE INDEX IF NOT EXISTS idx_skaftin_system_otp_verifications_user_id ON %s(user_id)
+	`, otpTable)); err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, fmt.Sprintf(`
+		CREATE INDEX IF NOT EXISTS idx_skaftin_system_otp_verifications_status ON %s(status)
+	`, otpTable)); err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, fmt.Sprintf(`
+		CREATE INDEX IF NOT EXISTS idx_skaftin_system_otp_verifications_expires_at ON %s(expires_at)
+	`, otpTable)); err != nil {
+		return err
+	}
+
 	_, err = s.pool.Exec(ctx, fmt.Sprintf(`
 		UPDATE public.skaftin_system_auth_settings aset
 		SET default_role_id = r.id
@@ -1297,6 +1343,13 @@ func (s *Store) MarkOTPFailed(ctx context.Context, schema string, otpID int) err
 	return err
 }
 
+func (s *Store) UpdateOTPMetadata(ctx context.Context, schema string, otpID int, metadata json.RawMessage) error {
+	_, err := s.pool.Exec(ctx,
+		fmt.Sprintf(`UPDATE %s.skaftin_system_otp_verifications SET metadata = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+			pgx.Identifier{schema}.Sanitize()), metadata, otpID)
+	return err
+}
+
 func (s *Store) GetUserOTPStatus(ctx context.Context, schema string, userID int) ([]OTPVerification, error) {
 	otpVerificationsExists, err := s.TableExists(ctx, schema, "skaftin_system_otp_verifications")
 	if err != nil {
@@ -1309,7 +1362,7 @@ func (s *Store) GetUserOTPStatus(ctx context.Context, schema string, userID int)
 	}
 
 	rows, err := s.pool.Query(ctx,
-		fmt.Sprintf(`SELECT id, user_id, otp_code, otp_method, destination, status, expires_at, verified_at, attempts, purpose, created_at
+		fmt.Sprintf(`SELECT id, user_id, otp_code, otp_method, destination, status, expires_at, verified_at, attempts, purpose, metadata, created_at, updated_at
 			FROM %s.skaftin_system_otp_verifications WHERE user_id = $1 ORDER BY created_at DESC`,
 			pgx.Identifier{schema}.Sanitize()), userID)
 	if err != nil {
@@ -1319,7 +1372,7 @@ func (s *Store) GetUserOTPStatus(ctx context.Context, schema string, userID int)
 	list := make([]OTPVerification, 0)
 	for rows.Next() {
 		var o OTPVerification
-		if err := rows.Scan(&o.ID, &o.UserID, &o.OtpCode, &o.OtpMethod, &o.Destination, &o.Status, &o.ExpiresAt, &o.VerifiedAt, &o.Attempts, &o.Purpose, &o.CreatedAt); err != nil {
+		if err := rows.Scan(&o.ID, &o.UserID, &o.OtpCode, &o.OtpMethod, &o.Destination, &o.Status, &o.ExpiresAt, &o.VerifiedAt, &o.Attempts, &o.Purpose, &o.Metadata, &o.CreatedAt, &o.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, o)

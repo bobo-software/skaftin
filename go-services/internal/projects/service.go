@@ -59,7 +59,7 @@ func (svc *Service) CreateProject(ctx context.Context, name, description string,
 	if err != nil {
 		return nil, fmt.Errorf("not a member of this organization")
 	}
-	if role != "admin" && role != "dev" {
+	if role != "owner" && role != "admin" && role != "dev" {
 		return nil, fmt.Errorf("you do not have permission to create projects in this organization")
 	}
 

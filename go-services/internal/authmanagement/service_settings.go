@@ -22,10 +22,14 @@ func (s *Service) GetAuthSettings(ctx context.Context, projectID int) (*AuthSett
 func (s *Service) UpdateAuthSettings(ctx context.Context, projectID int, fields map[string]any) (*AuthSettings, error) {
 	allowed := map[string]bool{
 		"auth_enabled": true, "registration_enabled": true, "email_provider_id": true,
-		"sms_provider_id": true, "send_registration_otp": true, "send_welcome_email": true,
-		"require_email": true, "require_email_verification": true, "otp_length": true,
+		"sms_provider_id": true, "send_registration_email": true, "send_registration_sms": true,
+		"send_verification_email": true, "send_verification_sms": true,
+		"send_password_reset_email": true, "send_password_reset_sms": true,
+		"send_welcome_email": true, "send_welcome_sms": true,
+		"require_email": true, "require_email_verification": true, "require_phone_verification": true, "otp_length": true,
 		"default_role_id": true, "enable_password_reset": true, "require_otp_for_password_change": true,
 		"require_otp_for_account_deletion": true, "allow_duplicate_emails": true,
+		"enable_mfa": true,
 	}
 	filtered := make(map[string]any)
 	for k, v := range fields {

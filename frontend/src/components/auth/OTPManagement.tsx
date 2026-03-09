@@ -108,6 +108,30 @@ const OTPManagement = ({ projectId, userId }: OTPManagementProps) => {
     );
   };
 
+  const getDeliveryStatusBadge = (deliveryStatus?: string) => {
+    switch (deliveryStatus) {
+      case 'sent':
+        return (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+            Sent
+          </span>
+        );
+      case 'failed':
+        return (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+            Failed
+          </span>
+        );
+      case 'pending_attempt':
+      default:
+        return (
+          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300">
+            Pending
+          </span>
+        );
+    }
+  };
+
   const hasPendingOTP = otpRecords.some(record => record.status === 'pending');
 
   if (loading) {
@@ -168,10 +192,16 @@ const OTPManagement = ({ projectId, userId }: OTPManagementProps) => {
                   Method
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
+                  Debug OTP
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
                   Destination
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
                   Status
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
+                  Delivery
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-dark-500 dark:text-dark-400 uppercase tracking-wider">
                   Attempts
@@ -196,11 +226,29 @@ const OTPManagement = ({ projectId, userId }: OTPManagementProps) => {
                       <span className="ml-2 capitalize">{record.otp_method}</span>
                     </div>
                   </td>
+                  <td className="px-4 py-3 text-sm font-mono text-dark-700 dark:text-dark-200">
+                    {record.otp_code || '-'}
+                  </td>
                   <td className="px-4 py-3 text-sm text-dark-600 dark:text-dark-400">
                     {record.destination}
                   </td>
                   <td className="px-4 py-3">
                     {getStatusBadge(record.status)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-dark-600 dark:text-dark-400">
+                    <div className="flex flex-col gap-1">
+                      {getDeliveryStatusBadge(record.metadata?.delivery_status)}
+                      {record.metadata?.attempted_at && (
+                        <span className="text-xs">
+                          {new Date(record.metadata.attempted_at).toLocaleString()}
+                        </span>
+                      )}
+                      {record.metadata?.delivery_error && (
+                        <span className="text-xs text-red-600 dark:text-red-400">
+                          {record.metadata.delivery_error}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-dark-600 dark:text-dark-400">
                     {record.attempts} / 3

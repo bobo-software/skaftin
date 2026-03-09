@@ -455,6 +455,24 @@ func (s *Store) InitializeProjectAuthTables(ctx context.Context, schemaName stri
 			(role_name, role_key, description, permissions, session_duration_minutes, is_system_role)
 			SELECT 'User', 'user', 'Default application user role', '[]'::jsonb, 10080, true
 			WHERE NOT EXISTS (SELECT 1 FROM %s.skaftin_system_roles WHERE role_key = 'user')`, schemaName, schemaName),
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.skaftin_system_otp_verifications (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER NOT NULL REFERENCES %s.skaftin_system_users(id) ON DELETE CASCADE,
+			otp_code VARCHAR(20) NOT NULL,
+			otp_method VARCHAR(20) NOT NULL,
+			destination VARCHAR(255) NOT NULL,
+			status VARCHAR(20) NOT NULL DEFAULT 'pending',
+			expires_at TIMESTAMP NOT NULL,
+			verified_at TIMESTAMP,
+			attempts INTEGER NOT NULL DEFAULT 0,
+			purpose VARCHAR(100),
+			metadata JSONB DEFAULT '{}'::jsonb,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`, schemaName, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_skaftin_system_otp_verifications_user_id ON %s.skaftin_system_otp_verifications(user_id)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_skaftin_system_otp_verifications_status ON %s.skaftin_system_otp_verifications(status)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_skaftin_system_otp_verifications_expires_at ON %s.skaftin_system_otp_verifications(expires_at)`, schemaName),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.skaftin_system_payment_providers (
 			id SERIAL PRIMARY KEY,
 			project_id INTEGER NOT NULL,

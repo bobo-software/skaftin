@@ -76,7 +76,7 @@ export interface LoginResult {
 // ORGANIZATION TYPES
 // ============================================================================
 
-export type OrganizationRole = 'admin' | 'dev' | 'member' | 'viewer';
+export type OrganizationRole = 'owner' | 'admin' | 'dev' | 'member' | 'viewer';
 
 export interface Organization {
   id: number;

@@ -147,19 +147,119 @@ func (s *Service) Register(ctx context.Context, projectID int, body map[string]a
 		otpLen = settings.OtpLength
 	}
 	if settings != nil && (settings.SendRegistrationEmail || settings.SendRegistrationSMS) {
-		code, _ := GenerateOTP(otpLen)
+		code, err := GenerateOTP(otpLen)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate registration OTP: %w", err)
+		}
 		var method, dest string
-		if email != "" {
+		switch {
+		case settings.SendRegistrationEmail && email != "":
 			method = "email"
 			dest = email
-		} else {
+		case settings.SendRegistrationSMS && phone != "":
 			method = "sms"
 			dest = phone
+		case email != "":
+			method = "email"
+			dest = email
+		case phone != "":
+			method = "sms"
+			dest = phone
+		default:
+			return nil, fmt.Errorf("registration OTP is enabled but no destination is available")
+		}
+
+		deliveryMetadata := map[string]any{
+			"delivery_status": "pending_attempt",
+		}
+		deliveryMetadataRaw, err := json.Marshal(deliveryMetadata)
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepare registration OTP metadata: %w", err)
 		}
 		expiresAt := time.Now().Add(10 * time.Minute)
-		_ = s.store.CreateOTP(ctx, schema, user.ID, code, method, dest, expiresAt, "", nil)
-		userData["is_active"] = false
-		_ = s.store.UpdateUser(ctx, schema, user.ID, map[string]any{"is_active": false})
+		if err := s.store.CreateOTP(ctx, schema, user.ID, code, method, dest, expiresAt, "", deliveryMetadataRaw); err != nil {
+			return nil, fmt.Errorf("failed to create registration OTP: %w", err)
+		}
+		if err := s.store.UpdateUser(ctx, schema, user.ID, map[string]any{"is_active": false}); err != nil {
+			return nil, fmt.Errorf("failed to set user inactive pending OTP verification: %w", err)
+		}
+
+		otpRecord, err := s.store.GetPendingOTP(ctx, schema, user.ID, "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to load registration OTP for delivery status: %w", err)
+		}
+		if otpRecord == nil {
+			return nil, fmt.Errorf("registration OTP record not found after creation")
+		}
+
+		attemptedAt := time.Now().UTC().Format(time.RFC3339)
+		deliveryMetadata["attempted_at"] = attemptedAt
+		deliveryMetadata["otp_method"] = method
+		deliveryMetadata["destination"] = dest
+
+		switch method {
+		case "email":
+			if settings.EmailProviderID == nil {
+				deliveryMetadata["delivery_status"] = "failed"
+				deliveryMetadata["delivery_error"] = "email provider is not configured"
+			} else if s.comms == nil {
+				deliveryMetadata["delivery_status"] = "failed"
+				deliveryMetadata["delivery_error"] = "communications service unavailable"
+			} else {
+				subject := "Verify your account"
+				textBody := fmt.Sprintf("Your verification OTP is %s. It expires in 10 minutes.", code)
+				htmlBody := fmt.Sprintf("<p>Your verification OTP is <strong>%s</strong>.</p><p>It expires in 10 minutes.</p>", code)
+				if _, sendErr := s.comms.SendEmail(ctx, projectID, *settings.EmailProviderID, []string{dest}, nil, nil, subject, textBody, htmlBody, nil); sendErr != nil {
+					deliveryMetadata["delivery_status"] = "failed"
+					deliveryMetadata["delivery_error"] = sendErr.Error()
+					slog.Warn("registration OTP email delivery failed",
+						"projectId", projectID,
+						"userId", user.ID,
+						"email", dest,
+						"providerId", *settings.EmailProviderID,
+						"error", sendErr,
+					)
+				} else {
+					deliveryMetadata["delivery_status"] = "sent"
+				}
+			}
+		case "sms":
+			if s.comms == nil {
+				deliveryMetadata["delivery_status"] = "failed"
+				deliveryMetadata["delivery_error"] = "communications service unavailable"
+			} else {
+				smsBody := fmt.Sprintf("Your verification OTP is %s. It expires in 10 minutes.", code)
+				if _, sendErr := s.comms.SendSMS(ctx, projectID, []communications.SmsMessage{{Content: smsBody, Destination: dest}}); sendErr != nil {
+					deliveryMetadata["delivery_status"] = "failed"
+					deliveryMetadata["delivery_error"] = sendErr.Error()
+					slog.Warn("registration OTP SMS delivery failed",
+						"projectId", projectID,
+						"userId", user.ID,
+						"phone", dest,
+						"error", sendErr,
+					)
+				} else {
+					deliveryMetadata["delivery_status"] = "sent"
+				}
+			}
+		}
+
+		updatedMetadataRaw, err := json.Marshal(deliveryMetadata)
+		if err != nil {
+			slog.Warn("failed to marshal registration OTP delivery metadata",
+				"projectId", projectID,
+				"userId", user.ID,
+				"otpId", otpRecord.ID,
+				"error", err,
+			)
+		} else if err := s.store.UpdateOTPMetadata(ctx, schema, otpRecord.ID, updatedMetadataRaw); err != nil {
+			slog.Warn("failed to persist registration OTP delivery metadata",
+				"projectId", projectID,
+				"userId", user.ID,
+				"otpId", otpRecord.ID,
+				"error", err,
+			)
+		}
 	}
 
 	// Create session

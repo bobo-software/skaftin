@@ -63,12 +63,22 @@ export interface UsersListResponse {
 
 export interface OTPStatus {
   id: number;
+  otp_code: string;
   otp_method: 'email' | 'sms';
   destination: string;
   status: 'pending' | 'verified' | 'expired' | 'failed';
   expires_at: string;
   verified_at?: string;
   attempts: number;
+  metadata?: {
+    attempted_at?: string;
+    otp_method?: string;
+    destination?: string;
+    delivery_status?: 'pending_attempt' | 'sent' | 'failed';
+    delivery_error?: string;
+    [key: string]: any;
+  };
+  updated_at?: string;
   created_at: string;
 }
 

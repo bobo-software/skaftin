@@ -12,9 +12,12 @@ interface CreateProjectModalProps {
 
 const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalProps) => {
   const { createProject } = useProjectStore();
-  const { organizations, fetchOrganizations } = useOrganizationStore();
-  // Only show orgs where the user has permission to create projects (admin or dev)
-  const creatableOrgs = organizations.filter(org => org.role === 'admin' || org.role === 'dev');
+  const { organizations, currentOrganization, fetchOrganizations } = useOrganizationStore();
+  // Only show orgs where the user has permission to create projects (owner, admin or dev)
+  const creatableOrgs = organizations.filter((org) => {
+    const role = String(org.role ?? '');
+    return role === 'owner' || role === 'admin' || role === 'dev';
+  });
   const hasOrganizations = creatableOrgs.length > 0;
   const [showCreateOrgModal, setShowCreateOrgModal] = useState(false);
   
@@ -36,13 +39,19 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
 
   // Set default organization when creatable organizations are loaded
   useEffect(() => {
-    if (creatableOrgs.length > 0 && projectData.organization_id === 0) {
-      setProjectData(prev => ({
-        ...prev,
-        organization_id: creatableOrgs[0].id
-      }));
-    }
-  }, [creatableOrgs, projectData.organization_id]);
+    if (creatableOrgs.length === 0) return;
+    if (projectData.organization_id !== 0) return;
+
+    const preferredOrg = currentOrganization &&
+      creatableOrgs.some(org => org.id === currentOrganization.id)
+      ? currentOrganization
+      : creatableOrgs[0];
+
+    setProjectData(prev => ({
+      ...prev,
+      organization_id: preferredOrg.id
+    }));
+  }, [creatableOrgs, currentOrganization, projectData.organization_id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,10 +81,10 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
     }
   };
 
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (field: string, value: string | number) => {
     setProjectData(prev => ({
       ...prev,
-      [field]: value
+      [field]: field === 'organization_id' ? Number(value) : value
     }));
   };
 
@@ -114,7 +123,7 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
                 </div>
                 <select
                   value={projectData.organization_id}
-                  onChange={(e) => handleInputChange('organization_id', e.target.value)}
+                  onChange={(e) => handleInputChange('organization_id', Number(e.target.value))}
                   className="w-full pl-10 pr-4 py-2.5 border border-dark-200 dark:border-dark-700 rounded-lg 
                            bg-white dark:bg-dark-700 text-dark-900 dark:text-white 
                            focus:ring-2 focus:ring-primary-500 focus:border-transparent
