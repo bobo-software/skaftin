@@ -7,8 +7,8 @@
         "NODE_ENV": "development",
         "DB_HOST": "localhost",
         "DB_PORT": "5440",
-        "DB_USER": "skaftin_user",
-        "DB_PASSWORD": "skaftin_password",
+        "DB_USER": "postgres",
+        "DB_PASSWORD": "BLUcabish#25",
         "DB_NAME": "skaftin_db"
       },
       "headers": {

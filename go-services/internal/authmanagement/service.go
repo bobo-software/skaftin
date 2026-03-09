@@ -74,6 +74,7 @@ func (s *Service) Register(ctx context.Context, projectID int, body map[string]a
 	email, _ := body["email"].(string)
 	phone, _ := body["phone"].(string)
 	name, _ := body["name"].(string)
+	lastName, _ := body["last_name"].(string)
 	password, _ := body["password"].(string)
 
 	if email == "" && phone == "" {
@@ -111,6 +112,7 @@ func (s *Service) Register(ctx context.Context, projectID int, body map[string]a
 	userData := map[string]any{
 		"supertokens_user_id": signUpResp.User.ID,
 		"name":                name,
+		"last_name":           nilIfEmpty(lastName),
 		"email":               nilIfEmpty(email),
 		"phone":               nilIfEmpty(phone),
 		"is_active":           true,

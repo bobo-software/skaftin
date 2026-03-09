@@ -988,10 +988,10 @@ func (s *Store) CreateUser(ctx context.Context, schema string, u map[string]any)
 		args = append(args, val)
 		i++
 	}
-	query := fmt.Sprintf(`INSERT INTO %s.skaftin_system_users (%s) VALUES (%s) RETURNING id, name, email, phone, is_active, created_at`,
+	query := fmt.Sprintf(`INSERT INTO %s.skaftin_system_users (%s) VALUES (%s) RETURNING id, name, last_name, email, phone, is_active, created_at`,
 		pgx.Identifier{schema}.Sanitize(), strings.Join(cols, ", "), strings.Join(placeholders, ", "))
 	var out AppUser
-	err := s.pool.QueryRow(ctx, query, args...).Scan(&out.ID, &out.Name, &out.Email, &out.Phone, &out.IsActive, &out.CreatedAt)
+	err := s.pool.QueryRow(ctx, query, args...).Scan(&out.ID, &out.Name, &out.LastName, &out.Email, &out.Phone, &out.IsActive, &out.CreatedAt)
 	return &out, err
 }
 
@@ -1189,7 +1189,7 @@ func (s *Store) GetUsersByRole(ctx context.Context, schema string, roleID int) (
 	if err != nil {
 		return nil, err
 	}
-	query := fmt.Sprintf(`SELECT u.id, u.name, u.email, u.phone, u.is_active, u.created_at
+	query := fmt.Sprintf(`SELECT u.id, u.name, u.last_name, u.email, u.phone, u.is_active, u.created_at
 		FROM %[1]s.skaftin_system_users u
 		INNER JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.%[2]s
 		WHERE ur.role_id = $1 ORDER BY u.created_at DESC`, pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
@@ -1201,7 +1201,7 @@ func (s *Store) GetUsersByRole(ctx context.Context, schema string, roleID int) (
 	list := make([]AppUser, 0)
 	for rows.Next() {
 		var u AppUser
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Phone, &u.IsActive, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.LastName, &u.Email, &u.Phone, &u.IsActive, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, u)
