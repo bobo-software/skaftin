@@ -47,6 +47,8 @@ export const TEXT_COLORS = {
   primary: 'text-primary-600 dark:text-primary-400',
   secondary: 'text-secondary-600 dark:text-secondary-400',
   default: 'text-dark-900 dark:text-white',
+  dark: 'text-dark-900 dark:text-white',
+  danger: 'text-red-600 dark:text-red-400',
   muted: 'text-dark-600 dark:text-dark-300',
   subtle: 'text-dark-500 dark:text-dark-400',
   disabled: 'text-dark-400 dark:text-dark-500',
@@ -64,6 +66,7 @@ export const TEXT_COLORS = {
 export const FONT_SIZES = {
   xs: 'text-xs',      // 12px
   sm: 'text-sm',      // 14px
+  md: 'text-md',      // 16px
   base: 'text-base',  // 16px
   lg: 'text-lg',      // 18px
   xl: 'text-xl',      // 20px
