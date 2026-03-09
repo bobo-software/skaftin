@@ -10,6 +10,7 @@ interface OrganizationMembersTabProps {
 }
 
 const roleIcons: Record<OrganizationRole, React.ReactNode> = {
+  owner: <Crown className="w-4 h-4 text-purple-500" />,
   admin: <Crown className="w-4 h-4 text-amber-500" />,
   dev: <Shield className="w-4 h-4 text-blue-500" />,
   member: <User className="w-4 h-4 text-green-500" />,
@@ -17,6 +18,7 @@ const roleIcons: Record<OrganizationRole, React.ReactNode> = {
 };
 
 const roleLabels: Record<OrganizationRole, string> = {
+  owner: 'Owner',
   admin: 'Admin',
   dev: 'Developer',
   member: 'Member',
@@ -24,6 +26,7 @@ const roleLabels: Record<OrganizationRole, string> = {
 };
 
 const roleDescriptions: Record<OrganizationRole, string> = {
+  owner: 'Primary organization owner with full control',
   admin: 'Full access to all organization settings and projects',
   dev: 'Can create and manage projects',
   member: 'Can view and contribute to projects',
