@@ -36,6 +36,10 @@ func (svc *Service) CheckProjectAccess(ctx context.Context, projectID int, userI
 	return svc.store.CheckProjectAccess(ctx, projectID, userID)
 }
 
+func (svc *Service) CheckProjectAccessIncludingDeleted(ctx context.Context, projectID int, userID string) (*AccessResult, error) {
+	return svc.store.CheckProjectAccessIncludingDeleted(ctx, projectID, userID)
+}
+
 // --- Project CRUD ---
 
 func (svc *Service) ListUserProjects(ctx context.Context, userID string) ([]Project, error) {
@@ -44,6 +48,10 @@ func (svc *Service) ListUserProjects(ctx context.Context, userID string) ([]Proj
 
 func (svc *Service) GetProject(ctx context.Context, id int) (*Project, error) {
 	return svc.store.GetProjectByID(ctx, id)
+}
+
+func (svc *Service) GetProjectIncludingDeleted(ctx context.Context, id int) (*Project, error) {
+	return svc.store.GetProjectByIDIncludingDeleted(ctx, id)
 }
 
 func (svc *Service) CreateProject(ctx context.Context, name, description string, orgID int, userID string) (*Project, error) {
@@ -82,8 +90,17 @@ func (svc *Service) UpdateProject(ctx context.Context, id int, name, description
 	return svc.store.UpdateProject(ctx, id, name, description, fieldEncryptionKey, clearEncKey)
 }
 
-func (svc *Service) DeleteProject(ctx context.Context, id int) error {
-	return svc.store.DeleteProject(ctx, id)
+func (svc *Service) DeleteProject(ctx context.Context, id int) (*Project, error) {
+	scheduledAt := time.Now().Add(48 * time.Hour)
+	return svc.store.ScheduleProjectDeletion(ctx, id, scheduledAt)
+}
+
+func (svc *Service) RestoreProject(ctx context.Context, id int) (*Project, error) {
+	return svc.store.RestoreProject(ctx, id)
+}
+
+func (svc *Service) ListDeletedProjects(ctx context.Context, userID string) ([]Project, error) {
+	return svc.store.ListDeletedProjectsForUser(ctx, userID)
 }
 
 // --- Project stats ---
@@ -127,12 +144,12 @@ func (svc *Service) GetDashboardStats(ctx context.Context, userID string) (*Dash
 
 // ProjectStats holds stats for a single project.
 type ProjectStats struct {
-	ProjectID   int        `json:"projectId"`
-	ProjectName string     `json:"projectName"`
-	TableCount  int        `json:"tableCount"`
-	FileCount   int        `json:"fileCount"`
-	APICalls    int        `json:"apiCalls"`
-	CreatedAt   time.Time  `json:"createdAt"`
+	ProjectID   int       `json:"projectId"`
+	ProjectName string    `json:"projectName"`
+	TableCount  int       `json:"tableCount"`
+	FileCount   int       `json:"fileCount"`
+	APICalls    int       `json:"apiCalls"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 func (svc *Service) GetProjectStats(ctx context.Context, project *Project) (*ProjectStats, error) {

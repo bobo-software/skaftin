@@ -49,7 +49,7 @@ const DeleteProjectModal = ({ isOpen, onClose, onConfirm, projectName }: DeleteP
             </div>
             <div>
               <h3 className="text-lg font-semibold text-dark-900 dark:text-white">Delete Project</h3>
-              <p className="text-sm text-dark-600 dark:text-dark-300">This action cannot be undone</p>
+              <p className="text-sm text-dark-600 dark:text-dark-300">Project is permanently deleted after 2 days</p>
             </div>
           </div>
           <button
@@ -66,7 +66,7 @@ const DeleteProjectModal = ({ isOpen, onClose, onConfirm, projectName }: DeleteP
           <div className="mb-6">
             <p className="text-dark-600 dark:text-dark-300 mb-4">
               Are you sure you want to delete <strong className="text-dark-900 dark:text-white">{projectName}</strong>? 
-              This will permanently delete:
+              It will be moved to deleted projects immediately, then permanently deleted in 2 days:
             </p>
             <ul className="space-y-2 text-sm text-dark-600 dark:text-dark-300">
               <li className="flex items-center space-x-2">
@@ -79,7 +79,7 @@ const DeleteProjectModal = ({ isOpen, onClose, onConfirm, projectName }: DeleteP
               </li>
               <li className="flex items-center space-x-2">
                 <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
-                <span>Project configuration and settings</span>
+                <span>Project configuration and settings (after grace period)</span>
               </li>
             </ul>
           </div>

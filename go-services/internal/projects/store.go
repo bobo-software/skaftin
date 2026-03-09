@@ -21,16 +21,19 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 // Project represents a row from skaftin_system_projects.
 type Project struct {
-	ID                 int        `json:"id"`
-	Name               string     `json:"name"`
-	Description        *string    `json:"description"`
-	OrganizationID     *int       `json:"organization_id"`
-	UserID             string     `json:"user_id"`
-	SchemaName         string     `json:"schema_name"`
-	FieldEncryptionKey *string    `json:"-"`
-	FieldEncryptionSet bool       `json:"field_encryption_key_set"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          *time.Time `json:"updated_at"`
+	ID                  int        `json:"id"`
+	Name                string     `json:"name"`
+	Description         *string    `json:"description"`
+	OrganizationID      *int       `json:"organization_id"`
+	UserID              string     `json:"user_id"`
+	SchemaName          string     `json:"schema_name"`
+	FieldEncryptionKey  *string    `json:"-"`
+	FieldEncryptionSet  bool       `json:"field_encryption_key_set"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           *time.Time `json:"updated_at"`
+	DeletionRequestedAt *time.Time `json:"deletion_requested_at"`
+	DeletionScheduledAt *time.Time `json:"deletion_scheduled_at"`
+	DeletedAt           *time.Time `json:"deleted_at"`
 }
 
 // AccessResult holds the result of a project access check.
@@ -58,7 +61,7 @@ func scanProject(row pgx.Row) (*Project, error) {
 	err := row.Scan(
 		&p.ID, &p.Name, &p.Description, &p.OrganizationID,
 		&p.UserID, &p.SchemaName, &encKey,
-		&p.CreatedAt, &p.UpdatedAt,
+		&p.CreatedAt, &p.UpdatedAt, &p.DeletionRequestedAt, &p.DeletionScheduledAt, &p.DeletedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -75,7 +78,7 @@ func scanProjectRows(rows pgx.Rows) ([]Project, error) {
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.Description, &p.OrganizationID,
 			&p.UserID, &p.SchemaName, &encKey,
-			&p.CreatedAt, &p.UpdatedAt,
+			&p.CreatedAt, &p.UpdatedAt, &p.DeletionRequestedAt, &p.DeletionScheduledAt, &p.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -85,11 +88,18 @@ func scanProjectRows(rows pgx.Rows) ([]Project, error) {
 	return out, rows.Err()
 }
 
-const projectColumns = `id, name, description, organization_id, user_id, schema_name, field_encryption_key, created_at, updated_at`
-const qualifiedProjectColumns = `p.id, p.name, p.description, p.organization_id, p.user_id, p.schema_name, p.field_encryption_key, p.created_at, p.updated_at`
+const projectColumns = `id, name, description, organization_id, user_id, schema_name, field_encryption_key, created_at, updated_at, deletion_requested_at, deletion_scheduled_at, deleted_at`
+const qualifiedProjectColumns = `p.id, p.name, p.description, p.organization_id, p.user_id, p.schema_name, p.field_encryption_key, p.created_at, p.updated_at, p.deletion_requested_at, p.deletion_scheduled_at, p.deleted_at`
 
 // GetProjectByID fetches a single project.
 func (s *Store) GetProjectByID(ctx context.Context, id int) (*Project, error) {
+	row := s.pool.QueryRow(ctx,
+		`SELECT `+projectColumns+` FROM skaftin_system_projects WHERE id = $1 AND deletion_scheduled_at IS NULL AND deleted_at IS NULL`, id)
+	return scanProject(row)
+}
+
+// GetProjectByIDIncludingDeleted fetches a single project regardless of deletion state.
+func (s *Store) GetProjectByIDIncludingDeleted(ctx context.Context, id int) (*Project, error) {
 	row := s.pool.QueryRow(ctx,
 		`SELECT `+projectColumns+` FROM skaftin_system_projects WHERE id = $1`, id)
 	return scanProject(row)
@@ -97,6 +107,48 @@ func (s *Store) GetProjectByID(ctx context.Context, id int) (*Project, error) {
 
 // CheckProjectAccess checks if a user has access to a project through org membership.
 func (s *Store) CheckProjectAccess(ctx context.Context, projectID int, userID string) (*AccessResult, error) {
+	var orgID *int
+	var ownerUserID string
+	var deletionScheduledAt *time.Time
+	var deletedAt *time.Time
+	err := s.pool.QueryRow(ctx,
+		`SELECT organization_id, user_id, deletion_scheduled_at, deleted_at FROM skaftin_system_projects WHERE id = $1`, projectID,
+	).Scan(&orgID, &ownerUserID, &deletionScheduledAt, &deletedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return &AccessResult{HasAccess: false}, nil
+		}
+		return nil, err
+	}
+	if deletionScheduledAt != nil || deletedAt != nil {
+		return &AccessResult{HasAccess: false}, nil
+	}
+
+	// Legacy project without organization
+	if orgID == nil {
+		return &AccessResult{
+			HasAccess: ownerUserID == userID,
+			Role:      "admin",
+		}, nil
+	}
+
+	var role string
+	err = s.pool.QueryRow(ctx,
+		`SELECT role FROM skaftin_system_organization_members WHERE organization_id = $1 AND user_id = $2`,
+		*orgID, userID,
+	).Scan(&role)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return &AccessResult{HasAccess: false}, nil
+		}
+		return nil, err
+	}
+
+	return &AccessResult{HasAccess: true, Role: role}, nil
+}
+
+// CheckProjectAccessIncludingDeleted checks membership/ownership, regardless of deletion state.
+func (s *Store) CheckProjectAccessIncludingDeleted(ctx context.Context, projectID int, userID string) (*AccessResult, error) {
 	var orgID *int
 	var ownerUserID string
 	err := s.pool.QueryRow(ctx,
@@ -109,7 +161,6 @@ func (s *Store) CheckProjectAccess(ctx context.Context, projectID int, userID st
 		return nil, err
 	}
 
-	// Legacy project without organization
 	if orgID == nil {
 		return &AccessResult{
 			HasAccess: ownerUserID == userID,
@@ -155,9 +206,13 @@ func (s *Store) ListUserProjects(ctx context.Context, userID string) ([]Project,
 			ON p.organization_id = om.organization_id AND om.user_id = $1
 		LEFT JOIN skaftin_system_project_members pm
 			ON p.id = pm.project_id AND pm.user_id = $1
-		WHERE p.user_id = $1
-		   OR om.user_id IS NOT NULL
-		   OR pm.user_id IS NOT NULL
+		WHERE p.deletion_scheduled_at IS NULL
+		  AND p.deleted_at IS NULL
+		  AND (
+			p.user_id = $1
+			OR om.user_id IS NOT NULL
+			OR pm.user_id IS NOT NULL
+		  )
 		ORDER BY p.created_at
 	`, userID)
 	if err != nil {
@@ -177,9 +232,13 @@ func (s *Store) ListAllUserProjects(ctx context.Context, userID string) ([]Proje
 			ON p.organization_id = om.organization_id AND om.user_id = $1
 		LEFT JOIN skaftin_system_project_members pm
 			ON p.id = pm.project_id AND pm.user_id = $1
-		WHERE p.user_id = $1
-		   OR om.user_id IS NOT NULL
-		   OR pm.user_id IS NOT NULL
+		WHERE p.deletion_scheduled_at IS NULL
+		  AND p.deleted_at IS NULL
+		  AND (
+			p.user_id = $1
+			OR om.user_id IS NOT NULL
+			OR pm.user_id IS NOT NULL
+		  )
 		ORDER BY p.created_at
 	`, userID)
 	if err != nil {
@@ -239,8 +298,91 @@ func (s *Store) UpdateProject(ctx context.Context, id int, name, description *st
 	return scanProject(row)
 }
 
-// DeleteProject removes a project.
-func (s *Store) DeleteProject(ctx context.Context, id int) error {
+// ScheduleProjectDeletion marks a project for permanent deletion.
+func (s *Store) ScheduleProjectDeletion(ctx context.Context, id int, scheduledAt time.Time) (*Project, error) {
+	row := s.pool.QueryRow(ctx, `
+		UPDATE skaftin_system_projects
+		SET deletion_requested_at = NOW(),
+			deletion_scheduled_at = $2,
+			updated_at = NOW()
+		WHERE id = $1
+		  AND deleted_at IS NULL
+		RETURNING `+projectColumns,
+		id, scheduledAt,
+	)
+	return scanProject(row)
+}
+
+// RestoreProject clears a pending project deletion schedule.
+func (s *Store) RestoreProject(ctx context.Context, id int) (*Project, error) {
+	row := s.pool.QueryRow(ctx, `
+		UPDATE skaftin_system_projects
+		SET deletion_requested_at = NULL,
+			deletion_scheduled_at = NULL,
+			updated_at = NOW()
+		WHERE id = $1
+		  AND deleted_at IS NULL
+		RETURNING `+projectColumns,
+		id,
+	)
+	return scanProject(row)
+}
+
+// ListDeletedProjectsForUser returns projects scheduled for deletion that the user can restore.
+// Visibility is restricted to project owners and org admins/owners.
+func (s *Store) ListDeletedProjectsForUser(ctx context.Context, userID string) ([]Project, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT `+qualifiedProjectColumns+`
+		FROM skaftin_system_projects p
+		LEFT JOIN skaftin_system_organization_members om
+			ON p.organization_id = om.organization_id AND om.user_id = $1
+		WHERE p.deletion_scheduled_at IS NOT NULL
+		  AND p.deleted_at IS NULL
+		  AND (
+			p.user_id = $1
+			OR om.role IN ('owner', 'admin')
+		  )
+		ORDER BY p.deletion_scheduled_at ASC, p.created_at ASC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanProjectRows(rows)
+}
+
+type PendingDeletionProject struct {
+	ID         int
+	SchemaName string
+}
+
+// ListProjectsDueForPermanentDeletion returns projects whose deletion window has elapsed.
+func (s *Store) ListProjectsDueForPermanentDeletion(ctx context.Context) ([]PendingDeletionProject, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, schema_name
+		FROM skaftin_system_projects
+		WHERE deletion_scheduled_at IS NOT NULL
+		  AND deletion_scheduled_at <= NOW()
+		  AND deleted_at IS NULL
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]PendingDeletionProject, 0)
+	for rows.Next() {
+		var p PendingDeletionProject
+		if err := rows.Scan(&p.ID, &p.SchemaName); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// PermanentlyDeleteProject removes a project row after cleanup.
+func (s *Store) PermanentlyDeleteProject(ctx context.Context, id int) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM skaftin_system_projects WHERE id = $1`, id)
 	return err
 }

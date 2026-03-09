@@ -229,10 +229,12 @@ func (h *Handler) RefreshSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if shouldReturnRefreshCompatibilitySuccess(resp.StatusCode, resp.Body) {
-		h.ensureFrontToken(w, r)
-		httputil.WriteSuccess(w, http.StatusOK, "Session refresh is handled automatically by SuperTokens", map[string]any{
-			"message": "No action needed - sessions are automatically refreshed",
-		})
+		// No valid refresh token was sent - the session is gone.
+		// Return 401 so the SuperTokens frontend SDK recognises the session as expired
+		// and stops retrying (returning 200 here causes an infinite refresh loop).
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"unauthorised"}`))
 		return
 	}
 
@@ -525,6 +527,8 @@ func (h *Handler) getUserClaims(ctx context.Context, userID string) ([]int, stri
 		SELECT id
 		FROM skaftin_system_projects
 		WHERE user_id = $1
+		  AND deletion_scheduled_at IS NULL
+		  AND deleted_at IS NULL
 	`, userID)
 	if err != nil {
 		return nil, "", fmt.Errorf("query owned projects: %w", err)
@@ -538,9 +542,12 @@ func (h *Handler) getUserClaims(ctx context.Context, userID string) ([]int, stri
 	}
 
 	memberRows, err := h.pool.Query(ctx, `
-		SELECT DISTINCT project_id
-		FROM skaftin_system_project_members
-		WHERE user_id = $1
+		SELECT DISTINCT pm.project_id
+		FROM skaftin_system_project_members pm
+		INNER JOIN skaftin_system_projects p ON p.id = pm.project_id
+		WHERE pm.user_id = $1
+		  AND p.deletion_scheduled_at IS NULL
+		  AND p.deleted_at IS NULL
 	`, userID)
 	if err != nil {
 		return nil, "", fmt.Errorf("query member projects: %w", err)
@@ -580,6 +587,8 @@ func (h *Handler) getUserClaims(ctx context.Context, userID string) ([]int, stri
 			SELECT id
 			FROM skaftin_system_projects
 			WHERE organization_id = $1
+			  AND deletion_scheduled_at IS NULL
+			  AND deleted_at IS NULL
 		`, orgID)
 		if err != nil {
 			return nil, "", fmt.Errorf("query org projects: %w", err)

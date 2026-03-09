@@ -31,11 +31,11 @@ func NewS3Client(cfg config.MinIOConfig) (*S3Client, error) {
 
 // BucketObjectStats holds aggregate stats for objects in a bucket.
 type BucketObjectStats struct {
-	FileCount   int        `json:"fileCount"`
-	TotalSize   int64      `json:"totalSize"`
-	LargestFile *FileInfo  `json:"largestFile"`
-	OldestFile  *FileInfo  `json:"oldestFile"`
-	NewestFile  *FileInfo  `json:"newestFile"`
+	FileCount   int       `json:"fileCount"`
+	TotalSize   int64     `json:"totalSize"`
+	LargestFile *FileInfo `json:"largestFile"`
+	OldestFile  *FileInfo `json:"oldestFile"`
+	NewestFile  *FileInfo `json:"newestFile"`
 }
 
 // FileInfo describes a single object.
@@ -132,6 +132,11 @@ func (s *S3Client) RemoveAllObjects(ctx context.Context, bucketName string) (int
 		deleted++
 	}
 	return deleted, nil
+}
+
+// RemoveBucket deletes an empty bucket.
+func (s *S3Client) RemoveBucket(ctx context.Context, bucketName string) error {
+	return s.client.RemoveBucket(ctx, bucketName)
 }
 
 // SetBucketPolicy sets a bucket to public-read or private.

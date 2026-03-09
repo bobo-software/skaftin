@@ -2,7 +2,7 @@ import { useAppStore, useProjectStore, useOrganizationStore } from "../../../sto
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import ProjectCreationLoadingPage from "./ProjectCreationLoadingPage";
-import { Database, FolderOpen, Plus, Users } from "lucide-react";
+import { Clock3, Database, FolderOpen, Plus, RotateCcw, Trash2, Users } from "lucide-react";
 import { AppButton, AppText, OrganizationSwitcher, DashboardStatItems, ProjectTileItem } from "../../../components/ComponentsIndex";
 import CreateProjectModal from "../../../components/modals/CreateProjectModal";
 import AccountDropdown from "../../../components/dashboard/AccountDropdown";
@@ -20,9 +20,12 @@ const navigate = useNavigate();
 const { user, logout } = useAppStore();
 const { 
 projects, 
+deletedProjects,
 loading: isLoading, 
 error, 
 fetchProjects, 
+fetchDeletedProjects,
+restoreProject,
 createProject,
 clearError 
 } = useProjectStore();
@@ -36,6 +39,9 @@ const filteredProjects = currentOrganization
 // Split into owned and invited projects
 const ownedProjects = filteredProjects.filter(project => project.user_id === user?.id);
 const invitedProjects = filteredProjects.filter(project => project.user_id !== user?.id);
+const filteredDeletedProjects = currentOrganization
+  ? deletedProjects.filter(project => project.organization_id === currentOrganization.id)
+  : deletedProjects;
 
 // State variables
 const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -48,6 +54,7 @@ const [dashboardStats, setDashboardStats] = useState<{
   totalApiCalls: number;
 } | null>(null);
 const [loadingStats, setLoadingStats] = useState(false);
+const [now, setNow] = useState(Date.now());
 
 const loadDashboardStats = useCallback(async () => {
   setLoadingStats(true);
@@ -66,8 +73,28 @@ const loadDashboardStats = useCallback(async () => {
 
 const loadUserProjects = useCallback(async () => {
     console.log('Loading projects for user:', user?.id);
-    await fetchProjects();
-}, [user?.id, fetchProjects]);
+    await Promise.all([fetchProjects(), fetchDeletedProjects()]);
+}, [user?.id, fetchProjects, fetchDeletedProjects]);
+
+const formatTimeRemaining = (deletionScheduledAt?: string) => {
+  if (!deletionScheduledAt) return "Deletion pending";
+  const target = new Date(deletionScheduledAt).getTime();
+  const msRemaining = target - now;
+  if (msRemaining <= 0) return "Deleting soon";
+
+  const totalMinutes = Math.ceil(msRemaining / (1000 * 60));
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `${days}d ${hours}h remaining`;
+  }
+  if (hours > 0) {
+    return `${hours}h ${minutes}m remaining`;
+  }
+  return `${minutes}m remaining`;
+};
 
 useEffect(() => {
   loadUserProjects();
@@ -75,6 +102,11 @@ useEffect(() => {
   // Only fetch if stale to avoid duplicate calls during auth bootstrap.
   fetchOrganizations({ skipIfFresh: true });
 }, [loadUserProjects, loadDashboardStats, fetchOrganizations]);
+
+useEffect(() => {
+  const interval = window.setInterval(() => setNow(Date.now()), 60000);
+  return () => window.clearInterval(interval);
+}, []);
 
 const handleCreateProject = () => {
 setIsCreateModalOpen(true);
@@ -113,6 +145,13 @@ const handleProjectSelect = (project: any) => {
 onProjectSelect?.(project);
 // Navigate to project dashboard
 navigate(`/projects/${project.id}`);
+};
+
+const handleRestoreProject = async (projectId: string) => {
+  const success = await restoreProject(projectId);
+  if (success) {
+    await Promise.all([fetchProjects(), fetchDeletedProjects(), loadDashboardStats()]);
+  }
 };
 
 
@@ -246,7 +285,7 @@ return (
         </div>
       )}
 
-     
+      {invitedProjects.length > 0 && (
         <div>
           <div className="mb-4">
             <AppText as="h3" size="lg" weight="semibold" color="default" className="flex items-center gap-2">
@@ -267,7 +306,62 @@ return (
             ))}
           </div>
         </div>
-    
+      )}
+
+      {filteredDeletedProjects.length > 0 && (
+        <div>
+          <div className="mb-4">
+            <AppText as="h3" size="lg" weight="semibold" color="default" className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-400" />
+              Deleted Projects
+            </AppText>
+            <AppText as="p" size="sm" color="muted" className="mt-1">
+              Projects scheduled for permanent deletion in 2 days
+            </AppText>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredDeletedProjects.map((project) => (
+              <div
+                key={project.id}
+                className="bg-white dark:bg-dark-800 rounded-xl shadow-lg border border-red-200 dark:border-red-900/50 p-4"
+              >
+                <div className="flex items-start justify-between mb-3 gap-3">
+                  <div>
+                    <AppText as="h4" size="md" weight="semibold" color="default">
+                      {project.name}
+                    </AppText>
+                    <AppText as="p" size="xs" color="muted">
+                      {project.schema_name}
+                    </AppText>
+                  </div>
+                  <AppButton
+                    size="sm"
+                    variant="secondary"
+                    icon={<RotateCcw className="w-4 h-4" />}
+                    onClick={() => handleRestoreProject(project.id)}
+                  >
+                    Restore
+                  </AppButton>
+                </div>
+
+                {project.description && (
+                  <AppText as="p" size="sm" color="muted" className="line-clamp-2 mb-3">
+                    {project.description}
+                  </AppText>
+                )}
+
+                <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                  <Clock3 className="w-4 h-4" />
+                  <AppText as="span" size="sm" color="danger">
+                    {formatTimeRemaining(project.deletion_scheduled_at)}
+                  </AppText>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   
 </main>

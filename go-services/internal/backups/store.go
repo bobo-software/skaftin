@@ -50,7 +50,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 func (s *Store) GetProjectSchema(ctx context.Context, projectID int) (string, error) {
 	var schema string
 	err := s.pool.QueryRow(ctx,
-		`SELECT schema_name FROM skaftin_system_projects WHERE id = $1`, projectID,
+		`SELECT schema_name FROM skaftin_system_projects WHERE id = $1 AND deletion_scheduled_at IS NULL AND deleted_at IS NULL`, projectID,
 	).Scan(&schema)
 	if err != nil {
 		return "", fmt.Errorf("project lookup: %w", err)
@@ -62,7 +62,7 @@ func (s *Store) GetProjectInfo(ctx context.Context, projectID int) (*ProjectInfo
 	var p ProjectInfo
 	var desc *string
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, name, COALESCE(description, ''), schema_name FROM skaftin_system_projects WHERE id = $1`, projectID,
+		`SELECT id, name, COALESCE(description, ''), schema_name FROM skaftin_system_projects WHERE id = $1 AND deletion_scheduled_at IS NULL AND deleted_at IS NULL`, projectID,
 	).Scan(&p.ID, &p.Name, &desc, &p.SchemaName)
 	if err != nil {
 		return nil, fmt.Errorf("project lookup: %w", err)

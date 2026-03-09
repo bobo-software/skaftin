@@ -13,6 +13,9 @@ interface Project {
   created_at: string;
   updated_at: string;
   user_id: string;
+  deletion_requested_at?: string;
+  deletion_scheduled_at?: string;
+  deleted_at?: string;
 }
 
 interface ProjectStats {
@@ -24,6 +27,7 @@ interface ProjectStats {
 interface ProjectStoreType {
   // State
   projects: Project[];
+  deletedProjects: Project[];
   currentProject: Project | null;
   projectStats: ProjectStats | null;
   loading: boolean;
@@ -31,9 +35,11 @@ interface ProjectStoreType {
 
   // Actions
   fetchProjects: () => Promise<void>;
+  fetchDeletedProjects: () => Promise<void>;
   createProject: (name: string, description?: string, organization_id?: number) => Promise<Project | null>;
   updateProject: (projectId: string, updates: Partial<Project>) => Promise<Project | null>;
   deleteProject: (projectId: string) => Promise<boolean>;
+  restoreProject: (projectId: string) => Promise<boolean>;
   resetProject: (projectId: string) => Promise<{ success: boolean; result?: any }>;
   setCurrentProject: (project: Project | null) => void;
   getProjectById: (projectId: string) => Promise<Project | null>;
@@ -47,10 +53,50 @@ const useProjectStore = create<ProjectStoreType>()(
     (set, get) => ({
       // Initial state
       projects: [],
+      deletedProjects: [],
       currentProject: null,
       projectStats: null,
       loading: false,
       error: null,
+
+      fetchDeletedProjects: async () => {
+        set({ loading: true, error: null });
+        try {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.get(ApiRoutes.PROJECTS.LIST_DELETED, token);
+
+          if (response.success) {
+            set({
+              deletedProjects: response.data.map((p: any) => ({
+                id: p.id.toString(),
+                name: p.name,
+                description: p.description,
+                organization_id: p.organization_id,
+                schema_name: p.schema_name,
+                field_encryption_key_set: p.field_encryption_key_set,
+                created_at: p.created_at,
+                updated_at: p.updated_at,
+                user_id: p.user_id.toString(),
+                deletion_requested_at: p.deletion_requested_at,
+                deletion_scheduled_at: p.deletion_scheduled_at,
+                deleted_at: p.deleted_at,
+              })),
+              loading: false
+            });
+          } else {
+            set({
+              error: response.message || 'Failed to fetch deleted projects',
+              loading: false
+            });
+          }
+        } catch (error) {
+          console.error('Error fetching deleted projects:', error);
+          set({
+            error: 'Network error while fetching deleted projects',
+            loading: false
+          });
+        }
+      },
 
       // Fetch all projects for the authenticated user
       fetchProjects: async () => {
@@ -71,6 +117,9 @@ const useProjectStore = create<ProjectStoreType>()(
                 created_at: p.created_at,
                 updated_at: p.updated_at,
                 user_id: p.user_id.toString(),
+                deletion_requested_at: p.deletion_requested_at,
+                deletion_scheduled_at: p.deletion_scheduled_at,
+                deleted_at: p.deleted_at,
               })),
               loading: false
             });
@@ -111,6 +160,9 @@ const useProjectStore = create<ProjectStoreType>()(
               created_at: projectData.created_at,
               updated_at: projectData.updated_at,
               user_id: projectData.user_id.toString(),
+              deletion_requested_at: projectData.deletion_requested_at,
+              deletion_scheduled_at: projectData.deletion_scheduled_at,
+              deleted_at: projectData.deleted_at,
             };
 
             set(state => ({
@@ -204,6 +256,25 @@ const useProjectStore = create<ProjectStoreType>()(
           if (response.success) {
             set(state => ({
               projects: state.projects.filter(project => project.id !== projectId),
+              deletedProjects: response.data
+                ? [
+                  ...state.deletedProjects.filter(project => project.id !== projectId),
+                  {
+                    id: response.data.id.toString(),
+                    name: response.data.name,
+                    description: response.data.description,
+                    organization_id: response.data.organization_id,
+                    schema_name: response.data.schema_name,
+                    field_encryption_key_set: response.data.field_encryption_key_set,
+                    created_at: response.data.created_at,
+                    updated_at: response.data.updated_at,
+                    user_id: response.data.user_id.toString(),
+                    deletion_requested_at: response.data.deletion_requested_at,
+                    deletion_scheduled_at: response.data.deletion_scheduled_at,
+                    deleted_at: response.data.deleted_at,
+                  }
+                ]
+                : state.deletedProjects,
               currentProject: state.currentProject?.id === projectId ? null : state.currentProject,
               loading: false
             }));
@@ -219,6 +290,58 @@ const useProjectStore = create<ProjectStoreType>()(
           console.error('Error deleting project:', error);
           set({
             error: 'Network error while deleting project',
+            loading: false
+          });
+          return false;
+        }
+      },
+
+      restoreProject: async (projectId: string) => {
+        set({ loading: true, error: null });
+        try {
+          const token = localStorage.getItem('skaftin-token') || '';
+          const response = await RequestUtils.post(
+            ApiRoutes.PROJECTS.RESTORE(projectId),
+            token,
+            {}
+          );
+
+          if (response.success) {
+            set(state => ({
+              deletedProjects: state.deletedProjects.filter(project => project.id !== projectId),
+              projects: response.data
+                ? [
+                  ...state.projects.filter(project => project.id !== projectId),
+                  {
+                    id: response.data.id.toString(),
+                    name: response.data.name,
+                    description: response.data.description,
+                    organization_id: response.data.organization_id,
+                    schema_name: response.data.schema_name,
+                    field_encryption_key_set: response.data.field_encryption_key_set,
+                    created_at: response.data.created_at,
+                    updated_at: response.data.updated_at,
+                    user_id: response.data.user_id.toString(),
+                    deletion_requested_at: response.data.deletion_requested_at,
+                    deletion_scheduled_at: response.data.deletion_scheduled_at,
+                    deleted_at: response.data.deleted_at,
+                  },
+                ]
+                : state.projects,
+              loading: false
+            }));
+            return true;
+          } else {
+            set({
+              error: response.message || 'Failed to restore project',
+              loading: false
+            });
+            return false;
+          }
+        } catch (error) {
+          console.error('Error restoring project:', error);
+          set({
+            error: 'Network error while restoring project',
             loading: false
           });
           return false;
@@ -277,6 +400,9 @@ const useProjectStore = create<ProjectStoreType>()(
               created_at: projectData.created_at,
               updated_at: projectData.updated_at,
               user_id: projectData.user_id.toString(),
+              deletion_requested_at: projectData.deletion_requested_at,
+              deletion_scheduled_at: projectData.deletion_scheduled_at,
+              deleted_at: projectData.deleted_at,
             };
 
             set({ currentProject: project, loading: false });
@@ -346,6 +472,7 @@ const useProjectStore = create<ProjectStoreType>()(
       reset: () => {
         set({
           projects: [],
+          deletedProjects: [],
           currentProject: null,
           projectStats: null,
           loading: false,

@@ -29,6 +29,25 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteSuccess(w, http.StatusOK, "Projects fetched successfully", projects)
 }
 
+// ListDeletedProjects returns projects scheduled for deletion that the user can restore.
+func (h *Handler) ListDeletedProjects(w http.ResponseWriter, r *http.Request) {
+	u := auth.RequireUser(w, r)
+	if u == nil {
+		return
+	}
+
+	projects, err := h.service.ListDeletedProjects(r.Context(), u.UserID)
+	if err != nil {
+		slog.Error("failed to list deleted projects", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to fetch deleted projects")
+		return
+	}
+	if projects == nil {
+		projects = []Project{}
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Deleted projects fetched successfully", projects)
+}
+
 // GetDashboardStats returns aggregated stats across all user projects.
 func (h *Handler) GetDashboardStats(w http.ResponseWriter, r *http.Request) {
 	u := auth.RequireUser(w, r)
@@ -146,24 +165,46 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteSuccess(w, http.StatusOK, "Project updated successfully", updated)
 }
 
-// DeleteProject deletes a project.
+// DeleteProject schedules project deletion.
 func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	u := auth.RequireUser(w, r)
 	if u == nil {
 		return
 	}
 
-	project, _ := h.requireProjectAccess(w, r, u.UserID, "admin")
+	project, _ := h.requireProjectAccess(w, r, u.UserID, "admin", "owner")
 	if project == nil {
 		return
 	}
 
-	if err := h.service.DeleteProject(r.Context(), project.ID); err != nil {
+	updated, err := h.service.DeleteProject(r.Context(), project.ID)
+	if err != nil {
 		slog.Error("failed to delete project", "error", err)
 		httputil.WriteError(w, http.StatusInternalServerError, "Failed to delete project")
 		return
 	}
-	httputil.WriteSuccess(w, http.StatusOK, "Project deleted successfully", nil)
+	httputil.WriteSuccess(w, http.StatusOK, "Project scheduled for permanent deletion in 2 days", updated)
+}
+
+// RestoreProject restores a project that is pending deletion.
+func (h *Handler) RestoreProject(w http.ResponseWriter, r *http.Request) {
+	u := auth.RequireUser(w, r)
+	if u == nil {
+		return
+	}
+
+	project, _ := h.requireProjectAccessIncludingDeleted(w, r, u.UserID, "admin", "owner")
+	if project == nil {
+		return
+	}
+
+	restored, err := h.service.RestoreProject(r.Context(), project.ID)
+	if err != nil {
+		slog.Error("failed to restore project", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to restore project")
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Project restored successfully", restored)
 }
 
 // ResetProject resets a project's database tables and storage.

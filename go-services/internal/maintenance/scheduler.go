@@ -9,14 +9,24 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/robfig/cron/v3"
+	"github.com/skaftin/go-services/internal/config"
+	"github.com/skaftin/go-services/internal/projects"
 	"github.com/skaftin/go-services/internal/supertokens"
 )
 
 var schemaNameRe = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
+const (
+	accountDeletionCronExpr   = "0 2 * * *"
+	requestLogCleanupCronExpr = "0 3 * * *"
+	projectPurgeCronExpr      = "15 * * * *"
+)
+
 type Scheduler struct {
 	pool *pgxpool.Pool
 	st   *supertokens.Client
+	ps   *projects.Store
+	s3   *projects.S3Client
 	cron *cron.Cron
 }
 
@@ -31,17 +41,28 @@ type requestLogCleanupStats struct {
 	Errors    int
 }
 
-func NewScheduler(pool *pgxpool.Pool, st *supertokens.Client) *Scheduler {
+type projectPurgeStats struct {
+	Processed int
+	Errors    int
+}
+
+func NewScheduler(pool *pgxpool.Pool, st *supertokens.Client, minioCfg config.MinIOConfig) *Scheduler {
 	c := cron.New(cron.WithLocation(time.UTC))
+	s3Client, err := projects.NewS3Client(minioCfg)
+	if err != nil {
+		slog.Warn("maintenance scheduler could not initialize project storage client", "error", err)
+	}
 	return &Scheduler{
 		pool: pool,
 		st:   st,
+		ps:   projects.NewStore(pool),
+		s3:   s3Client,
 		cron: c,
 	}
 }
 
 func (s *Scheduler) Start() error {
-	if _, err := s.cron.AddFunc("0 2 * * *", func() {
+	if _, err := s.cron.AddFunc(accountDeletionCronExpr, func() {
 		stats, runErr := s.processPendingAccountDeletions(context.Background())
 		if runErr != nil {
 			slog.Error("maintenance account deletion failed", "error", runErr)
@@ -52,7 +73,7 @@ func (s *Scheduler) Start() error {
 		return err
 	}
 
-	if _, err := s.cron.AddFunc("0 3 * * *", func() {
+	if _, err := s.cron.AddFunc(requestLogCleanupCronExpr, func() {
 		stats, runErr := s.cleanupRequestLogs(context.Background())
 		if runErr != nil {
 			slog.Error("maintenance request log cleanup failed", "error", runErr)
@@ -63,6 +84,22 @@ func (s *Scheduler) Start() error {
 		return err
 	}
 
+	if _, err := s.cron.AddFunc(projectPurgeCronExpr, func() {
+		stats, runErr := s.processPendingProjectDeletions(context.Background())
+		if runErr != nil {
+			slog.Error("maintenance project purge failed", "error", runErr)
+			return
+		}
+		slog.Info("maintenance project purge complete", "processed", stats.Processed, "errors", stats.Errors)
+	}); err != nil {
+		return err
+	}
+
+	slog.Info("maintenance scheduler cron configured",
+		"accountDeletion", accountDeletionCronExpr,
+		"requestLogCleanup", requestLogCleanupCronExpr,
+		"projectPurge", projectPurgeCronExpr,
+	)
 	s.cron.Start()
 	return nil
 }
@@ -249,6 +286,71 @@ func (s *Scheduler) cleanupRequestLogs(ctx context.Context) (requestLogCleanupSt
 
 		stats.Processed++
 		stats.Deleted += tagCount
+	}
+
+	return stats, nil
+}
+
+func (s *Scheduler) processPendingProjectDeletions(ctx context.Context) (projectPurgeStats, error) {
+	stats := projectPurgeStats{}
+
+	projectsDue, err := s.ps.ListProjectsDueForPermanentDeletion(ctx)
+	if err != nil {
+		return stats, err
+	}
+
+	for _, p := range projectsDue {
+		if p.SchemaName != "" && !schemaNameRe.MatchString(p.SchemaName) {
+			stats.Errors++
+			slog.Warn("skipping purge for invalid schema name", "projectId", p.ID, "schema", p.SchemaName)
+			continue
+		}
+
+		bucketRows, qErr := s.pool.Query(ctx, `SELECT bucket_name FROM skaftin_system_project_buckets WHERE project_id = $1`, p.ID)
+		if qErr != nil {
+			stats.Errors++
+			slog.Error("failed to fetch project buckets before purge", "projectId", p.ID, "error", qErr)
+			continue
+		}
+
+		buckets := make([]string, 0)
+		for bucketRows.Next() {
+			var bucketName string
+			if scanErr := bucketRows.Scan(&bucketName); scanErr != nil {
+				stats.Errors++
+				slog.Error("failed to scan project bucket before purge", "projectId", p.ID, "error", scanErr)
+				continue
+			}
+			buckets = append(buckets, bucketName)
+		}
+		bucketRows.Close()
+
+		if s.s3 != nil {
+			for _, bucketName := range buckets {
+				if _, rmErr := s.s3.RemoveAllObjects(ctx, bucketName); rmErr != nil {
+					stats.Errors++
+					slog.Warn("failed to clear bucket objects during purge", "projectId", p.ID, "bucket", bucketName, "error", rmErr)
+				}
+				if rmBucketErr := s.s3.RemoveBucket(ctx, bucketName); rmBucketErr != nil {
+					stats.Errors++
+					slog.Warn("failed to remove bucket during purge", "projectId", p.ID, "bucket", bucketName, "error", rmBucketErr)
+				}
+			}
+		}
+
+		if p.SchemaName != "" {
+			if _, dropErr := s.pool.Exec(ctx, fmt.Sprintf(`DROP SCHEMA IF EXISTS %s CASCADE`, p.SchemaName)); dropErr != nil {
+				stats.Errors++
+				slog.Warn("failed to drop project schema during purge", "projectId", p.ID, "schema", p.SchemaName, "error", dropErr)
+			}
+		}
+
+		if delErr := s.ps.PermanentlyDeleteProject(ctx, p.ID); delErr != nil {
+			stats.Errors++
+			slog.Error("failed to permanently delete project", "projectId", p.ID, "error", delErr)
+			continue
+		}
+		stats.Processed++
 	}
 
 	return stats, nil

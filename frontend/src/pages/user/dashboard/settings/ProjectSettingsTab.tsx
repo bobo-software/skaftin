@@ -338,7 +338,7 @@ const ProjectSettingsTab = () => {
               <div className="border-2 border-red-200 dark:border-red-800 rounded-lg p-4">
                 <h4 className="font-medium text-dark-900 dark:text-white mb-2">Delete Project</h4>
                 <p className="text-sm text-dark-600 dark:text-dark-300 mb-3">
-                  Permanently delete this project and all its data. This action cannot be undone.
+                  Move this project to deleted projects now. It will be permanently deleted in 2 days unless restored.
                 </p>
                 <button
                   onClick={() => setIsDeleteModalOpen(true)}

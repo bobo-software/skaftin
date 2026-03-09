@@ -27,11 +27,13 @@ func NewHandler(pool *pgxpool.Pool, cfg *config.Config) (*Handler, error) {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Project CRUD
 	mux.HandleFunc("GET /api/projects/list", h.ListProjects)
+	mux.HandleFunc("GET /api/projects/deleted", h.ListDeletedProjects)
 	mux.HandleFunc("GET /api/projects/dashboard-stats", h.GetDashboardStats)
 	mux.HandleFunc("POST /api/projects/create", h.CreateProject)
 	mux.HandleFunc("GET /api/projects/{id}", h.GetProject)
 	mux.HandleFunc("PUT /api/projects/update/{id}", h.UpdateProject)
 	mux.HandleFunc("DELETE /api/projects/delete/{id}", h.DeleteProject)
+	mux.HandleFunc("POST /api/projects/{id}/restore", h.RestoreProject)
 	mux.HandleFunc("POST /api/projects/{id}/reset", h.ResetProject)
 	mux.HandleFunc("GET /api/projects/{id}/stats", h.GetProjectStats)
 
@@ -68,6 +70,48 @@ func (h *Handler) requireProjectAccess(w http.ResponseWriter, r *http.Request, u
 	}
 
 	access, err := h.service.CheckProjectAccess(r.Context(), id, userID)
+	if err != nil || !access.HasAccess {
+		httputil.WriteError(w, http.StatusForbidden, "You do not have access to this project")
+		return nil, nil
+	}
+
+	if len(requiredRoles) > 0 {
+		allowed := false
+		for _, rr := range requiredRoles {
+			if access.Role == rr {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			httputil.WriteError(w, http.StatusForbidden, "You do not have permission for this action")
+			return nil, nil
+		}
+	}
+
+	return project, access
+}
+
+// requireProjectAccessIncludingDeleted checks access for routes that can operate on deleted projects.
+func (h *Handler) requireProjectAccessIncludingDeleted(w http.ResponseWriter, r *http.Request, userID string, requiredRoles ...string) (*Project, *AccessResult) {
+	id, ok := httputil.PathInt(r, "id")
+	if !ok {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid project ID")
+		return nil, nil
+	}
+
+	project, err := h.service.GetProjectIncludingDeleted(r.Context(), id)
+	if err != nil {
+		httputil.WriteError(w, http.StatusNotFound, "Project not found")
+		return nil, nil
+	}
+
+	u := auth.GetUserContext(r)
+	if u != nil && u.Role == "admin" {
+		return project, &AccessResult{HasAccess: true, Role: "admin"}
+	}
+
+	access, err := h.service.CheckProjectAccessIncludingDeleted(r.Context(), id, userID)
 	if err != nil || !access.HasAccess {
 		httputil.WriteError(w, http.StatusForbidden, "You do not have access to this project")
 		return nil, nil

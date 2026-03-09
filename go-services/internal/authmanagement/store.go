@@ -186,7 +186,7 @@ func (s *Store) ensureCustomFieldsCompatibility(ctx context.Context, schema stri
 
 func (s *Store) GetProjectSchema(ctx context.Context, projectID int) (string, error) {
 	var schema string
-	err := s.pool.QueryRow(ctx, `SELECT schema_name FROM skaftin_system_projects WHERE id = $1`, projectID).Scan(&schema)
+	err := s.pool.QueryRow(ctx, `SELECT schema_name FROM skaftin_system_projects WHERE id = $1 AND deletion_scheduled_at IS NULL AND deleted_at IS NULL`, projectID).Scan(&schema)
 	if err == pgx.ErrNoRows {
 		return "", nil
 	}

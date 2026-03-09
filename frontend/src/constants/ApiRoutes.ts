@@ -33,10 +33,12 @@ const ApiRoutes = {
   // Projects routes
   PROJECTS: {
     LIST: '/api/projects/list',
+    LIST_DELETED: '/api/projects/deleted',
     CREATE: '/api/projects/create',
     GET: (id: string) => `/api/projects/${id}`,
     UPDATE: (id: string) => `/api/projects/update/${id}`,
     DELETE: (id: string) => `/api/projects/delete/${id}`,
+    RESTORE: (id: string) => `/api/projects/${id}/restore`,
     RESET: (id: string) => `/api/projects/${id}/reset`,
     STATS: (id: string) => `/api/projects/${id}/stats`,
     DASHBOARD_STATS: '/api/projects/dashboard-stats',

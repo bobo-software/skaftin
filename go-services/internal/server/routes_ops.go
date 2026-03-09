@@ -104,7 +104,7 @@ func registerOperationalRoutes(
 		slog.Error("failed to load workflow schedules", "error", err)
 	}
 
-	maintenanceScheduler := maintenance.NewScheduler(pool, stClient)
+	maintenanceScheduler := maintenance.NewScheduler(pool, stClient, cfg.MinIO)
 	if err := maintenanceScheduler.Start(); err != nil {
 		return nil, err
 	}
