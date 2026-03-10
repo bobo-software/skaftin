@@ -180,12 +180,7 @@ type Handler struct {
 }
 
 func newHandler(hub *Hub, mode AuthMode, allowedOrigins []string) *Handler {
-	allowed := make(map[string]struct{})
-	for _, origin := range allowedOrigins {
-		if origin != "" {
-			allowed[origin] = struct{}{}
-		}
-	}
+	_ = allowedOrigins
 
 	return &Handler{
 		hub: hub,
@@ -194,12 +189,9 @@ func newHandler(hub *Hub, mode AuthMode, allowedOrigins []string) *Handler {
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				origin := r.Header.Get("Origin")
-				if origin == "" {
-					return true
-				}
-				_, ok := allowed[origin]
-				return ok
+				// BaaS clients may connect from many domains. We rely on auth
+				// (API key / session) rather than origin whitelisting.
+				return true
 			},
 		},
 	}
