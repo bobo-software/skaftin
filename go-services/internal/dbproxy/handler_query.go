@@ -139,7 +139,6 @@ func (h *Handler) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer pc.Release()
-	_ = pid
 
 	if !h.ensurePgCron(w, r, pc) {
 		return
@@ -181,10 +180,16 @@ func (h *Handler) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 		"schedule": normalizedSchedule,
 		"command":  fullCommand,
 	})
+	h.emitDatabaseEvent(pid, "create_cron_job", "cron.job", map[string]any{
+		"jobId":    jobID,
+		"jobName":  body.JobName,
+		"schedule": normalizedSchedule,
+		"command":  fullCommand,
+	}, nil)
 }
 
 func (h *Handler) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -216,10 +221,16 @@ func (h *Handler) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteSuccess(w, http.StatusOK, "Cron job updated successfully", map[string]any{
 		"jobId": jobId,
 	})
+	h.emitDatabaseEvent(pid, "update_cron_job", "cron.job", map[string]any{
+		"jobId":    jobId,
+		"jobName":  body.JobName,
+		"schedule": body.Schedule,
+		"command":  body.Command,
+	}, nil)
 }
 
 func (h *Handler) ToggleCronJob(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -245,10 +256,14 @@ func (h *Handler) ToggleCronJob(w http.ResponseWriter, r *http.Request) {
 		"jobId":  jobId,
 		"active": *body.Active,
 	})
+	h.emitDatabaseEvent(pid, "toggle_cron_job", "cron.job", map[string]any{
+		"jobId":  jobId,
+		"active": *body.Active,
+	}, nil)
 }
 
 func (h *Handler) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -277,4 +292,7 @@ func (h *Handler) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httputil.WriteSuccess(w, http.StatusOK, "Cron job deleted successfully", map[string]any{"jobId": jobId})
+	h.emitDatabaseEvent(pid, "delete_cron_job", "cron.job", map[string]any{
+		"jobId": jobId,
+	}, nil)
 }

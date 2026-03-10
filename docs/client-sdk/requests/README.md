@@ -29,6 +29,7 @@ Authorization: Bearer <jwt-token>
 | [04-STORAGE-REQUESTS.md](./04-STORAGE-REQUESTS.md) | MinIO storage operations (files, buckets) |
 | [05-GRAPHQL-REQUESTS.md](./05-GRAPHQL-REQUESTS.md) | GraphQL queries and mutations |
 | [06-COMMUNICATIONS-REQUESTS.md](./06-COMMUNICATIONS-REQUESTS.md) | Email and SMS operations |
+| [07-WEBSOCKET-REQUESTS.md](./07-WEBSOCKET-REQUESTS.md) | Real-time subscriptions over native WebSocket |
 
 ## Quick Reference
 

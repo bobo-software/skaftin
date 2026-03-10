@@ -13,7 +13,7 @@ import (
 // --- Phase 4: Columns ---
 
 func (h *Handler) AddColumn(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -53,10 +53,16 @@ func (h *Handler) AddColumn(w http.ResponseWriter, r *http.Request) {
 		"columnName": body.ColumnName,
 		"columnType": body.ColumnType,
 	})
+	h.emitDatabaseEvent(pid, "add_column", tableName, map[string]any{
+		"columnName":   body.ColumnName,
+		"columnType":   body.ColumnType,
+		"nullable":     body.Nullable,
+		"defaultValue": body.DefaultValue,
+	}, nil)
 }
 
 func (h *Handler) AlterColumn(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -118,10 +124,17 @@ func (h *Handler) AlterColumn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httputil.WriteSuccess(w, http.StatusOK, fmt.Sprintf("Column %s altered successfully", columnName), nil)
+	h.emitDatabaseEvent(pid, "alter_column", tableName, map[string]any{
+		"columnName":   columnName,
+		"newName":      body.NewName,
+		"newType":      body.NewType,
+		"nullable":     body.Nullable,
+		"defaultValue": body.DefaultValue,
+	}, nil)
 }
 
 func (h *Handler) DropColumn(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -136,6 +149,9 @@ func (h *Handler) DropColumn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteSuccess(w, http.StatusOK, fmt.Sprintf("Column %s dropped successfully", columnName), nil)
+	h.emitDatabaseEvent(pid, "drop_column", tableName, map[string]any{
+		"columnName": columnName,
+	}, nil)
 }
 
 // formatDefault returns the DEFAULT clause for PostgreSQL functions vs string literals.

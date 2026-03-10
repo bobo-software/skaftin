@@ -226,11 +226,22 @@ The service already:
 - Replace any `socket.io-client` usage with native `WebSocket`.
 - Replace event-emitter style handlers (`socket.on`) with message-envelope
   dispatching.
-# Client SDK - WebSocket Real-Time Updates
+
+## Archived Legacy Socket.IO Guide (Deprecated)
+
+The section below is retained for historical context only and does **not**
+reflect the current backend runtime. Do not implement new clients using
+Socket.IO from this point onward.
+
+Use the native WebSocket contract documented above and in:
+- `docs/client-sdk/requests/07-WEBSOCKET-REQUESTS.md`
+
+# Client SDK - WebSocket Real-Time Updates (Legacy Socket.IO Example)
 
 ## Overview
 
-Skaftin supports real-time database updates via WebSocket using Socket.IO. When database changes occur (insert, update, delete, table creation, etc.), all connected clients in the project room receive instant notifications.
+Legacy note: the example below uses Socket.IO and is deprecated. The active
+platform implementation uses native WebSocket (`/ws`) and JSON envelopes.
 
 This guide shows you how to integrate WebSocket real-time updates into your external React application.
 

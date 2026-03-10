@@ -89,6 +89,62 @@ func APIKey(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	}
 }
 
+// APIKeyWebSocket validates credentials for websocket upgrade requests.
+// In addition to headers, it allows query-string auth for browser clients:
+// - ?api_key=...
+// - ?token=...
+func APIKeyWebSocket(pool *pgxpool.Pool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			token := extractTokenForWebSocket(r)
+			if token == "" {
+				slog.Warn("no websocket authentication token provided",
+					"path", r.URL.Path,
+					"method", r.Method,
+				)
+				httputil.WriteError(w, http.StatusUnauthorized, "Authentication required. Provide X-API-Key, Authorization Bearer token, or ?api_key query parameter.")
+				return
+			}
+
+			cred, err := store.VerifyCredential(r.Context(), pool, token)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					slog.Warn("invalid websocket credential", "path", r.URL.Path)
+					httputil.WriteError(w, http.StatusForbidden, "Invalid API key or access token")
+					return
+				}
+				if errors.Is(err, model.ErrCredentialInactive) {
+					httputil.WriteError(w, http.StatusForbidden, "Credential is inactive")
+					return
+				}
+				if errors.Is(err, model.ErrCredentialExpired) {
+					httputil.WriteError(w, http.StatusForbidden, "Credential has expired")
+					return
+				}
+				slog.Error("websocket credential verification failed", "error", err, "path", r.URL.Path)
+				httputil.WriteError(w, http.StatusInternalServerError, "Authentication failed")
+				return
+			}
+
+			schemaName, err := store.LookupSchemaName(r.Context(), pool, cred.ProjectID)
+			if err != nil {
+				slog.Error("failed to look up project schema", "error", err, "projectId", cred.ProjectID)
+				httputil.WriteError(w, http.StatusBadRequest, "Project not found")
+				return
+			}
+
+			store.UpdateLastUsed(r.Context(), pool, token)
+			authCtx := &model.AuthContext{
+				Credential: cred,
+				ProjectID:  cred.ProjectID,
+				SchemaName: schemaName,
+			}
+			ctx := context.WithValue(r.Context(), AuthContextKey, authCtx)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // RequirePermission returns middleware that checks if the authenticated
 // credential has a specific permission.
 func RequirePermission(permission string) func(http.Handler) http.Handler {
@@ -133,5 +189,18 @@ func extractToken(r *http.Request) string {
 		return strings.TrimPrefix(auth, "Bearer ")
 	}
 
+	return ""
+}
+
+func extractTokenForWebSocket(r *http.Request) string {
+	if token := extractToken(r); token != "" {
+		return token
+	}
+	if apiKey := strings.TrimSpace(r.URL.Query().Get("api_key")); apiKey != "" {
+		return apiKey
+	}
+	if token := strings.TrimSpace(r.URL.Query().Get("token")); token != "" {
+		return token
+	}
 	return ""
 }

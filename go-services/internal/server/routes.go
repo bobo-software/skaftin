@@ -66,7 +66,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	// PUBLIC ROUTES (no auth required)
 	// ==================================================================
 	healthHandler.RegisterRoutes(mux)
-	mux.Handle("/ws", realtimeHandler)
+	mux.Handle("/ws", auth.APIKeyWebSocket(pool)(realtimeHandler))
 
 	// ==================================================================
 	// GO-HANDLED ROUTES (API key / access token auth)

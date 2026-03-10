@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/skaftin/go-services/internal/auth"
 )
 
 const (
@@ -49,9 +51,10 @@ type ProjectEvent struct {
 }
 
 type client struct {
-	conn     *websocket.Conn
-	send     chan []byte
-	projects map[string]struct{}
+	conn             *websocket.Conn
+	send             chan []byte
+	projects         map[string]struct{}
+	allowedProjectID string
 }
 
 type Hub struct {
@@ -192,6 +195,12 @@ func NewHandler(hub *Hub, allowedOrigins []string) *Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	authCtx := auth.GetAuthContext(r)
+	if authCtx == nil {
+		http.Error(w, "Authentication required", http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		slog.Warn("realtime upgrade failed", "error", err)
@@ -199,9 +208,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c := &client{
-		conn:     conn,
-		send:     make(chan []byte, 64),
-		projects: make(map[string]struct{}),
+		conn:             conn,
+		send:             make(chan []byte, 64),
+		projects:         make(map[string]struct{}),
+		allowedProjectID: strconv.Itoa(authCtx.ProjectID),
 	}
 	h.hub.Register(c)
 
@@ -239,6 +249,10 @@ func (h *Handler) readPump(c *client) {
 				h.sendToClient(c, OutgoingMessage{Type: messageTypeError, Message: "projectId is required"})
 				continue
 			}
+			if !canSubscribeProject(c, msg.ProjectID) {
+				h.sendToClient(c, OutgoingMessage{Type: messageTypeError, Message: "not authorized for requested project"})
+				continue
+			}
 			h.hub.Subscribe(c, msg.ProjectID)
 			h.sendToClient(c, OutgoingMessage{Type: messageTypeSubscribed, ProjectID: msg.ProjectID})
 		case messageTypeUnsubscribe:
@@ -252,6 +266,17 @@ func (h *Handler) readPump(c *client) {
 			h.sendToClient(c, OutgoingMessage{Type: messageTypeError, Message: "Unknown message type"})
 		}
 	}
+}
+
+func canSubscribeProject(c *client, projectID string) bool {
+	if c == nil {
+		return false
+	}
+	if projectID == "" {
+		return false
+	}
+	// API-key auth is project-scoped: allow subscriptions only to that project.
+	return c.allowedProjectID != "" && c.allowedProjectID == projectID
 }
 
 func (h *Handler) writePump(c *client) {

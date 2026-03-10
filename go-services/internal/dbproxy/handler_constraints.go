@@ -92,7 +92,7 @@ func (h *Handler) ListForeignKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateForeignKey(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -140,10 +140,19 @@ func (h *Handler) CreateForeignKey(w http.ResponseWriter, r *http.Request) {
 		"onDelete":         body.OnDelete,
 		"onUpdate":         body.OnUpdate,
 	})
+	h.emitDatabaseEvent(pid, "create_constraint", tableName, map[string]any{
+		"constraintType":   "FOREIGN KEY",
+		"constraintName":   constraintName,
+		"columnName":       body.ColumnName,
+		"referencedTable":  body.ReferencedTable,
+		"referencedColumn": body.ReferencedColumn,
+		"onDelete":         body.OnDelete,
+		"onUpdate":         body.OnUpdate,
+	}, nil)
 }
 
 func (h *Handler) CreateUniqueConstraint(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -179,10 +188,15 @@ func (h *Handler) CreateUniqueConstraint(w http.ResponseWriter, r *http.Request)
 		"tableName":      tableName,
 		"columnName":     body.ColumnName,
 	})
+	h.emitDatabaseEvent(pid, "create_constraint", tableName, map[string]any{
+		"constraintType": "UNIQUE",
+		"constraintName": body.ConstraintName,
+		"columnName":     body.ColumnName,
+	}, nil)
 }
 
 func (h *Handler) CreatePrimaryKeyConstraint(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -238,10 +252,15 @@ func (h *Handler) CreatePrimaryKeyConstraint(w http.ResponseWriter, r *http.Requ
 		"tableName":      tableName,
 		"columnNames":    body.ColumnNames,
 	})
+	h.emitDatabaseEvent(pid, "create_constraint", tableName, map[string]any{
+		"constraintType": "PRIMARY KEY",
+		"constraintName": body.ConstraintName,
+		"columnNames":    body.ColumnNames,
+	}, nil)
 }
 
 func (h *Handler) CreateCheckConstraint(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -277,10 +296,15 @@ func (h *Handler) CreateCheckConstraint(w http.ResponseWriter, r *http.Request) 
 		"tableName":       tableName,
 		"checkExpression": body.CheckExpression,
 	})
+	h.emitDatabaseEvent(pid, "create_constraint", tableName, map[string]any{
+		"constraintType":  "CHECK",
+		"constraintName":  body.ConstraintName,
+		"checkExpression": body.CheckExpression,
+	}, nil)
 }
 
 func (h *Handler) DropConstraint(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -310,4 +334,7 @@ func (h *Handler) DropConstraint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteSuccess(w, http.StatusOK, fmt.Sprintf("Constraint %s dropped successfully", constraintName), nil)
+	h.emitDatabaseEvent(pid, "drop_constraint", tableName, map[string]any{
+		"constraintName": constraintName,
+	}, nil)
 }

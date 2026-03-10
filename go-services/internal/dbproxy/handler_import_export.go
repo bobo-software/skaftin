@@ -13,7 +13,7 @@ import (
 // --- Phase 6: Import / Export ---
 
 func (h *Handler) ImportDatabaseDump(w http.ResponseWriter, r *http.Request) {
-	pc, _ := h.acquireConn(w, r)
+	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
 	}
@@ -107,6 +107,12 @@ func (h *Handler) ImportDatabaseDump(w http.ResponseWriter, r *http.Request) {
 		msg = "Database dump imported with warnings"
 	}
 	httputil.WriteSuccess(w, http.StatusOK, msg, data)
+	h.emitDatabaseEvent(pid, "import_dump", "__schema__", map[string]any{
+		"successCount":       successCount,
+		"errorCount":         errorCount,
+		"droppedTablesCount": droppedCount,
+		"dropExisting":       body.DropExisting,
+	}, nil)
 }
 
 func (h *Handler) ExportDatabaseDump(w http.ResponseWriter, r *http.Request) {
