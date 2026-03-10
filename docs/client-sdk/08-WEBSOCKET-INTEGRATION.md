@@ -5,7 +5,8 @@ native WebSocket (RFC6455). Socket.IO is no longer used.
 
 ## Overview
 
-- **Server endpoint:** `/ws`
+- **Admin app endpoint (internal):** `/ws` (no auth)
+- **Client app endpoint (public):** `/app-api/ws` (API key required)
 - **Transport:** native WebSocket only
 - **Subscription model:** client sends `subscribe` / `unsubscribe` messages per
   `projectId`
@@ -17,8 +18,12 @@ native WebSocket (RFC6455). Socket.IO is no longer used.
 
 Use your API base URL and replace protocol:
 
-- `http://localhost:4006` -> `ws://localhost:4006/ws`
-- `https://api.example.com` -> `wss://api.example.com/ws`
+- Admin app:
+  - `http://localhost:4006` -> `ws://localhost:4006/ws`
+  - `https://api.example.com` -> `wss://api.example.com/ws`
+- Client app:
+  - `http://localhost:4006` -> `ws://localhost:4006/app-api/ws?api_key=YOUR_API_KEY`
+  - `https://api.example.com` -> `wss://api.example.com/app-api/ws?api_key=YOUR_API_KEY`
 
 ## Message Protocol
 

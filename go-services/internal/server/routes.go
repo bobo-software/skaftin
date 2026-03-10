@@ -39,7 +39,9 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	healthHandler := health.NewHandler(pool)
 	stClient := supertokens.NewClient(cfg.SuperTokensCoreURL, cfg.SuperTokensAPIKey)
 	realtimeHub := realtime.NewHub()
-	realtimeHandler := realtime.NewHandler(realtimeHub, []string{cfg.FrontendURL})
+	wsAllowedOrigins := buildWebSocketAllowedOrigins(cfg)
+	realtimeHandler := realtime.NewHandler(realtimeHub, wsAllowedOrigins)
+	realtimeClientHandler := realtime.NewAPIKeyHandler(realtimeHub, wsAllowedOrigins)
 	dbHandler := dbproxy.NewHandler(pool, stClient, realtimeHub)
 	projectsHandler, err := projects.NewHandler(pool, cfg)
 	if err != nil {
@@ -66,7 +68,8 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	// PUBLIC ROUTES (no auth required)
 	// ==================================================================
 	healthHandler.RegisterRoutes(mux)
-	mux.Handle("/ws", auth.APIKeyWebSocket(pool)(realtimeHandler))
+	mux.Handle("/ws", realtimeHandler)
+	mux.Handle("/app-api/ws", auth.APIKeyWebSocket(pool)(realtimeClientHandler))
 
 	// ==================================================================
 	// GO-HANDLED ROUTES (API key / access token auth)
@@ -91,6 +94,32 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 
 	registerProxyRoutes(mux, pool, requestLogger, platformAuthHandler)
 	return opsCleanup, nil
+}
+
+func buildWebSocketAllowedOrigins(cfg *config.Config) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 4)
+	add := func(origin string) {
+		if origin == "" {
+			return
+		}
+		if _, exists := seen[origin]; exists {
+			return
+		}
+		seen[origin] = struct{}{}
+		out = append(out, origin)
+	}
+
+	add(cfg.FrontendURL)
+	for _, origin := range cfg.ClientAllowedOrigins {
+		add(origin)
+	}
+
+	// Useful local-dev defaults when CLIENT_ALLOWED_ORIGINS is not set.
+	add("http://localhost:3005")
+	add("http://localhost:5173")
+	add("http://localhost:5178")
+	return out
 }
 
 // mountJWT creates a sub-mux, registers routes on it, and mounts it under

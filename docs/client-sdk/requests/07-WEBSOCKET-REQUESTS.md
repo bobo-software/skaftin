@@ -1,16 +1,27 @@
 # 07 - WebSocket Requests
 
-This document covers real-time client integration for apps connecting to the Go
-service over native WebSocket.
+This document covers real-time integration for external/client apps connecting
+to the Go service over native WebSocket.
 
-## Base Endpoint
+This file is client-focused. If you are integrating the internal admin app,
+use the admin websocket endpoint (`/ws`) documentation instead.
 
-- Development: `ws://localhost:4006/ws`
-- Production: `wss://skaftinplatform.bobosoftware.co.za/ws`
+Important:
+- Client apps must connect to `/app-api/ws`.
+- `/ws` is reserved for the internal admin websocket endpoint.
+
+## Base Endpoint (Client Apps Only)
+
+- Development: `ws://localhost:4006/app-api/ws`
+- Production: `wss://skaftinplatform.bobosoftware.co.za/app-api/ws`
 
 Use:
 - `ws://` when your API URL is `http://`
 - `wss://` when your API URL is `https://`
+
+Example:
+- API base: `https://skaftinplatform.bobosoftware.co.za`
+- WS URL: `wss://skaftinplatform.bobosoftware.co.za/app-api/ws?api_key=YOUR_API_KEY`
 
 ## Authentication
 
@@ -18,7 +29,7 @@ WebSocket connections require authentication. For browser clients, include the
 API key in the query string:
 
 ```text
-wss://skaftinplatform.bobosoftware.co.za/ws?api_key=YOUR_API_KEY
+wss://skaftinplatform.bobosoftware.co.za/app-api/ws?api_key=YOUR_API_KEY
 ```
 
 Notes:
@@ -177,7 +188,7 @@ export type WsIncomingMessage =
 export function createProjectSocket(apiBaseUrl: string, projectId: string) {
   const wsBase = apiBaseUrl.replace(/^http/, 'ws');
   const apiKey = import.meta.env.VITE_SKAFTIN_API_KEY as string;
-  const socket = new WebSocket(`${wsBase}/ws?api_key=${encodeURIComponent(apiKey)}`);
+  const socket = new WebSocket(`${wsBase}/app-api/ws?api_key=${encodeURIComponent(apiKey)}`);
 
   const subscribe = () => {
     socket.send(
@@ -221,7 +232,7 @@ export function useProjectRealtime({
   useEffect(() => {
     const wsBase = apiBaseUrl.replace(/^http/, 'ws');
     const apiKey = import.meta.env.VITE_SKAFTIN_API_KEY as string;
-    const socket = new WebSocket(`${wsBase}/ws?api_key=${encodeURIComponent(apiKey)}`);
+    const socket = new WebSocket(`${wsBase}/app-api/ws?api_key=${encodeURIComponent(apiKey)}`);
 
     socket.addEventListener('open', () => {
       socket.send(JSON.stringify({ type: 'subscribe', projectId }));

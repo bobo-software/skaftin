@@ -11,14 +11,15 @@ import (
 )
 
 type Config struct {
-	Port               string
-	Database           DatabaseConfig
-	MinIO              MinIOConfig
-	MinioBucket        string
-	SuperTokensCoreURL string
-	SuperTokensAPIKey  string
-	AppRootDir         string
-	FrontendURL        string
+	Port                 string
+	Database             DatabaseConfig
+	MinIO                MinIOConfig
+	MinioBucket          string
+	SuperTokensCoreURL   string
+	SuperTokensAPIKey    string
+	AppRootDir           string
+	FrontendURL          string
+	ClientAllowedOrigins []string
 }
 
 type DatabaseConfig struct {
@@ -49,12 +50,13 @@ func Load() *Config {
 		slog.Info("loaded .env file")
 	}
 	return &Config{
-		Port:               getEnv("PORT", "4006"),
-		SuperTokensCoreURL: getEnvAny([]string{"SUPERTOKENS_CORE_URL", "SUPERTOKENS_CONNECTION_URI"}, "http://localhost:3567"),
-		SuperTokensAPIKey:  getEnv("SUPERTOKENS_API_KEY", ""),
-		AppRootDir:         getEnv("APP_ROOT_DIR", ".."),
-		FrontendURL:        getEnvAny([]string{"FRONTEND_URL", "SUPERTOKENS_WEBSITE_DOMAIN"}, "http://localhost:3005"),
-		MinioBucket:        getEnv("MINIO_BUCKET", "skaftin"),
+		Port:                 getEnv("PORT", "4006"),
+		SuperTokensCoreURL:   getEnvAny([]string{"SUPERTOKENS_CORE_URL", "SUPERTOKENS_CONNECTION_URI"}, "http://localhost:3567"),
+		SuperTokensAPIKey:    getEnv("SUPERTOKENS_API_KEY", ""),
+		AppRootDir:           getEnv("APP_ROOT_DIR", ".."),
+		FrontendURL:          getEnvAny([]string{"FRONTEND_URL", "SUPERTOKENS_WEBSITE_DOMAIN"}, "http://localhost:3005"),
+		ClientAllowedOrigins: parseCommaSeparatedEnv("CLIENT_ALLOWED_ORIGINS"),
+		MinioBucket:          getEnv("MINIO_BUCKET", "skaftin"),
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "5432"),
@@ -64,6 +66,22 @@ func Load() *Config {
 		},
 		MinIO: parseMinIOConfig(),
 	}
+}
+
+func parseCommaSeparatedEnv(key string) []string {
+	raw := strings.TrimSpace(getEnv(key, ""))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		v := strings.TrimSpace(p)
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // parseMinIOConfig builds a MinIOConfig, handling endpoints that may contain a

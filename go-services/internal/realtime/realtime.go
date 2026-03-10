@@ -12,6 +12,13 @@ import (
 	"github.com/skaftin/go-services/internal/auth"
 )
 
+type AuthMode int
+
+const (
+	AuthModeAdminUnrestricted AuthMode = iota
+	AuthModeAPIKeyScoped
+)
+
 const (
 	messageTypeSubscribe      = "subscribe"
 	messageTypeUnsubscribe    = "unsubscribe"
@@ -51,10 +58,12 @@ type ProjectEvent struct {
 }
 
 type client struct {
-	conn             *websocket.Conn
-	send             chan []byte
-	projects         map[string]struct{}
-	allowedProjectID string
+	conn              *websocket.Conn
+	send              chan []byte
+	projects          map[string]struct{}
+	allowedProjectID  string
+	allowedProjects   map[string]struct{}
+	adminProjectScope bool
 }
 
 type Hub struct {
@@ -166,10 +175,11 @@ func (h *Hub) broadcastToProject(projectID string, msg OutgoingMessage) {
 
 type Handler struct {
 	hub      *Hub
+	mode     AuthMode
 	upgrader websocket.Upgrader
 }
 
-func NewHandler(hub *Hub, allowedOrigins []string) *Handler {
+func newHandler(hub *Hub, mode AuthMode, allowedOrigins []string) *Handler {
 	allowed := make(map[string]struct{})
 	for _, origin := range allowedOrigins {
 		if origin != "" {
@@ -179,6 +189,7 @@ func NewHandler(hub *Hub, allowedOrigins []string) *Handler {
 
 	return &Handler{
 		hub: hub,
+		mode: mode,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -194,9 +205,32 @@ func NewHandler(hub *Hub, allowedOrigins []string) *Handler {
 	}
 }
 
+func NewHandler(hub *Hub, allowedOrigins []string) *Handler {
+	return newHandler(hub, AuthModeAdminUnrestricted, allowedOrigins)
+}
+
+func NewAPIKeyHandler(hub *Hub, allowedOrigins []string) *Handler {
+	return newHandler(hub, AuthModeAPIKeyScoped, allowedOrigins)
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	authCtx := auth.GetAuthContext(r)
-	if authCtx == nil {
+	var userCtx = auth.GetUserContext(r)
+	var authCtx = auth.GetAuthContext(r)
+	slog.Info("websocket handshake received",
+		"path", r.URL.Path,
+		"query", r.URL.RawQuery,
+		"remoteAddr", r.RemoteAddr,
+		"origin", r.Header.Get("Origin"),
+		"mode", h.mode.String(),
+		"hasUserContext", userCtx != nil,
+		"hasAuthContext", authCtx != nil,
+	)
+	if h.mode == AuthModeAPIKeyScoped && authCtx == nil {
+		slog.Warn("websocket auth rejected: missing API key auth context",
+			"path", r.URL.Path,
+			"query", r.URL.RawQuery,
+			"remoteAddr", r.RemoteAddr,
+		)
 		http.Error(w, "Authentication required", http.StatusUnauthorized)
 		return
 	}
@@ -206,12 +240,28 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("realtime upgrade failed", "error", err)
 		return
 	}
+	slog.Info("websocket upgrade successful",
+		"path", r.URL.Path,
+		"mode", h.mode.String(),
+		"remoteAddr", r.RemoteAddr,
+	)
 
 	c := &client{
-		conn:             conn,
-		send:             make(chan []byte, 64),
-		projects:         make(map[string]struct{}),
-		allowedProjectID: strconv.Itoa(authCtx.ProjectID),
+		conn:            conn,
+		send:            make(chan []byte, 64),
+		projects:        make(map[string]struct{}),
+		allowedProjects: make(map[string]struct{}),
+	}
+	if h.mode == AuthModeAPIKeyScoped {
+		c.allowedProjectID = strconv.Itoa(authCtx.ProjectID)
+	} else if userCtx != nil {
+		if userCtx.Role == "admin" {
+			c.adminProjectScope = true
+		} else {
+			for _, pid := range userCtx.ProjectIDs {
+				c.allowedProjects[strconv.Itoa(int(pid))] = struct{}{}
+			}
+		}
 	}
 	h.hub.Register(c)
 
@@ -250,10 +300,20 @@ func (h *Handler) readPump(c *client) {
 				continue
 			}
 			if !canSubscribeProject(c, msg.ProjectID) {
+				slog.Warn("websocket subscribe rejected",
+					"projectId", msg.ProjectID,
+					"mode", h.mode.String(),
+					"allowedProjectId", c.allowedProjectID,
+					"adminScope", c.adminProjectScope,
+				)
 				h.sendToClient(c, OutgoingMessage{Type: messageTypeError, Message: "not authorized for requested project"})
 				continue
 			}
 			h.hub.Subscribe(c, msg.ProjectID)
+			slog.Info("websocket subscribed",
+				"projectId", msg.ProjectID,
+				"mode", h.mode.String(),
+			)
 			h.sendToClient(c, OutgoingMessage{Type: messageTypeSubscribed, ProjectID: msg.ProjectID})
 		case messageTypeUnsubscribe:
 			if msg.ProjectID == "" {
@@ -268,6 +328,17 @@ func (h *Handler) readPump(c *client) {
 	}
 }
 
+func (m AuthMode) String() string {
+	switch m {
+	case AuthModeAdminUnrestricted:
+		return "admin_unrestricted"
+	case AuthModeAPIKeyScoped:
+		return "api_key_scoped"
+	default:
+		return "unknown"
+	}
+}
+
 func canSubscribeProject(c *client, projectID string) bool {
 	if c == nil {
 		return false
@@ -276,7 +347,15 @@ func canSubscribeProject(c *client, projectID string) bool {
 		return false
 	}
 	// API-key auth is project-scoped: allow subscriptions only to that project.
-	return c.allowedProjectID != "" && c.allowedProjectID == projectID
+	if c.allowedProjectID != "" {
+		return c.allowedProjectID == projectID
+	}
+	// Session-auth users can subscribe to authorized projects.
+	if c.adminProjectScope {
+		return true
+	}
+	_, ok := c.allowedProjects[projectID]
+	return ok
 }
 
 func (h *Handler) writePump(c *client) {

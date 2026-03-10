@@ -97,50 +97,50 @@ func APIKeyWebSocket(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := extractTokenForWebSocket(r)
-			if token == "" {
-				slog.Warn("no websocket authentication token provided",
-					"path", r.URL.Path,
-					"method", r.Method,
-				)
-				httputil.WriteError(w, http.StatusUnauthorized, "Authentication required. Provide X-API-Key, Authorization Bearer token, or ?api_key query parameter.")
-				return
-			}
+			if token != "" {
+				cred, err := store.VerifyCredential(r.Context(), pool, token)
+				if err == nil {
+					schemaName, schemaErr := store.LookupSchemaName(r.Context(), pool, cred.ProjectID)
+					if schemaErr != nil {
+						slog.Error("failed to look up project schema", "error", schemaErr, "projectId", cred.ProjectID)
+						httputil.WriteError(w, http.StatusBadRequest, "Project not found")
+						return
+					}
 
-			cred, err := store.VerifyCredential(r.Context(), pool, token)
-			if err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
-					slog.Warn("invalid websocket credential", "path", r.URL.Path)
-					httputil.WriteError(w, http.StatusForbidden, "Invalid API key or access token")
+					store.UpdateLastUsed(r.Context(), pool, token)
+					authCtx := &model.AuthContext{
+						Credential: cred,
+						ProjectID:  cred.ProjectID,
+						SchemaName: schemaName,
+					}
+					ctx := context.WithValue(r.Context(), AuthContextKey, authCtx)
+					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
-				if errors.Is(err, model.ErrCredentialInactive) {
-					httputil.WriteError(w, http.StatusForbidden, "Credential is inactive")
+
+				if !errors.Is(err, pgx.ErrNoRows) && !errors.Is(err, model.ErrCredentialInactive) && !errors.Is(err, model.ErrCredentialExpired) {
+					slog.Error("websocket credential verification failed", "error", err, "path", r.URL.Path)
+					httputil.WriteError(w, http.StatusInternalServerError, "Authentication failed")
 					return
 				}
-				if errors.Is(err, model.ErrCredentialExpired) {
-					httputil.WriteError(w, http.StatusForbidden, "Credential has expired")
+			}
+
+			// Fallback: allow logged-in app users via SuperTokens session/cookie JWT.
+			jwtToken := extractJWT(r)
+			if jwtToken == "" {
+				jwtToken = token
+			}
+			if jwtToken != "" {
+				userCtx, err := verifySessionWithCore(r.Context(), jwtToken)
+				if err == nil && userCtx != nil {
+					ctx := context.WithValue(r.Context(), UserContextKey, userCtx)
+					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
-				slog.Error("websocket credential verification failed", "error", err, "path", r.URL.Path)
-				httputil.WriteError(w, http.StatusInternalServerError, "Authentication failed")
-				return
 			}
 
-			schemaName, err := store.LookupSchemaName(r.Context(), pool, cred.ProjectID)
-			if err != nil {
-				slog.Error("failed to look up project schema", "error", err, "projectId", cred.ProjectID)
-				httputil.WriteError(w, http.StatusBadRequest, "Project not found")
-				return
-			}
-
-			store.UpdateLastUsed(r.Context(), pool, token)
-			authCtx := &model.AuthContext{
-				Credential: cred,
-				ProjectID:  cred.ProjectID,
-				SchemaName: schemaName,
-			}
-			ctx := context.WithValue(r.Context(), AuthContextKey, authCtx)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			slog.Warn("websocket auth failed", "path", r.URL.Path, "method", r.Method)
+			httputil.WriteError(w, http.StatusUnauthorized, "Authentication required. Provide X-API-Key, Authorization Bearer token, cookie session, or ?api_key query parameter.")
 		})
 	}
 }

@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Menu, X, Database, Cloud, Home, Settings, ChevronRight, Mail, Shield, BarChart3 } from 'lucide-react';
 import AccountDropdown from './AccountDropdown';
 import OrganizationSwitcher from './OrganizationSwitcher';
 import AppText from '../forms/AppText';
+import socketService from '../../services/SocketService';
 
 interface DashboardNavbarProps {
   projectName: string;
@@ -19,6 +21,7 @@ const DashboardNavbar = ({
 }: DashboardNavbarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [wsStatus, setWsStatus] = useState(socketService.getConnectionStatus());
 
   // Get current section from URL
   const getCurrentSection = () => {
@@ -34,6 +37,36 @@ const DashboardNavbar = ({
 
   const currentSection = getCurrentSection();
   const SectionIcon = currentSection.icon;
+
+  useEffect(() => {
+    const updateStatus = () => setWsStatus(socketService.getConnectionStatus());
+    updateStatus();
+    const timer = window.setInterval(updateStatus, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const getWsStatusColor = () => {
+    if (wsStatus.isConnected) return 'bg-green-500';
+    if (wsStatus.reconnectAttempts > 0) return 'bg-amber-500';
+    return 'bg-red-500';
+  };
+
+  const handleWsStatusClick = () => {
+    const before = socketService.getConnectionStatus();
+    console.log('🛠️ WebSocket debug reconnect triggered from navbar', {
+      before,
+      projectName,
+      route: location.pathname,
+    });
+
+    socketService.reconnect();
+
+    setTimeout(() => {
+      const after = socketService.getConnectionStatus();
+      console.log('🛠️ WebSocket debug reconnect status after trigger', { after });
+      setWsStatus(after);
+    }, 500);
+  };
 
   return (
     <div className="sticky top-0 z-40 h-12 border-b border-dark-200 dark:border-dark-700 bg-white dark:bg-dark-800 flex items-center justify-between px-4 md:px-6 flex-shrink-0 shadow-sm">
@@ -100,6 +133,27 @@ const DashboardNavbar = ({
 
       {/* Right Side Actions */}
       <div className="flex items-center space-x-1 md:space-x-2 flex-shrink-0">
+        {/* WebSocket Connectivity Indicator */}
+        <button
+          type="button"
+          onClick={handleWsStatusClick}
+          className="hidden sm:flex items-center gap-2 px-2 py-1 rounded-md bg-dark-50 dark:bg-dark-700 hover:bg-dark-100 dark:hover:bg-dark-600 transition-colors cursor-pointer"
+          title={
+            wsStatus.isConnected
+              ? 'WebSocket connected (click to re-test connection)'
+              : `WebSocket disconnected${wsStatus.reconnectAttempts > 0 ? ` (retries: ${wsStatus.reconnectAttempts})` : ''} - click to reconnect`
+          }
+        >
+          <span className={`w-2 h-2 rounded-full ${getWsStatusColor()}`} />
+          <AppText
+            children={wsStatus.isConnected ? 'Realtime' : 'Offline'}
+            size="xs"
+            color="default"
+            weight="medium"
+            align="left"
+          />
+        </button>
+
         {/* Current Section Badge (Mobile Only) */}
         <div className={`sm:hidden flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-50 dark:bg-dark-700 ${currentSection.color}`}>
           <SectionIcon className="w-4 h-4" />

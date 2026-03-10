@@ -63,6 +63,11 @@ func (s *Server) Start() error {
 		"supertokensCore", s.cfg.SuperTokensCoreURL,
 		"appAPI2FallbackEnabled", false,
 	)
+	slog.Info("websocket routes active",
+		"enabled", true,
+		"adminEndpoint", "/ws",
+		"clientEndpoint", "/app-api/ws",
+	)
 	return s.httpServer.ListenAndServe()
 }
 
