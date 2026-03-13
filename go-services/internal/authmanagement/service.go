@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -143,32 +145,20 @@ func (s *Service) Register(ctx context.Context, projectID int, body map[string]a
 		}
 	}
 
-	// OTP if configured
+	// OTP if requested/configured
 	otpLen := 6
 	if settings != nil && settings.OtpLength > 0 {
 		otpLen = settings.OtpLength
 	}
-	if settings != nil && (settings.SendRegistrationEmail || settings.SendRegistrationSMS) {
+	otpMethodInput, _ := body["otp_method"].(string)
+	method, dest, shouldSendOTP, routeErr := resolveRegistrationOTPRoute(settings, otpMethodInput, email, phone)
+	if routeErr != nil {
+		return nil, routeErr
+	}
+	if shouldSendOTP {
 		code, err := GenerateOTP(otpLen)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate registration OTP: %w", err)
-		}
-		var method, dest string
-		switch {
-		case settings.SendRegistrationEmail && email != "":
-			method = "email"
-			dest = email
-		case settings.SendRegistrationSMS && phone != "":
-			method = "sms"
-			dest = phone
-		case email != "":
-			method = "email"
-			dest = email
-		case phone != "":
-			method = "sms"
-			dest = phone
-		default:
-			return nil, fmt.Errorf("registration OTP is enabled but no destination is available")
 		}
 
 		deliveryMetadata := map[string]any{
@@ -695,14 +685,13 @@ func (s *Service) SendForgotPasswordOTP(ctx context.Context, projectID int, body
 		otpLen = settings.OtpLength
 	}
 	_ = s.store.ExpirePendingOTPs(ctx, schema, user.ID, "password_reset")
-	code, _ := GenerateOTP(otpLen)
-	var method, dest string
-	if email != "" {
-		method = "email"
-		dest = email
-	} else {
-		method = "sms"
-		dest = phone
+	code, err := resolveForgotPasswordCode(body, otpLen)
+	if err != nil {
+		return err
+	}
+	method, dest, err := resolveForgotPasswordDelivery(body, user, email, phone)
+	if err != nil {
+		return err
 	}
 	expiresAt := time.Now().Add(10 * time.Minute)
 	if err := s.store.CreateOTP(ctx, schema, user.ID, code, method, dest, expiresAt, "password_reset", nil); err != nil {
@@ -1094,4 +1083,83 @@ func nilIfEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func resolveForgotPasswordCode(body map[string]any, otpLen int) (string, error) {
+	providedCode, _ := body["code"].(string)
+	providedCode = strings.TrimSpace(providedCode)
+	if providedCode == "" {
+		return GenerateOTP(otpLen)
+	}
+	if len(providedCode) != otpLen {
+		return "", fmt.Errorf("code must be %d digits", otpLen)
+	}
+	digitsOnly := regexp.MustCompile(`^\d+$`)
+	if !digitsOnly.MatchString(providedCode) {
+		return "", fmt.Errorf("code must contain only digits")
+	}
+	return providedCode, nil
+}
+
+func resolveForgotPasswordDelivery(body map[string]any, user *AppUser, requestedEmail, requestedPhone string) (method string, destination string, err error) {
+	requestedMethod, _ := body["method"].(string)
+	requestedMethod = strings.ToLower(strings.TrimSpace(requestedMethod))
+	if requestedMethod == "" {
+		if strings.TrimSpace(requestedEmail) != "" {
+			requestedMethod = "email"
+		} else {
+			requestedMethod = "sms"
+		}
+	}
+
+	switch requestedMethod {
+	case "email":
+		if user.Email == nil || strings.TrimSpace(*user.Email) == "" {
+			return "", "", fmt.Errorf("user does not have an email address")
+		}
+		return "email", strings.TrimSpace(*user.Email), nil
+	case "sms":
+		if user.Phone == nil || strings.TrimSpace(*user.Phone) == "" {
+			return "", "", fmt.Errorf("user does not have a phone number")
+		}
+		return "sms", strings.TrimSpace(*user.Phone), nil
+	default:
+		return "", "", fmt.Errorf("method must be one of: email, sms")
+	}
+}
+
+func resolveRegistrationOTPRoute(settings *AuthSettings, otpMethodInput, email, phone string) (method string, destination string, send bool, err error) {
+	otpMethod := strings.ToLower(strings.TrimSpace(otpMethodInput))
+	if otpMethod != "" {
+		switch otpMethod {
+		case "email":
+			if strings.TrimSpace(email) == "" {
+				return "", "", false, fmt.Errorf("email is required when otp_method is email")
+			}
+			return "email", strings.TrimSpace(email), true, nil
+		case "sms":
+			if strings.TrimSpace(phone) == "" {
+				return "", "", false, fmt.Errorf("phone is required when otp_method is sms")
+			}
+			return "sms", strings.TrimSpace(phone), true, nil
+		default:
+			return "", "", false, fmt.Errorf("otp_method must be one of: email, sms")
+		}
+	}
+
+	if settings == nil || (!settings.SendRegistrationEmail && !settings.SendRegistrationSMS) {
+		return "", "", false, nil
+	}
+	switch {
+	case settings.SendRegistrationEmail && strings.TrimSpace(email) != "":
+		return "email", strings.TrimSpace(email), true, nil
+	case settings.SendRegistrationSMS && strings.TrimSpace(phone) != "":
+		return "sms", strings.TrimSpace(phone), true, nil
+	case strings.TrimSpace(email) != "":
+		return "email", strings.TrimSpace(email), true, nil
+	case strings.TrimSpace(phone) != "":
+		return "sms", strings.TrimSpace(phone), true, nil
+	default:
+		return "", "", false, fmt.Errorf("registration OTP is enabled but no destination is available")
+	}
 }

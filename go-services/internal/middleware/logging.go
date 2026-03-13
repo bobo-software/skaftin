@@ -3,9 +3,9 @@ package middleware
 import (
 	"bufio"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -43,12 +43,28 @@ func Logging(next http.Handler) http.Handler {
 
 		next.ServeHTTP(wrapped, r)
 
-		slog.Info("request",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", wrapped.statusCode,
-			"duration", time.Since(start).String(),
-			"ip", r.RemoteAddr,
+		routeLabel, routeEmoji := classifyRoute(r.URL.Path)
+		fmt.Printf("%s request method=%s path=%s route_type=%s status=%d duration=%s ip=%s\n",
+			routeEmoji,
+			r.Method,
+			r.URL.Path,
+			routeLabel,
+			wrapped.statusCode,
+			time.Since(start).String(),
+			r.RemoteAddr,
 		)
 	})
+}
+
+func classifyRoute(path string) (string, string) {
+	switch {
+	case strings.HasPrefix(path, "/app-api/"):
+		return "app-api", "🟣"
+	case strings.HasPrefix(path, "/app-api-2/"):
+		return "app-api-2", "🟪"
+	case strings.HasPrefix(path, "/api/"):
+		return "api", "🔵"
+	default:
+		return "other", "⚪"
+	}
 }

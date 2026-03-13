@@ -183,7 +183,7 @@ func newHandler(hub *Hub, mode AuthMode, allowedOrigins []string) *Handler {
 	_ = allowedOrigins
 
 	return &Handler{
-		hub: hub,
+		hub:  hub,
 		mode: mode,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
@@ -291,7 +291,9 @@ func (h *Handler) readPump(c *client) {
 				h.sendToClient(c, OutgoingMessage{Type: messageTypeError, Message: "projectId is required"})
 				continue
 			}
-			if !canSubscribeProject(c, msg.ProjectID) {
+			// Internal admin websocket route (/ws) is intentionally unrestricted.
+			// Project authorization checks only apply to API-key scoped clients.
+			if h.mode != AuthModeAdminUnrestricted && !canSubscribeProject(c, msg.ProjectID) {
 				slog.Warn("websocket subscribe rejected",
 					"projectId", msg.ProjectID,
 					"mode", h.mode.String(),

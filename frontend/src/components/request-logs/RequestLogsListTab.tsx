@@ -1,10 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { useProjectStore, useRequestLogsStore } from '../../stores/StoresIndex';
+import React, { useState, useEffect, useRef } from 'react';
+import { useProjectStore, useRealtimeStore, useRequestLogsStore } from '../../stores/StoresIndex';
 import { Loader2, RefreshCw, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { RequestLogDetailModal } from '@components/ComponentsIndex';
 
 const RequestLogsListTab = () => {
   const { currentProject } = useProjectStore();
+  const {
+    joinProject,
+    leaveProject,
+    recentEvents,
+    initialize: initializeRealtime,
+  } = useRealtimeStore();
   const {
     logs,
     logsLoading,
@@ -21,6 +27,12 @@ const RequestLogsListTab = () => {
   } = useRequestLogsStore();
 
   const [statusCodeInput, setStatusCodeInput] = useState('');
+  const lastRealtimeRefreshRef = useRef(0);
+
+  // Initialize realtime websocket listeners once for this page session
+  useEffect(() => {
+    initializeRealtime();
+  }, [initializeRealtime]);
 
   // Set project ID when component mounts or project changes
   useEffect(() => {
@@ -35,6 +47,18 @@ const RequestLogsListTab = () => {
       fetchLogs(String(currentProject.id));
     }
   }, [currentProject?.id]);
+
+  // Subscribe to project websocket stream while logs tab is mounted
+  useEffect(() => {
+    if (!currentProject?.id) return;
+
+    const projectId = String(currentProject.id);
+    joinProject(projectId);
+
+    return () => {
+      leaveProject(projectId);
+    };
+  }, [currentProject?.id, joinProject, leaveProject]);
 
   // Debounce status code input
   useEffect(() => {
@@ -53,6 +77,25 @@ const RequestLogsListTab = () => {
       fetchLogs(String(currentProject.id), filters);
     }
   }, [filters.method, filters.status_code, filters.has_error]);
+
+  // Auto-refresh when backend emits request_log_created for this project
+  useEffect(() => {
+    if (!currentProject?.id || recentEvents.length === 0) return;
+
+    const projectId = String(currentProject.id);
+    const latestEvent = recentEvents[0];
+    if (latestEvent.projectId !== projectId || latestEvent.type !== 'request_log_created') {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastRealtimeRefreshRef.current < 1000) {
+      return;
+    }
+    lastRealtimeRefreshRef.current = now;
+
+    void refreshLogs(projectId);
+  }, [recentEvents, currentProject?.id, refreshLogs]);
 
   const handleRefresh = async () => {
     if (currentProject?.id) {

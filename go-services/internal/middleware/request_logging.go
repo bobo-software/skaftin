@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/auth"
+	"github.com/skaftin/go-services/internal/realtime"
 	"github.com/skaftin/go-services/internal/requestlogs"
 )
 
@@ -29,6 +30,10 @@ type requestLogService interface {
 	CreateLog(ctx context.Context, input requestlogs.CreateLogInput) (int, error)
 }
 
+type requestLogEventBroadcaster interface {
+	BroadcastProjectEvent(event realtime.ProjectEvent)
+}
+
 type cachedRequestLogSetting struct {
 	enabled   bool
 	timestamp time.Time
@@ -39,13 +44,14 @@ type cachedRequestLogSetting struct {
 type RequestLogger struct {
 	service requestLogService
 
-	queue chan requestlogs.CreateLogInput
-	done  chan struct{}
+	queue       chan requestlogs.CreateLogInput
+	done        chan struct{}
+	broadcaster requestLogEventBroadcaster
 
-	cache            map[int]cachedRequestLogSetting
-	cacheMu          sync.RWMutex
-	refreshing       map[int]struct{}
-	refreshingMu     sync.Mutex
+	cache        map[int]cachedRequestLogSetting
+	cacheMu      sync.RWMutex
+	refreshing   map[int]struct{}
+	refreshingMu sync.Mutex
 }
 
 // NewRequestLogger constructs request logging middleware backed by DB settings.
@@ -59,10 +65,10 @@ func newRequestLoggerWithService(svc requestLogService, queueSize int) *RequestL
 		queueSize = requestLogQueueSize
 	}
 	rl := &RequestLogger{
-		service: svc,
-		queue:   make(chan requestlogs.CreateLogInput, queueSize),
-		done:    make(chan struct{}),
-		cache:   make(map[int]cachedRequestLogSetting),
+		service:    svc,
+		queue:      make(chan requestlogs.CreateLogInput, queueSize),
+		done:       make(chan struct{}),
+		cache:      make(map[int]cachedRequestLogSetting),
 		refreshing: make(map[int]struct{}),
 	}
 	go rl.worker()
@@ -74,6 +80,33 @@ func (rl *RequestLogger) Close() {
 	close(rl.done)
 }
 
+// SetRealtimeBroadcaster attaches an optional project-event broadcaster for
+// realtime log notifications.
+func (rl *RequestLogger) SetRealtimeBroadcaster(b requestLogEventBroadcaster) {
+	rl.broadcaster = b
+}
+
+func (rl *RequestLogger) emitRequestLogCreated(entry requestlogs.CreateLogInput, logID int) {
+	if rl.broadcaster == nil {
+		return
+	}
+
+	payload := map[string]any{
+		"logId":      logID,
+		"method":     entry.Method,
+		"url":        entry.URL,
+		"statusCode": entry.StatusCode,
+		"createdAt":  time.Now().UTC().Format(time.RFC3339Nano),
+	}
+
+	rl.broadcaster.BroadcastProjectEvent(realtime.ProjectEvent{
+		Type:      "request_log_created",
+		ProjectID: strconv.Itoa(entry.ProjectID),
+		Data:      payload,
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+	})
+}
+
 func (rl *RequestLogger) worker() {
 	for {
 		select {
@@ -81,9 +114,12 @@ func (rl *RequestLogger) worker() {
 			return
 		case entry := <-rl.queue:
 			// Logging should never impact serving requests.
-			if _, err := rl.service.CreateLog(context.Background(), entry); err != nil {
+			logID, err := rl.service.CreateLog(context.Background(), entry)
+			if err != nil {
 				slog.Warn("request log insert failed", "error", err, "path", entry.URL)
+				continue
 			}
+			rl.emitRequestLogCreated(entry, logID)
 		}
 	}
 }

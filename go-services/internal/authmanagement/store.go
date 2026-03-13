@@ -1277,16 +1277,18 @@ func (s *Store) GetUserRoles(ctx context.Context, schema string, userID int) ([]
 // ─── OTP ─────────────────────────────────────────────────────────────
 
 func (s *Store) CreateOTP(ctx context.Context, schema string, userID int, code, method, destination string, expiresAt time.Time, purpose string, metadata json.RawMessage) error {
-	var purposeVal *string
-	if purpose != "" {
-		purposeVal = &purpose
+	purposeValue := strings.TrimSpace(purpose)
+	if purposeValue == "" {
+		// Some project schemas enforce NOT NULL on purpose.
+		// Treat empty/legacy purpose as registration OTP.
+		purposeValue = "registration"
 	}
 	_, err := s.pool.Exec(ctx,
 		fmt.Sprintf(`INSERT INTO %s.skaftin_system_otp_verifications
 			(user_id, otp_code, otp_method, destination, expires_at, purpose, metadata)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 			pgx.Identifier{schema}.Sanitize()),
-		userID, code, method, destination, expiresAt, purposeVal, metadata)
+		userID, code, method, destination, expiresAt, purposeValue, metadata)
 	return err
 }
 

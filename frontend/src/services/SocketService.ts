@@ -52,7 +52,9 @@ class SocketService {
     const serverUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:4006';
     const parsed = new URL(serverUrl);
     parsed.protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
-    parsed.pathname = '/ws';
+    const wsPathFromEnv = import.meta.env.VITE_WS_PATH;
+    const wsPath = wsPathFromEnv && wsPathFromEnv.trim() ? wsPathFromEnv.trim() : '/ws';
+    parsed.pathname = wsPath.startsWith('/') ? wsPath : `/${wsPath}`;
     parsed.search = '';
     parsed.hash = '';
 

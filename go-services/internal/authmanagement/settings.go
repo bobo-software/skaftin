@@ -1,7 +1,10 @@
 package authmanagement
 
 import (
+	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
@@ -115,9 +118,9 @@ func (h *Handler) SendVerificationHandler(w http.ResponseWriter, r *http.Request
 		httputil.WriteError(w, 404, "Project not found")
 		return
 	}
-	userIDOrEmail, _ := body["user_id_or_email"].(string)
+	userIDOrEmail := extractUserIDOrEmail(body)
 	if err := h.service.SendVerificationEmail(r.Context(), projectID, schema, userIDOrEmail); err != nil {
-		httputil.WriteError(w, 500, err.Error())
+		writeSettingsTriggerError(w, err)
 		return
 	}
 	httputil.WriteSuccess(w, 200, "Verification email sent", nil)
@@ -138,12 +141,54 @@ func (h *Handler) SendPasswordResetHandler(w http.ResponseWriter, r *http.Reques
 		httputil.WriteError(w, 404, "Project not found")
 		return
 	}
-	userIDOrEmail, _ := body["user_id_or_email"].(string)
+	userIDOrEmail := extractUserIDOrEmail(body)
 	if err := h.service.SendPasswordResetEmail(r.Context(), projectID, schema, userIDOrEmail); err != nil {
-		httputil.WriteError(w, 500, err.Error())
+		writeSettingsTriggerError(w, err)
 		return
 	}
 	httputil.WriteSuccess(w, 200, "Password reset email sent", nil)
+}
+
+func extractUserIDOrEmail(body map[string]any) string {
+	if body == nil {
+		return ""
+	}
+	if raw, ok := body["user_id_or_email"].(string); ok {
+		if value := strings.TrimSpace(raw); value != "" {
+			return value
+		}
+	}
+	if raw, ok := body["user_id"].(float64); ok {
+		if raw > 0 {
+			return strconv.Itoa(int(raw))
+		}
+	}
+	if raw, ok := body["user_id"].(string); ok {
+		if value := strings.TrimSpace(raw); value != "" {
+			return value
+		}
+	}
+	if raw, ok := body["email"].(string); ok {
+		return strings.TrimSpace(raw)
+	}
+	return ""
+}
+
+func writeSettingsTriggerError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrSettingsRecipientRequired),
+		errors.Is(err, ErrSettingsRecipientInvalid),
+		errors.Is(err, ErrSettingsRecipientHasNoEmail),
+		errors.Is(err, ErrSettingsProviderNotConfigured):
+		httputil.WriteError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrSettingsVerificationEmailDisabled),
+		errors.Is(err, ErrSettingsPasswordResetEmailDisabled):
+		httputil.WriteError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, ErrSettingsUserNotFound):
+		httputil.WriteError(w, http.StatusNotFound, err.Error())
+	default:
+		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+	}
 }
 
 func (h *Handler) VerifyOTPSettingsHandler(w http.ResponseWriter, r *http.Request) {

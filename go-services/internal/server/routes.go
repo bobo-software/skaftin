@@ -42,6 +42,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	wsAllowedOrigins := buildWebSocketAllowedOrigins(cfg)
 	realtimeHandler := realtime.NewHandler(realtimeHub, wsAllowedOrigins)
 	realtimeClientHandler := realtime.NewAPIKeyHandler(realtimeHub, wsAllowedOrigins)
+	requestLogger.SetRealtimeBroadcaster(realtimeHub)
 	dbHandler := dbproxy.NewHandler(pool, stClient, realtimeHub)
 	projectsHandler, err := projects.NewHandler(pool, cfg)
 	if err != nil {

@@ -2,7 +2,11 @@ package authmanagement
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/skaftin/go-services/internal/communications"
@@ -74,11 +78,120 @@ func (s *Service) TestEmailProvider(ctx context.Context, projectID, providerID i
 }
 
 func (s *Service) SendVerificationEmail(ctx context.Context, projectID int, schema string, userIDOrEmail string) error {
-	return fmt.Errorf("not yet implemented via Go; use Node proxy")
+	settings, err := s.GetAuthSettings(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if settings == nil || !settings.SendVerificationEmail {
+		return ErrSettingsVerificationEmailDisabled
+	}
+	if settings.EmailProviderID == nil {
+		return ErrSettingsProviderNotConfigured
+	}
+	if s.comms == nil {
+		return fmt.Errorf("%w: communications service unavailable", ErrSettingsDeliveryFailed)
+	}
+
+	user, destination, err := s.resolveSettingsRecipient(ctx, schema, userIDOrEmail)
+	if err != nil {
+		return err
+	}
+
+	otpLen := 6
+	if settings.OtpLength > 0 {
+		otpLen = settings.OtpLength
+	}
+	code, err := GenerateOTP(otpLen)
+	if err != nil {
+		return fmt.Errorf("failed to generate verification OTP: %w", err)
+	}
+
+	metadataRaw, err := json.Marshal(map[string]any{
+		"trigger": "settings_send_verification",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to build verification metadata: %w", err)
+	}
+	expiresAt := time.Now().Add(10 * time.Minute)
+	if err := s.store.CreateOTP(ctx, schema, user.ID, code, "email", destination, expiresAt, "", metadataRaw); err != nil {
+		return fmt.Errorf("failed to create verification OTP: %w", err)
+	}
+
+	subject := "Verify your email"
+	textBody := fmt.Sprintf("Your verification OTP is %s. It expires in 10 minutes.", code)
+	htmlBody := fmt.Sprintf("<p>Your verification OTP is <strong>%s</strong>.</p><p>It expires in 10 minutes.</p>", code)
+	if _, err := s.comms.SendEmail(ctx, projectID, *settings.EmailProviderID, []string{destination}, nil, nil, subject, textBody, htmlBody, nil); err != nil {
+		slog.Warn("settings verification email delivery failed",
+			"projectId", projectID,
+			"userId", user.ID,
+			"email", destination,
+			"providerId", *settings.EmailProviderID,
+			"error", err,
+		)
+		return fmt.Errorf("%w: %v", ErrSettingsDeliveryFailed, err)
+	}
+
+	return nil
 }
 
 func (s *Service) SendPasswordResetEmail(ctx context.Context, projectID int, schema string, userIDOrEmail string) error {
-	return fmt.Errorf("not yet implemented via Go; use Node proxy")
+	settings, err := s.GetAuthSettings(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if settings == nil || !settings.SendPasswordResetEmail {
+		return ErrSettingsPasswordResetEmailDisabled
+	}
+	if settings.EmailProviderID == nil {
+		return ErrSettingsProviderNotConfigured
+	}
+	if s.comms == nil {
+		return fmt.Errorf("%w: communications service unavailable", ErrSettingsDeliveryFailed)
+	}
+
+	user, destination, err := s.resolveSettingsRecipient(ctx, schema, userIDOrEmail)
+	if err != nil {
+		return err
+	}
+
+	otpLen := 6
+	if settings.OtpLength > 0 {
+		otpLen = settings.OtpLength
+	}
+	code, err := GenerateOTP(otpLen)
+	if err != nil {
+		return fmt.Errorf("failed to generate password-reset OTP: %w", err)
+	}
+
+	if err := s.store.ExpirePendingOTPs(ctx, schema, user.ID, "password_reset"); err != nil {
+		return fmt.Errorf("failed to expire prior password-reset OTPs: %w", err)
+	}
+	metadataRaw, err := json.Marshal(map[string]any{
+		"trigger": "settings_send_reset",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to build password-reset metadata: %w", err)
+	}
+	expiresAt := time.Now().Add(10 * time.Minute)
+	if err := s.store.CreateOTP(ctx, schema, user.ID, code, "email", destination, expiresAt, "password_reset", metadataRaw); err != nil {
+		return fmt.Errorf("failed to create password-reset OTP: %w", err)
+	}
+
+	subject := "Your password reset OTP"
+	textBody := fmt.Sprintf("Your password reset OTP is %s. It expires in 10 minutes.", code)
+	htmlBody := fmt.Sprintf("<p>Your password reset OTP is <strong>%s</strong>.</p><p>It expires in 10 minutes.</p>", code)
+	if _, err := s.comms.SendEmail(ctx, projectID, *settings.EmailProviderID, []string{destination}, nil, nil, subject, textBody, htmlBody, nil); err != nil {
+		slog.Warn("settings password-reset email delivery failed",
+			"projectId", projectID,
+			"userId", user.ID,
+			"email", destination,
+			"providerId", *settings.EmailProviderID,
+			"error", err,
+		)
+		return fmt.Errorf("%w: %v", ErrSettingsDeliveryFailed, err)
+	}
+
+	return nil
 }
 
 func (s *Service) VerifyOTPForSettings(ctx context.Context, projectID int, userID int, code string) error {
@@ -117,4 +230,34 @@ func (s *Service) TestSmsProvider(ctx context.Context, projectID int, providerID
 	}
 	_, err := s.comms.SendSMS(ctx, projectID, []communications.SmsMessage{{Content: message, Destination: phone}})
 	return err
+}
+
+func (s *Service) resolveSettingsRecipient(ctx context.Context, schema, userIDOrEmail string) (*AppUser, string, error) {
+	identifier := strings.TrimSpace(userIDOrEmail)
+	if identifier == "" {
+		return nil, "", ErrSettingsRecipientRequired
+	}
+
+	var (
+		user *AppUser
+		err  error
+	)
+	if parsedID, parseErr := strconv.Atoi(identifier); parseErr == nil {
+		if parsedID <= 0 {
+			return nil, "", ErrSettingsRecipientInvalid
+		}
+		user, err = s.store.GetUser(ctx, schema, parsedID)
+	} else {
+		user, err = s.store.GetUserByEmail(ctx, schema, identifier)
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	if user == nil {
+		return nil, "", ErrSettingsUserNotFound
+	}
+	if user.Email == nil || strings.TrimSpace(*user.Email) == "" {
+		return nil, "", ErrSettingsRecipientHasNoEmail
+	}
+	return user, strings.TrimSpace(*user.Email), nil
 }
