@@ -7,17 +7,67 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/skaftin/go-services/internal/dbmetrics"
 )
 
 // Store handles database queries for request logs and related settings.
 type Store struct {
-	pool *pgxpool.Pool
+	pool     *pgxpool.Pool
+	recorder *dbmetrics.Recorder
 }
 
 // NewStore creates a new request logs Store.
 func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+	return &Store{
+		pool:     pool,
+		recorder: dbmetrics.NewRecorder(pool),
+	}
+}
+
+func (s *Store) query(ctx context.Context, projectID int, query string, args ...any) (pgx.Rows, error) {
+	start := time.Now()
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err == nil {
+		s.captureMetric(ctx, projectID, query, 0, start)
+	}
+	return rows, err
+}
+
+func (s *Store) queryRow(ctx context.Context, projectID int, query string, args ...any) pgx.Row {
+	start := time.Now()
+	row := s.pool.QueryRow(ctx, query, args...)
+	return dbmetrics.WrapRow(row, func(scanErr error) {
+		rowsAffected := int64(0)
+		if scanErr == nil {
+			rowsAffected = 1
+		}
+		s.captureMetric(ctx, projectID, query, rowsAffected, start)
+	})
+}
+
+func (s *Store) exec(ctx context.Context, projectID int, query string, args ...any) (pgconn.CommandTag, error) {
+	start := time.Now()
+	tag, err := s.pool.Exec(ctx, query, args...)
+	rowsAffected := int64(0)
+	if err == nil {
+		rowsAffected = tag.RowsAffected()
+	}
+	s.captureMetric(ctx, projectID, query, rowsAffected, start)
+	return tag, err
+}
+
+func (s *Store) captureMetric(ctx context.Context, projectID int, query string, rowsAffected int64, startedAt time.Time) {
+	if s.recorder == nil || projectID <= 0 {
+		return
+	}
+	s.recorder.Record(ctx, dbmetrics.Record{
+		ProjectID:    projectID,
+		Query:        query,
+		RowsAffected: rowsAffected,
+		Duration:     time.Since(startedAt),
+	})
 }
 
 // RequestLog represents a row from public.skaftin_system_request_logs.
@@ -134,7 +184,7 @@ func scanLogRows(rows pgx.Rows) ([]RequestLog, error) {
 // GetSettings reads request logging settings from skaftin_system_auth_settings.
 func (s *Store) GetSettings(ctx context.Context, projectID int) (*LogSettings, error) {
 	var raw json.RawMessage
-	err := s.pool.QueryRow(ctx,
+	err := s.queryRow(ctx, projectID,
 		`SELECT settings_json FROM skaftin_system_auth_settings WHERE project_id = $1`,
 		projectID,
 	).Scan(&raw)
@@ -178,7 +228,7 @@ func (s *Store) IsLoggingEnabled(ctx context.Context, projectID int) (bool, erro
 // CreateLog inserts one request log entry.
 func (s *Store) CreateLog(ctx context.Context, input CreateLogInput) (int, error) {
 	var id int
-	err := s.pool.QueryRow(ctx, `
+	err := s.queryRow(ctx, input.ProjectID, `
 		INSERT INTO public.skaftin_system_request_logs
 			(project_id, method, url, status_code, request_payload, response_data, error_message, duration_ms, user_id, ip_address, user_agent)
 		VALUES
@@ -212,7 +262,7 @@ func nilIfEmptyJSON(raw json.RawMessage) any {
 // UpdateSettings merges request logging fields into settings_json.
 func (s *Store) UpdateSettings(ctx context.Context, projectID int, enabled *bool, retention *string) (*LogSettings, error) {
 	var raw json.RawMessage
-	err := s.pool.QueryRow(ctx,
+	err := s.queryRow(ctx, projectID,
 		`SELECT settings_json FROM skaftin_system_auth_settings WHERE project_id = $1`,
 		projectID,
 	).Scan(&raw)
@@ -240,7 +290,7 @@ func (s *Store) UpdateSettings(ctx context.Context, projectID int, enabled *bool
 		return nil, err
 	}
 
-	_, err = s.pool.Exec(ctx,
+	_, err = s.exec(ctx, projectID,
 		`UPDATE skaftin_system_auth_settings SET settings_json = $1, updated_at = NOW() WHERE project_id = $2`,
 		updated, projectID,
 	)
@@ -297,7 +347,7 @@ func (s *Store) ListLogs(ctx context.Context, projectID int, f LogFilters) (*Log
 	}
 
 	var total int
-	err := s.pool.QueryRow(ctx,
+	err := s.queryRow(ctx, projectID,
 		`SELECT COUNT(*) FROM public.skaftin_system_request_logs `+where, args...,
 	).Scan(&total)
 	if err != nil {
@@ -310,7 +360,7 @@ func (s *Store) ListLogs(ctx context.Context, projectID int, f LogFilters) (*Log
 	)
 	args = append(args, f.Limit, f.Offset)
 
-	rows, err := s.pool.Query(ctx, query, args...)
+	rows, err := s.query(ctx, projectID, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +387,7 @@ func (s *Store) ListLogs(ctx context.Context, projectID int, f LogFilters) (*Log
 
 // GetLog retrieves a single request log by ID and project.
 func (s *Store) GetLog(ctx context.Context, projectID, logID int) (*RequestLog, error) {
-	row := s.pool.QueryRow(ctx,
+	row := s.queryRow(ctx, projectID,
 		`SELECT `+logColumns+` FROM public.skaftin_system_request_logs WHERE id = $1 AND project_id = $2`,
 		logID, projectID,
 	)
@@ -350,7 +400,7 @@ func (s *Store) GetLog(ctx context.Context, projectID, logID int) (*RequestLog, 
 
 // Cleanup deletes request logs older than cutoff for the given project.
 func (s *Store) Cleanup(ctx context.Context, projectID int, cutoff time.Time) (int64, error) {
-	tag, err := s.pool.Exec(ctx,
+	tag, err := s.exec(ctx, projectID,
 		`DELETE FROM public.skaftin_system_request_logs WHERE project_id = $1 AND created_at < $2`,
 		projectID, cutoff,
 	)
@@ -363,7 +413,7 @@ func (s *Store) Cleanup(ctx context.Context, projectID int, cutoff time.Time) (i
 // CountTotal returns the total log count for a project since startTime.
 func (s *Store) CountTotal(ctx context.Context, projectID int, since time.Time) (int, error) {
 	var count int
-	err := s.pool.QueryRow(ctx,
+	err := s.queryRow(ctx, projectID,
 		`SELECT COUNT(*) FROM public.skaftin_system_request_logs WHERE project_id = $1 AND created_at >= $2`,
 		projectID, since,
 	).Scan(&count)
@@ -372,7 +422,7 @@ func (s *Store) CountTotal(ctx context.Context, projectID int, since time.Time) 
 
 // CountByStatusCategory returns request counts grouped by HTTP status category.
 func (s *Store) CountByStatusCategory(ctx context.Context, projectID int, since time.Time) (map[string]int, error) {
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.query(ctx, projectID, `
 		SELECT
 			CASE
 				WHEN status_code >= 200 AND status_code < 300 THEN '2xx'
@@ -404,7 +454,7 @@ func (s *Store) CountByStatusCategory(ctx context.Context, projectID int, since 
 
 // CountByMethod returns request counts grouped by HTTP method.
 func (s *Store) CountByMethod(ctx context.Context, projectID int, since time.Time) (map[string]int, error) {
-	rows, err := s.pool.Query(ctx,
+	rows, err := s.query(ctx, projectID,
 		`SELECT method, COUNT(*) FROM public.skaftin_system_request_logs
 		 WHERE project_id = $1 AND created_at >= $2
 		 GROUP BY method`, projectID, since)
@@ -435,7 +485,7 @@ type ResponseTimeStats struct {
 // GetResponseTimeStats returns avg, max, and min duration_ms.
 func (s *Store) GetResponseTimeStats(ctx context.Context, projectID int, since time.Time) (*ResponseTimeStats, error) {
 	var avgDur, maxDur, minDur *float64
-	err := s.pool.QueryRow(ctx,
+	err := s.queryRow(ctx, projectID,
 		`SELECT AVG(duration_ms), MAX(duration_ms), MIN(duration_ms)
 		 FROM public.skaftin_system_request_logs
 		 WHERE project_id = $1 AND created_at >= $2 AND duration_ms IS NOT NULL`,
@@ -461,7 +511,7 @@ func (s *Store) GetResponseTimeStats(ctx context.Context, projectID int, since t
 // CountErrors returns the count of error requests (error_message IS NOT NULL OR status_code >= 400).
 func (s *Store) CountErrors(ctx context.Context, projectID int, since time.Time) (int, error) {
 	var count int
-	err := s.pool.QueryRow(ctx,
+	err := s.queryRow(ctx, projectID,
 		`SELECT COUNT(*) FROM public.skaftin_system_request_logs
 		 WHERE project_id = $1 AND created_at >= $2 AND (error_message IS NOT NULL OR status_code >= 400)`,
 		projectID, since,
@@ -471,7 +521,7 @@ func (s *Store) CountErrors(ctx context.Context, projectID int, since time.Time)
 
 // TopEndpoints returns the top 10 most requested endpoints by count.
 func (s *Store) TopEndpoints(ctx context.Context, projectID int, since time.Time) ([]TopEndpoint, error) {
-	rows, err := s.pool.Query(ctx,
+	rows, err := s.query(ctx, projectID,
 		`SELECT url, method, COUNT(*) AS count, AVG(duration_ms) AS avg_duration
 		 FROM public.skaftin_system_request_logs
 		 WHERE project_id = $1 AND created_at >= $2

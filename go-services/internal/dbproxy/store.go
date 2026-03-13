@@ -3,26 +3,34 @@ package dbproxy
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/skaftin/go-services/internal/dbmetrics"
 )
 
 // Store handles dynamic SQL against project schemas.
 type Store struct {
-	pool *pgxpool.Pool
+	pool     *pgxpool.Pool
+	recorder *dbmetrics.Recorder
 }
 
 // NewStore creates a new dbproxy Store.
 func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+	return &Store{
+		pool:     pool,
+		recorder: dbmetrics.NewRecorder(pool),
+	}
 }
 
 // ProjectConn wraps a pgx connection with the project's search_path set.
 // The caller MUST call Release() when done.
 type ProjectConn struct {
 	conn       *pgxpool.Conn
+	ProjectID  int
 	SchemaName string
+	recorder   *dbmetrics.Recorder
 }
 
 // Release returns the connection to the pool.
@@ -34,18 +42,47 @@ func (pc *ProjectConn) Release() {
 
 // Query executes a query that returns rows.
 func (pc *ProjectConn) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	return pc.conn.Query(ctx, sql, args...)
+	start := time.Now()
+	rows, err := pc.conn.Query(ctx, sql, args...)
+	pc.captureMetric(ctx, sql, 0, start)
+	return rows, err
 }
 
 // QueryRow executes a query that returns at most one row.
 func (pc *ProjectConn) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
-	return pc.conn.QueryRow(ctx, sql, args...)
+	start := time.Now()
+	row := pc.conn.QueryRow(ctx, sql, args...)
+	return dbmetrics.WrapRow(row, func(scanErr error) {
+		rowsAffected := int64(0)
+		if scanErr == nil {
+			rowsAffected = 1
+		}
+		pc.captureMetric(ctx, sql, rowsAffected, start)
+	})
 }
 
 // Exec executes a query that doesn't return rows.
 func (pc *ProjectConn) Exec(ctx context.Context, sql string, args ...any) error {
-	_, err := pc.conn.Exec(ctx, sql, args...)
+	start := time.Now()
+	tag, err := pc.conn.Exec(ctx, sql, args...)
+	rowsAffected := int64(0)
+	if err == nil {
+		rowsAffected = tag.RowsAffected()
+	}
+	pc.captureMetric(ctx, sql, rowsAffected, start)
 	return err
+}
+
+func (pc *ProjectConn) captureMetric(ctx context.Context, sql string, rowsAffected int64, startedAt time.Time) {
+	if pc == nil || pc.recorder == nil || pc.ProjectID <= 0 {
+		return
+	}
+	pc.recorder.Record(ctx, dbmetrics.Record{
+		ProjectID:    pc.ProjectID,
+		Query:        sql,
+		RowsAffected: rowsAffected,
+		Duration:     time.Since(startedAt),
+	})
 }
 
 // AcquireProjectConn looks up the schema for a project, acquires a pooled
@@ -71,7 +108,12 @@ func (s *Store) AcquireProjectConn(ctx context.Context, projectID int) (*Project
 		return nil, fmt.Errorf("set search_path: %w", err)
 	}
 
-	return &ProjectConn{conn: conn, SchemaName: schemaName}, nil
+	return &ProjectConn{
+		conn:       conn,
+		ProjectID:  projectID,
+		SchemaName: schemaName,
+		recorder:   s.recorder,
+	}, nil
 }
 
 // ListTables returns all base tables in the project schema.
@@ -110,13 +152,13 @@ func (s *Store) ListTables(ctx context.Context, pc *ProjectConn, includeSystemTa
 
 // TableColumn represents a column in a table schema.
 type TableColumn struct {
-	ColumnName            string  `json:"column_name"`
-	DataType              string  `json:"data_type"`
-	CharacterMaximumLength *int   `json:"character_maximum_length"`
-	IsNullable            bool    `json:"is_nullable"`
-	ColumnDefault         *string `json:"column_default"`
-	OrdinalPosition       int     `json:"ordinal_position"`
-	IsPrimaryKey          bool    `json:"is_primary_key"`
+	ColumnName             string  `json:"column_name"`
+	DataType               string  `json:"data_type"`
+	CharacterMaximumLength *int    `json:"character_maximum_length"`
+	IsNullable             bool    `json:"is_nullable"`
+	ColumnDefault          *string `json:"column_default"`
+	OrdinalPosition        int     `json:"ordinal_position"`
+	IsPrimaryKey           bool    `json:"is_primary_key"`
 }
 
 // GetTableSchema returns column definitions for a table including primary key info.

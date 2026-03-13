@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/skaftin/go-services/internal/dbmetrics"
 	"github.com/skaftin/go-services/internal/model"
 )
 
@@ -17,6 +18,8 @@ func VerifyCredential(ctx context.Context, pool *pgxpool.Pool, token string) (*m
 	`
 
 	var cred model.Credential
+	recorder := dbmetrics.NewRecorder(pool)
+	start := time.Now()
 	err := pool.QueryRow(ctx, query, token).Scan(
 		&cred.ID,
 		&cred.ProjectID,
@@ -29,6 +32,12 @@ func VerifyCredential(ctx context.Context, pool *pgxpool.Pool, token string) (*m
 	if err != nil {
 		return nil, err
 	}
+	recorder.Record(ctx, dbmetrics.Record{
+		ProjectID:    cred.ProjectID,
+		Query:        query,
+		RowsAffected: 1,
+		Duration:     time.Since(start),
+	})
 
 	if !cred.IsActive {
 		return nil, model.ErrCredentialInactive
