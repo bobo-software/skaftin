@@ -3,6 +3,7 @@ package dbproxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 	"github.com/skaftin/go-services/internal/supertokens"
 	"golang.org/x/crypto/bcrypt"
@@ -724,6 +726,40 @@ type userAuthIdentity struct {
 	Phone             *string
 }
 
+func (h *Handler) cleanupSuperTokensUserOnPermanentDelete(ctx context.Context, projectID int, identity userAuthIdentity) error {
+	if h.st == nil {
+		return nil
+	}
+	if identity.Email == nil || strings.TrimSpace(*identity.Email) == "" {
+		return nil
+	}
+
+	scopedEmail := supertokens.CreateProjectScopedEmail(strings.TrimSpace(*identity.Email), projectID)
+	users, err := h.st.ListUsersByAccountInfo(ctx, "public", scopedEmail)
+	if err != nil {
+		return fmt.Errorf("failed to find auth identities for %s: %w", scopedEmail, err)
+	}
+
+	userIDs := make(map[string]struct{}, len(users)+1)
+	if identity.SupertokensUserID != nil && strings.TrimSpace(*identity.SupertokensUserID) != "" {
+		userIDs[strings.TrimSpace(*identity.SupertokensUserID)] = struct{}{}
+	}
+	for _, user := range users {
+		if strings.TrimSpace(user.ID) == "" {
+			continue
+		}
+		userIDs[strings.TrimSpace(user.ID)] = struct{}{}
+	}
+
+	for userID := range userIDs {
+		if err := h.st.DeleteUser(ctx, userID); err != nil {
+			return fmt.Errorf("failed to delete auth identity %s: %w", userID, err)
+		}
+	}
+
+	return nil
+}
+
 func (h *Handler) syncUserPasswordWithSuperTokens(ctx context.Context, pc *ProjectConn, schemaName string, projectID, userID int, newPassword string) error {
 	if h.st == nil {
 		return fmt.Errorf("authentication service unavailable")
@@ -888,7 +924,22 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var identity userAuthIdentity
+	if err := pc.QueryRow(ctx, fmt.Sprintf(`SELECT email, supertokens_user_id FROM %s.skaftin_system_users WHERE id = $1`, schemaName), userID).Scan(
+		&identity.Email, &identity.SupertokensUserID,
+	); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.Error("resolve user auth identity failed", "error", err, "userId", userID, "projectId", pid)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to resolve user authentication identity")
+		return
+	}
+
 	if body.Permanent {
+		if err := h.cleanupSuperTokensUserOnPermanentDelete(ctx, pid, identity); err != nil {
+			slog.Error("cleanup auth identity failed before hard delete", "error", err, "userId", userID, "projectId", pid)
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to delete user from authentication service")
+			return
+		}
+
 		// Delete user roles first
 		pc.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.skaftin_system_user_roles WHERE %s = $1`, schemaName, userRoleUserIDColumn), userID)
 		if err := pc.Exec(ctx, fmt.Sprintf(`DELETE FROM %s.skaftin_system_users WHERE id = $1`, schemaName), userID); err != nil {

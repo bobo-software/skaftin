@@ -875,3 +875,19 @@ Delete a user directly from the database.
   }
 }
 ```
+
+**Hard Delete Example (`permanent: true`):**
+```json
+{
+  "where": {
+    "id": 5
+  },
+  "permanent": true
+}
+```
+
+**Notes:**
+- `where` must include either `id` or `user_id`.
+- When `permanent` is omitted or `false`, the user is soft-deleted (`is_active=false`, `deleted_at` set).
+- When `permanent=true` and the user has an email, matching SuperTokens auth identities are deleted before the app DB hard delete.
+- If SuperTokens cleanup fails during `permanent=true`, the request fails and the app DB hard delete is not executed.
