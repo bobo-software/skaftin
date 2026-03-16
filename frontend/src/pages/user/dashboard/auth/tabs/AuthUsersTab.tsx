@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Plus, Search, RefreshCw, Edit, Trash2, UserPlus, Shield, Mail, Phone, CheckCircle, XCircle, Eye, EyeOff, RotateCw, Copy, Clock, AlertCircle, Trash, Download, Upload } from 'lucide-react';
 import AuthUsersService, { AppUser, CreateUserRequest } from '../../../../../services/AuthUsersService';
 import RolesService, { Role } from '../../../../../services/RolesService';
 import CustomFieldsService, { CustomField } from '../../../../../services/CustomFieldsService';
 import ToastUtils from '../../../../../utils/ToastUtils';
+import { useRealtimeStore } from '../../../../../stores/StoresIndex';
 import { AppButton, UserImportModal } from '../../../../../components/ComponentsIndex';
 import AppLabledAutocomplete from '../../../../../components/forms/AppLabledAutocomplete';
 import DeleteConfirmModal from '../../../../../components/modals/DeleteConfirmModal';
@@ -33,6 +34,14 @@ const AuthUsersTab = () => {
   const [totalPages, setTotalPages] = useState(1);
   const pageSize = 20;
   const isSearching = searchTerm.trim().length > 0;
+  const lastRealtimeRefreshRef = useRef(0);
+
+  const {
+    joinProject,
+    leaveProject,
+    recentEvents,
+    initialize: initializeRealtime,
+  } = useRealtimeStore();
 
   const fetchUsers = useCallback(async () => {
     if (!projectId) return;
@@ -85,6 +94,36 @@ const AuthUsersTab = () => {
       fetchCustomFields();
     }
   }, [projectId, fetchUsers, fetchRoles, fetchCustomFields]);
+
+  useEffect(() => {
+    initializeRealtime();
+  }, [initializeRealtime]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    joinProject(projectId);
+    return () => {
+      leaveProject(projectId);
+    };
+  }, [projectId, joinProject, leaveProject]);
+
+  useEffect(() => {
+    if (!projectId || recentEvents.length === 0) return;
+
+    const latestEvent = recentEvents[0];
+    if (latestEvent.projectId !== projectId) return;
+
+    const eventType = String(latestEvent.type || '').toLowerCase();
+    const tableName = String('tableName' in latestEvent ? latestEvent.tableName : '').toLowerCase();
+    const isUserTableEvent = tableName === 'skaftin_system_users' || tableName === 'skaftin_system_user_roles';
+    const isUserProjectEvent = eventType.includes('user') || eventType.includes('role') || eventType.includes('auth');
+    if (!isUserTableEvent && !isUserProjectEvent) return;
+
+    const now = Date.now();
+    if (now - lastRealtimeRefreshRef.current < 1000) return;
+    lastRealtimeRefreshRef.current = now;
+    void fetchUsers();
+  }, [projectId, recentEvents, fetchUsers]);
 
 
   const confirmDelete = async () => {
