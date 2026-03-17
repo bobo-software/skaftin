@@ -924,15 +924,19 @@ func (s *Store) GetUserByCredential(ctx context.Context, schema, method, value s
 	}
 	query := fmt.Sprintf(`
 		WITH matched_user AS (
-			SELECT id, supertokens_user_id, name, email, phone, password, metadata,
-			       custom_field_1, custom_field_2, is_active, email_verified, phone_verified, organisation_id
+			SELECT id, supertokens_user_id, name, last_name, email, phone, password, metadata,
+			       organisation_id, is_active, email_verified, phone_verified,
+			       deletion_requested_at, deletion_scheduled_at, deletion_reason, deleted_at,
+			       created_at, updated_at, custom_field_1, custom_field_2
 			FROM %[1]s.skaftin_system_users
 			WHERE %[2]s = $1
 			ORDER BY is_active DESC, updated_at DESC NULLS LAST, id DESC
 			LIMIT 1
 		)
-		SELECT u.id, u.supertokens_user_id, u.name, u.email, u.phone, u.password, u.metadata,
-		       u.custom_field_1, u.custom_field_2, u.is_active, u.email_verified, u.phone_verified, u.organisation_id,
+		SELECT u.id, u.supertokens_user_id, u.name, u.last_name, u.email, u.phone, u.password, u.metadata,
+		       u.organisation_id, u.is_active, u.email_verified, u.phone_verified,
+		       u.deletion_requested_at, u.deletion_scheduled_at, u.deletion_reason, u.deleted_at,
+		       u.created_at, u.updated_at, u.custom_field_1, u.custom_field_2,
 		       COALESCE((
 		       	SELECT json_agg(json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key,
 		       		'organisation_field_name', r.organisation_field_name, 'organisation_lookup_table', r.organisation_lookup_table,
@@ -945,8 +949,10 @@ func (s *Store) GetUserByCredential(ctx context.Context, schema, method, value s
 		pgx.Identifier{schema}.Sanitize(), pgx.Identifier{col}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
 	var u AppUser
 	err = s.pool.QueryRow(ctx, query, value).Scan(
-		&u.ID, &u.SupertokensUserID, &u.Name, &u.Email, &u.Phone, &u.Password, &u.Metadata,
-		&u.CustomField1, &u.CustomField2, &u.IsActive, &u.EmailVerified, &u.PhoneVerified, &u.OrganisationID, &u.Roles)
+		&u.ID, &u.SupertokensUserID, &u.Name, &u.LastName, &u.Email, &u.Phone, &u.Password, &u.Metadata,
+		&u.OrganisationID, &u.IsActive, &u.EmailVerified, &u.PhoneVerified,
+		&u.DeletionRequestedAt, &u.DeletionScheduledAt, &u.DeletionReason, &u.DeletedAt,
+		&u.CreatedAt, &u.UpdatedAt, &u.CustomField1, &u.CustomField2, &u.Roles)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
