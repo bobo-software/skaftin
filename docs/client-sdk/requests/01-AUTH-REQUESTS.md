@@ -617,11 +617,19 @@ x-api-key: your-api-key
 
 ## 11. Change Password Request (Logged-in Users)
 
-Request password change for logged-in users.
+Start password change for a logged-in app user by validating the current password and providing a new password.
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/change-password-request`
+**Endpoint (app-api compatibility route):** `POST /app-api/auth/auth/change-password-request`
 
-**Headers:**
+**Alternative Endpoint (project-scoped route):** `POST /api/auth/{projectId}/auth/change-password-request`
+
+**Headers (app-api route):**
+```
+Content-Type: application/json
+x-api-key: your-api-key
+```
+
+**Headers (project-scoped route):**
 ```
 Content-Type: application/json
 Authorization: Bearer <jwt-token>
@@ -636,23 +644,57 @@ Authorization: Bearer <jwt-token>
 }
 ```
 
-**Response:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| app_user_id / user_id | number | Yes | App user ID |
+| old_password | string | Yes | Current password (must be correct) |
+| new_password | string | Yes | New password |
+
+**Response when OTP is required:**
 ```json
 {
   "success": true,
-  "message": "Password change OTP sent"
+  "message": "Password change OTP sent",
+  "data": {
+    "message": "OTP sent for password change verification",
+    "requires_otp": true
+  }
 }
 ```
+
+**Response when OTP is NOT required:**
+```json
+{
+  "success": true,
+  "message": "Password change OTP sent",
+  "data": {
+    "message": "Password changed successfully"
+  }
+}
+```
+
+**Flow Notes:**
+- The server first validates `old_password`.
+- If OTP is disabled in auth settings, password is changed immediately in this step.
+- If OTP is enabled, continue to Step 12 to verify OTP and complete the change.
 
 ---
 
 ## 12. Verify Password Change OTP
 
-Verify OTP and change password.
+Complete password change when Step 11 returned `requires_otp: true`.
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/verify-password-change-otp`
+**Endpoint (app-api compatibility route):** `POST /app-api/auth/auth/verify-password-change-otp`
 
-**Headers:**
+**Alternative Endpoint (project-scoped route):** `POST /api/auth/{projectId}/auth/verify-password-change-otp`
+
+**Headers (app-api route):**
+```
+Content-Type: application/json
+x-api-key: your-api-key
+```
+
+**Headers (project-scoped route):**
 ```
 Content-Type: application/json
 Authorization: Bearer <jwt-token>
@@ -666,6 +708,11 @@ Authorization: Bearer <jwt-token>
 }
 ```
 
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| app_user_id / user_id | number | Yes | App user ID |
+| otp / otp_code | string | Yes | Password change OTP |
+
 **Response:**
 ```json
 {
@@ -673,6 +720,11 @@ Authorization: Bearer <jwt-token>
   "message": "Password changed successfully"
 }
 ```
+
+**OTP Rules:**
+- OTP expires after 10 minutes.
+- Maximum 3 attempts are allowed.
+- A new password is applied only after successful OTP verification.
 
 ---
 

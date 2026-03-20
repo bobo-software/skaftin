@@ -887,7 +887,23 @@ func (s *Service) ChangePasswordRequest(ctx context.Context, projectID, appUserI
 			RecipeUserID: signInResp.User.ID, Password: newPassword,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to update password: %w", err)
+			// Compatibility fallback: some SuperTokens core deployments reject
+			// /recipe/user payload variants. Rotate identity by recreating creds.
+			if delErr := s.st.DeleteUser(ctx, signInResp.User.ID); delErr != nil {
+				return nil, fmt.Errorf("failed to update password: %w", err)
+			}
+			resp, signUpErr := s.st.SignUp(ctx, "public", stEmail, newPassword)
+			if signUpErr != nil {
+				return nil, fmt.Errorf("failed to update password: %w", signUpErr)
+			}
+			if resp == nil || resp.Status != "OK" || resp.User == nil {
+				status := ""
+				if resp != nil {
+					status = resp.Status
+				}
+				return nil, fmt.Errorf("failed to update password: signup status %s", status)
+			}
+			_ = s.store.SetUserSuperTokensID(ctx, schema, user.ID, resp.User.ID)
 		}
 		return map[string]any{"message": "Password changed successfully"}, nil
 	}
@@ -951,7 +967,33 @@ func (s *Service) VerifyPasswordChangeOTP(ctx context.Context, projectID, appUse
 			RecipeUserID: *user.SupertokensUserID, Password: newPw,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to update password: %w", err)
+			var stEmail string
+			if user.Email != nil && *user.Email != "" {
+				stEmail = supertokens.CreateProjectScopedEmail(*user.Email, projectID)
+			} else if user.Phone != nil && *user.Phone != "" {
+				stEmail = supertokens.CreatePhoneScopedEmail(*user.Phone, projectID)
+			}
+			if stEmail == "" {
+				return fmt.Errorf("failed to update password: %w", err)
+			}
+
+			// Compatibility fallback: rotate auth identity when core rejects
+			// /recipe/user payload variants.
+			if delErr := s.st.DeleteUser(ctx, *user.SupertokensUserID); delErr != nil {
+				return fmt.Errorf("failed to update password: %w", err)
+			}
+			resp, signUpErr := s.st.SignUp(ctx, "public", stEmail, newPw)
+			if signUpErr != nil {
+				return fmt.Errorf("failed to update password: %w", signUpErr)
+			}
+			if resp == nil || resp.Status != "OK" || resp.User == nil {
+				status := ""
+				if resp != nil {
+					status = resp.Status
+				}
+				return fmt.Errorf("failed to update password: signup status %s", status)
+			}
+			_ = s.store.SetUserSuperTokensID(ctx, schema, user.ID, resp.User.ID)
 		}
 	}
 	_ = s.store.MarkOTPVerified(ctx, schema, otp.ID)
