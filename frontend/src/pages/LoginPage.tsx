@@ -155,7 +155,7 @@ const staggerContainer = {
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' as const } },
 };
 
 const LoginPage = () => {
@@ -251,7 +251,7 @@ const LoginPage = () => {
             className="w-16 h-16 mx-auto mb-4 rounded-2xl object-contain"
             initial={{ opacity: 0, scale: 0.6, rotate: -10 }}
             animate={{ opacity: 1, scale: 1, rotate: 0 }}
-            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.7, ease: 'easeOut' as const }}
             whileHover={{ scale: 1.08, rotate: 3 }}
           />
           <motion.h1
@@ -342,7 +342,7 @@ const LoginPage = () => {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                  transition={{ duration: 0.3, ease: 'easeOut' as const }}
                   style={{ overflow: 'hidden' }}
                 >
                   <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
