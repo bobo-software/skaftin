@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Database, Mail, ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
+import { Mail, ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
 import { sendPasswordResetEmail } from '../config/supertokens';
+import skaftinLogo from '../assets/skaftinLogo.png';
 
 const ForgotPasswordPage = () => {
   const [email, setEmail] = useState('');
@@ -42,9 +43,7 @@ const ForgotPasswordPage = () => {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl mb-4">
-            <Database className="w-8 h-8 text-white" />
-          </div>
+          <img src={skaftinLogo} alt="Skaftin logo" className="w-16 h-16 mx-auto mb-4 rounded-2xl object-contain" />
           <h1 className="text-3xl font-bold text-dark-900 dark:text-white mb-2">
             Reset Password
           </h1>

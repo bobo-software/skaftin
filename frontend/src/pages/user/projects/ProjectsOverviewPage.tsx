@@ -8,6 +8,7 @@ import CreateProjectModal from "../../../components/modals/CreateProjectModal";
 import AccountDropdown from "../../../components/dashboard/AccountDropdown";
 import RequestUtils from "../../../utils/RequestUtils";
 import ApiRoutes from "../../../constants/ApiRoutes";
+import skaftinLogo from "../../../assets/skaftinLogo.png";
 
 interface ProjectsOverviewPageProps {
   onProjectSelect?: (_project: any) => void;
@@ -170,9 +171,7 @@ if (isLoading) {
 return (
 <div className="min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800 flex items-center justify-center">
   <div className="text-center">
-    <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl mb-6">
-      <Database className="w-8 h-8 text-white animate-pulse" />
-    </div>
+    <img src={skaftinLogo} alt="Skaftin logo" className="w-16 h-16 mx-auto mb-6 rounded-2xl object-contain animate-pulse" />
     <h2 className="text-2xl font-bold text-dark-900 dark:text-white mb-2">
       Loading Projects
     </h2>
@@ -191,9 +190,7 @@ return (
   <div className="max-w-7xl mx-auto px-6 py-4">
     <div className="flex items-center justify-between">
       <div className="flex items-center space-x-4">
-        <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center">
-          <Database className="w-6 h-6 text-white" />
-        </div>
+        <img src={skaftinLogo} alt="Skaftin logo" className="w-10 h-10 rounded-xl object-contain" />
         <div>
           <h1 className="text-2xl font-bold text-dark-900 dark:text-white">Skaftin</h1>
           <AppText

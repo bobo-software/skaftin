@@ -12,6 +12,7 @@
   "dependencies": {
     "axios": "^1.13.2",
     "dotenv": "^17.2.3",
+    "framer-motion": "^12.38.0",
     "lucide-react": "^0.548.0",
     "react": "^19.1.1",
     "react-complex-tree": "^2.6.1",

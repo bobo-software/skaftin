@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Database, Lock, Eye, EyeOff, ArrowRight, CheckCircle, AlertTriangle, Clock, ShieldCheck } from 'lucide-react';
+import { Lock, Eye, EyeOff, ArrowRight, CheckCircle, AlertTriangle, Clock, ShieldCheck } from 'lucide-react';
 import { submitNewPassword, getResetPasswordTokenFromURL } from '../config/supertokens';
+import skaftinLogo from '../assets/skaftinLogo.png';
 
 const RESET_LINK_LIFETIME_SECONDS = 900; // 15 minutes
 const USED_TOKENS_KEY = 'skaftin_used_reset_tokens';
@@ -36,6 +37,7 @@ const ResetPasswordPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const logo = <img src={skaftinLogo} alt="Skaftin logo" className="w-16 h-16 mx-auto mb-4 rounded-2xl object-contain" />;
 
   // Check if we have a valid token in the URL
   let token: string | undefined;
@@ -106,9 +108,7 @@ const ResetPasswordPage = () => {
       <div className="min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl mb-4">
-              <Database className="w-8 h-8 text-white" />
-            </div>
+            {logo}
             <h1 className="text-3xl font-bold text-dark-900 dark:text-white mb-2">
               Link Expired
             </h1>
@@ -141,9 +141,7 @@ const ResetPasswordPage = () => {
       <div className="min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl mb-4">
-              <Database className="w-8 h-8 text-white" />
-            </div>
+            {logo}
             <h1 className="text-3xl font-bold text-dark-900 dark:text-white mb-2">
               Link Already Used
             </h1>
@@ -184,9 +182,7 @@ const ResetPasswordPage = () => {
       <div className="min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl mb-4">
-              <Database className="w-8 h-8 text-white" />
-            </div>
+            {logo}
             <h1 className="text-3xl font-bold text-dark-900 dark:text-white mb-2">
               Invalid Link
             </h1>
@@ -218,9 +214,7 @@ const ResetPasswordPage = () => {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl mb-4">
-            <Database className="w-8 h-8 text-white" />
-          </div>
+          {logo}
           <h1 className="text-3xl font-bold text-dark-900 dark:text-white mb-2">
             {success ? 'Password Updated' : 'Set New Password'}
           </h1>

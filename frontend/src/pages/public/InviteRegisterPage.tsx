@@ -6,6 +6,7 @@ import { useAppStore } from '../../stores/StoresIndex';
 import ToastUtils from '../../utils/ToastUtils';
 import { signUp } from '../../config/supertokens';
 import { bootstrapAuth } from '../../services/AuthFlowService';
+import skaftinLogo from '../../assets/skaftinLogo.png';
 
 const InviteRegisterPage = () => {
   const { inviteCode } = useParams<{ inviteCode: string }>();
@@ -180,9 +181,7 @@ const InviteRegisterPage = () => {
           <div className="w-full bg-white dark:bg-dark-800 rounded-2xl shadow-2xl p-8 lg:p-10">
             {/* Mobile Header */}
             <div className="lg:hidden mb-6 text-center">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-purple-500 rounded-2xl mb-4">
-                <Mail className="w-8 h-8 text-white" />
-              </div>
+              <img src={skaftinLogo} alt="Skaftin logo" className="w-16 h-16 mx-auto mb-4 rounded-2xl object-contain" />
               <h2 className="text-2xl font-bold text-dark-900 dark:text-white mb-2">
                 Join {invitation.project_name}
               </h2>

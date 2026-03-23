@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Mail, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react';
 import InvitationsService, { ProjectInvitation } from '../../services/InvitationsService';
 import { useAppStore } from '../../stores/StoresIndex';
 import ToastUtils from '../../utils/ToastUtils';
 import { storeLoginRedirect } from '../../services/AuthFlowService';
+import skaftinLogo from '../../assets/skaftinLogo.png';
 
 const InviteAcceptPage = () => {
   const { inviteCode } = useParams<{ inviteCode: string }>();
@@ -127,9 +128,7 @@ const InviteAcceptPage = () => {
         <div className="bg-white dark:bg-dark-800 rounded-lg shadow-lg p-8">
           {/* Header */}
           <div className="text-center mb-6">
-            <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Mail className="w-8 h-8 text-primary-600" />
-            </div>
+            <img src={skaftinLogo} alt="Skaftin logo" className="w-16 h-16 mx-auto mb-4 rounded-2xl object-contain" />
             <h1 className="text-2xl font-bold text-dark-900 dark:text-white mb-2">
               You're Invited! 🎉
             </h1>

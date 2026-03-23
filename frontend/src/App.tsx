@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster } from 'react-hot-toast';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
@@ -21,6 +23,119 @@ import { useAppStore } from './stores/StoresIndex';
 import { bootstrapAuth } from './services/AuthFlowService';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import './App.css';
+
+const pageTransition = {
+  initial: { opacity: 0, y: 18, scale: 0.995, filter: 'blur(3px)' },
+  animate: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    filter: 'blur(0px)',
+    transition: { duration: 0.38, ease: 'easeOut' as const },
+  },
+  exit: {
+    opacity: 0,
+    y: -18,
+    scale: 1.005,
+    filter: 'blur(3px)',
+    transition: { duration: 0.24, ease: 'easeIn' as const },
+  },
+};
+
+const AnimatedPage = ({ children }: { children: ReactNode }) => (
+  <motion.div
+    variants={pageTransition}
+    initial="initial"
+    animate="animate"
+    exit="exit"
+    className="min-h-screen"
+  >
+    {children}
+  </motion.div>
+);
+
+function AppRoutes() {
+  const location = useLocation();
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<AnimatedPage><HomePage /></AnimatedPage>} />
+        <Route path="/auth/*" element={<AnimatedPage><LoginPage /></AnimatedPage>} />
+        <Route path="/login" element={<AnimatedPage><LoginPage /></AnimatedPage>} />
+        <Route path="/forgot-password" element={<AnimatedPage><ForgotPasswordPage /></AnimatedPage>} />
+        <Route path="/auth/reset-password" element={<AnimatedPage><ResetPasswordPage /></AnimatedPage>} />
+        {/* OAuth callback routes for Google, GitHub, Apple */}
+        <Route path="/auth/callback/:providerId" element={<AnimatedPage><AuthCallbackPage /></AnimatedPage>} />
+        <Route path="/invite/:inviteCode" element={<AnimatedPage><InviteAcceptPage /></AnimatedPage>} />
+        <Route path="/invite/:inviteCode/register" element={<AnimatedPage><InviteRegisterPage /></AnimatedPage>} />
+        <Route
+          path="/organizations/select"
+          element={
+            <AnimatedPage>
+              <ProtectedRoute>
+                <SelectOrganizationPage />
+              </ProtectedRoute>
+            </AnimatedPage>
+          }
+        />
+        <Route
+          path="/organizations/create"
+          element={
+            <AnimatedPage>
+              <ProtectedRoute>
+                <CreateOrganizationPage />
+              </ProtectedRoute>
+            </AnimatedPage>
+          }
+        />
+        <Route
+          path="/organizations/settings"
+          element={
+            <AnimatedPage>
+              <ProtectedRoute>
+                <OrganizationSettingsPage />
+              </ProtectedRoute>
+            </AnimatedPage>
+          }
+        />
+        <Route
+          path="/projects"
+          element={
+            <AnimatedPage>
+              <ProtectedRoute>
+                <ProjectsOverviewPage />
+              </ProtectedRoute>
+            </AnimatedPage>
+          }
+        />
+        <Route
+          path="/projects/:projectId/*"
+          element={
+            <AnimatedPage>
+              <ProtectedRoute>
+                <ProjectDashboardPage />
+              </ProtectedRoute>
+            </AnimatedPage>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <AnimatedPage>
+              <ProtectedRoute>
+                <UserProfile />
+              </ProtectedRoute>
+            </AnimatedPage>
+          }
+        />
+        <Route path="/payments/return" element={<AnimatedPage><PaymentReturnPage /></AnimatedPage>} />
+        <Route path="/payments/cancel" element={<AnimatedPage><PaymentCancelPage /></AnimatedPage>} />
+        <Route path="/thankyou/:reference" element={<AnimatedPage><FNBThankYouPage /></AnimatedPage>} />
+      </Routes>
+    </AnimatePresence>
+  );
+}
 
 // SuperTokens is now initialized in main.tsx with SuperTokensWrapper
 // This provides automatic session refresh - no manual refresh needed!
@@ -82,77 +197,7 @@ function App() {
           },
         }}
       />
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/auth/*" element={<LoginPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
-        {/* OAuth callback routes for Google, GitHub, Apple */}
-        <Route path="/auth/callback/:providerId" element={<AuthCallbackPage />} />
-        <Route path="/invite/:inviteCode" element={<InviteAcceptPage />} />
-        <Route path="/invite/:inviteCode/register" element={<InviteRegisterPage />} />
-        <Route
-          path="/organizations/select"
-          element={
-            <ProtectedRoute>
-              <SelectOrganizationPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/organizations/create"
-          element={
-            <ProtectedRoute>
-              <CreateOrganizationPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/organizations/settings"
-          element={
-            <ProtectedRoute>
-              <OrganizationSettingsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/projects"
-          element={
-            <ProtectedRoute>
-              <ProjectsOverviewPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/projects/:projectId/*"
-          element={
-            <ProtectedRoute>
-              <ProjectDashboardPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute>
-              <UserProfile />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/payments/return"
-          element={<PaymentReturnPage />}
-        />
-        <Route
-          path="/payments/cancel"
-          element={<PaymentCancelPage />}
-        />
-        <Route
-          path="/thankyou/:reference"
-          element={<FNBThankYouPage />}
-        />
-      </Routes>
+      <AppRoutes />
     </BrowserRouter>
   );
 }

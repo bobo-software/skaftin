@@ -14,6 +14,7 @@ import { useAppStore } from '../stores/StoresIndex';
 import ProjectService from '../services/ProjectService';
 import AuthService from '../services/AuthService';
 import { AppButton } from '@/components/ComponentsIndex';
+import skaftinLogo from '../assets/skaftinLogo.png';
 
 const ProjectsPage = () => {
   const navigate = useNavigate();
@@ -116,9 +117,7 @@ const ProjectsPage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center">
-                <Database className="w-5 h-5 text-white" />
-              </div>
+              <img src={skaftinLogo} alt="Skaftin logo" className="w-8 h-8 rounded-lg object-contain" />
               <span className="text-xl font-bold text-dark-900 dark:text-white">Skaftin</span>
             </div>
 

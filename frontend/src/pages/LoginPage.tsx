@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { Database, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../stores/StoresIndex';
 import { signIn, signUp, redirectToThirdPartyLogin } from '../config/supertokens';
 import {
@@ -8,6 +9,7 @@ import {
   resolvePostLoginRedirect,
   storeLoginRedirect,
 } from '../services/AuthFlowService';
+import skaftinLogo from '../assets/skaftinLogo.png';
 
 // Google icon SVG component
 const GoogleIcon = () => (
@@ -38,6 +40,124 @@ const GitHubIcon = () => (
   </svg>
 );
 
+// --- Particle background ---
+interface Particle {
+  id: number;
+  x: number;
+  y: number;
+  size: number;
+  duration: number;
+  delay: number;
+  driftX: number;
+  driftY: number;
+  opacity: number;
+}
+
+const ParticleField = () => {
+  const particles: Particle[] = useMemo(() => {
+    return Array.from({ length: 55 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: Math.random() * 3.5 + 1.5,
+      duration: Math.random() * 18 + 12,
+      delay: Math.random() * -20,
+      driftX: (Math.random() - 0.5) * 140,
+      driftY: (Math.random() - 0.5) * 140,
+      opacity: Math.random() * 0.45 + 0.1,
+    }));
+  }, []);
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {particles.map((p) => (
+        <motion.div
+          key={p.id}
+          className="absolute rounded-full bg-primary-400 dark:bg-primary-500"
+          style={{
+            left: `${p.x}%`,
+            top: `${p.y}%`,
+            width: p.size,
+            height: p.size,
+            opacity: p.opacity,
+          }}
+          animate={{
+            x: [0, p.driftX, p.driftX * 0.4, 0],
+            y: [0, p.driftY * 0.6, p.driftY, 0],
+            opacity: [p.opacity, p.opacity * 1.6, p.opacity * 0.4, p.opacity],
+            scale: [1, 1.4, 0.8, 1],
+          }}
+          transition={{
+            duration: p.duration,
+            delay: p.delay,
+            repeat: Infinity,
+            ease: 'easeInOut',
+          }}
+        />
+      ))}
+    </div>
+  );
+};
+
+// Orb blobs for depth
+const BackgroundOrbs = () => (
+  <div className="absolute inset-0 overflow-hidden pointer-events-none">
+    <motion.div
+      className="absolute w-[500px] h-[500px] rounded-full opacity-20 dark:opacity-10"
+      style={{
+        background: 'radial-gradient(circle, var(--color-primary-400, #60a5fa) 0%, transparent 70%)',
+        top: '-15%',
+        left: '-10%',
+      }}
+      animate={{
+        scale: [1, 1.12, 1],
+        x: [0, 30, 0],
+        y: [0, 20, 0],
+      }}
+      transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
+    />
+    <motion.div
+      className="absolute w-[400px] h-[400px] rounded-full opacity-15 dark:opacity-10"
+      style={{
+        background: 'radial-gradient(circle, var(--color-primary-300, #93c5fd) 0%, transparent 70%)',
+        bottom: '-10%',
+        right: '-8%',
+      }}
+      animate={{
+        scale: [1, 1.18, 1],
+        x: [0, -25, 0],
+        y: [0, -30, 0],
+      }}
+      transition={{ duration: 17, repeat: Infinity, ease: 'easeInOut', delay: 3 }}
+    />
+    <motion.div
+      className="absolute w-[250px] h-[250px] rounded-full opacity-10 dark:opacity-8"
+      style={{
+        background: 'radial-gradient(circle, var(--color-primary-500, #3b82f6) 0%, transparent 70%)',
+        top: '45%',
+        right: '15%',
+      }}
+      animate={{
+        scale: [1, 1.25, 1],
+        x: [0, 15, 0],
+        y: [0, 25, 0],
+      }}
+      transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut', delay: 7 }}
+    />
+  </div>
+);
+
+
+const staggerContainer = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.09 } },
+};
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 24 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } },
+};
+
 const LoginPage = () => {
   const { setUser, setLoading, isLoading } = useAppStore();
   const navigate = useNavigate();
@@ -51,7 +171,6 @@ const LoginPage = () => {
   });
   const [error, setError] = useState('');
 
-  // Check for redirect parameters and OAuth callback
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const redirect = params.get('redirect');
@@ -62,13 +181,11 @@ const LoginPage = () => {
     e.preventDefault();
     setError('');
 
-    // Validate password confirmation for registration
     if (!isLogin && formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
     }
 
-    // Validate password length
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters');
       return;
@@ -76,9 +193,7 @@ const LoginPage = () => {
 
     setLoading(true);
     try {
-      // Use SuperTokens signIn/signUp methods directly
-      // This uses HTTP-only cookies automatically - no localStorage tokens!
-      const response = isLogin 
+      const response = isLogin
         ? await signIn({ formFields: [
             { id: 'email', value: formData.email },
             { id: 'password', value: formData.password }
@@ -91,11 +206,9 @@ const LoginPage = () => {
       if (response.status === 'OK') {
         const bootstrap = await bootstrapAuth({ preloadOrganizations: true, force: true });
         setUser(bootstrap.user);
-
         const redirectTo = await resolvePostLoginRedirect((location.state as any)?.redirectTo);
         navigate(redirectTo);
       } else if (response.status === 'FIELD_ERROR') {
-        // Handle field-specific errors from SuperTokens
         const fieldError = response.formFields?.find((f: any) => f.error);
         setError(fieldError?.error || 'Invalid input');
       } else if (response.status === 'WRONG_CREDENTIALS_ERROR') {
@@ -114,33 +227,61 @@ const LoginPage = () => {
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl mb-4">
-            <Database className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-dark-900 dark:text-white mb-2">
-            Welcome to Skaftin
-          </h1>
-          <p className="text-dark-600 dark:text-dark-300">
-            {isLogin ? 'Sign in to your account' : 'Create your account'}
-          </p>
-        </div>
+    <div className="relative min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 dark:from-dark-900 dark:to-dark-800 flex items-center justify-center p-4 overflow-hidden">
+      {/* Animated background layers */}
+      <BackgroundOrbs />
+      <ParticleField />
 
-        {/* Form */}
-        <div className="bg-white dark:bg-dark-800 rounded-2xl shadow-xl p-8">
+      {/* Content */}
+      <motion.div
+        className="relative z-10 w-full max-w-md"
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+      >
+        {/* Logo */}
+        <motion.div className="text-center mb-8" variants={fadeUp}>
+          <motion.img
+            src={skaftinLogo}
+            alt="Skaftin logo"
+            className="w-16 h-16 mx-auto mb-4 rounded-2xl object-contain"
+            initial={{ opacity: 0, scale: 0.6, rotate: -10 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+            whileHover={{ scale: 1.08, rotate: 3 }}
+          />
+          <motion.h1
+            className="text-3xl font-bold text-dark-900 dark:text-white mb-2"
+            variants={fadeUp}
+          >
+            Welcome to Skaftin
+          </motion.h1>
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={isLogin ? 'signin' : 'signup'}
+              className="text-dark-600 dark:text-dark-300"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25 }}
+            >
+              {isLogin ? 'Sign in to your account' : 'Create your account'}
+            </motion.p>
+          </AnimatePresence>
+        </motion.div>
+
+        {/* Form card */}
+        <motion.div
+          className="bg-white/80 dark:bg-dark-800/80 backdrop-blur-md rounded-2xl shadow-xl p-8 border border-white/40 dark:border-dark-700/40"
+          variants={fadeUp}
+        >
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email */}
-            <div>
+            <motion.div variants={fadeUp}>
               <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
                 Email Address
               </label>
@@ -156,10 +297,10 @@ const LoginPage = () => {
                   required
                 />
               </div>
-            </div>
+            </motion.div>
 
             {/* Password */}
-            <div>
+            <motion.div variants={fadeUp}>
               <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
                 Password
               </label>
@@ -192,78 +333,112 @@ const LoginPage = () => {
                   </Link>
                 </div>
               )}
-            </div>
+            </motion.div>
 
             {/* Confirm Password (Register only) */}
-            {!isLogin && (
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Confirm Password
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-dark-400" />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleInputChange}
-                    className="w-full pl-10 pr-4 py-3 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
-                    placeholder="Confirm your password"
-                    required
-                  />
-                </div>
-              </div>
-            )}
+            <AnimatePresence>
+              {!isLogin && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                  style={{ overflow: 'hidden' }}
+                >
+                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+                    Confirm Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-dark-400" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="confirmPassword"
+                      value={formData.confirmPassword}
+                      onChange={handleInputChange}
+                      className="w-full pl-10 pr-4 py-3 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white placeholder-dark-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                      placeholder="Confirm your password"
+                      required
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Error Message */}
-            {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
-                <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
-              </div>
-            )}
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3"
+                  initial={{ opacity: 0, scale: 0.95, y: -6 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -6 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full btn-primary text-lg py-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <>
-                  <span className="animate-spin mr-2">⏳</span>
-                  {isLogin ? 'Signing in...' : 'Creating account...'}
-                </>
-              ) : (
-                <>
-                  {isLogin ? 'Sign In' : 'Create Account'}
-                  <ArrowRight className="w-5 h-5 ml-2" />
-                </>
-              )}
-            </button>
+            <motion.div variants={fadeUp}>
+              <motion.button
+                type="submit"
+                disabled={isLoading}
+                className="w-full btn-primary text-lg py-3 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                whileHover={!isLoading ? { scale: 1.02 } : {}}
+                whileTap={!isLoading ? { scale: 0.98 } : {}}
+                transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              >
+                {isLoading ? (
+                  <>
+                    <motion.span
+                      className="mr-2 inline-block"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                    >
+                      ⏳
+                    </motion.span>
+                    {isLogin ? 'Signing in...' : 'Creating account...'}
+                  </>
+                ) : (
+                  <>
+                    <AnimatePresence mode="wait">
+                      <motion.span
+                        key={isLogin ? 'signin-label' : 'signup-label'}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 10 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        {isLogin ? 'Sign In' : 'Create Account'}
+                      </motion.span>
+                    </AnimatePresence>
+                    <ArrowRight className="w-5 h-5 ml-2" />
+                  </>
+                )}
+              </motion.button>
+            </motion.div>
           </form>
 
           {/* Divider */}
-          <div className="relative my-6">
+          <motion.div className="relative my-6" variants={fadeUp}>
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-dark-200 dark:border-dark-700"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-white dark:bg-dark-800 text-dark-500 dark:text-dark-400">
+              <span className="px-4 bg-white/80 dark:bg-dark-800/80 text-dark-500 dark:text-dark-400">
                 Or continue with
               </span>
             </div>
-          </div>
+          </motion.div>
 
           {/* OAuth Buttons */}
-          <div className="space-y-3">
-            {/* Google Sign In */}
-            <button
+          <motion.div className="space-y-3" variants={fadeUp}>
+            <motion.button
               type="button"
               onClick={async () => {
                 try {
-                  await redirectToThirdPartyLogin({
-                    thirdPartyId: 'google',
-                  });
+                  await redirectToThirdPartyLogin({ thirdPartyId: 'google' });
                 } catch (err) {
                   console.error('Google login error:', err);
                   setError('Failed to initiate Google login');
@@ -271,19 +446,19 @@ const LoginPage = () => {
               }}
               disabled={isLoading}
               className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 hover:bg-dark-50 dark:hover:bg-dark-600 text-dark-700 dark:text-dark-200 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              whileHover={!isLoading ? { scale: 1.015, y: -1 } : {}}
+              whileTap={!isLoading ? { scale: 0.985 } : {}}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             >
               <GoogleIcon />
               Continue with Google
-            </button>
+            </motion.button>
 
-            {/* GitHub Sign In */}
-            <button
+            <motion.button
               type="button"
               onClick={async () => {
                 try {
-                  await redirectToThirdPartyLogin({
-                    thirdPartyId: 'github',
-                  });
+                  await redirectToThirdPartyLogin({ thirdPartyId: 'github' });
                 } catch (err) {
                   console.error('GitHub login error:', err);
                   setError('Failed to initiate GitHub login');
@@ -291,37 +466,42 @@ const LoginPage = () => {
               }}
               disabled={isLoading}
               className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-dark-200 dark:border-dark-700 rounded-lg bg-dark-900 dark:bg-dark-900 hover:bg-dark-800 dark:hover:bg-dark-800 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              whileHover={!isLoading ? { scale: 1.015, y: -1 } : {}}
+              whileTap={!isLoading ? { scale: 0.985 } : {}}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             >
               <GitHubIcon />
               Continue with GitHub
-            </button>
-          </div>
+            </motion.button>
+          </motion.div>
 
           {/* Toggle Login/Register */}
-          <div className="mt-6 text-center">
+          <motion.div className="mt-6 text-center" variants={fadeUp}>
             <p className="text-dark-600 dark:text-dark-300">
               {isLogin ? "Don't have an account?" : "Already have an account?"}
             </p>
-            <button
+            <motion.button
               onClick={() => {
                 setIsLogin(!isLogin);
                 setError('');
                 setFormData({ email: '', password: '', confirmPassword: '' });
               }}
               className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors"
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.97 }}
             >
               {isLogin ? 'Create an account' : 'Sign in instead'}
-            </button>
-          </div>
-        </div>
+            </motion.button>
+          </motion.div>
+        </motion.div>
 
         {/* Footer */}
-        <div className="text-center mt-8">
+        <motion.div className="text-center mt-8" variants={fadeUp}>
           <p className="text-dark-500 dark:text-dark-400 text-sm">
             By continuing, you agree to our Terms of Service and Privacy Policy
           </p>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </div>
   );
 };
