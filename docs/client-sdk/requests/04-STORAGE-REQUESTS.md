@@ -1,6 +1,6 @@
 # Storage Requests (MinIO)
 
-All storage endpoints are available at `/app-api/storage`.
+Client storage is served at **`/app-api/storage`** (and **`/app-api-2/storage`** for the parallel public surface). On the Go server, these routes use **`x-api-key`** middleware; project is resolved from the key.
 
 ## Base URL
 ```
@@ -8,9 +8,10 @@ All storage endpoints are available at `/app-api/storage`.
 ```
 
 ## Authentication
-All endpoints require either:
-- `x-api-key` header with a valid API key
-- `Authorization: Bearer <jwt-token>` header
+
+Send **`x-api-key`**. Some clients also send **`Authorization: Bearer`** for app-user context where supported; the reference server’s app storage mux is mounted with API-key auth — **always include a valid API key**.
+
+Path parameters use **`{bucketName}`**, **`{filePath}`** style (Go `ServeMux`).
 
 ---
 
@@ -24,7 +25,7 @@ Get all buckets for the project.
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Query Parameters:**
@@ -63,11 +64,11 @@ Authorization: Bearer <jwt-token>
 
 Get all files in a bucket.
 
-**Endpoint:** `GET /app-api/storage/:bucketName/files`
+**Endpoint:** `GET /app-api/storage/{bucketName}/files`
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Query Parameters:**
@@ -112,12 +113,12 @@ GET /app-api/storage/uploads/files?prefix=images/&maxKeys=100
 
 Search for files in a bucket.
 
-**Endpoint:** `POST /app-api/storage/:bucketName/search`
+**Endpoint:** `POST /app-api/storage/{bucketName}/search`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -163,12 +164,12 @@ Authorization: Bearer <jwt-token>
 
 Upload a file using base64 encoding.
 
-**Endpoint:** `POST /app-api/storage/:bucketName/upload`
+**Endpoint:** `POST /app-api/storage/{bucketName}/upload`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -211,11 +212,11 @@ Authorization: Bearer <jwt-token>
 
 Upload a file using multipart form data (bucket is in the URL).
 
-**Endpoint:** `POST /app-api/storage/:bucketName/upload-multipart`
+**Endpoint:** `POST /app-api/storage/{bucketName}/upload-multipart`
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Note:** Do not set `Content-Type` for multipart requests; the client (e.g. cURL with `-F`, or fetch with `FormData`) sets `multipart/form-data; boundary=...` automatically.
@@ -263,7 +264,7 @@ Upload a file with bucket and path in form data. Use this when the bucket and pa
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Important:** For multipart uploads, do **not** set `Content-Type` yourself. Let the client set it automatically to `multipart/form-data; boundary=...` (e.g. when using `FormData` with `fetch`, or cURL’s `-F`). Setting `Content-Type: application/json` or omitting the boundary will cause the request to fail.
@@ -320,11 +321,11 @@ const response = await fetch('/app-api/storage/files', {
 
 Download a file from storage.
 
-**Endpoint:** `GET /app-api/storage/:bucketName/download/:filePath`
+**Endpoint:** `GET /app-api/storage/{bucketName}/download/:filePath`
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Example:**
@@ -349,7 +350,7 @@ Download a file using query parameters.
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Query Parameters:**
@@ -383,11 +384,11 @@ GET /app-api/storage/files/download?bucket=documents&path=reports/monthly-jan.pd
 
 Delete a file from storage.
 
-**Endpoint:** `DELETE /app-api/storage/:bucketName/files/:filePath`
+**Endpoint:** `DELETE /app-api/storage/{bucketName}/files/:filePath`
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Example:**
@@ -418,7 +419,7 @@ Delete a file with bucket and path in request body.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -447,11 +448,11 @@ Authorization: Bearer <jwt-token>
 
 Get metadata for a specific file.
 
-**Endpoint:** `GET /app-api/storage/:bucketName/files/:filePath/metadata`
+**Endpoint:** `GET /app-api/storage/{bucketName}/files/:filePath/metadata`
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Example:**
@@ -486,12 +487,12 @@ GET /app-api/storage/documents/files/reports/monthly-jan.pdf/metadata
 
 Rename a folder (moves all files within).
 
-**Endpoint:** `PUT /app-api/storage/:bucketName/folders/rename`
+**Endpoint:** `PUT /app-api/storage/{bucketName}/folders/rename`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -521,11 +522,11 @@ Authorization: Bearer <jwt-token>
 
 Delete a folder and all its contents.
 
-**Endpoint:** `DELETE /app-api/storage/:bucketName/folders/:folderPath`
+**Endpoint:** `DELETE /app-api/storage/{bucketName}/folders/:folderPath`
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Example:**

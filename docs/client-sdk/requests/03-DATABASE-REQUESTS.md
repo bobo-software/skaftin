@@ -1,16 +1,15 @@
 # Database Requests
 
-All database endpoints are available at `/app-api/database`.
+Project data is exposed under **`/app-api/database`** (full client API) and **`/app-api-2/database`** (restricted “public” subset). On the reference Go server, both are wrapped with **`auth.APIKey`** only — send **`x-api-key`**; project is taken from the key (no `projectId` in the path).
 
-## Base URL
-```
-/app-api/database
-```
+## Base URLs
 
-## Authentication
-All endpoints require either:
-- `x-api-key` header with a valid API key
-- `Authorization: Bearer <jwt-token>` header
+| Surface | Prefix | Notes |
+|---------|--------|--------|
+| App API | `/app-api/database` | Full CRUD: tables, columns, constraints, cron, import/export, row update/delete, etc. |
+| App API 2 | `/app-api-2/database` | GET/POST-only style routes (aligned with legacy Node); no `PUT`/`DELETE` verbs on many resources — see route list in code if you rely on this surface |
+
+**Project / admin API:** `/api/database/{projectId}/...` uses the same handlers but requires **platform JWT** and project access middleware (see `routes_data.go`).
 
 ---
 
@@ -24,10 +23,17 @@ Get all tables in the project schema.
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
-**Response:**
+**Query parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `includeSystemTables` | If `true`, include system tables in the result |
+
+**Response:** `data` is an array of table descriptors (see live API for fields).
+
 ```json
 {
   "success": true,
@@ -55,11 +61,11 @@ Authorization: Bearer <jwt-token>
 
 Get the schema (columns) of a specific table.
 
-**Endpoint:** `GET /app-api/database/tables/:tableName/schema`
+**Endpoint:** `GET /app-api/database/tables/{tableName}/schema`
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Example:**
@@ -67,40 +73,21 @@ Authorization: Bearer <jwt-token>
 GET /app-api/database/tables/customers/schema
 ```
 
-**Response:**
+**Response:** `data` is column metadata (often an array of column objects). Inspect a live call for the exact JSON shape.
+
 ```json
 {
   "success": true,
-  "data": {
-    "table_name": "customers",
-    "columns": [
-      {
-        "column_name": "id",
-        "data_type": "integer",
-        "is_nullable": "NO",
-        "column_default": "nextval('customers_id_seq'::regclass)",
-        "is_primary_key": true
-      },
-      {
-        "column_name": "name",
-        "data_type": "character varying",
-        "character_maximum_length": 255,
-        "is_nullable": "NO"
-      },
-      {
-        "column_name": "email",
-        "data_type": "character varying",
-        "character_maximum_length": 255,
-        "is_nullable": "YES"
-      },
-      {
-        "column_name": "created_at",
-        "data_type": "timestamp without time zone",
-        "is_nullable": "YES",
-        "column_default": "now()"
-      }
-    ]
-  }
+  "message": "Table schema fetched successfully",
+  "data": [
+    {
+      "column_name": "id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "is_primary_key": true
+    }
+  ],
+  "timestamp": "..."
 }
 ```
 
@@ -115,7 +102,7 @@ Create a new table.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -179,12 +166,12 @@ Authorization: Bearer <jwt-token>
 
 Rename an existing table.
 
-**Endpoint:** `POST /app-api/database/tables/:tableName/rename`
+**Endpoint:** `POST /app-api/database/tables/{tableName}/rename`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -200,11 +187,11 @@ Authorization: Bearer <jwt-token>
 
 Delete a table.
 
-**Endpoint:** `DELETE /app-api/database/tables/:tableName`
+**Endpoint:** `DELETE /app-api/database/tables/{tableName}`
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Example:**
@@ -232,11 +219,11 @@ Only fields present in `data` and listed in `encrypt` are encrypted; only fields
 
 Query data from a table using GET parameters.
 
-**Endpoint:** `GET /app-api/database/tables/:tableName/select`
+**Endpoint:** `GET /app-api/database/tables/{tableName}/select`
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Query Parameters:**
@@ -279,12 +266,12 @@ Returns rows with `user_card_number` and `user_card_expiry` decrypted. If no enc
 
 Query data with complex WHERE clauses.
 
-**Endpoint:** `POST /app-api/database/tables/:tableName/select`
+**Endpoint:** `POST /app-api/database/tables/{tableName}/select`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -331,12 +318,12 @@ Authorization: Bearer <jwt-token>
 
 Insert a single row into a table.
 
-**Endpoint:** `POST /app-api/database/tables/:tableName/insert`
+**Endpoint:** `POST /app-api/database/tables/{tableName}/insert`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -381,12 +368,12 @@ Authorization: Bearer <jwt-token>
 
 Insert multiple rows at once.
 
-**Endpoint:** `POST /app-api/database/tables/:tableName/bulk-insert`
+**Endpoint:** `POST /app-api/database/tables/{tableName}/bulk-insert`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -436,12 +423,12 @@ Authorization: Bearer <jwt-token>
 
 Update rows in a table.
 
-**Endpoint:** `PUT /app-api/database/tables/:tableName/update`
+**Endpoint:** `PUT /app-api/database/tables/{tableName}/update`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -480,12 +467,12 @@ Authorization: Bearer <jwt-token>
 
 Delete rows from a table.
 
-**Endpoint:** `DELETE /app-api/database/tables/:tableName/delete`
+**Endpoint:** `DELETE /app-api/database/tables/{tableName}/delete`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -516,12 +503,12 @@ Authorization: Bearer <jwt-token>
 
 Add a new column to a table.
 
-**Endpoint:** `POST /app-api/database/tables/:tableName/columns`
+**Endpoint:** `POST /app-api/database/tables/{tableName}/columns`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -540,12 +527,12 @@ Authorization: Bearer <jwt-token>
 
 Modify an existing column.
 
-**Endpoint:** `PUT /app-api/database/tables/:tableName/columns/:columnName`
+**Endpoint:** `PUT /app-api/database/tables/{tableName}/columns/{columnName}`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -563,11 +550,11 @@ Authorization: Bearer <jwt-token>
 
 Remove a column from a table.
 
-**Endpoint:** `DELETE /app-api/database/tables/:tableName/columns/:columnName`
+**Endpoint:** `DELETE /app-api/database/tables/{tableName}/columns/{columnName}`
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 ---
@@ -578,7 +565,7 @@ Authorization: Bearer <jwt-token>
 
 Get all constraints for a table.
 
-**Endpoint:** `GET /app-api/database/tables/:tableName/constraints`
+**Endpoint:** `GET /app-api/database/tables/{tableName}/constraints`
 
 **Response:**
 ```json
@@ -612,12 +599,12 @@ Get all constraints for a table.
 
 Add a foreign key constraint.
 
-**Endpoint:** `POST /app-api/database/tables/:tableName/constraints/foreign-key`
+**Endpoint:** `POST /app-api/database/tables/{tableName}/constraints/foreign-key`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -645,7 +632,7 @@ Authorization: Bearer <jwt-token>
 
 Add a unique constraint.
 
-**Endpoint:** `POST /app-api/database/tables/:tableName/constraints/unique`
+**Endpoint:** `POST /app-api/database/tables/{tableName}/constraints/unique`
 
 **Request Body:**
 ```json
@@ -661,7 +648,7 @@ Add a unique constraint.
 
 Add a primary key constraint.
 
-**Endpoint:** `POST /app-api/database/tables/:tableName/constraints/primary-key`
+**Endpoint:** `POST /app-api/database/tables/{tableName}/constraints/primary-key`
 
 **Request Body:**
 ```json
@@ -676,7 +663,7 @@ Add a primary key constraint.
 
 Add a check constraint.
 
-**Endpoint:** `POST /app-api/database/tables/:tableName/constraints/check`
+**Endpoint:** `POST /app-api/database/tables/{tableName}/constraints/check`
 
 **Request Body:**
 ```json
@@ -692,7 +679,7 @@ Add a check constraint.
 
 Remove a constraint.
 
-**Endpoint:** `DELETE /app-api/database/tables/:tableName/constraints/:constraintName`
+**Endpoint:** `DELETE /app-api/database/tables/{tableName}/constraints/{constraintName}`
 
 ---
 
@@ -707,7 +694,7 @@ Execute a raw SQL query.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**

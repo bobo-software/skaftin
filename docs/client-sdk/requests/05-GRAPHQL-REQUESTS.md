@@ -1,17 +1,27 @@
 # GraphQL Requests
 
-GraphQL endpoint is available at `/api/graphql`.
+GraphQL is available at **`/api/graphql`** (GET and POST).
 
 ## Endpoint
 ```
 POST /api/graphql
+GET /api/graphql
 ```
 
 ## Authentication
-GraphQL requests require SuperTokens session authentication (cookies).
+
+On the reference Go server, `/api/graphql` is mounted with the same **platform JWT** middleware as other `/api/` routes. Send:
+
+```
+Authorization: Bearer <platform-jwt>
+```
+
+When you use the admin web app, the browser’s **SuperTokens / session cookies** may satisfy that auth automatically. For scripts or external clients, use a bearer token issued by your platform auth flow.
 
 ## GraphQL Playground
-Access the GraphQL Playground for interactive queries:
+
+When enabled, the playground is typically served from the same path, for example:
+
 ```
 http://localhost:4006/api/graphql
 ```

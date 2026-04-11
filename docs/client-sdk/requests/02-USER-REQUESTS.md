@@ -1,17 +1,19 @@
 # User Management Requests
 
-All user management endpoints require authentication and are available at `/api/auth/{projectId}`.
+These routes manage **app users** (end users of your project). The same handlers are mounted in two places:
 
-## Base URL
-```
-/api/auth/{projectId}
-```
+| Style | Base path | Auth (reference Go server) |
+|-------|-----------|----------------------------|
+| **App API** (recommended for SDKs) | `/app-api/auth/...` | `x-api-key` — project from key |
+| **Project API** | `/api/auth/{projectId}/...` | `Authorization: Bearer` platform JWT + project access |
 
-## Authentication
-All `/api/auth/{projectId}/...` endpoints in this document require:
-- `Authorization: Bearer <jwt-token>` header
+Examples below use **`{userId}`**, **`{roleId}`** path segments (Go `ServeMux` style). Replace with numeric IDs in real requests.
 
-If you need API-key authentication, use the `/app-api/auth/...` compatibility routes.
+**Note:** **`POST .../users/import`** is only registered on the **project** API (`/api/auth/{projectId}/users/import` with JWT), not under `/app-api/auth/`. Export and all other operations listed here exist on **both** mounts unless stated otherwise.
+
+**App API path rule:** For a **project URL** `/api/auth/{projectId}/foo`, the app client URL is **`/app-api/auth/foo`** (drop `{projectId}`; project comes from **`x-api-key`**). Example: `GET /api/auth/3/users/5` → `GET /app-api/auth/users/5`.
+
+**Authentication:** Use **`x-api-key`** on `/app-api/auth/...`. Use **`Authorization: Bearer`** (platform JWT) on `/api/auth/{projectId}/...`.
 
 ---
 
@@ -21,12 +23,8 @@ If you need API-key authentication, use the `/app-api/auth/...` compatibility ro
 
 Get all users for the project.
 
-**Endpoint:** `GET /api/auth/{projectId}/users`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `GET /api/auth/{projectId}/users`  
+**App API:** `GET /app-api/auth/users`
 
 **Query Parameters:**
 | Parameter | Type | Description |
@@ -83,14 +81,11 @@ GET /api/auth/3/users?page=1&limit=20&search=john&is_active=true
 
 Get a specific user by ID.
 
-**Endpoint:** `GET /api/auth/{projectId}/users/:userId`
+**Project URL:** `GET /api/auth/{projectId}/users/{userId}`  
+**App API:** `GET /app-api/auth/users/{userId}`
 
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Response:** `data` is the user object (not wrapped under another key).
 
-**Response:**
 ```json
 {
   "success": true,
@@ -110,8 +105,9 @@ Authorization: Bearer <jwt-token>
     "email_verified": true,
     "created_at": "2024-01-15T10:30:00.000Z",
     "updated_at": "2024-01-15T10:30:00.000Z",
-    "roles": [...]
-  }
+    "roles": []
+  },
+  "timestamp": "..."
 }
 ```
 
@@ -121,12 +117,8 @@ Authorization: Bearer <jwt-token>
 
 Get all users with a specific role.
 
-**Endpoint:** `GET /api/auth/{projectId}/roles/:roleId/users`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `GET /api/auth/{projectId}/roles/{roleId}/users`  
+**App API:** `GET /app-api/auth/roles/{roleId}/users`
 
 **Response:**
 ```json
@@ -150,13 +142,8 @@ Authorization: Bearer <jwt-token>
 
 Create a new user (admin creation, bypasses registration flow).
 
-**Endpoint:** `POST /api/auth/{projectId}/users`
-
-**Headers:**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `POST /api/auth/{projectId}/users`  
+**App API:** `POST /app-api/auth/users`
 
 **Request Body:**
 ```json
@@ -184,7 +171,8 @@ Authorization: Bearer <jwt-token>
 | metadata | object | No | Additional metadata |
 | is_active | boolean | No | Active status (default: true) |
 
-**Response:**
+**Response:** HTTP **201** — `data` is the created user record.
+
 ```json
 {
   "success": true,
@@ -192,9 +180,9 @@ Authorization: Bearer <jwt-token>
   "data": {
     "id": 2,
     "name": "Jane",
-    "email": "jane.smith@example.com",
-    ...
-  }
+    "email": "jane.smith@example.com"
+  },
+  "timestamp": "..."
 }
 ```
 
@@ -204,13 +192,8 @@ Authorization: Bearer <jwt-token>
 
 Update an existing user.
 
-**Endpoint:** `PUT /api/auth/{projectId}/users/:userId`
-
-**Headers:**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `PUT /api/auth/{projectId}/users/{userId}`  
+**App API:** `PUT /app-api/auth/users/{userId}`
 
 **Request Body:**
 ```json
@@ -245,12 +228,8 @@ Authorization: Bearer <jwt-token>
 
 Delete a user (soft delete by default).
 
-**Endpoint:** `DELETE /api/auth/{projectId}/users/:userId`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `DELETE /api/auth/{projectId}/users/{userId}`  
+**App API:** `DELETE /app-api/auth/users/{userId}`
 
 **Query Parameters:**
 | Parameter | Type | Description |
@@ -267,7 +246,9 @@ DELETE /api/auth/3/users/5?permanent=true  # Permanent delete
 ```json
 {
   "success": true,
-  "message": "User deleted successfully"
+  "message": "User deleted successfully",
+  "data": {},
+  "timestamp": "..."
 }
 ```
 
@@ -279,13 +260,8 @@ DELETE /api/auth/3/users/5?permanent=true  # Permanent delete
 
 Assign a role to a user.
 
-**Endpoint:** `POST /api/auth/{projectId}/users/:userId/roles`
-
-**Headers:**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `POST /api/auth/{projectId}/users/{userId}/roles`  
+**App API:** `POST /app-api/auth/users/{userId}/roles`
 
 **Request Body:**
 ```json
@@ -298,7 +274,9 @@ Authorization: Bearer <jwt-token>
 ```json
 {
   "success": true,
-  "message": "Role assigned successfully"
+  "message": "Role assigned",
+  "data": {},
+  "timestamp": "..."
 }
 ```
 
@@ -308,18 +286,16 @@ Authorization: Bearer <jwt-token>
 
 Remove a role from a user.
 
-**Endpoint:** `DELETE /api/auth/{projectId}/users/:userId/roles/:roleId`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `DELETE /api/auth/{projectId}/users/{userId}/roles/{roleId}`  
+**App API:** `DELETE /app-api/auth/users/{userId}/roles/{roleId}`
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "Role removed successfully"
+  "message": "Role removed",
+  "data": {},
+  "timestamp": "..."
 }
 ```
 
@@ -331,17 +307,14 @@ Authorization: Bearer <jwt-token>
 
 Check user's OTP verification status.
 
-**Endpoint:** `GET /api/auth/{projectId}/users/:userId/otp-status`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `GET /api/auth/{projectId}/users/{userId}/otp-status`  
+**App API:** `GET /app-api/auth/users/{userId}/otp-status`
 
 **Response:**
 ```json
 {
   "success": true,
+  "message": "OTP status fetched",
   "data": {
     "has_pending_otp": true,
     "otp_created_at": "2024-01-15T10:30:00.000Z",
@@ -357,13 +330,8 @@ Authorization: Bearer <jwt-token>
 
 Resend OTP to a user.
 
-**Endpoint:** `POST /api/auth/{projectId}/users/:userId/resend-otp`
-
-**Headers:**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `POST /api/auth/{projectId}/users/{userId}/resend-otp`  
+**App API:** `POST /app-api/auth/users/{userId}/resend-otp`
 
 **Request Body:**
 ```json
@@ -376,7 +344,9 @@ Authorization: Bearer <jwt-token>
 ```json
 {
   "success": true,
-  "message": "OTP resent successfully"
+  "message": "OTP resent",
+  "data": {},
+  "timestamp": "..."
 }
 ```
 
@@ -386,18 +356,16 @@ Authorization: Bearer <jwt-token>
 
 Verify a user without OTP (admin action).
 
-**Endpoint:** `POST /api/auth/{projectId}/users/:userId/manual-verify`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `POST /api/auth/{projectId}/users/{userId}/manual-verify`  
+**App API:** `POST /app-api/auth/users/{userId}/manual-verify`
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "User verified successfully"
+  "message": "User verified",
+  "data": {},
+  "timestamp": "..."
 }
 ```
 
@@ -409,20 +377,18 @@ Authorization: Bearer <jwt-token>
 
 Get whether a user currently has a password set.
 
-**Endpoint:** `GET /api/auth/{projectId}/users/:userId/password`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `GET /api/auth/{projectId}/users/{userId}/password`  
+**App API:** `GET /app-api/auth/users/{userId}/password`
 
 **Response:**
 ```json
 {
   "success": true,
+  "message": "Password status fetched",
   "data": {
     "has_password": true
-  }
+  },
+  "timestamp": "..."
 }
 ```
 
@@ -432,13 +398,8 @@ Authorization: Bearer <jwt-token>
 
 Set or reset a user's password.
 
-**Endpoint:** `POST /api/auth/{projectId}/users/:userId/password`
-
-**Headers:**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `POST /api/auth/{projectId}/users/{userId}/password`  
+**App API:** `POST /app-api/auth/users/{userId}/password`
 
 **Request Body:**
 ```json
@@ -461,13 +422,8 @@ Authorization: Bearer <jwt-token>
 
 Verify a candidate password against the stored password hash.
 
-**Endpoint:** `POST /api/auth/{projectId}/users/:userId/password/verify`
-
-**Headers:**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `POST /api/auth/{projectId}/users/{userId}/password/verify`  
+**App API:** `POST /app-api/auth/users/{userId}/password/verify`
 
 **Request Body:**
 ```json
@@ -496,12 +452,8 @@ Authorization: Bearer <jwt-token>
 
 Export users as SQL dump.
 
-**Endpoint:** `POST /api/auth/{projectId}/users/export`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `POST /api/auth/{projectId}/users/export`  
+**App API:** `POST /app-api/auth/users/export`
 
 **Response:**
 Returns SQL content as a downloadable file (`Content-Type: application/sql`).
@@ -512,15 +464,16 @@ Returns SQL content as a downloadable file (`Content-Type: application/sql`).
 
 Import users from SQL dump.
 
-**Endpoint:** `POST /api/auth/{projectId}/users/import`
+**Project URL only (not on app API):** `POST /api/auth/{projectId}/users/import`
 
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+Authorization: Bearer <platform-jwt>
 ```
 
-**Request Body:**
+**Request Body:** provide either **`sql`** or **`sqlContent`** (both names are accepted).
+
 ```json
 {
   "sqlContent": "INSERT INTO users (name, email, ...) VALUES ...",
@@ -551,12 +504,8 @@ Authorization: Bearer <jwt-token>
 
 Get all roles for the project.
 
-**Endpoint:** `GET /api/auth/{projectId}/roles`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `GET /api/auth/{projectId}/roles`  
+**App API:** `GET /app-api/auth/roles`
 
 **Response:**
 ```json
@@ -591,13 +540,8 @@ Authorization: Bearer <jwt-token>
 
 Create a new role.
 
-**Endpoint:** `POST /api/auth/{projectId}/roles`
-
-**Headers:**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `POST /api/auth/{projectId}/roles`  
+**App API:** `POST /app-api/auth/roles`
 
 **Request Body:**
 ```json
@@ -630,13 +574,8 @@ Authorization: Bearer <jwt-token>
 
 Update an existing role.
 
-**Endpoint:** `PUT /api/auth/{projectId}/roles/:roleId`
-
-**Headers:**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `PUT /api/auth/{projectId}/roles/{roleId}`  
+**App API:** `PUT /app-api/auth/roles/{roleId}`
 
 **Request Body:**
 ```json
@@ -652,12 +591,8 @@ Authorization: Bearer <jwt-token>
 
 Delete a role (system roles cannot be deleted).
 
-**Endpoint:** `DELETE /api/auth/{projectId}/roles/:roleId`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `DELETE /api/auth/{projectId}/roles/{roleId}`  
+**App API:** `DELETE /app-api/auth/roles/{roleId}`
 
 ---
 
@@ -665,13 +600,8 @@ Authorization: Bearer <jwt-token>
 
 Update permissions for a role.
 
-**Endpoint:** `PUT /api/auth/{projectId}/roles/:roleId/permissions`
-
-**Headers:**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `PUT /api/auth/{projectId}/roles/{roleId}/permissions`  
+**App API:** `PUT /app-api/auth/roles/{roleId}/permissions`
 
 **Request Body:**
 ```json
@@ -686,13 +616,8 @@ Authorization: Bearer <jwt-token>
 
 Update session duration for a role.
 
-**Endpoint:** `PUT /api/auth/{projectId}/roles/:roleId/session-duration`
-
-**Headers:**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
+**Project URL:** `PUT /api/auth/{projectId}/roles/{roleId}/session-duration`  
+**App API:** `PUT /app-api/auth/roles/{roleId}/session-duration`
 
 **Request Body:**
 ```json
@@ -700,3 +625,48 @@ Authorization: Bearer <jwt-token>
   "session_duration_minutes": 720
 }
 ```
+
+---
+
+### 22. Verify organisation context (role)
+
+**Project URL:** `GET /api/auth/{projectId}/roles/{roleId}/verify-org-context`  
+**App API:** `GET /app-api/auth/roles/{roleId}/verify-org-context`
+
+Used to validate org-related configuration for a role (response shape depends on project settings).
+
+---
+
+## Custom auth fields
+
+Manage custom login identifiers linked to database columns (same path rule as above).
+
+| Method | Project URL | App API |
+|--------|-------------|---------|
+| GET | `/api/auth/{projectId}/fields/available-tables` | `/app-api/auth/fields/available-tables` |
+| GET | `/api/auth/{projectId}/fields` | `/app-api/auth/fields` |
+| GET | `/api/auth/{projectId}/fields/{fieldId}` | `/app-api/auth/fields/{fieldId}` |
+| POST | `/api/auth/{projectId}/fields` | `/app-api/auth/fields` |
+| PUT | `/api/auth/{projectId}/fields/{fieldId}` | `/app-api/auth/fields/{fieldId}` |
+| DELETE | `/api/auth/{projectId}/fields/{fieldId}` | `/app-api/auth/fields/{fieldId}` |
+| POST | `/api/auth/{projectId}/fields/{fieldId}/apply` | `/app-api/auth/fields/{fieldId}/apply` |
+
+---
+
+## Auth settings & provider tests
+
+| Method | Project URL | App API |
+|--------|-------------|---------|
+| GET | `/api/auth/{projectId}/settings` | `/app-api/auth/settings` |
+| PUT | `/api/auth/{projectId}/settings` | `/app-api/auth/settings` |
+| GET | `/api/auth/{projectId}/settings/email-providers` | `/app-api/auth/settings/email-providers` |
+| GET | `/api/auth/{projectId}/settings/sms-providers` | `/app-api/auth/settings/sms-providers` |
+| GET | `/api/auth/{projectId}/settings/session-durations` | `/app-api/auth/settings/session-durations` |
+| GET | `/api/auth/{projectId}/settings/session-config/{roleId}` | `/app-api/auth/settings/session-config/{roleId}` |
+| POST | `/api/auth/{projectId}/settings/send-verification` | `/app-api/auth/settings/send-verification` |
+| POST | `/api/auth/{projectId}/settings/send-reset` | `/app-api/auth/settings/send-reset` |
+| POST | `/api/auth/{projectId}/settings/verify-otp` | `/app-api/auth/settings/verify-otp` |
+| POST | `/api/auth/{projectId}/settings/test-email-provider` | `/app-api/auth/settings/test-email-provider` |
+| POST | `/api/auth/{projectId}/settings/test-sms-provider` | `/app-api/auth/settings/test-sms-provider` |
+
+See also [01-AUTH-REQUESTS.md](./01-AUTH-REQUESTS.md) for end-user auth flows (`/app-api/auth/auth/...`).

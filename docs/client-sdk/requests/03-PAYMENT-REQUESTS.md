@@ -45,6 +45,8 @@ headers: {
 
 **Note:** The API key must be active (`is_active: true`) and have the required permissions. The system automatically extracts the project ID from the API key, so you don't need to include it in the request.
 
+**Client payment routes (Go):** `POST /app-api/payments/initiate`, `GET /app-api/payments/transaction/{transactionId}`, `POST /app-api/payments/subscription/cancel` — all require **`x-api-key`**. Admin/dashboard provider management may use separate `/api/payments/...` JWT routes.
+
 ## Quick Start
 
 ### React Web
@@ -974,7 +976,7 @@ const initiatePayment = async (providerId?: number) => {
 
 Check the status of a payment.
 
-**Endpoint:** `GET /app-api/payments/transaction/:transactionId`
+**Endpoint:** `GET /app-api/payments/transaction/{transactionId}`
 
 **Response:**
 

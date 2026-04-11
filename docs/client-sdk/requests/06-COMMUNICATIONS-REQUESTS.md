@@ -1,6 +1,11 @@
 # Communications Requests (Email, SMS & WhatsApp)
 
-All communications endpoints are available at `/app-api/communications`.
+Communications are exposed under **`/app-api/communications`** with **two path styles**:
+
+1. **Project in URL:** `/app-api/communications/{projectId}/...` (e.g. provider CRUD, templates, sends under that prefix).
+2. **Project from API key:** routes such as **`POST /app-api/communications/email/send`**, **`POST /app-api/communications/sms/send`**, **`POST /app-api/communications/sms/send-basic`**, WhatsApp sends, and some template/provider listings — these resolve the project from **`x-api-key`** (see `communications/handler.go` `RegisterAppAPIRoutes`).
+
+Always send **`x-api-key`** unless your gateway adds it for you.
 
 ## Base URL
 ```
@@ -8,9 +13,11 @@ All communications endpoints are available at `/app-api/communications`.
 ```
 
 ## Authentication
-All endpoints require either:
-- `x-api-key` header with a valid API key
-- `Authorization: Bearer <jwt-token>` header
+```
+x-api-key: your-api-key
+```
+
+Some responses use the shared `{ success, message, data }` helper; others return ad-hoc JSON (especially some error paths). Check HTTP status as well as body fields.
 
 ---
 
@@ -25,7 +32,7 @@ Send an email using a configured email provider.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -98,7 +105,7 @@ Send a single SMS message.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -138,7 +145,7 @@ Send multiple SMS messages at once.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -196,7 +203,7 @@ Get all SMS providers for the project.
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Response:**
@@ -240,7 +247,7 @@ Get a specific SMS provider.
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Response (MyMobileAPI):**
@@ -296,7 +303,7 @@ Create a new SMS provider. Supports MyMobileAPI, SA Mobile SMS, and Twilio.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body (MyMobileAPI / SA Mobile SMS):**
@@ -368,7 +375,7 @@ Update an existing SMS provider.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -389,7 +396,7 @@ Delete an SMS provider.
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 ---
@@ -404,7 +411,7 @@ Get all SMS templates.
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Response:**
@@ -440,7 +447,7 @@ Get a specific SMS template.
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 ---
@@ -454,7 +461,7 @@ Create a new SMS template.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -495,7 +502,7 @@ Update an existing SMS template.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -516,7 +523,7 @@ Delete an SMS template.
 
 **Headers:**
 ```
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 ---
@@ -534,7 +541,7 @@ Send a single WhatsApp message.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -599,7 +606,7 @@ Send multiple WhatsApp messages at once.
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -656,7 +663,7 @@ Send a pre-approved WhatsApp template message using Twilio Content Templates. Te
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -751,7 +758,7 @@ Check the delivery status of any SMS or WhatsApp message sent via Twilio using i
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: Bearer <jwt-token>
+x-api-key: your-api-key
 ```
 
 **Request Body:**
@@ -829,7 +836,7 @@ When a Twilio message fails or is undelivered, the response includes an `errorCo
 ```bash
 curl -X POST "http://localhost:4006/app-api/communications/sms/send-basic" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "destination": "+27821234567",
     "message": "Your verification code is: 123456. Valid for 10 minutes."
@@ -841,7 +848,7 @@ curl -X POST "http://localhost:4006/app-api/communications/sms/send-basic" \
 ```bash
 curl -X POST "http://localhost:4006/app-api/communications/sms/send" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "messages": [
       {"destination": "+27821234567", "content": "Your order #1001 has shipped!"},
@@ -855,7 +862,7 @@ curl -X POST "http://localhost:4006/app-api/communications/sms/send" \
 ```bash
 curl -X POST "http://localhost:4006/app-api/communications/email/send" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "provider_id": 1,
     "to": "newuser@example.com",
@@ -870,7 +877,7 @@ curl -X POST "http://localhost:4006/app-api/communications/email/send" \
 ```bash
 curl -X POST "http://localhost:4006/app-api/communications/email/send" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "provider_id": 1,
     "to": "customer@example.com",
@@ -891,7 +898,7 @@ curl -X POST "http://localhost:4006/app-api/communications/email/send" \
 ```bash
 curl -X POST "http://localhost:4006/app-api/communications/whatsapp/send-basic" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "destination": "0712345678",
     "message": "Hi! Your order has been dispatched and will arrive tomorrow."
@@ -903,7 +910,7 @@ curl -X POST "http://localhost:4006/app-api/communications/whatsapp/send-basic" 
 ```bash
 curl -X POST "http://localhost:4006/app-api/communications/whatsapp/send" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "messages": [
       {"destination": "+27712345678", "content": "Your appointment is confirmed for 10:00 AM."},
@@ -917,7 +924,7 @@ curl -X POST "http://localhost:4006/app-api/communications/whatsapp/send" \
 ```bash
 curl -X POST "http://localhost:4006/app-api/communications/whatsapp/template" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "phone": "0712442080",
     "contentSid": "HX350d429d32e64a552466cafecbe95f3c",
@@ -933,7 +940,7 @@ curl -X POST "http://localhost:4006/app-api/communications/whatsapp/template" \
 ```bash
 curl -X POST "http://localhost:4006/app-api/communications/whatsapp/template" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "phone": "+27712345678",
     "contentSid": "HX350d429d32e64a552466cafecbe95f3c"
@@ -945,7 +952,7 @@ curl -X POST "http://localhost:4006/app-api/communications/whatsapp/template" \
 ```bash
 curl -X POST "http://localhost:4006/app-api/communications/sms/check-status" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "messageSid": "SM1234567890abcdef1234567890abcdef"
   }'
@@ -956,7 +963,7 @@ curl -X POST "http://localhost:4006/app-api/communications/sms/check-status" \
 ```bash
 curl -X POST "http://localhost:4006/app-api/communications/sms/providers" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
+  -H "x-api-key: your-api-key" \
   -d '{
     "name": "Twilio (SMS + WhatsApp)",
     "provider_type": "twilio",

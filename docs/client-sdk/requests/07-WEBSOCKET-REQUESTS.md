@@ -34,7 +34,7 @@ wss://skaftinplatform.bobosoftware.co.za/app-api/ws?api_key=YOUR_API_KEY
 
 Notes:
 - The key is project-scoped; you can only subscribe to that project.
-- Header auth (`X-API-Key` / `Authorization`) is also supported for non-browser clients.
+- Non-browser clients may pass the same API key via headers (`x-api-key`, `X-API-Key`, or `Authorization` as configured) instead of the query string.
 
 ## Protocol Overview
 

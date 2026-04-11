@@ -1,19 +1,64 @@
 # Authentication Requests
 
-All authentication endpoints are available at `/api/auth/{projectId}/auth`.
+App clients should call **`/app-api/auth/...`** with the **`x-api-key`** header. The server resolves the project from the key, so paths do not include `projectId`.
 
-## Base URL
+The same handlers are also mounted under **`/api/auth/{projectId}/auth/...`** for direct, project-scoped calls (typical for server-side or admin tools). On the reference Go server, those public auth routes are **not** wrapped in API-key middleware; your gateway may still require a key.
+
+## Response shape
+
+Successful responses:
+
+```json
+{
+  "success": true,
+  "message": "...",
+  "data": { },
+  "timestamp": "2026-04-11T12:00:00.000000000Z"
+}
 ```
-/api/auth/{projectId}/auth
+
+Errors:
+
+```json
+{
+  "success": false,
+  "message": "...",
+  "error": "..."
+}
 ```
 
-## Authentication Methods
+## Endpoint map (App API)
 
-The login endpoints support 4 different identifier methods:
-- `email` - User's email address
-- `phone` - User's phone number  
-- `custom_field_1` - Custom identifier (e.g., employee ID)
-- `custom_field_2` - Custom identifier (e.g., membership number)
+| Action | App API (`x-api-key`) |
+|--------|------------------------|
+| Register | `POST /app-api/auth/auth/register` |
+| Login | `POST /app-api/auth/auth/login` |
+| Single-credential login | `POST /app-api/auth/auth/single-credential-login` |
+| Request OTP login | `POST /app-api/auth/auth/otp-login` |
+| Verify OTP login | `POST /app-api/auth/auth/verify-otp-login` |
+| Verify session | `POST /app-api/auth/auth/verify` |
+| Logout | `POST /app-api/auth/auth/logout` |
+| Verify registration OTP | `POST /app-api/auth/auth/verify-otp` |
+| Forgot password | `POST /app-api/auth/auth/forgot-password` |
+| Verify forgot-password OTP | `POST /app-api/auth/auth/verify-forgot-password-otp` |
+| Reset password | `POST /app-api/auth/auth/reset-password` |
+| Session refresh (SuperTokens) | `POST /app-api/auth/session/refresh` |
+| Change password (start) | `POST /app-api/auth/auth/change-password-request` |
+| Verify password-change OTP | `POST /app-api/auth/auth/verify-password-change-otp` |
+| Request account deletion | `POST /app-api/auth/auth/request-account-deletion` |
+| Verify account-deletion OTP | `POST /app-api/auth/auth/verify-account-deletion-otp` |
+| Cancel account deletion | `POST /app-api/auth/auth/cancel-account-deletion` |
+
+Project-scoped equivalents replace the prefix with `POST /api/auth/{projectId}/auth/...` (same path suffix, e.g. `.../register`, `.../verify-otp`).
+
+## Login identifier methods
+
+Login-related endpoints support these `method` values:
+
+- `email` — user's email address  
+- `phone` — user's phone number  
+- `custom_field_1` — custom identifier (e.g. employee ID)  
+- `custom_field_2` — custom identifier (e.g. membership number)
 
 ---
 
@@ -21,15 +66,18 @@ The login endpoints support 4 different identifier methods:
 
 Create a new user account.
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/register`
+**App API:** `POST /app-api/auth/auth/register`  
+**Project URL:** `POST /api/auth/{projectId}/auth/register`
 
-**Headers:**
+**Headers (app API):**
+
 ```
 Content-Type: application/json
 x-api-key: your-api-key
 ```
 
-**Request Body:**
+**Request body:**
+
 ```json
 {
   "name": "John",
@@ -37,7 +85,7 @@ x-api-key: your-api-key
   "email": "john.doe@example.com",
   "password": "SecurePass123!",
   "phone": "+27821234567",
-  "role_key": "user",
+  "role_id": 2,
   "custom_field_1": "EMP001",
   "custom_field_2": "MEMBER123",
   "metadata": {
@@ -52,21 +100,23 @@ x-api-key: your-api-key
 |-------|------|----------|-------------|
 | name | string | Yes | User's first name |
 | last_name | string | No | User's last name |
-| email | string | Yes | User's email address |
-| password | string | Yes | User's password (min 8 characters) |
-| phone | string | No | Phone number (required if otp_method is "sms") |
-| role_key | string | No | Role key to assign (e.g., "user", "admin") |
-| role_id | number | No | Role ID to assign (alternative to role_key) |
+| email | string | Conditional | Required unless `phone` is provided |
+| phone | string | Conditional | Required unless `email` is provided |
+| password | string | Yes | User's password |
+| role_id | number | No | Role ID to assign (in addition to the project's default role, if configured) |
 | custom_field_1 | string | No | Custom identifier 1 |
 | custom_field_2 | string | No | Custom identifier 2 |
 | metadata | object | No | Additional user metadata |
-| otp_method | string | No | OTP delivery method: "email" or "sms" |
+| otp_method | string | No | When registration OTP is enabled in project settings: `"email"` or `"sms"` |
 
-**Response:**
+If registration OTP is sent, the user is created with **`is_active`: `false`** until **`verify-otp`** succeeds. The server still attempts to create a session on register; when OTP is pending, treat the user as unverified until OTP is confirmed (and use **`verify-otp`** + login as your product flow requires).
+
+**Response** (HTTP **201**):
+
 ```json
 {
   "success": true,
-  "message": "User registered successfully",
+  "message": "Registration successful",
   "data": {
     "user": {
       "id": 1,
@@ -74,37 +124,33 @@ x-api-key: your-api-key
       "last_name": "Doe",
       "email": "john.doe@example.com",
       "phone": "+27821234567",
-      "is_active": true,
-      "roles": [
-        {
-          "id": 2,
-          "role_name": "User",
-          "role_key": "user"
-        }
-      ]
+      "is_active": true
     },
-    "session": {
-      "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-    }
-  }
+    "message": "User registered successfully",
+    "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+  },
+  "timestamp": "..."
 }
 ```
 
+`accessToken` is omitted if session creation fails. There is **no** `session` wrapper — the token is **`data.accessToken`**.
+
 ---
 
-## 2. Login (with Password)
+## 2. Login (with password)
 
-Authenticate with credential and password.
+**App API:** `POST /app-api/auth/auth/login`  
+**Project URL:** `POST /api/auth/{projectId}/auth/login`
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/login`
+**Headers (app API):**
 
-**Headers:**
 ```
 Content-Type: application/json
 x-api-key: your-api-key
 ```
 
-**Request Body:**
+**Request body** — supply the identifier in **`credential`**, or **`email`**, or **`phone`** (the service merges these). For **`POST /app-api/auth/auth/login`** only, **`username`** is accepted and mapped to **`credential`** when `credential` / `email` / `phone` are absent.
+
 ```json
 {
   "credential": "john.doe@example.com",
@@ -115,36 +161,20 @@ x-api-key: your-api-key
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| credential | string | Yes | User identifier (email, phone, or custom field value) |
+| credential / email / phone | string | Yes | Login identifier (any one of these keys) |
 | password | string | Yes | User's password |
-| method | string | Yes | Identifier type: "email", "phone", "custom_field_1", "custom_field_2" |
+| method | string | No | Defaults to **`email`**. One of `email`, `phone`, `custom_field_1`, `custom_field_2` |
 
-**Examples by Method:**
+**Examples:**
 
 ```json
-// Login with email
-{
-  "credential": "john.doe@example.com",
-  "password": "SecurePass123!",
-  "method": "email"
-}
-
-// Login with phone
-{
-  "credential": "+27821234567",
-  "password": "SecurePass123!",
-  "method": "phone"
-}
-
-// Login with employee ID
-{
-  "credential": "EMP001",
-  "password": "SecurePass123!",
-  "method": "custom_field_1"
-}
+{ "credential": "john.doe@example.com", "password": "SecurePass123!", "method": "email" }
+{ "credential": "+27821234567", "password": "SecurePass123!", "method": "phone" }
+{ "credential": "EMP001", "password": "SecurePass123!", "method": "custom_field_1" }
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -153,34 +183,38 @@ x-api-key: your-api-key
     "user": {
       "id": 1,
       "name": "John",
-      "email": "john.doe@example.com",
-      "roles": [...]
+      "email": "john.doe@example.com"
     },
-    "session": {
-      "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-    },
-    "organisation_name": "church_id",
-    "organisation_id": 5,
-    "is_admin": false
-  }
+    "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "message": "Login successful"
+  },
+  "timestamp": "..."
+}
+```
+
+Organization context is carried in the JWT access token payload, not as separate fields in this JSON.
+
+**Login error (invalid credentials)** — HTTP **401**:
+
+```json
+{
+  "success": false,
+  "message": "invalid credentials",
+  "error": "invalid credentials"
 }
 ```
 
 ---
 
-## 3. Single Credential Login (Passwordless)
+## 3. Single-credential login (passwordless)
 
-Login without a password using just the identifier.
+**App API:** `POST /app-api/auth/auth/single-credential-login`  
+**Project URL:** `POST /api/auth/{projectId}/auth/single-credential-login`
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/single-credential-login`
+**Headers (app API):** same as register.
 
-**Headers:**
-```
-Content-Type: application/json
-x-api-key: your-api-key
-```
+**Request body:**
 
-**Request Body:**
 ```json
 {
   "credential": "john.doe@example.com",
@@ -188,83 +222,50 @@ x-api-key: your-api-key
 }
 ```
 
+You may use **`email`** instead of **`credential`** when the method is email.
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| credential | string | Yes | User identifier value |
-| method | string | Yes | Identifier type: "email", "phone", "custom_field_1", "custom_field_2" |
+| credential / email | string | Yes | User identifier value |
+| method | string | No | Defaults to **`email`** |
 
-**Response:** Same as regular login.
+**Response:** Same shape as password login (`user`, `accessToken`, `message` inside `data`).
 
 ---
 
-## 4. OTP Login (Two-Step Passwordless)
+## 4. OTP login (two-step)
 
-A two-step passwordless login flow where the user receives an OTP via email or SMS.
+### 4a. Request OTP login
 
-### 4a. Request OTP Login
+**App API:** `POST /app-api/auth/auth/otp-login`  
+**Project URL:** `POST /api/auth/{projectId}/auth/otp-login`
 
-Request an OTP code to be sent to the user's email or phone.
-
-**Endpoint:** `POST /api/auth/{projectId}/auth/otp-login`
-
-**Headers:**
-```
-Content-Type: application/json
-x-api-key: your-api-key
-```
-
-**Request Body:**
-```json
-{
-  "email": "john.doe@example.com"
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| email | string | Conditional | User's email (required if phone not provided) |
-| phone | string | Conditional | User's phone number (required if email not provided) |
-
-**Examples:**
+**Request body:**
 
 ```json
-// Request OTP via email
-{
-  "email": "john.doe@example.com"
-}
-
-// Request OTP via SMS
-{
-  "phone": "+27821234567"
-}
+{ "email": "john.doe@example.com" }
 ```
 
-**Response:**
+or `{ "phone": "+27821234567" }`.
+
+**Response** — always the same message whether or not the account exists (no user enumeration):
+
 ```json
 {
   "success": true,
-  "message": "OTP sent successfully via email",
-  "data": {
-    "message": "A verification code has been sent to your email. Please check and enter the code.",
-    "method": "email",
-    "destination": "jo***@example.com"
-  }
+  "message": "OTP sent if account exists",
+  "data": {},
+  "timestamp": "..."
 }
 ```
 
-### 4b. Verify OTP Login
+### 4b. Verify OTP login
 
-Verify the OTP code and receive login credentials.
+**App API:** `POST /app-api/auth/auth/verify-otp-login`  
+**Project URL:** `POST /api/auth/{projectId}/auth/verify-otp-login`
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/verify-otp-login`
+**Request body:**
 
-**Headers:**
-```
-Content-Type: application/json
-x-api-key: your-api-key
-```
-
-**Request Body:**
 ```json
 {
   "email": "john.doe@example.com",
@@ -274,100 +275,52 @@ x-api-key: your-api-key
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| email | string | Conditional | User's email (required if phone not provided) |
-| phone | string | Conditional | User's phone number (required if email not provided) |
-| otp | string | Yes | The OTP code received (or `otp_code`) |
-
-**Examples:**
-
-```json
-// Verify with email
-{
-  "email": "john.doe@example.com",
-  "otp": "123456"
-}
-
-// Verify with phone
-{
-  "phone": "+27821234567",
-  "otp": "123456"
-}
-```
+| email or phone | string | Yes | Same channel used in `otp-login` |
+| otp | string | Yes | Alias: **`otp_code`** |
 
 **Response:**
+
 ```json
 {
   "success": true,
-  "message": "Login successful",
+  "message": "OTP login verified",
   "data": {
-    "user": {
-      "id": 1,
-      "name": "John",
-      "email": "john.doe@example.com",
-      "roles": [...]
-    },
-    "organisation": {
-      "name": "org_field",
-      "id": 5,
-      "is_admin": false
-    },
-    "session": {
-      "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-    }
-  }
+    "user": { "id": 1, "email": "john.doe@example.com" },
+    "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "message": "OTP verified successfully"
+  },
+  "timestamp": "..."
 }
 ```
 
-**Error Responses:**
-
-```json
-// Invalid OTP
-{
-  "success": false,
-  "message": "Invalid OTP code. 2 attempt(s) remaining."
-}
-
-// Expired OTP
-{
-  "success": false,
-  "message": "OTP code has expired. Please request a new login code."
-}
-
-// Max attempts exceeded
-{
-  "success": false,
-  "message": "Maximum verification attempts exceeded. Please request a new login code."
-}
-```
+**Typical error responses** (HTTP **400**, `success: false`): e.g. `"invalid OTP code"`, `"OTP has expired"`, `"too many attempts"`, `"no pending OTP found"`, `"user not found"`.
 
 ---
 
-## 5. Verify Token
+## 5. Verify session
 
-Verify if a JWT token is valid.
-
-**Endpoint:** `POST /api/auth/{projectId}/auth/verify`
+**App API:** `POST /app-api/auth/auth/verify`  
+**Project URL:** `POST /api/auth/{projectId}/auth/verify`
 
 **Headers:**
+
 ```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
+Authorization: Bearer <access-token>
 ```
 
-**Request Body:** Empty or `{}`
+Alternatively, send JSON `{ "accessToken": "..." }` if the header is not set.
 
 **Response:**
+
 ```json
 {
   "success": true,
-  "message": "Token is valid",
+  "message": "Session verified",
   "data": {
-    "user": {
-      "id": 1,
-      "email": "john.doe@example.com",
-      "roles": [...]
-    }
-  }
+    "user": { "id": 1, "email": "john.doe@example.com" },
+    "message": "Token is valid"
+  },
+  "timestamp": "..."
 }
 ```
 
@@ -375,38 +328,43 @@ Authorization: Bearer <jwt-token>
 
 ## 6. Logout
 
-End the user's session.
+**App API:** `POST /app-api/auth/auth/logout`  
+**Project URL:** `POST /api/auth/{projectId}/auth/logout`
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/logout`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Headers / body:** Bearer token, or JSON `{ "accessToken": "..." }`.
 
 **Response:**
+
 ```json
 {
   "success": true,
-  "message": "Logged out successfully"
+  "message": "Logged out",
+  "data": {},
+  "timestamp": "..."
 }
 ```
 
 ---
 
-## 7. Verify OTP
+## 7. Session refresh (SuperTokens)
 
-Verify an OTP code sent during registration.
+**App API:** `POST /app-api/auth/session/refresh`
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/verify-otp`
+Forwards refresh semantics to SuperTokens (cookies / tokens as configured). Some clients receive a JSON success stub when no refresh body is needed.
 
-**Headers:**
-```
-Content-Type: application/json
-x-api-key: your-api-key
-```
+---
 
-**Request Body:**
+## 8. Verify OTP (registration)
+
+Confirms the **registration** OTP and activates the user. This is **not** the same as **`verify-otp-login`** (passwordless sign-in).
+
+**App API:** `POST /app-api/auth/auth/verify-otp`  
+**Project URL:** `POST /api/auth/{projectId}/auth/verify-otp`
+
+**Headers (app API):** `Content-Type: application/json`, `x-api-key`
+
+**Request body:**
+
 ```json
 {
   "user_id": 1,
@@ -414,164 +372,89 @@ x-api-key: your-api-key
 }
 ```
 
-**Response:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| user_id | number | Yes | App user id returned from register (`data.user.id`) |
+| otp | string | Yes | Alias: **`otp_code`** |
+
+**Response** — the handler **does not** return a new session or user object; it only confirms verification:
+
 ```json
 {
   "success": true,
-  "message": "OTP verified successfully",
-  "data": {
-    "user": {...},
-    "session": {
-      "accessToken": "..."
-    }
-  }
+  "message": "OTP verified",
+  "data": {},
+  "timestamp": "..."
 }
 ```
 
+After success, call **login** (or reuse an existing access token from registration, if your flow allows).
+
 ---
 
-## 8. Forgot Password
+## 9. Forgot password
 
-Request a password reset OTP. Supports both email and phone number as identifiers.
+**App API:** `POST /app-api/auth/auth/forgot-password`  
+**Project URL:** `POST /api/auth/{projectId}/auth/forgot-password`
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/forgot-password`
+**Request body:**
 
-**Headers:**
-```
-Content-Type: application/json
-x-api-key: your-api-key
-```
-
-**Request Body:**
 ```json
 {
   "email": "john.doe@example.com",
-  "phone": null,
   "method": "email"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| email | string | Conditional | User's email address (required if phone not provided) |
-| phone | string | Conditional | User's phone number (required if email not provided) |
-| method | string | Conditional | OTP delivery: "email" or "sms". Required "sms" if only phone provided |
-| code | string | No | Custom OTP code to use. If omitted, one is auto-generated |
-
-**Examples:**
-
-```json
-// Request via email (default)
-{
-  "email": "john.doe@example.com",
-  "method": "email"
-}
-
-// Request via phone (SMS)
-{
-  "phone": "+27821234567",
-  "method": "sms"
-}
-
-// With email but send via SMS (user's phone on file)
-{
-  "email": "john.doe@example.com",
-  "method": "sms"
-}
-
-// With a custom OTP code
-{
-  "email": "john.doe@example.com",
-  "method": "email",
-  "code": "123456"
-}
-```
+| email or phone | string | Yes | Identifier |
+| method | string | No | `"email"` or `"sms"` (e.g. SMS to the user's stored phone when email is given) |
+| code | string | No | Optional fixed OTP for testing; normally generated server-side |
 
 **Response:**
+
 ```json
 {
   "success": true,
-  "message": "OTP sent successfully via email",
-  "data": {
-    "message": "A verification code has been sent to your email. Please check and enter the code.",
-    "method": "email",
-    "destination": "jo***@example.com"
-  }
+  "message": "If the account exists, a password reset OTP has been sent",
+  "data": {},
+  "timestamp": "..."
 }
 ```
 
 ---
 
-## 9. Verify Forgot Password OTP
+## 10. Verify forgot-password OTP
 
-Verify the password reset OTP. Use the same identifier (email or phone) used in the forgot password request.
+**App API:** `POST /app-api/auth/auth/verify-forgot-password-otp`  
+**Project URL:** `POST /api/auth/{projectId}/auth/verify-forgot-password-otp`
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/verify-forgot-password-otp`
-
-**Headers:**
-```
-Content-Type: application/json
-x-api-key: your-api-key
-```
-
-**Request Body:**
-```json
-{
-  "email": "john.doe@example.com",
-  "otp": "123456"
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| email | string | Conditional | User's email (required if phone not provided) |
-| phone | string | Conditional | User's phone number (required if email not provided) |
-| otp | string | Yes | The OTP code received (or `otp_code`) |
-
-**Examples:**
-
-```json
-// Verify with email
-{
-  "email": "john.doe@example.com",
-  "otp": "123456"
-}
-
-// Verify with phone
-{
-  "phone": "+27821234567",
-  "otp": "123456"
-}
-```
+**Request body:** same identifier shape as forgot-password, plus `otp` or `otp_code`.
 
 **Response:**
+
 ```json
 {
   "success": true,
-  "message": "OTP verified successfully",
+  "message": "Forgot password OTP verified",
   "data": {
-    "message": "OTP verified. You can now reset your password.",
     "reset_token": "a1b2c3d4e5f6...",
     "expires_in_minutes": 15
-  }
+  },
+  "timestamp": "..."
 }
 ```
 
 ---
 
-## 10. Reset Password
+## 11. Reset password
 
-Set a new password after OTP verification. Use the same identifier (email or phone) and the reset token from the verify step.
+**App API:** `POST /app-api/auth/auth/reset-password`  
+**Project URL:** `POST /api/auth/{projectId}/auth/reset-password`
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/reset-password`
+**Request body:**
 
-**Headers:**
-```
-Content-Type: application/json
-x-api-key: your-api-key
-```
-
-**Request Body:**
 ```json
 {
   "email": "john.doe@example.com",
@@ -580,62 +463,33 @@ x-api-key: your-api-key
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| email | string | Conditional | User's email (required if phone not provided) |
-| phone | string | Conditional | User's phone number (required if email not provided) |
-| reset_token | string | Yes | The reset token from verify-forgot-password-otp |
-| new_password | string | Yes | New password (minimum 8 characters) |
-
-**Examples:**
-
-```json
-// Reset with email identifier
-{
-  "email": "john.doe@example.com",
-  "reset_token": "a1b2c3d4e5f6...",
-  "new_password": "NewSecurePass123!"
-}
-
-// Reset with phone identifier
-{
-  "phone": "+27821234567",
-  "reset_token": "a1b2c3d4e5f6...",
-  "new_password": "NewSecurePass123!"
-}
-```
+Use **`phone`** instead of **`email`** when the account is phone-based.
 
 **Response:**
+
 ```json
 {
   "success": true,
-  "message": "Password reset successfully"
+  "message": "Password reset successfully",
+  "data": {},
+  "timestamp": "..."
 }
 ```
 
 ---
 
-## 11. Change Password Request (Logged-in Users)
+## 12. Change password request
 
-Start password change for a logged-in app user by validating the current password and providing a new password.
+Validates the current password and either applies the new password immediately or sends an OTP (per project auth settings).
 
-**Endpoint (app-api compatibility route):** `POST /app-api/auth/auth/change-password-request`
+**App API:** `POST /app-api/auth/auth/change-password-request`  
+**Project URL:** `POST /api/auth/{projectId}/auth/change-password-request`
 
-**Alternative Endpoint (project-scoped route):** `POST /api/auth/{projectId}/auth/change-password-request`
+**Headers (app API):** `Content-Type: application/json`, `x-api-key`  
+**Headers (project URL):** `Content-Type: application/json`, `Authorization: Bearer <platform-jwt>` (JWT + project access on the reference server)
 
-**Headers (app-api route):**
-```
-Content-Type: application/json
-x-api-key: your-api-key
-```
+**Request body:**
 
-**Headers (project-scoped route):**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
-
-**Request Body:**
 ```json
 {
   "app_user_id": 1,
@@ -644,13 +498,10 @@ Authorization: Bearer <jwt-token>
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| app_user_id / user_id | number | Yes | App user ID |
-| old_password | string | Yes | Current password (must be correct) |
-| new_password | string | Yes | New password |
+`user_id` is accepted as an alias for `app_user_id`.
 
-**Response when OTP is required:**
+**When OTP is required** (`RequireOtpForPasswordChange` in settings):
+
 ```json
 {
   "success": true,
@@ -658,88 +509,59 @@ Authorization: Bearer <jwt-token>
   "data": {
     "message": "OTP sent for password change verification",
     "requires_otp": true
-  }
+  },
+  "timestamp": "..."
 }
 ```
 
-**Response when OTP is NOT required:**
+**When OTP is not required** (password updated in this call):
+
 ```json
 {
   "success": true,
   "message": "Password change OTP sent",
   "data": {
     "message": "Password changed successfully"
-  }
+  },
+  "timestamp": "..."
 }
 ```
 
-**Flow Notes:**
-- The server first validates `old_password`.
-- If OTP is disabled in auth settings, password is changed immediately in this step.
-- If OTP is enabled, continue to Step 12 to verify OTP and complete the change.
+Note: the top-level **`message`** is currently **`"Password change OTP sent"`** in both cases; use **`data.requires_otp`** and **`data.message`** to branch in clients.
 
 ---
 
-## 12. Verify Password Change OTP
+## 13. Verify password change OTP
 
-Complete password change when Step 11 returned `requires_otp: true`.
+**App API:** `POST /app-api/auth/auth/verify-password-change-otp`  
+**Project URL:** `POST /api/auth/{projectId}/auth/verify-password-change-otp`
 
-**Endpoint (app-api compatibility route):** `POST /app-api/auth/auth/verify-password-change-otp`
-
-**Alternative Endpoint (project-scoped route):** `POST /api/auth/{projectId}/auth/verify-password-change-otp`
-
-**Headers (app-api route):**
-```
-Content-Type: application/json
-x-api-key: your-api-key
-```
-
-**Headers (project-scoped route):**
-```
-Content-Type: application/json
-Authorization: Bearer <jwt-token>
-```
-
-**Request Body:**
-```json
-{
-  "app_user_id": 1,
-  "otp": "123456"
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| app_user_id / user_id | number | Yes | App user ID |
-| otp / otp_code | string | Yes | Password change OTP |
+**Request body:** `app_user_id` (or `user_id`), `otp` or `otp_code`.
 
 **Response:**
+
 ```json
 {
   "success": true,
-  "message": "Password changed successfully"
+  "message": "Password changed successfully",
+  "data": {},
+  "timestamp": "..."
 }
 ```
 
-**OTP Rules:**
-- OTP expires after 10 minutes.
-- Maximum 3 attempts are allowed.
-- A new password is applied only after successful OTP verification.
+OTP expires after **10 minutes**; **3** failed attempts invalidate the pending OTP.
 
 ---
 
-## 13. Request Account Deletion
+## 14. Request account deletion
 
-Request to delete the user's account.
+**App API:** `POST /app-api/auth/auth/request-account-deletion`  
+**Project URL:** `POST /api/auth/{projectId}/auth/request-account-deletion`
 
-**Endpoint:** `POST /api/auth/{projectId}/auth/request-account-deletion`
+**Headers:** app API uses **`x-api-key`**; project URL uses platform **`Authorization: Bearer`** as for other protected `/api/auth/...` routes.
 
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
+**Request body:**
 
-**Request Body:**
 ```json
 {
   "app_user_id": 1,
@@ -748,100 +570,100 @@ Authorization: Bearer <jwt-token>
 }
 ```
 
-**Response:**
+If OTP for account deletion is **disabled**, the account is scheduled immediately:
+
 ```json
 {
   "success": true,
-  "message": "Account deletion OTP sent"
-}
-```
-
----
-
-## 14. Verify Account Deletion OTP
-
-Confirm account deletion with OTP.
-
-**Endpoint:** `POST /api/auth/{projectId}/auth/verify-account-deletion-otp`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
-
-**Request Body:**
-```json
-{
-  "app_user_id": 1,
-  "otp": "123456"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Account scheduled for deletion"
-}
-```
-
----
-
-## 15. Cancel Account Deletion
-
-Cancel a pending account deletion.
-
-**Endpoint:** `POST /api/auth/{projectId}/auth/cancel-account-deletion`
-
-**Headers:**
-```
-Authorization: Bearer <jwt-token>
-```
-
-**Request Body:**
-```json
-{
-  "app_user_id": 1
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Account deletion cancelled"
-}
-```
-
----
-
-## Error Responses
-
-### Invalid Credentials
-```json
-{
-  "success": false,
-  "message": "Invalid email or password"
-}
-```
-
-### Account Inactive
-```json
-{
-  "success": false,
-  "message": "Account pending verification. Please verify your email with the OTP code sent to you.",
+  "message": "Account deletion requested",
   "data": {
-    "requires_otp": true,
-    "user_id": 1,
-    "email": "john.doe@example.com"
-  }
+    "message": "Account deletion scheduled",
+    "deletion_date": "2026-04-18T12:00:00Z"
+  },
+  "timestamp": "..."
 }
 ```
 
-### Registration Disabled
+If OTP is **enabled**:
+
+```json
+{
+  "success": true,
+  "message": "Account deletion requested",
+  "data": {
+    "message": "OTP sent for account deletion verification",
+    "requires_otp": true
+  },
+  "timestamp": "..."
+}
+```
+
+---
+
+## 15. Verify account deletion OTP
+
+**App API:** `POST /app-api/auth/auth/verify-account-deletion-otp`  
+**Project URL:** `POST /api/auth/{projectId}/auth/verify-account-deletion-otp`
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Account deletion confirmed",
+  "data": {},
+  "timestamp": "..."
+}
+```
+
+---
+
+## 16. Cancel account deletion
+
+**App API:** `POST /app-api/auth/auth/cancel-account-deletion`  
+**Project URL:** `POST /api/auth/{projectId}/auth/cancel-account-deletion`
+
+**Request body:** `{ "app_user_id": 1 }` (or `user_id`).
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Account deletion cancelled",
+  "data": {},
+  "timestamp": "..."
+}
+```
+
+---
+
+## Error responses
+
+### Invalid credentials (login)
+
+HTTP **401**:
+
 ```json
 {
   "success": false,
-  "message": "Registration is disabled for this project"
+  "message": "invalid credentials",
+  "error": "invalid credentials"
 }
 ```
+
+### Registration disabled
+
+```json
+{
+  "success": false,
+  "message": "registration is disabled",
+  "error": "registration is disabled"
+}
+```
+
+(Messages are normalized to lowercase in many paths; always check `success` and HTTP status.)
+
+### Pending registration OTP
+
+The API does **not** return a dedicated “account inactive” payload on login. If registration OTP is enabled, the registered user has **`is_active`: false** until **`verify-otp`** succeeds; use the register response (`data.user.id`, `data.user.is_active`) and the **`verify-otp`** flow above.

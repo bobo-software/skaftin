@@ -22,11 +22,24 @@ formData.append('file', file);
 formData.append('bucket', bucketName);
 formData.append('path', filePath);
 
-// Only Authorization – do NOT set Content-Type
+// x-api-key (required on app-api storage) — do NOT set Content-Type for FormData
 const response = await fetch('/app-api/storage/files', {
   method: 'POST',
-  headers: { Authorization: `Bearer ${token}` },
-  credentials: 'include',
+  headers: { 'x-api-key': apiKey },
+  body: formData,
+});
+```
+
+If your integration also uses an app-user JWT on other routes, you can add `Authorization: Bearer …` **in addition to** `x-api-key` when your server expects both.
+
+```javascript
+// Example with both API key and bearer token
+const response = await fetch('/app-api/storage/files', {
+  method: 'POST',
+  headers: {
+    'x-api-key': apiKey,
+    Authorization: `Bearer ${accessToken}`,
+  },
   body: formData,
 });
 ```
