@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/database"
 	"github.com/skaftin/go-services/internal/server"
+	"github.com/skaftin/go-services/internal/startup"
 )
 
 func main() {
@@ -21,16 +23,27 @@ func main() {
 
 	cfg := config.Load()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	pool, err := database.NewPool(ctx, cfg.Database)
+	poolCtx, poolCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	pool, err := database.NewPool(poolCtx, cfg.Database)
+	poolCancel()
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
-	slog.Info("connected to PostgreSQL")
+
+	migrationsDir := filepath.Join(cfg.AppRootDir, "migrations")
+	migCtx, migCancel := context.WithTimeout(context.Background(), 120*time.Second)
+	migErr := startup.RunMigrations(migCtx, pool, migrationsDir)
+	migCancel()
+	if migErr != nil {
+		slog.Error("startup migrations failed", "error", migErr)
+		os.Exit(1)
+	}
+
+	depCtx, depCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	startup.LogDependencyStatus(depCtx, cfg, pool)
+	depCancel()
 
 	srv, err := server.New(cfg, pool)
 	if err != nil {

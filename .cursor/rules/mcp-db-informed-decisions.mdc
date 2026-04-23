@@ -1,0 +1,13 @@
+---
+description: Use MCP/database context to inform schema and backend decisions
+alwaysApply: true
+---
+
+# MCP-Informed Database Decisions
+
+- When planning DB-related changes, verify current schema/state via MCP or direct DB introspection before implementing.
+- Base migration decisions on actual runtime tables/constraints, not assumptions from legacy docs alone.
+- Cross-check proposed SQL with code usage in `go-services/internal/**` (table names, columns, constraints, expected defaults).
+- Prefer additive, backward-compatible migrations for startup paths; call out any non-idempotent SQL explicitly.
+- If MCP/db inspection is unavailable, state the limitation and use conservative changes with validation steps.
+- Document key evidence used for decisions (queried tables, constraints, migration order) in the task summary.

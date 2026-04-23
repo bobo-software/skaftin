@@ -1,0 +1,13 @@
+---
+description: Keep docs synced for significant architecture and feature changes
+alwaysApply: true
+---
+
+# Docs Update Policy For Major Changes
+
+- For major changes (architecture, auth/data flow, migrations strategy, runtime behavior), update docs in the same task.
+- Prefer canonical docs under `docs/README.md`, `docs/architecture/`, and `docs/migrations/` over adding new ad-hoc plan docs.
+- If behavior changes at startup (health checks, dependency requirements, migration flow), reflect it in relevant runbook/docs.
+- Include what changed, why, rollout/ops impact, and verification steps.
+- If no doc update is needed, explicitly state why in the final task summary.
+- Keep historical docs concise; avoid duplicating the same guidance across multiple files.

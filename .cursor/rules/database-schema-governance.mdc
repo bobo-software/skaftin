@@ -1,0 +1,13 @@
+---
+description: Enforce safe schema updates and startup migration hygiene
+alwaysApply: true
+---
+
+# Database Schema Governance
+
+- Every database structure change must include a migration file in `migrations/`.
+- Migrations intended for startup execution must be idempotent (`IF NOT EXISTS`, guarded `DO $$` checks).
+- Do not add destructive or legacy migrations (`RESET_DATABASE.sql`, one-off data cleanup SQL) to startup execution lists.
+- Keep `go-services/internal/startup/migrate.go` allowlist explicit and ordered; avoid glob/sort execution of all SQL files.
+- Reuse `ValidateMigrationFilename` rules when reading migration files from code paths.
+- When changing table/column names used by Go services, update both SQL migrations and consuming code together.

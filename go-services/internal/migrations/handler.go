@@ -96,7 +96,7 @@ func (h *Handler) GetMigration(w http.ResponseWriter, r *http.Request) {
 	if filename == "" {
 		filename = strings.TrimPrefix(r.URL.Path, "/api/migrations/")
 	}
-	if !validateFilename(filename) {
+	if !ValidateMigrationFilename(filename) {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid migration filename")
 		return
 	}
@@ -131,7 +131,7 @@ func (h *Handler) GetMigration(w http.ResponseWriter, r *http.Request) {
 // RunMigration handles POST /api/migrations/{filename}/run
 func (h *Handler) RunMigration(w http.ResponseWriter, r *http.Request) {
 	filename := r.PathValue("filename")
-	if !validateFilename(filename) {
+	if !ValidateMigrationFilename(filename) {
 		httputil.WriteError(w, http.StatusBadRequest, "Invalid migration filename")
 		return
 	}
@@ -244,7 +244,7 @@ func (h *Handler) executeBatch(r *http.Request, filenames []string, stopOnError,
 	var results []migrationResult
 
 	for _, filename := range filenames {
-		if !validateFilename(filename) {
+		if !ValidateMigrationFilename(filename) {
 			results = append(results, migrationResult{File: filename, Success: false, Error: "Invalid filename", Duration: 0})
 			if stopOnError {
 				break
@@ -313,7 +313,8 @@ func (h *Handler) writeBatchResponse(w http.ResponseWriter, results []migrationR
 	})
 }
 
-func validateFilename(filename string) bool {
+// ValidateMigrationFilename returns true if filename is a single path segment ending in .sql (no subpaths).
+func ValidateMigrationFilename(filename string) bool {
 	if filename == "" {
 		return false
 	}

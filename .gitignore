@@ -6,3 +6,6 @@
 /drizzle
 drizzle
 .vscode
+
+# Cursor
+.cursor/mcp.json

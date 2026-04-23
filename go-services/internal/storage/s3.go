@@ -39,6 +39,11 @@ func NewS3Client(cfg config.MinIOConfig) (*S3Client, error) {
 	return &S3Client{client: client}, nil
 }
 
+// BucketExists reports whether the bucket exists on the MinIO/S3 endpoint.
+func (s *S3Client) BucketExists(ctx context.Context, bucket string) (bool, error) {
+	return s.client.BucketExists(ctx, bucket)
+}
+
 // ListObjects lists objects in a bucket with an optional prefix and max key limit.
 func (s *S3Client) ListObjects(ctx context.Context, bucket, prefix string, maxKeys int) ([]ObjectInfo, error) {
 	opts := minio.ListObjectsOptions{
