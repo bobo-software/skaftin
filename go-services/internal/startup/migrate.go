@@ -2,6 +2,7 @@ package startup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -38,11 +39,12 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 		if !migrations.ValidateMigrationFilename(name) {
 			return fmt.Errorf("startup migration has invalid filename: %q", name)
 		}
-		full := filepath.Join(dir, name)
-		sqlBytes, err := os.ReadFile(full)
+
+		sqlBytes, full, err := readMigrationWithFallback(name, dir)
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
+		slog.Info("startup migration source", "file", name, "path", full)
 
 		start := time.Now()
 		_, err = pool.Exec(ctx, string(sqlBytes))
@@ -54,4 +56,55 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 		slog.Info("startup migration ok ✅", "file", name, "duration_ms", duration.Milliseconds())
 	}
 	return nil
+}
+
+func readMigrationWithFallback(name, configuredDir string) ([]byte, string, error) {
+	candidates := make([]string, 0, 8)
+	if configuredDir != "" {
+		candidates = append(candidates, filepath.Join(configuredDir, name))
+	}
+
+	// Common runtime locations when cwd differs between local/dev/prod.
+	candidates = append(candidates,
+		filepath.Join("migrations", name),
+		filepath.Join("..", "migrations", name),
+	)
+
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(cwd, "migrations", name),
+			filepath.Join(cwd, "..", "migrations", name),
+		)
+	}
+
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "migrations", name),
+			filepath.Join(exeDir, "..", "migrations", name),
+		)
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	var lastErr error
+	for _, candidate := range candidates {
+		clean := filepath.Clean(candidate)
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+
+		b, err := os.ReadFile(clean)
+		if err == nil {
+			return b, clean, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			lastErr = fmt.Errorf("open %s: %w", clean, err)
+		}
+	}
+
+	if lastErr != nil {
+		return nil, "", lastErr
+	}
+	return nil, "", fmt.Errorf("not found in candidate paths")
 }
