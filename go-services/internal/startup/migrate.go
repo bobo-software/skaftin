@@ -58,6 +58,39 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 	return nil
 }
 
+// ResolveMigrationsDir returns the first existing migrations directory from a
+// list of common runtime locations. It prefers go-services/migrations.
+func ResolveMigrationsDir(appRootDir string) string {
+	candidates := make([]string, 0, 8)
+	if appRootDir != "" {
+		candidates = append(candidates,
+			filepath.Join(appRootDir, "go-services", "migrations"),
+			filepath.Join(appRootDir, "migrations"),
+		)
+	}
+	candidates = append(candidates,
+		filepath.Join("go-services", "migrations"),
+		"migrations",
+		filepath.Join("..", "go-services", "migrations"),
+		filepath.Join("..", "migrations"),
+	)
+
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		clean := filepath.Clean(candidate)
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+		if info, err := os.Stat(clean); err == nil && info.IsDir() {
+			return clean
+		}
+	}
+
+	// Fallback to expected modern location, even if it doesn't exist yet.
+	return filepath.Join("go-services", "migrations")
+}
+
 func readMigrationWithFallback(name, configuredDir string) ([]byte, string, error) {
 	candidates := make([]string, 0, 8)
 	if configuredDir != "" {

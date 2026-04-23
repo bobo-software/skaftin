@@ -2,7 +2,6 @@ package server
 
 import (
 	"net/http"
-	"path/filepath"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/analytics"
@@ -18,6 +17,7 @@ import (
 	"github.com/skaftin/go-services/internal/projects"
 	"github.com/skaftin/go-services/internal/requestlogs"
 	"github.com/skaftin/go-services/internal/storage"
+	"github.com/skaftin/go-services/internal/startup"
 	"github.com/skaftin/go-services/internal/users"
 )
 
@@ -84,7 +84,7 @@ func registerDataRoutes(
 	filesHandler := files.NewHandler(storageHandler.S3(), cfg.MinioBucket)
 	mountJWT(mux, "/api/files/", jwks, filesHandler.RegisterRoutes)
 
-	migrationsDir := filepath.Join(cfg.AppRootDir, "migrations")
+	migrationsDir := startup.ResolveMigrationsDir(cfg.AppRootDir)
 	migrationsHandler := migrations.NewHandler(pool, migrationsDir)
 	mountJWT(mux, "/api/migrations/", jwks, migrationsHandler.RegisterRoutes)
 	return nil

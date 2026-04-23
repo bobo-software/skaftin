@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -32,13 +31,12 @@ func main() {
 	}
 	defer pool.Close()
 
-	migrationsDir := filepath.Join(cfg.AppRootDir, "migrations")
+	migrationsDir := startup.ResolveMigrationsDir(cfg.AppRootDir)
 	migCtx, migCancel := context.WithTimeout(context.Background(), 120*time.Second)
 	migErr := startup.RunMigrations(migCtx, pool, migrationsDir)
 	migCancel()
 	if migErr != nil {
-		slog.Error("startup migrations failed", "error", migErr)
-		os.Exit(1)
+		slog.Error("startup migrations failed; continuing without blocking API startup", "error", migErr)
 	}
 
 	depCtx, depCancel := context.WithTimeout(context.Background(), 15*time.Second)
