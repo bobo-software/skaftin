@@ -8,6 +8,7 @@ This repository now runs with a Go-only backend runtime (`go-services`) and a Re
 - Local Docker setup: [plans/DOCKER_LOCAL_SETUP.md](./plans/DOCKER_LOCAL_SETUP.md)
 - Coolify quick deploy: [plans/COOLIFY_QUICKSTART.md](./plans/COOLIFY_QUICKSTART.md)
 - Go migration/cutover context: [plans/GO_GATEWAY_MIGRATION.md](./plans/GO_GATEWAY_MIGRATION.md)
+- Startup migration behavior: [migrations/startup-migrations.md](./migrations/startup-migrations.md)
 
 ## Architecture and Restructure Artifacts
 
@@ -28,4 +29,6 @@ This repository now runs with a Go-only backend runtime (`go-services`) and a Re
 
 - `docs/plans/` currently contains many legacy and historical documents.
 - Use the inventory and prune matrix above before treating `plans/*` as canonical.
+- Runtime SQL files for general migration tooling live in `go-services/migrations/`.
+- API startup executes an embedded baseline migration from `go-services/internal/startup/sql/`.
 
