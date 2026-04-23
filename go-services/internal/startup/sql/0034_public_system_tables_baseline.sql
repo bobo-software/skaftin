@@ -183,3 +183,4 @@ FROM public.skaftin_system_projects p
 WHERE NOT EXISTS (
     SELECT 1 FROM public.skaftin_system_auth_settings s WHERE s.project_id = p.id
 );
+

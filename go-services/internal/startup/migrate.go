@@ -19,13 +19,6 @@ import (
 // legacy projects/api_credentials migrations, or one-off data fixes here.
 var startupMigrations = []string{
 	"0034_public_system_tables_baseline.sql",
-	"0035_public_sms_providers_baseline.sql",
-	"0021_add_payment_providers.sql",
-	"0036_bucket_access_policy_idempotent.sql",
-	"0029_add_request_logs_table.sql",
-	"0033_add_database_metrics_table.sql",
-	"0024_add_fnb_payments.sql",
-	"0018_add_backup_type_and_retention.sql",
 }
 
 // RunMigrations executes the startup allowlist against dir. Skipped entirely when SKIP_STARTUP_MIGRATIONS=1.
@@ -92,6 +85,11 @@ func ResolveMigrationsDir(appRootDir string) string {
 }
 
 func readMigrationWithFallback(name, configuredDir string) ([]byte, string, error) {
+	// Primary source: startup-owned embedded SQL files.
+	if b, err := readStartupEmbedded(name); err == nil {
+		return b, "embedded://internal/startup/sql/" + name, nil
+	}
+
 	candidates := make([]string, 0, 8)
 	if configuredDir != "" {
 		candidates = append(candidates, filepath.Join(configuredDir, name))
@@ -141,6 +139,7 @@ func readMigrationWithFallback(name, configuredDir string) ([]byte, string, erro
 	if lastErr != nil {
 		return nil, "", lastErr
 	}
+
 	logMigrationLookupDebug(name, configuredDir, uniqueCandidates)
 	return nil, "", fmt.Errorf("not found in candidate paths")
 }
