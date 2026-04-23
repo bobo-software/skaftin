@@ -120,12 +120,14 @@ func readMigrationWithFallback(name, configuredDir string) ([]byte, string, erro
 
 	seen := make(map[string]struct{}, len(candidates))
 	var lastErr error
+	uniqueCandidates := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		clean := filepath.Clean(candidate)
 		if _, ok := seen[clean]; ok {
 			continue
 		}
 		seen[clean] = struct{}{}
+		uniqueCandidates = append(uniqueCandidates, clean)
 
 		b, err := os.ReadFile(clean)
 		if err == nil {
@@ -139,5 +141,73 @@ func readMigrationWithFallback(name, configuredDir string) ([]byte, string, erro
 	if lastErr != nil {
 		return nil, "", lastErr
 	}
+	logMigrationLookupDebug(name, configuredDir, uniqueCandidates)
 	return nil, "", fmt.Errorf("not found in candidate paths")
+}
+
+func logMigrationLookupDebug(name, configuredDir string, candidateFiles []string) {
+	var cwd string
+	if wd, err := os.Getwd(); err == nil {
+		cwd = wd
+	}
+
+	var exePath string
+	if exe, err := os.Executable(); err == nil {
+		exePath = exe
+	}
+
+	// Build a compact "ls -a"-style snapshot for relevant directories.
+	dirsSeen := map[string]struct{}{}
+	dirsToInspect := make([]string, 0, len(candidateFiles)+3)
+	addDir := func(dir string) {
+		if dir == "" {
+			return
+		}
+		clean := filepath.Clean(dir)
+		if _, ok := dirsSeen[clean]; ok {
+			return
+		}
+		dirsSeen[clean] = struct{}{}
+		dirsToInspect = append(dirsToInspect, clean)
+	}
+
+	addDir(configuredDir)
+	addDir("migrations")
+	addDir("go-services/migrations")
+	for _, f := range candidateFiles {
+		addDir(filepath.Dir(f))
+	}
+
+	dirSnapshots := make([]string, 0, len(dirsToInspect))
+	for _, dir := range dirsToInspect {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			dirSnapshots = append(dirSnapshots, fmt.Sprintf("%s (error: %v)", dir, err))
+			continue
+		}
+		names := make([]string, 0, len(entries)+2)
+		names = append(names, ".", "..")
+		for i, e := range entries {
+			// Keep logs readable if directory is very large.
+			if i >= 50 {
+				names = append(names, fmt.Sprintf("... (%d more)", len(entries)-50))
+				break
+			}
+			name := e.Name()
+			if e.IsDir() {
+				name += "/"
+			}
+			names = append(names, name)
+		}
+		dirSnapshots = append(dirSnapshots, fmt.Sprintf("%s: %s", dir, strings.Join(names, ", ")))
+	}
+
+	slog.Error("startup migration file lookup failed",
+		"file", name,
+		"configuredDir", configuredDir,
+		"cwd", cwd,
+		"executable", exePath,
+		"candidateFiles", candidateFiles,
+		"dirSnapshots", dirSnapshots,
+	)
 }
