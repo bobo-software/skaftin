@@ -46,9 +46,12 @@ const CredentialsTab = () => {
         CredentialsService.getAvailablePermissions(),
         CredentialsService.getMcpKey(projectId!),
       ]);
+      const normalizedMcpKey = Array.isArray(mcpKeyData)
+        ? (mcpKeyData[0] ?? null)
+        : mcpKeyData;
       // Filter out MCP key from regular credentials
       setCredentials(credentialsData.filter(c => c.credential_type !== 'mcp_key'));
-      setMcpKey(mcpKeyData);
+      setMcpKey(normalizedMcpKey);
       setAvailablePermissions(permissionsData);
     } catch (error: any) {
       ToastUtils.error(error.message || 'Failed to load credentials');

@@ -13,11 +13,12 @@ import (
 // Handler serves API key and access token management endpoints.
 type Handler struct {
 	service *Service
+	pool    *pgxpool.Pool
 }
 
 // NewHandler creates a new credentials Handler.
 func NewHandler(pool *pgxpool.Pool) *Handler {
-	return &Handler{service: NewService(pool)}
+	return &Handler{service: NewService(pool), pool: pool}
 }
 
 // RegisterRoutes registers this domain's routes on the given mux.
@@ -46,10 +47,14 @@ func (h *Handler) requireProjectAccess(w http.ResponseWriter, r *http.Request) (
 		return projectID, u.UserID, true
 	}
 
-	for _, id := range u.ProjectIDs {
-		if int(id) == projectID {
-			return projectID, u.UserID, true
-		}
+	hasAccess, err := auth.UserHasProjectAccess(r.Context(), h.pool, u.UserID, projectID)
+	if err != nil {
+		slog.Error("failed to verify project access", "error", err, "projectId", projectID, "userId", u.UserID)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to verify project access")
+		return 0, "", false
+	}
+	if hasAccess {
+		return projectID, u.UserID, true
 	}
 
 	httputil.WriteError(w, http.StatusForbidden, "You do not have access to this project")
@@ -188,11 +193,9 @@ func (h *Handler) GetMcpKey(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var notFound *NotFoundError
 		if errors.As(err, &notFound) {
-			httputil.WriteJSON(w, http.StatusNotFound, map[string]any{
-				"success": false,
-				"error":   notFound.Message,
-				"data":    nil,
-			})
+			// Treat missing MCP key as an empty result so clients can
+			// decide whether to create/regenerate one without error handling.
+			httputil.WriteSuccess(w, http.StatusOK, "MCP key retrieved successfully", []CredentialRecord{})
 			return
 		}
 		slog.Error("failed to get MCP key", "error", err, "projectId", projectID)

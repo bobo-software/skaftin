@@ -137,7 +137,7 @@ func (s *Store) DeleteOrg(ctx context.Context, id int) error {
 // ListUserOrgs returns orgs the user is a member of, with their role, project count, and member count.
 func (s *Store) ListUserOrgs(ctx context.Context, userID string) ([]OrgWithRole, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT o.`+orgColumns+`, om.role,
+		SELECT o.id, o.name, o.description, o.owner_id, o.created_at, o.updated_at, om.role,
 			(SELECT COUNT(*)::int FROM skaftin_system_projects p WHERE p.organization_id = o.id) AS project_count,
 			(SELECT COUNT(*)::int FROM skaftin_system_organization_members m WHERE m.organization_id = o.id) AS member_count
 		FROM skaftin_system_organization_members om

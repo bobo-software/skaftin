@@ -115,6 +115,15 @@ func (s *Service) CreateBackup(ctx context.Context, projectID int, name, descrip
 }
 
 func (s *Service) ListBackups(ctx context.Context, projectID int) ([]BackupMetadata, error) {
+	// Treat a missing bucket as "no backups yet" rather than a hard error.
+	exists, err := s.s3.BucketExists(ctx, s.bucket)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return []BackupMetadata{}, nil
+	}
+
 	prefix := fmt.Sprintf("backups/%d/", projectID)
 	objects, err := s.s3.ListObjects(ctx, s.bucket, prefix, 0)
 	if err != nil {
