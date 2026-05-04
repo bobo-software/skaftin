@@ -46,3 +46,12 @@ For each route migrated from Node to Go:
 For the current Go-vs-Node ownership matrix, see:
 
 - `docs/route-ownership.md`
+
+## Platform password reset (dashboard)
+
+The `/auth/` prefix is served by `platformauth` for SuperTokens-compatible platform login. Link-based forgot-password (used by the React `supertokens-auth-react` EmailPassword recipe) is implemented as:
+
+- `POST /auth/user/password/reset/token` — creates a reset token in SuperTokens Core and sends email via **environment SMTP**, not project DB email providers.
+- `POST /auth/user/password/reset` — completes reset via Core.
+
+Configure mail with `PLATFORM_SMTP_HOST`, `PLATFORM_SMTP_PORT`, `PLATFORM_SMTP_USER`, `PLATFORM_SMTP_PASSWORD`, `PLATFORM_SMTP_SECURE`, `PLATFORM_FROM_EMAIL`, and optionally `PLATFORM_FROM_NAME`. If `PLATFORM_SMTP_HOST` is unset, `EMAIL_USER` and `EMAIL_PASS` default to Gmail SMTP (`smtp.gmail.com:587`). The reset link uses `FRONTEND_URL` (or `SUPERTOKENS_WEBSITE_DOMAIN`) as the site base. App-user OTP reset remains on `/app-api/auth/...` and uses per-project communications providers.

@@ -30,5 +30,5 @@ This repository now runs with a Go-only backend runtime (`go-services`) and a Re
 - `docs/plans/` currently contains many legacy and historical documents.
 - Use the inventory and prune matrix above before treating `plans/*` as canonical.
 - Runtime SQL files for general migration tooling live in `go-services/migrations/`.
-- API startup executes an embedded baseline migration from `go-services/internal/startup/sql/`.
+- API and MCP startup run an ordered allowlist of idempotent migrations from `go-services/internal/startup/sql/` (embedded), then validate required `public` tables before listening.
 

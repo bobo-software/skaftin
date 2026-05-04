@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,12 @@ import (
 	"github.com/skaftin/go-services/internal/projects"
 	"github.com/skaftin/go-services/internal/storage"
 )
+
+// ErrFullRestoreRequiresZip is returned when POST /api/backups/restore is called with a non-.zip key.
+var ErrFullRestoreRequiresZip = errors.New("full restore requires a .zip backup; for .sql database backups use POST /api/backups/{projectId}/{filename}/restore")
+
+// ErrProjectRestoreRequiresSQL is returned when project-scoped restore is called with a .zip file.
+var ErrProjectRestoreRequiresSQL = errors.New("this endpoint restores .sql database backups only; use POST /api/backups/restore with a full backup .zip to create a new project")
 
 // BackupMetadata is the API representation of a backup file.
 type BackupMetadata struct {
@@ -167,6 +174,10 @@ func (s *Service) DownloadBackup(ctx context.Context, projectID int, filename st
 }
 
 func (s *Service) RestoreBackup(ctx context.Context, projectID int, filename string, dropExisting bool) error {
+	if strings.HasSuffix(strings.ToLower(filename), ".zip") {
+		return ErrProjectRestoreRequiresSQL
+	}
+
 	schema, err := s.store.GetProjectSchema(ctx, projectID)
 	if err != nil {
 		return fmt.Errorf("project not found: %w", err)
@@ -329,6 +340,10 @@ func (s *Service) CreateFullBackup(ctx context.Context, projectID int, name, des
 }
 
 func (s *Service) RestoreFullBackup(ctx context.Context, backupID, newProjectName string, organizationID int, userID string) (map[string]any, error) {
+	if !strings.HasSuffix(strings.ToLower(backupID), ".zip") {
+		return nil, ErrFullRestoreRequiresZip
+	}
+
 	rc, err := s.s3.GetObject(ctx, s.bucket, backupID)
 	if err != nil {
 		return nil, fmt.Errorf("backup not found: %w", err)

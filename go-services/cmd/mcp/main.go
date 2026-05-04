@@ -9,6 +9,7 @@ import (
 	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/database"
 	mcpserver "github.com/skaftin/go-services/internal/mcp"
+	"github.com/skaftin/go-services/internal/startup"
 )
 
 func main() {
@@ -30,6 +31,21 @@ func main() {
 	}
 	defer pool.Close()
 	slog.Info("connected to PostgreSQL")
+
+	migrationsDir := startup.ResolveMigrationsDir(cfg.AppRootDir)
+	migCtx, migCancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer migCancel()
+	if err := startup.RunMigrations(migCtx, pool, migrationsDir); err != nil {
+		slog.Error("startup migrations failed; refusing to start MCP server", "error", err)
+		os.Exit(1)
+	}
+
+	schemaCtx, schemaCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer schemaCancel()
+	if err := startup.ValidatePlatformSchema(schemaCtx, pool); err != nil {
+		slog.Error("database schema validation failed; refusing to start MCP server", "error", err)
+		os.Exit(1)
+	}
 
 	srv := mcpserver.New(pool)
 

@@ -129,9 +129,9 @@ class BackupService {
   }
 
   /**
-   * Restore a backup to create a new project
+   * Restore a **full** backup (.zip) into a **new** project (POST /api/backups/restore).
    */
-  static async restoreBackup(
+  static async restoreFullBackupToNewProject(
     backupId: string,
     newProjectName: string,
     organizationId: number
@@ -144,10 +144,47 @@ class BackupService {
       );
       return { success: true, project: response.data.data };
     } catch (error: any) {
-      console.error('Error restoring backup:', error);
+      console.error('Error restoring full backup:', error);
       return {
         success: false,
         error: error.response?.data?.message || error.message || 'Failed to restore backup',
+      };
+    }
+  }
+
+  /** @deprecated Use {@link restoreFullBackupToNewProject} — same behavior. */
+  static async restoreBackup(
+    backupId: string,
+    newProjectName: string,
+    organizationId: number
+  ): Promise<{ success: boolean; project?: any; error?: string }> {
+    return BackupService.restoreFullBackupToNewProject(backupId, newProjectName, organizationId);
+  }
+
+  /**
+   * Restore a **database** backup (.sql) into the **current** project's schema.
+   */
+  static async restoreDatabaseBackup(
+    projectId: number,
+    backupId: string,
+    dropExisting: boolean
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    const filename = backupId.split('/').pop();
+    if (!filename) {
+      return { success: false, error: 'Invalid backup id' };
+    }
+    try {
+      const response = await axios.post(
+        `${API_BASE}/api/backups/${projectId}/${encodeURIComponent(filename)}/restore`,
+        { dropExisting },
+        { withCredentials: true }
+      );
+      return { success: true, data: response.data.data };
+    } catch (error: any) {
+      console.error('Error restoring database backup:', error);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message || 'Failed to restore database backup',
       };
     }
   }

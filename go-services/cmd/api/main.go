@@ -33,10 +33,18 @@ func main() {
 
 	migrationsDir := startup.ResolveMigrationsDir(cfg.AppRootDir)
 	migCtx, migCancel := context.WithTimeout(context.Background(), 120*time.Second)
-	migErr := startup.RunMigrations(migCtx, pool, migrationsDir)
-	migCancel()
-	if migErr != nil {
-		slog.Error("startup migrations failed; continuing without blocking API startup", "error", migErr)
+	defer migCancel()
+	if err := startup.RunMigrations(migCtx, pool, migrationsDir); err != nil {
+		slog.Error("startup migrations failed; refusing to start API", "error", err)
+		os.Exit(1)
+	}
+
+	schemaCtx, schemaCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	schemaErr := startup.ValidatePlatformSchema(schemaCtx, pool)
+	schemaCancel()
+	if schemaErr != nil {
+		slog.Error("database schema validation failed; refusing to start API", "error", schemaErr)
+		os.Exit(1)
 	}
 
 	depCtx, depCancel := context.WithTimeout(context.Background(), 15*time.Second)

@@ -12,19 +12,24 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/skaftin/go-services/internal/config"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 	"github.com/skaftin/go-services/internal/supertokens"
 )
 
 type Handler struct {
-	pool *pgxpool.Pool
-	st   *supertokens.Client
+	pool                   *pgxpool.Pool
+	st                     *supertokens.Client
+	frontendURL            string
+	platformSMTPSettings   *config.PlatformSMTPSettings
 }
 
-func NewHandler(pool *pgxpool.Pool, st *supertokens.Client) *Handler {
+func NewHandler(pool *pgxpool.Pool, st *supertokens.Client, frontendURL string, platformSMTP *config.PlatformSMTPSettings) *Handler {
 	return &Handler{
-		pool: pool,
-		st:   st,
+		pool:                 pool,
+		st:                   st,
+		frontendURL:          strings.TrimRight(strings.TrimSpace(frontendURL), "/"),
+		platformSMTPSettings: platformSMTP,
 	}
 }
 
@@ -50,6 +55,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.Method == http.MethodGet && r.URL.Path == "/auth/user":
 		h.GetUser(w, r)
+		return
+	case r.Method == http.MethodPost && r.URL.Path == "/auth/user/password/reset/token":
+		h.PasswordResetToken(w, r)
+		return
+	case r.Method == http.MethodPost && r.URL.Path == "/auth/user/password/reset":
+		h.PasswordReset(w, r)
 		return
 	default:
 		httputil.WriteError(w, http.StatusNotFound, "Route not available in Go auth handler")

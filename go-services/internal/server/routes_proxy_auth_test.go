@@ -11,7 +11,7 @@ import (
 
 func TestRegisterProxyRoutes_AuthUsesGoHandlerWhenEnabled(t *testing.T) {
 	mux := http.NewServeMux()
-	goAuth := platformauth.NewHandler(nil, nil)
+	goAuth := platformauth.NewHandler(nil, nil, "http://localhost:3005", nil)
 
 	registerProxyRoutes(mux, nil, nil, goAuth)
 
@@ -25,7 +25,7 @@ func TestRegisterProxyRoutes_AuthUsesGoHandlerWhenEnabled(t *testing.T) {
 
 func TestRegisterProxyRoutes_UnknownAPIRouteReturnsNotFound(t *testing.T) {
 	mux := http.NewServeMux()
-	goAuth := platformauth.NewHandler(nil, nil)
+	goAuth := platformauth.NewHandler(nil, nil, "http://localhost:3005", nil)
 
 	registerProxyRoutes(mux, nil, nil, goAuth)
 

@@ -32,7 +32,7 @@ Named volumes (data survives `docker compose down` unless you remove volumes):
 
 - **Network:** `skaftin-network` (bridge). Services reach each other by **service name** (`postgres`, `minio`, `supertokens`, `go-service`).
 - **Database URL inside the stack:** the Go service uses `DB_HOST=postgres`, `DB_PORT=5432`. SuperTokens uses a PostgreSQL connection URI pointing at `postgres:5432` (password must be URL-encoded where required, as in compose).
-- **SuperTokens:** `go-service` sets `SUPERTOKENS_CORE_URL=http://supertokens:3567`. Optionally align `SUPERTOKENS_API_KEY` with the Core `API_KEYS` value via a root `.env` file and `${SUPERTOKENS_API_KEY}` in compose.
+- **SuperTokens:** `go-service` sets `SUPERTOKENS_CORE_URL=http://supertokens:3567`. Optionally align `SUPERTOKENS_API_KEY` with the Core `API_KEYS` value via a root `.env` file and `${SUPERTOKENS_API_KEY}` in compose. If the Go API (or MCP) runs **startup migrations** that touch `supertokens.*` while Core is already running, restart Core once so it reloads tenant metadata from Postgres (`docker restart skaftin-supertokens`), or wait for the next internal sync. Details: [`docs/migrations/startup-migrations.md`](migrations/startup-migrations.md#supertokens-core-and-tenant-cache).
 - **MinIO:** `go-service` uses `MINIO_ENDPOINT=minio:9000` and the same access/secret keys as the MinIO service.
 
 Credentials and defaults are defined in `docker-compose.yml`. For anything beyond a disposable local machine, replace hard-coded passwords and keys and use env files or secrets (do not commit real production values).

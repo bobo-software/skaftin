@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -20,6 +21,20 @@ type Config struct {
 	AppRootDir           string
 	FrontendURL          string
 	ClientAllowedOrigins []string
+	// PlatformSMTP is optional; when nil, platform link-based password reset cannot send email.
+	PlatformSMTP *PlatformSMTPSettings
+}
+
+// PlatformSMTPSettings holds SMTP credentials for platform (dashboard) transactional email,
+// loaded from PLATFORM_SMTP_* or Gmail-style EMAIL_USER / EMAIL_PASS fallback.
+type PlatformSMTPSettings struct {
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUser     string
+	SMTPPassword string
+	SMTPSecure   bool // implicit TLS (e.g. port 465); false uses STARTTLS on 587
+	FromEmail    string
+	FromName     string
 }
 
 type DatabaseConfig struct {
@@ -49,6 +64,12 @@ func Load() *Config {
 	if err := godotenv.Load(); err == nil {
 		slog.Info("loaded .env file")
 	}
+	platformSMTP := parsePlatformSMTPSettings()
+	if platformSMTP == nil {
+		slog.Warn("platform SMTP not configured: link-based password reset emails are disabled (set PLATFORM_SMTP_* or EMAIL_USER+EMAIL_PASS)")
+	} else {
+		slog.Info("platform SMTP configured for password reset email", "host", platformSMTP.SMTPHost, "from", platformSMTP.FromEmail)
+	}
 	return &Config{
 		Port:                 getEnv("PORT", "4006"),
 		SuperTokensCoreURL:   getEnvAny([]string{"SUPERTOKENS_CORE_URL", "SUPERTOKENS_CONNECTION_URI"}, "http://localhost:3567"),
@@ -64,7 +85,58 @@ func Load() *Config {
 			User:     getEnv("DB_USER", "postgres"),
 			Password: getEnv("DB_PASSWORD", ""),
 		},
-		MinIO: parseMinIOConfig(),
+		MinIO:        parseMinIOConfig(),
+		PlatformSMTP: platformSMTP,
+	}
+}
+
+func parsePlatformSMTPSettings() *PlatformSMTPSettings {
+	host := strings.TrimSpace(getEnv("PLATFORM_SMTP_HOST", ""))
+	user := strings.TrimSpace(getEnv("PLATFORM_SMTP_USER", ""))
+	pass := strings.TrimSpace(getEnv("PLATFORM_SMTP_PASSWORD", ""))
+	fromEmail := strings.TrimSpace(getEnv("PLATFORM_FROM_EMAIL", ""))
+	fromName := strings.TrimSpace(getEnv("PLATFORM_FROM_NAME", ""))
+
+	if host != "" {
+		port := 587
+		if p, err := strconv.Atoi(strings.TrimSpace(getEnv("PLATFORM_SMTP_PORT", "587"))); err == nil && p > 0 {
+			port = p
+		}
+		secure := strings.EqualFold(strings.TrimSpace(getEnv("PLATFORM_SMTP_SECURE", "false")), "true")
+		if fromEmail == "" {
+			fromEmail = user
+		}
+		if user == "" || pass == "" || fromEmail == "" {
+			return nil
+		}
+		return &PlatformSMTPSettings{
+			SMTPHost:     host,
+			SMTPPort:     port,
+			SMTPUser:     user,
+			SMTPPassword: pass,
+			SMTPSecure:   secure,
+			FromEmail:    fromEmail,
+			FromName:     fromName,
+		}
+	}
+
+	// Gmail-style fallback when PLATFORM_SMTP_HOST is unset
+	emailUser := strings.TrimSpace(getEnv("EMAIL_USER", ""))
+	emailPass := strings.TrimSpace(getEnv("EMAIL_PASS", ""))
+	if emailUser == "" || emailPass == "" {
+		return nil
+	}
+	if fromEmail == "" {
+		fromEmail = emailUser
+	}
+	return &PlatformSMTPSettings{
+		SMTPHost:     "smtp.gmail.com",
+		SMTPPort:     587,
+		SMTPUser:     emailUser,
+		SMTPPassword: emailPass,
+		SMTPSecure:   false,
+		FromEmail:    fromEmail,
+		FromName:     fromName,
 	}
 }
 

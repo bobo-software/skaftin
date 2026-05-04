@@ -1,6 +1,7 @@
 package backups
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -165,6 +166,10 @@ func (h *Handler) restoreBackup(w http.ResponseWriter, r *http.Request) {
 	httputil.ReadJSON(r, &body)
 
 	if err := h.service.RestoreBackup(r.Context(), pid, filename, body.DropExisting); err != nil {
+		if errors.Is(err, ErrProjectRestoreRequiresSQL) {
+			httputil.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		httputil.WriteError(w, http.StatusInternalServerError, "Failed to restore backup")
 		return
 	}
@@ -245,6 +250,10 @@ func (h *Handler) restoreFullBackup(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.RestoreFullBackup(r.Context(), body.BackupID, body.NewProjectName, body.OrganizationID, userCtx.UserID)
 	if err != nil {
+		if errors.Is(err, ErrFullRestoreRequiresZip) {
+			httputil.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		httputil.WriteError(w, http.StatusInternalServerError, "Failed to restore backup")
 		return
 	}

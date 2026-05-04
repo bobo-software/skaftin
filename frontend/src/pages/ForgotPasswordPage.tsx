@@ -67,7 +67,7 @@ const ForgotPasswordPage = () => {
                   Email Sent
                 </h2>
                 <p className="text-dark-600 dark:text-dark-300 text-sm">
-                  If an account exists for <span className="font-medium text-dark-800 dark:text-dark-200">{email}</span>, you'll receive a password reset link shortly.
+                  We sent a password reset link to <span className="font-medium text-dark-800 dark:text-dark-200">{email}</span>. It should arrive shortly.
                 </p>
               </div>
               <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">

@@ -17,11 +17,22 @@ import (
 // startupMigrations is an explicit ordered allowlist of SQL files safe to run on every API boot.
 // Only add idempotent migrations (IF NOT EXISTS / guarded DO blocks). Never add RESET_DATABASE,
 // legacy projects/api_credentials migrations, or one-off data fixes here.
+//
+// Order: 0038 public; 0039 supertokens DDL; 0041 default app/tenant rows; 0037/0034/0036; 0040 workflows.
 var startupMigrations = []string{
+	"0038_ensure_public_schema.sql",
+	"0039_supertokens_schema_baseline.sql",
+	"0041_supertokens_public_app_seed.sql",
+	"0037_platform_core_public_baseline.sql",
 	"0034_public_system_tables_baseline.sql",
+	"0036_bucket_access_policy_idempotent.sql",
+	"0040_public_workflows_and_backup_baseline.sql",
 }
 
-// RunMigrations executes the startup allowlist against dir. Skipped entirely when SKIP_STARTUP_MIGRATIONS=1.
+// RunMigrations executes the startup allowlist against dir.
+//
+// Skipped entirely when SKIP_STARTUP_MIGRATIONS=1 (SQL is not applied). Callers should still
+// run ValidatePlatformSchema unless SKIP_STARTUP_SCHEMA_CHECK=1 (break-glass only).
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 	if strings.TrimSpace(os.Getenv("SKIP_STARTUP_MIGRATIONS")) == "1" {
 		slog.Info("startup migrations skipped ⚙️", "env", "SKIP_STARTUP_MIGRATIONS=1")

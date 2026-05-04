@@ -63,7 +63,7 @@ func RegisterRoutes(mux *http.ServeMux, cfg *config.Config, pool *pgxpool.Pool, 
 	clientMCPHandler := mcpserver.NewHTTPHandler(mcpSvc, true)
 	usersHandler := users.NewHandler(pool, stClient)
 	adminHandler := admin.NewHandler(pool, stClient)
-	platformAuthHandler := platformauth.NewHandler(pool, stClient)
+	platformAuthHandler := platformauth.NewHandler(pool, stClient, cfg.FrontendURL, cfg.PlatformSMTP)
 
 	// ==================================================================
 	// PUBLIC ROUTES (no auth required)

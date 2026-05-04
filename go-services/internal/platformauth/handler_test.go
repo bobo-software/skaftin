@@ -30,7 +30,7 @@ func TestRefreshSessionForwardsHeadersAndCookies(t *testing.T) {
 	}))
 	defer stCore.Close()
 
-	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""))
+	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""), "http://app.test", nil)
 	req := httptest.NewRequest(http.MethodPost, "/auth/session/refresh", strings.NewReader(`{}`))
 	req.Header.Set("Cookie", "sRefreshToken=refresh-value")
 	req.Header.Set("anti-csrf", "csrf-token")
@@ -52,7 +52,7 @@ func TestRefreshSessionForwardsHeadersAndCookies(t *testing.T) {
 	}
 }
 
-func TestRefreshSessionCompatibilityErrorReturnsSuccess(t *testing.T) {
+func TestRefreshSessionCompatibilityErrorReturnsUnauthorized(t *testing.T) {
 	stCore := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -60,21 +60,18 @@ func TestRefreshSessionCompatibilityErrorReturnsSuccess(t *testing.T) {
 	}))
 	defer stCore.Close()
 
-	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""))
+	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""), "http://app.test", nil)
 	req := httptest.NewRequest(http.MethodPost, "/auth/session/refresh", strings.NewReader(`{}`))
 	req.AddCookie(&http.Cookie{Name: "sFrontToken", Value: "front-token-cookie"})
 	rec := httptest.NewRecorder()
 
 	h.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (SDK must not spin on missing refresh token)", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), `"success":true`) {
-		t.Fatalf("expected success envelope, got: %s", rec.Body.String())
-	}
-	if got := rec.Header().Get("front-token"); got != "front-token-cookie" {
-		t.Fatalf("front-token header = %q, want front-token-cookie", got)
+	if !strings.Contains(rec.Body.String(), `"message":"unauthorised"`) {
+		t.Fatalf("expected unauthorised body, got: %s", rec.Body.String())
 	}
 }
 
@@ -95,7 +92,7 @@ func TestRefreshSessionBuildsFrontTokenWhenMissing(t *testing.T) {
 	}))
 	defer stCore.Close()
 
-	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""))
+	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""), "http://app.test", nil)
 	req := httptest.NewRequest(http.MethodPost, "/auth/session/refresh", strings.NewReader(`{}`))
 	req.AddCookie(&http.Cookie{Name: "sAccessToken", Value: "opaque-token"})
 	rec := httptest.NewRecorder()
@@ -146,7 +143,7 @@ func TestEmailVerifyRouteProxiesToSuperTokens(t *testing.T) {
 	}))
 	defer stCore.Close()
 
-	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""))
+	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""), "http://app.test", nil)
 	req := httptest.NewRequest(http.MethodGet, "/auth/user/email/verify?token=verify-token", nil)
 	rec := httptest.NewRecorder()
 
@@ -190,7 +187,7 @@ func TestEmailVerifyRouteInjectsUserIDFromSessionWhenMissing(t *testing.T) {
 	}))
 	defer stCore.Close()
 
-	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""))
+	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""), "http://app.test", nil)
 	req := httptest.NewRequest(http.MethodGet, "/auth/user/email/verify", nil)
 	req.AddCookie(&http.Cookie{Name: "sAccessToken", Value: "opaque-token"})
 	rec := httptest.NewRecorder()
@@ -226,7 +223,7 @@ func TestEmailVerifyTokenRouteProxiesToSuperTokens(t *testing.T) {
 	}))
 	defer stCore.Close()
 
-	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""))
+	h := NewHandler(nil, supertokens.NewClient(stCore.URL, ""), "http://app.test", nil)
 	req := httptest.NewRequest(http.MethodPost, "/auth/user/email/verify/token", strings.NewReader(`{"foo":"bar"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -281,7 +278,7 @@ func TestSetSessionCookiesAndHeaders_UsesMillisecondExpiryInFrontToken(t *testin
 }
 
 func TestUnknownAuthPathReturnsNotFound(t *testing.T) {
-	h := NewHandler(nil, nil)
+	h := NewHandler(nil, nil, "http://app.test", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/authorisationurl", nil)
 	rec := httptest.NewRecorder()
@@ -293,7 +290,7 @@ func TestUnknownAuthPathReturnsNotFound(t *testing.T) {
 }
 
 func TestSignOutClearsSessionCookies(t *testing.T) {
-	h := NewHandler(nil, nil)
+	h := NewHandler(nil, nil, "http://app.test", nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/signout", nil)
 	rec := httptest.NewRecorder()

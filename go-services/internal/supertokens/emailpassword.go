@@ -91,3 +91,44 @@ func (c *Client) UpdateEmailOrPassword(ctx context.Context, req UpdatePasswordRe
 	err = c.do(ctx, "PUT", "/recipe/user", "emailpassword", fallbackBody, &resp)
 	return &resp, err
 }
+
+// CreatePasswordResetToken asks SuperTokens Core for a one-time password reset token (CDI).
+type CreatePasswordResetTokenResponse struct {
+	Status string `json:"status"`
+	Token  string `json:"token,omitempty"`
+}
+
+// CreatePasswordResetToken calls POST /{tenantID}/recipe/user/password/reset/token.
+func (c *Client) CreatePasswordResetToken(ctx context.Context, tenantID, userID, email string) (*CreatePasswordResetTokenResponse, error) {
+	path := fmt.Sprintf("/%s/recipe/user/password/reset/token", tenantID)
+	body := map[string]string{
+		"userId": userID,
+		"email":  email,
+	}
+	var resp CreatePasswordResetTokenResponse
+	if err := c.do(ctx, "POST", path, "emailpassword", body, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// ResetPasswordWithTokenResponse is the subset of CDI fields used by the platform reset flow.
+type ResetPasswordWithTokenResponse struct {
+	Status     string `json:"status"`
+	FormFields []struct {
+		ID    string `json:"id"`
+		Error string `json:"error"`
+	} `json:"formFields,omitempty"`
+}
+
+// ResetPasswordWithToken calls POST /{tenantID}/recipe/user/password/reset with method "token".
+func (c *Client) ResetPasswordWithToken(ctx context.Context, tenantID, token, newPassword string) (*ResetPasswordWithTokenResponse, error) {
+	path := fmt.Sprintf("/%s/recipe/user/password/reset", tenantID)
+	var resp ResetPasswordWithTokenResponse
+	err := c.do(ctx, "POST", path, "emailpassword", map[string]string{
+		"method":   "token",
+		"token":    token,
+		"password": newPassword,
+	}, &resp)
+	return &resp, err
+}
