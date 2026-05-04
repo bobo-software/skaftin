@@ -2,6 +2,7 @@ package dbproxy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
@@ -59,20 +62,7 @@ func (h *Handler) ExecuteQuery(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- Cron Jobs ---
-
-func (h *Handler) ensurePgCron(w http.ResponseWriter, r *http.Request, pc *ProjectConn) bool {
-	var exists bool
-	pc.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pg_cron')`).Scan(&exists)
-	if exists {
-		return true
-	}
-	if err := pc.Exec(r.Context(), "CREATE EXTENSION IF NOT EXISTS pg_cron"); err != nil {
-		httputil.WriteError(w, http.StatusBadRequest, "pg_cron extension is not installed and could not be automatically enabled.")
-		return false
-	}
-	return true
-}
+// --- Cron Jobs (app-owned tables; pg_cron is not used) ---
 
 func (h *Handler) ListCronJobs(w http.ResponseWriter, r *http.Request) {
 	pc, _ := h.acquireConn(w, r)
@@ -81,20 +71,21 @@ func (h *Handler) ListCronJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer pc.Release()
 
-	if !h.ensurePgCron(w, r, pc) {
+	ctx := r.Context()
+	if err := EnsureAppCronTables(ctx, pc); err != nil {
+		slog.Error("ensure app cron tables", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to initialize cron storage")
 		return
 	}
 
-	rows, err := pc.Query(r.Context(), `
-		SELECT jobid, schedule, command, nodename, nodeport, database, username, active, jobname
-		FROM cron.job ORDER BY jobid DESC
+	rows, err := pc.Query(ctx, `
+		SELECT j.id AS jobid, j.schedule, j.command, j.jobname, j.active,
+			current_database() AS database, current_user AS username
+		FROM skaftin_app_cron_jobs j
+		ORDER BY j.id DESC
 	`)
 	if err != nil {
 		slog.Error("list cron jobs failed", "error", err)
-		if strings.Contains(err.Error(), "cron.job") {
-			httputil.WriteError(w, http.StatusBadRequest, "pg_cron extension is not installed.")
-			return
-		}
 		httputil.WriteError(w, http.StatusInternalServerError, "Failed to fetch cron jobs")
 		return
 	}
@@ -111,17 +102,34 @@ func (h *Handler) GetCronJobHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	defer pc.Release()
 
-	jobId := r.PathValue("jobId")
+	ctx := r.Context()
+	if err := EnsureAppCronTables(ctx, pc); err != nil {
+		slog.Error("ensure app cron tables", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to initialize cron storage")
+		return
+	}
+
+	jobIdStr := r.PathValue("jobId")
+	jobID, err := strconv.Atoi(jobIdStr)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid job ID format")
+		return
+	}
 	limitStr := r.URL.Query().Get("limit")
 	limit := 50
 	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
 		limit = l
 	}
 
-	rows, err := pc.Query(r.Context(), `
-		SELECT runid, jobid, job_pid, database, username, command, status, return_message, start_time, end_time
-		FROM cron.job_run_details WHERE jobid = $1 ORDER BY start_time DESC LIMIT $2
-	`, jobId, limit)
+	rows, err := pc.Query(ctx, `
+		SELECT r.id AS runid, r.job_id AS jobid, NULL::integer AS job_pid,
+			current_database() AS database, current_user AS username,
+			r.command, r.status, r.return_message, r.start_time, r.end_time
+		FROM skaftin_app_cron_job_runs r
+		WHERE r.job_id = $1
+		ORDER BY r.start_time DESC
+		LIMIT $2
+	`, jobID, limit)
 	if err != nil {
 		slog.Error("get cron job history failed", "error", err)
 		httputil.WriteError(w, http.StatusInternalServerError, "Failed to fetch cron job history")
@@ -140,7 +148,10 @@ func (h *Handler) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 	defer pc.Release()
 
-	if !h.ensurePgCron(w, r, pc) {
+	ctx := r.Context()
+	if err := EnsureAppCronTables(ctx, pc); err != nil {
+		slog.Error("ensure app cron tables", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to initialize cron storage")
 		return
 	}
 
@@ -156,19 +167,28 @@ func (h *Handler) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	parts := strings.Fields(body.Schedule)
-	if len(parts) != 5 {
-		httputil.WriteError(w, http.StatusBadRequest, "Invalid cron schedule format. Expected: \"minute hour day month weekday\"")
+	if len(parts) != 5 && len(parts) != 6 {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid cron schedule format. Expected 5 fields (minute hour day month weekday) or 6 fields (second minute hour day month weekday)")
 		return
 	}
 	normalizedSchedule := strings.Join(parts, " ")
 
 	var currentSchema string
-	pc.QueryRow(r.Context(), "SELECT current_schema()").Scan(&currentSchema)
+	pc.QueryRow(ctx, "SELECT current_schema()").Scan(&currentSchema)
 	fullCommand := fmt.Sprintf("SET search_path TO %s, public; %s", currentSchema, body.Command)
 
 	var jobID int
-	err := pc.QueryRow(r.Context(), `SELECT cron.schedule($1, $2, $3)`, body.JobName, normalizedSchedule, fullCommand).Scan(&jobID)
+	err := pc.QueryRow(ctx, `
+		INSERT INTO skaftin_app_cron_jobs (jobname, schedule, command)
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, body.JobName, normalizedSchedule, fullCommand).Scan(&jobID)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			httputil.WriteError(w, http.StatusConflict, "A cron job with this name already exists")
+			return
+		}
 		slog.Error("create cron job failed", "error", err)
 		httputil.WriteError(w, http.StatusInternalServerError, "Failed to create cron job")
 		return
@@ -180,7 +200,7 @@ func (h *Handler) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 		"schedule": normalizedSchedule,
 		"command":  fullCommand,
 	})
-	h.emitDatabaseEvent(pid, "create_cron_job", "cron.job", map[string]any{
+	h.emitDatabaseEvent(pid, "create_cron_job", "skaftin_app_cron_jobs", map[string]any{
 		"jobId":    jobID,
 		"jobName":  body.JobName,
 		"schedule": normalizedSchedule,
@@ -195,7 +215,20 @@ func (h *Handler) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 	defer pc.Release()
 
-	jobId := r.PathValue("jobId")
+	ctx := r.Context()
+	if err := EnsureAppCronTables(ctx, pc); err != nil {
+		slog.Error("ensure app cron tables", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to initialize cron storage")
+		return
+	}
+
+	jobIdStr := r.PathValue("jobId")
+	jobId, err := strconv.Atoi(jobIdStr)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid job ID format")
+		return
+	}
+
 	var body struct {
 		Schedule *string `json:"schedule"`
 		Command  *string `json:"command"`
@@ -203,25 +236,46 @@ func (h *Handler) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 
-	ctx := r.Context()
-
 	if body.Schedule != nil {
-		pc.Exec(ctx, `UPDATE cron.job SET schedule = $1 WHERE jobid = $2`, *body.Schedule, jobId)
+		parts := strings.Fields(*body.Schedule)
+		if len(parts) != 5 && len(parts) != 6 {
+			httputil.WriteError(w, http.StatusBadRequest, "Invalid cron schedule format. Expected 5 or 6 cron fields")
+			return
+		}
+		norm := strings.Join(parts, " ")
+		if err := pc.Exec(ctx, `UPDATE skaftin_app_cron_jobs SET schedule = $1, updated_at = now() WHERE id = $2`, norm, jobId); err != nil {
+			slog.Error("update cron schedule", "error", err)
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to update cron job")
+			return
+		}
 	}
 	if body.Command != nil {
 		var currentSchema string
 		pc.QueryRow(ctx, "SELECT current_schema()").Scan(&currentSchema)
 		fullCmd := fmt.Sprintf("SET search_path TO %s, public; %s", currentSchema, *body.Command)
-		pc.Exec(ctx, `UPDATE cron.job SET command = $1 WHERE jobid = $2`, fullCmd, jobId)
+		if err := pc.Exec(ctx, `UPDATE skaftin_app_cron_jobs SET command = $1, updated_at = now() WHERE id = $2`, fullCmd, jobId); err != nil {
+			slog.Error("update cron command", "error", err)
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to update cron job")
+			return
+		}
 	}
 	if body.JobName != nil {
-		pc.Exec(ctx, `UPDATE cron.job SET jobname = $1 WHERE jobid = $2`, *body.JobName, jobId)
+		if err := pc.Exec(ctx, `UPDATE skaftin_app_cron_jobs SET jobname = $1, updated_at = now() WHERE id = $2`, *body.JobName, jobId); err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				httputil.WriteError(w, http.StatusConflict, "A cron job with this name already exists")
+				return
+			}
+			slog.Error("update cron jobname", "error", err)
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to update cron job")
+			return
+		}
 	}
 
 	httputil.WriteSuccess(w, http.StatusOK, "Cron job updated successfully", map[string]any{
-		"jobId": jobId,
+		"jobId": jobIdStr,
 	})
-	h.emitDatabaseEvent(pid, "update_cron_job", "cron.job", map[string]any{
+	h.emitDatabaseEvent(pid, "update_cron_job", "skaftin_app_cron_jobs", map[string]any{
 		"jobId":    jobId,
 		"jobName":  body.JobName,
 		"schedule": body.Schedule,
@@ -236,7 +290,20 @@ func (h *Handler) ToggleCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 	defer pc.Release()
 
-	jobId := r.PathValue("jobId")
+	ctx := r.Context()
+	if err := EnsureAppCronTables(ctx, pc); err != nil {
+		slog.Error("ensure app cron tables", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to initialize cron storage")
+		return
+	}
+
+	jobIdStr := r.PathValue("jobId")
+	jobId, err := strconv.Atoi(jobIdStr)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid job ID format")
+		return
+	}
+
 	var body struct {
 		Active *bool `json:"active"`
 	}
@@ -246,7 +313,18 @@ func (h *Handler) ToggleCronJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pc.Exec(r.Context(), `UPDATE cron.job SET active = $1 WHERE jobid = $2`, *body.Active, jobId)
+	err = pc.QueryRow(ctx, `
+		UPDATE skaftin_app_cron_jobs SET active = $1, updated_at = now() WHERE id = $2 RETURNING id
+	`, *body.Active, jobId).Scan(&jobId)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			httputil.WriteError(w, http.StatusNotFound, fmt.Sprintf("Cron job with ID %d not found", jobId))
+			return
+		}
+		slog.Error("toggle cron job", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to update cron job")
+		return
+	}
 
 	msg := "deactivated"
 	if *body.Active {
@@ -256,7 +334,7 @@ func (h *Handler) ToggleCronJob(w http.ResponseWriter, r *http.Request) {
 		"jobId":  jobId,
 		"active": *body.Active,
 	})
-	h.emitDatabaseEvent(pid, "toggle_cron_job", "cron.job", map[string]any{
+	h.emitDatabaseEvent(pid, "toggle_cron_job", "skaftin_app_cron_jobs", map[string]any{
 		"jobId":  jobId,
 		"active": *body.Active,
 	}, nil)
@@ -269,6 +347,13 @@ func (h *Handler) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 	}
 	defer pc.Release()
 
+	ctx := r.Context()
+	if err := EnsureAppCronTables(ctx, pc); err != nil {
+		slog.Error("ensure app cron tables", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to initialize cron storage")
+		return
+	}
+
 	jobIdStr := r.PathValue("jobId")
 	jobId, err := strconv.Atoi(jobIdStr)
 	if err != nil {
@@ -276,23 +361,80 @@ func (h *Handler) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check job exists
-	var jobExists bool
-	pc.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM cron.job WHERE jobid = $1)`, jobId).Scan(&jobExists)
-	if !jobExists {
-		httputil.WriteError(w, http.StatusNotFound, fmt.Sprintf("Cron job with ID %d not found", jobId))
-		return
-	}
-
-	var unscheduled bool
-	pc.QueryRow(r.Context(), `SELECT cron.unschedule($1)`, jobId).Scan(&unscheduled)
-	if !unscheduled {
-		httputil.WriteError(w, http.StatusNotFound, fmt.Sprintf("Failed to unschedule cron job %d", jobId))
+	err = pc.QueryRow(ctx, `DELETE FROM skaftin_app_cron_jobs WHERE id = $1 RETURNING id`, jobId).Scan(&jobId)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			httputil.WriteError(w, http.StatusNotFound, fmt.Sprintf("Cron job with ID %d not found", jobId))
+			return
+		}
+		slog.Error("delete cron job", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to delete cron job")
 		return
 	}
 
 	httputil.WriteSuccess(w, http.StatusOK, "Cron job deleted successfully", map[string]any{"jobId": jobId})
-	h.emitDatabaseEvent(pid, "delete_cron_job", "cron.job", map[string]any{
+	h.emitDatabaseEvent(pid, "delete_cron_job", "skaftin_app_cron_jobs", map[string]any{
 		"jobId": jobId,
+	}, nil)
+}
+
+// RecordCronClientRun appends a run row when the dashboard client executes a job in the browser.
+func (h *Handler) RecordCronClientRun(w http.ResponseWriter, r *http.Request) {
+	pc, pid := h.acquireConn(w, r)
+	if pc == nil {
+		return
+	}
+	defer pc.Release()
+
+	ctx := r.Context()
+	if err := EnsureAppCronTables(ctx, pc); err != nil {
+		slog.Error("ensure app cron tables", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to initialize cron storage")
+		return
+	}
+
+	jobIdStr := r.PathValue("jobId")
+	jobId, err := strconv.Atoi(jobIdStr)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid job ID format")
+		return
+	}
+
+	var body struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Command string `json:"command"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	status := "failed"
+	if body.Success {
+		status = "succeeded"
+	}
+
+	var exists bool
+	if err := pc.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM skaftin_app_cron_jobs WHERE id = $1)`, jobId).Scan(&exists); err != nil {
+		slog.Error("cron client run lookup", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to record cron run")
+		return
+	}
+	if !exists {
+		httputil.WriteError(w, http.StatusNotFound, fmt.Sprintf("Cron job with ID %d not found", jobId))
+		return
+	}
+
+	now := time.Now().UTC()
+	if err := pc.Exec(ctx, `
+		INSERT INTO skaftin_app_cron_job_runs (job_id, status, return_message, command, start_time, end_time)
+		VALUES ($1, $2, $3, $4, $5, $5)
+	`, jobId, status, body.Message, body.Command, now); err != nil {
+		slog.Error("record cron client run", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to record cron run")
+		return
+	}
+
+	httputil.WriteSuccess(w, http.StatusCreated, "Cron run recorded", map[string]any{"jobId": jobId})
+	h.emitDatabaseEvent(pid, "cron_client_run", "skaftin_app_cron_job_runs", map[string]any{
+		"jobId": jobId, "status": status,
 	}, nil)
 }

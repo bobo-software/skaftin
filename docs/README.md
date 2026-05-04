@@ -24,6 +24,7 @@ This repository now runs with a Go-only backend runtime (`go-services`) and a Re
 - MCP docs:
   - [mcp/AUTH_TOOLS.md](./mcp/AUTH_TOOLS.md)
   - [mcp/AUTH_TOOLS_QUICKSTART.md](./mcp/AUTH_TOOLS_QUICKSTART.md)
+  - Cron (stored job definitions): MCP tools `list_cron_jobs`, `create_cron_job`, `update_cron_job`, `delete_cron_job`, `toggle_cron_job`, `get_cron_job_history` live in `go-services/internal/mcp/tools_database.go`. On the **client** MCP endpoint, `projectId` is optional and taken from the API key / auth context (if you pass `projectId`, it must match the token). On **admin** MCP, `projectId` is required in tool arguments.
 
 ## Notes
 

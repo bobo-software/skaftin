@@ -1,8 +1,10 @@
 # PostgreSQL Cron Features Integration
 
+**Status (2026):** Skaftin no longer uses the `pg_cron` extension. Cron job definitions and client-triggered run history live in each project schema as `skaftin_app_cron_jobs` and `skaftin_app_cron_job_runs` (created automatically by the API). The dashboard runs schedules in the browser on a 30-second timer and logs runs via `POST /api/database/:projectId/cron/:jobId/runs`. The sections below that reference `pg_cron`, `cron.job`, and `01-init.sql` are **historical** unless updated elsewhere.
+
 ## Overview
 
-This document describes the PostgreSQL cron features that have been integrated into the Skaftin platform. The integration enables users to schedule and manage automated database tasks using `pg_cron` extension.
+This document originally described scheduling via the PostgreSQL `pg_cron` extension. The platform now stores job definitions in application tables and relies on the dashboard (or external runners calling the query API) to execute SQL on schedule.
 
 ## Features Implemented
 

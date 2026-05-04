@@ -10,6 +10,7 @@ import (
 	"github.com/skaftin/go-services/internal/backups"
 	"github.com/skaftin/go-services/internal/communications"
 	"github.com/skaftin/go-services/internal/config"
+	"github.com/skaftin/go-services/internal/healthcron"
 	"github.com/skaftin/go-services/internal/invitations"
 	"github.com/skaftin/go-services/internal/maintenance"
 	"github.com/skaftin/go-services/internal/middleware"
@@ -109,7 +110,16 @@ func registerOperationalRoutes(
 		return nil, err
 	}
 
+	healthCron := healthcron.New()
+	if err := healthCron.Start(); err != nil {
+		maintenanceScheduler.Stop()
+		workflowScheduler.Stop()
+		backupScheduler.Stop()
+		return nil, err
+	}
+
 	cleanup := func() {
+		healthCron.Stop()
 		backupScheduler.Stop()
 		workflowScheduler.Stop()
 		maintenanceScheduler.Stop()

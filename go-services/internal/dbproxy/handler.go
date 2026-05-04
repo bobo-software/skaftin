@@ -118,6 +118,7 @@ func (h *Handler) registerRoutesWithBase(mux *http.ServeMux, base string) {
 	mux.HandleFunc("PUT "+base+"/cron/{jobId}", h.UpdateCronJob)
 	mux.HandleFunc("PATCH "+base+"/cron/{jobId}/toggle", h.ToggleCronJob)
 	mux.HandleFunc("DELETE "+base+"/cron/{jobId}", h.DeleteCronJob)
+	mux.HandleFunc("POST "+base+"/cron/{jobId}/runs", h.RecordCronClientRun)
 
 	// Import / Export
 	mux.HandleFunc("POST "+base+"/import", h.ImportDatabaseDump)

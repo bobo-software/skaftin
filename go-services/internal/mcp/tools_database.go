@@ -3,9 +3,11 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -157,19 +159,19 @@ func registerDatabaseTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy
 		"force":      {Type: "boolean", Desc: "Force deletion even if schema has dependencies (default: false)"},
 	}, []string{"schemaName"}), reg.deleteSchema)
 
-	srv.AddTool(makeTool("list_cron_jobs", "List all scheduled cron jobs in the database", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+	srv.AddTool(makeTool("list_cron_jobs", "List cron job definitions stored in the project (skaftin_app_cron_jobs; not pg_cron)", map[string]prop{
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 	}, nil), reg.listCronJobs)
 
-	srv.AddTool(makeTool("create_cron_job", "Create a new cron job to schedule automated tasks", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+	srv.AddTool(makeTool("create_cron_job", "Create a stored cron job definition (SQL runs when scheduled via dashboard or your own runner; not pg_cron)", map[string]prop{
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"jobName":   {Type: "string", Desc: "Name for the cron job"},
-		"schedule":  {Type: "string", Desc: "Cron schedule expression (e.g. '*/5 * * * *')"},
+		"schedule":  {Type: "string", Desc: "Cron expression: 5 fields (minute hour day month weekday) or 6 fields (second minute hour day month weekday), e.g. */30 * * * * *"},
 		"command":   {Type: "string", Desc: "SQL command to execute"},
 	}, []string{"jobName", "schedule", "command"}), reg.createCronJob)
 
 	srv.AddTool(makeTool("update_cron_job", "Update an existing cron job", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"jobId":     {Type: "string", Desc: "Job ID"},
 		"jobName":   {Type: "string", Desc: "New job name (optional)"},
 		"schedule":  {Type: "string", Desc: "New cron schedule expression (optional)"},
@@ -177,18 +179,18 @@ func registerDatabaseTools(srv toolRegistrar, pool *pgxpool.Pool, dbSvc *dbproxy
 	}, []string{"jobId"}), reg.updateCronJob)
 
 	srv.AddTool(makeTool("delete_cron_job", "Delete a cron job", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"jobId":     {Type: "string", Desc: "Job ID to delete"},
 	}, []string{"jobId"}), reg.deleteCronJob)
 
 	srv.AddTool(makeTool("toggle_cron_job", "Enable or disable a cron job", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"jobId":     {Type: "string", Desc: "Job ID"},
 		"active":    {Type: "boolean", Desc: "Set to true to activate, false to deactivate"},
 	}, []string{"jobId", "active"}), reg.toggleCronJob)
 
 	srv.AddTool(makeTool("get_cron_job_history", "Get execution history for a cron job", map[string]prop{
-		"projectId": {Type: "string", Desc: "Project ID"},
+		"projectId": {Type: "string", Desc: "Project ID (optional on client endpoint; derived from token)"},
 		"jobId":     {Type: "string", Desc: "Job ID"},
 		"limit":     {Type: "number", Desc: "Maximum number of history entries (default: 50)"},
 	}, []string{"jobId"}), reg.getCronJobHistory)
@@ -1216,13 +1218,16 @@ func (d *dbTools) listCronJobs(ctx context.Context, req *sdkmcp.CallToolRequest)
 	}
 	defer pc.Release()
 
-	var pgCronExists bool
-	pc.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pg_cron')`).Scan(&pgCronExists)
-	if !pgCronExists {
-		return textResult(map[string]any{"message": "pg_cron extension is not installed", "hint": "Run: CREATE EXTENSION IF NOT EXISTS pg_cron"})
+	if err := dbproxy.EnsureAppCronTables(ctx, pc); err != nil {
+		return errorResult(fmt.Sprintf("Failed to initialize cron storage: %v", err))
 	}
 
-	rows, err := pc.Query(ctx, `SELECT jobid, schedule, command, nodename, nodeport, database, username, active, jobname FROM cron.job ORDER BY jobid DESC`)
+	rows, err := pc.Query(ctx, `
+		SELECT j.id AS jobid, j.schedule, j.command, j.jobname, j.active,
+			current_database() AS database, current_user AS username
+		FROM skaftin_app_cron_jobs j
+		ORDER BY j.id DESC
+	`)
 	if err != nil {
 		return errorResult(fmt.Sprintf("Failed to list cron jobs: %v", err))
 	}
@@ -1250,15 +1255,29 @@ func (d *dbTools) createCronJob(ctx context.Context, req *sdkmcp.CallToolRequest
 	}
 	defer pc.Release()
 
+	if err := dbproxy.EnsureAppCronTables(ctx, pc); err != nil {
+		return errorResult(fmt.Sprintf("Failed to initialize cron storage: %v", err))
+	}
+
+	parts := strings.Fields(schedule)
+	if len(parts) != 5 && len(parts) != 6 {
+		return errorResult("schedule must have 5 fields (minute hour day month weekday) or 6 fields (second minute hour day month weekday)")
+	}
+	normalizedSchedule := strings.Join(parts, " ")
+
 	var currentSchema string
 	pc.QueryRow(ctx, "SELECT current_schema()").Scan(&currentSchema)
 	fullCommand := fmt.Sprintf("SET search_path TO %s, public; %s", currentSchema, command)
 
 	var jobID int
-	if err := pc.QueryRow(ctx, `SELECT cron.schedule($1, $2, $3)`, jobName, schedule, fullCommand).Scan(&jobID); err != nil {
+	if err := pc.QueryRow(ctx, `
+		INSERT INTO skaftin_app_cron_jobs (jobname, schedule, command)
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, jobName, normalizedSchedule, fullCommand).Scan(&jobID); err != nil {
 		return errorResult(fmt.Sprintf("Failed to create cron job: %v", err))
 	}
-	return textResult(map[string]any{"success": true, "jobid": jobID, "jobName": jobName, "schedule": schedule, "command": fullCommand})
+	return textResult(map[string]any{"success": true, "jobid": jobID, "jobName": jobName, "schedule": normalizedSchedule, "command": fullCommand})
 }
 
 // --- update_cron_job ---
@@ -1268,9 +1287,13 @@ func (d *dbTools) updateCronJob(ctx context.Context, req *sdkmcp.CallToolRequest
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	jobId := getString(args, "jobId")
-	if jobId == "" {
+	jobIdStr := getString(args, "jobId")
+	if jobIdStr == "" {
 		return errorResult("jobId is required")
+	}
+	jobId, err := strconv.Atoi(jobIdStr)
+	if err != nil {
+		return errorResult("jobId must be an integer")
 	}
 
 	pc, err := d.acquireConn(ctx, args)
@@ -1279,17 +1302,32 @@ func (d *dbTools) updateCronJob(ctx context.Context, req *sdkmcp.CallToolRequest
 	}
 	defer pc.Release()
 
+	if err := dbproxy.EnsureAppCronTables(ctx, pc); err != nil {
+		return errorResult(fmt.Sprintf("Failed to initialize cron storage: %v", err))
+	}
+
 	if s := getString(args, "schedule"); s != "" {
-		pc.Exec(ctx, `UPDATE cron.job SET schedule = $1 WHERE jobid = $2`, s, jobId)
+		parts := strings.Fields(s)
+		if len(parts) != 5 && len(parts) != 6 {
+			return errorResult("schedule must have 5 or 6 cron fields")
+		}
+		norm := strings.Join(parts, " ")
+		if err := pc.Exec(ctx, `UPDATE skaftin_app_cron_jobs SET schedule = $1, updated_at = now() WHERE id = $2`, norm, jobId); err != nil {
+			return errorResult(fmt.Sprintf("Failed to update schedule: %v", err))
+		}
 	}
 	if c := getString(args, "command"); c != "" {
 		var currentSchema string
 		pc.QueryRow(ctx, "SELECT current_schema()").Scan(&currentSchema)
 		fullCmd := fmt.Sprintf("SET search_path TO %s, public; %s", currentSchema, c)
-		pc.Exec(ctx, `UPDATE cron.job SET command = $1 WHERE jobid = $2`, fullCmd, jobId)
+		if err := pc.Exec(ctx, `UPDATE skaftin_app_cron_jobs SET command = $1, updated_at = now() WHERE id = $2`, fullCmd, jobId); err != nil {
+			return errorResult(fmt.Sprintf("Failed to update command: %v", err))
+		}
 	}
 	if n := getString(args, "jobName"); n != "" {
-		pc.Exec(ctx, `UPDATE cron.job SET jobname = $1 WHERE jobid = $2`, n, jobId)
+		if err := pc.Exec(ctx, `UPDATE skaftin_app_cron_jobs SET jobname = $1, updated_at = now() WHERE id = $2`, n, jobId); err != nil {
+			return errorResult(fmt.Sprintf("Failed to update job name: %v", err))
+		}
 	}
 	return textResult(map[string]any{"success": true, "message": "Cron job updated successfully", "jobId": jobId})
 }
@@ -1301,9 +1339,13 @@ func (d *dbTools) deleteCronJob(ctx context.Context, req *sdkmcp.CallToolRequest
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	jobId := getString(args, "jobId")
-	if jobId == "" {
+	jobIdStr := getString(args, "jobId")
+	if jobIdStr == "" {
 		return errorResult("jobId is required")
+	}
+	jobId, err := strconv.Atoi(jobIdStr)
+	if err != nil {
+		return errorResult("jobId must be an integer")
 	}
 
 	pc, err := d.acquireConn(ctx, args)
@@ -1312,8 +1354,14 @@ func (d *dbTools) deleteCronJob(ctx context.Context, req *sdkmcp.CallToolRequest
 	}
 	defer pc.Release()
 
-	var unscheduled bool
-	pc.QueryRow(ctx, `SELECT cron.unschedule($1::int)`, jobId).Scan(&unscheduled)
+	if err := dbproxy.EnsureAppCronTables(ctx, pc); err != nil {
+		return errorResult(fmt.Sprintf("Failed to initialize cron storage: %v", err))
+	}
+
+	var deleted int
+	if err := pc.QueryRow(ctx, `DELETE FROM skaftin_app_cron_jobs WHERE id = $1 RETURNING id`, jobId).Scan(&deleted); err != nil {
+		return errorResult(fmt.Sprintf("Cron job not found or could not delete: %v", err))
+	}
 	return textResult(map[string]any{"success": true, "message": "Cron job deleted successfully", "jobId": jobId})
 }
 
@@ -1324,7 +1372,14 @@ func (d *dbTools) toggleCronJob(ctx context.Context, req *sdkmcp.CallToolRequest
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	jobId := getString(args, "jobId")
+	jobIdStr := getString(args, "jobId")
+	if jobIdStr == "" {
+		return errorResult("jobId is required")
+	}
+	jobId, err := strconv.Atoi(jobIdStr)
+	if err != nil {
+		return errorResult("jobId must be an integer")
+	}
 	active := getBool(args, "active", true)
 
 	pc, err := d.acquireConn(ctx, args)
@@ -1333,7 +1388,19 @@ func (d *dbTools) toggleCronJob(ctx context.Context, req *sdkmcp.CallToolRequest
 	}
 	defer pc.Release()
 
-	pc.Exec(ctx, `UPDATE cron.job SET active = $1 WHERE jobid = $2`, active, jobId)
+	if err := dbproxy.EnsureAppCronTables(ctx, pc); err != nil {
+		return errorResult(fmt.Sprintf("Failed to initialize cron storage: %v", err))
+	}
+
+	var toggled int
+	if err := pc.QueryRow(ctx, `
+		UPDATE skaftin_app_cron_jobs SET active = $1, updated_at = now() WHERE id = $2 RETURNING id
+	`, active, jobId).Scan(&toggled); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errorResult("Cron job not found")
+		}
+		return errorResult(fmt.Sprintf("Could not toggle cron job: %v", err))
+	}
 	msg := "deactivated"
 	if active {
 		msg = "activated"
@@ -1348,9 +1415,13 @@ func (d *dbTools) getCronJobHistory(ctx context.Context, req *sdkmcp.CallToolReq
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	jobId := getString(args, "jobId")
-	if jobId == "" {
+	jobIdStr := getString(args, "jobId")
+	if jobIdStr == "" {
 		return errorResult("jobId is required")
+	}
+	jobId, err := strconv.Atoi(jobIdStr)
+	if err != nil {
+		return errorResult("jobId must be an integer")
 	}
 	limit := getInt(args, "limit", 50)
 
@@ -1360,9 +1431,18 @@ func (d *dbTools) getCronJobHistory(ctx context.Context, req *sdkmcp.CallToolReq
 	}
 	defer pc.Release()
 
+	if err := dbproxy.EnsureAppCronTables(ctx, pc); err != nil {
+		return errorResult(fmt.Sprintf("Failed to initialize cron storage: %v", err))
+	}
+
 	rows, err := pc.Query(ctx, `
-		SELECT runid, jobid, job_pid, database, username, command, status, return_message, start_time, end_time
-		FROM cron.job_run_details WHERE jobid = $1 ORDER BY start_time DESC LIMIT $2
+		SELECT r.id AS runid, r.job_id AS jobid, NULL::integer AS job_pid,
+			current_database() AS database, current_user AS username,
+			r.command, r.status, r.return_message, r.start_time, r.end_time
+		FROM skaftin_app_cron_job_runs r
+		WHERE r.job_id = $1
+		ORDER BY r.start_time DESC
+		LIMIT $2
 	`, jobId, limit)
 	if err != nil {
 		return errorResult(fmt.Sprintf("Failed to get cron job history: %v", err))

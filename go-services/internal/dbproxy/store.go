@@ -125,7 +125,7 @@ func (s *Store) ListTables(ctx context.Context, pc *ProjectConn, includeSystemTa
 		  AND table_type = 'BASE TABLE'
 	`
 	if !includeSystemTables {
-		query += ` AND table_name NOT LIKE 'skaftin_system_%'`
+		query += ` AND table_name NOT LIKE 'skaftin_system_%' AND table_name NOT LIKE 'skaftin_app_cron%'`
 	}
 	query += ` ORDER BY table_name`
 
