@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/auth"
@@ -28,6 +30,9 @@ func NewHandler(pool *pgxpool.Pool, s3 *storage.S3Client, bucket string, project
 // RegisterRoutes registers project-scoped backup routes (require project access).
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/backups/{projectId}/create", h.createBackup)
+	// Must not be POST .../{projectId}/import alone: path /api/backups/1/import matches
+	// DELETE /api/backups/{projectId}/{backupId} (backupId="import") and yields 405 if this POST route is missing.
+	mux.HandleFunc("POST /api/backups/{projectId}/actions/import", h.importBackup)
 	mux.HandleFunc("GET /api/backups/{projectId}/list", h.listBackups)
 	mux.HandleFunc("GET /api/backups/{projectId}/{backupId}/download", h.downloadBackup)
 	mux.HandleFunc("POST /api/backups/{projectId}/{backupId}/restore", h.restoreBackup)
@@ -109,6 +114,61 @@ func (h *Handler) createBackup(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteSuccess(w, http.StatusOK, "Backup created successfully", meta)
 }
 
+const maxBackupImportBytes int64 = 64 << 20 // 64 MiB
+
+func (h *Handler) importBackup(w http.ResponseWriter, r *http.Request) {
+	pid, ok := parseProjectID(r)
+	if !ok {
+		httputil.WriteError(w, http.StatusBadRequest, "Project ID is required")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxBackupImportBytes+4096)
+	if err := r.ParseMultipartForm(maxBackupImportBytes); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid multipart form: use field name \"file\" (max 64MiB)")
+		return
+	}
+	f, hdr, err := r.FormFile("file")
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Missing form file field \"file\"")
+		return
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(io.LimitReader(f, maxBackupImportBytes+1))
+	if err != nil {
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to read uploaded file")
+		return
+	}
+	if int64(len(data)) > maxBackupImportBytes {
+		httputil.WriteError(w, http.StatusRequestEntityTooLarge, "File exceeds maximum import size (64MiB)")
+		return
+	}
+
+	orig := ""
+	if hdr != nil {
+		orig = hdr.Filename
+	}
+
+	meta, err := h.service.ImportBackup(r.Context(), pid, orig, data)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrImportEmpty), errors.Is(err, ErrImportBadType):
+			httputil.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		default:
+			if strings.Contains(err.Error(), "project not found") {
+				httputil.WriteError(w, http.StatusNotFound, "Project not found")
+				return
+			}
+			slog.Error("import backup failed", "error", err)
+			httputil.WriteError(w, http.StatusBadGateway, fmt.Sprintf("Could not save import to object storage: %v", err))
+			return
+		}
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Backup imported successfully", meta)
+}
+
 func (h *Handler) listBackups(w http.ResponseWriter, r *http.Request) {
 	pid, ok := parseProjectID(r)
 	if !ok {
@@ -166,11 +226,8 @@ func (h *Handler) restoreBackup(w http.ResponseWriter, r *http.Request) {
 	httputil.ReadJSON(r, &body)
 
 	if err := h.service.RestoreBackup(r.Context(), pid, filename, body.DropExisting); err != nil {
-		if errors.Is(err, ErrProjectRestoreRequiresSQL) {
-			httputil.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		httputil.WriteError(w, http.StatusInternalServerError, "Failed to restore backup")
+		slog.Error("restore backup failed", "projectId", pid, "filename", filename, "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 

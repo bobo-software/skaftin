@@ -8,6 +8,12 @@ This package is the HTTP composition root for the Go API.
 - `routes_data.go`: data-domain mounts (`database`, `storage`, `projects`, etc.).
 - `routes_auth_admin.go`: auth management and admin mounts.
 - `routes_ops.go`: invitations, communications, payments, backups, workflows.
+
+## Backups and restore
+
+- **Database backup** (`.sql`): `POST /api/backups/{projectId}/create` stores a schema dump in object storage. **Restore** applies that SQL to the **same** project’s schema via `POST /api/backups/{projectId}/{filename}/restore` with body `{ "dropExisting": bool }` (JWT + project access). Use `dropExisting` only when you intend to drop existing project tables first.
+- **Full backup** (`.zip`): includes project SQL and system settings. **Restore into the current project** uses the same route as database restore: `POST /api/backups/{projectId}/{filename}/restore` with `{ "dropExisting": bool }` (JWT + project access). The service remaps the backup’s schema name and source `project_id` to this project before executing. **`POST /api/backups/restore`** (JWT only) still creates a **new** project from a `.zip` when you pass `backupId`, `newProjectName`, `organizationId`. Calling `POST /api/backups/restore` with a non-`.zip` key returns `400` with a short hint.
+- **Another instance (e.g. live → local):** restores always read from **this** environment’s object storage. Download `.sql` or `.zip` from the source UI (or copy the object from its bucket), then use **`POST /api/backups/{projectId}/actions/import`** (multipart field `file`, max **64MiB**) to upload into the **local** project’s `backups/{projectId}/…` prefix; the file then appears in the list and the same restore flows apply. (The path is under `actions/import` so it does not collide with `DELETE /api/backups/{projectId}/{backupId}`.) Alternatively, use `mc cp` / AWS CLI to place an object at `backups/{projectId}/yourfile.sql` in the local bucket and refresh the list.
 - `routes_proxy.go`: gateway-only mounts (`/api/v2`) and strict fallback handlers.
 
 ## Route Ordering Guardrails

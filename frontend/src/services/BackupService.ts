@@ -33,6 +33,30 @@ export interface BackupSchedule {
 
 class BackupService {
   /**
+   * Upload a .sql or .zip from another machine (e.g. production download) into this project's backup bucket.
+   * Max size 64 MiB (server limit). Then use Restore on the new list entry.
+   */
+  static async importBackupFromFile(
+    projectId: number,
+    file: File
+  ): Promise<{ success: boolean; backup?: Backup; error?: string }> {
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const response = await axios.post(`${API_BASE}/api/backups/${projectId}/actions/import`, form, {
+        withCredentials: true,
+      });
+      return { success: true, backup: response.data.data };
+    } catch (error: any) {
+      console.error('Error importing backup:', error);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message || 'Failed to import backup',
+      };
+    }
+  }
+
+  /**
    * Create a database backup (schema only)
    */
   static async createDatabaseBackup(
@@ -162,7 +186,9 @@ class BackupService {
   }
 
   /**
-   * Restore a **database** backup (.sql) into the **current** project's schema.
+   * Restore a backup into the **current** project: `.sql` (schema dump) or full `.zip`
+   * (project SQL + system settings remapped to this project). Uses
+   * `POST /api/backups/{projectId}/{filename}/restore`.
    */
   static async restoreDatabaseBackup(
     projectId: number,

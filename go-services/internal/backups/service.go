@@ -4,15 +4,19 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/projects"
 	"github.com/skaftin/go-services/internal/storage"
@@ -21,8 +25,11 @@ import (
 // ErrFullRestoreRequiresZip is returned when POST /api/backups/restore is called with a non-.zip key.
 var ErrFullRestoreRequiresZip = errors.New("full restore requires a .zip backup; for .sql database backups use POST /api/backups/{projectId}/{filename}/restore")
 
-// ErrProjectRestoreRequiresSQL is returned when project-scoped restore is called with a .zip file.
-var ErrProjectRestoreRequiresSQL = errors.New("this endpoint restores .sql database backups only; use POST /api/backups/restore with a full backup .zip to create a new project")
+// ErrImportEmpty / ErrImportBadType are returned by ImportBackup for invalid uploads.
+var (
+	ErrImportEmpty   = errors.New("file is empty")
+	ErrImportBadType = errors.New("only .sql or .zip files are allowed")
+)
 
 // BackupMetadata is the API representation of a backup file.
 type BackupMetadata struct {
@@ -70,6 +77,10 @@ func NewService(pool *pgxpool.Pool, s3 *storage.S3Client, bucket string, project
 	}
 }
 
+func (s *Service) ensureBackupBucket(ctx context.Context) error {
+	return s.s3.EnsureBucket(ctx, s.bucket)
+}
+
 // ---------------------------------------------------------------------------
 // Database backup
 // ---------------------------------------------------------------------------
@@ -104,6 +115,9 @@ func (s *Service) CreateBackup(ctx context.Context, projectID int, name, descrip
 		metadata["description"] = description
 	}
 
+	if err := s.ensureBackupBucket(ctx); err != nil {
+		return nil, fmt.Errorf("ensure backup bucket: %w", err)
+	}
 	if err := s.s3.PutObject(ctx, s.bucket, key, reader, int64(len(sqlContent)), "application/octet-stream", metadata); err != nil {
 		return nil, fmt.Errorf("upload backup: %w", err)
 	}
@@ -119,6 +133,82 @@ func (s *Service) CreateBackup(ctx context.Context, projectID int, name, descrip
 		Type:        backupType,
 		Description: description,
 	}, nil
+}
+
+// ImportBackup stores an uploaded .sql or .zip from another environment into this deployment's
+// object storage under backups/{projectId}/..., so it appears in the list and can be restored like any other backup.
+func (s *Service) ImportBackup(ctx context.Context, projectID int, originalFilename string, data []byte) (*BackupMetadata, error) {
+	if _, err := s.store.GetProjectSchema(ctx, projectID); err != nil {
+		return nil, fmt.Errorf("project not found: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, ErrImportEmpty
+	}
+
+	base := filepath.Base(originalFilename)
+	ext := strings.ToLower(filepath.Ext(base))
+	if ext != ".sql" && ext != ".zip" {
+		return nil, ErrImportBadType
+	}
+
+	stem := sanitizeImportedBackupStem(strings.TrimSuffix(base, ext))
+	ts := time.Now().UTC().Format("20060102-150405")
+	fileName := fmt.Sprintf("%s-imported-%s%s", stem, ts, ext)
+	key := fmt.Sprintf("backups/%d/%s", projectID, fileName)
+
+	backupType := "database"
+	contentType := "application/octet-stream"
+	if ext == ".zip" {
+		backupType = "full"
+		contentType = "application/zip"
+	}
+
+	metadata := map[string]string{
+		"projectId":  fmt.Sprintf("%d", projectID),
+		"backupName": strings.TrimSuffix(fileName, ext),
+		"type":       backupType,
+		"createdAt":  time.Now().UTC().Format(time.RFC3339),
+		"imported":   "true",
+	}
+
+	if err := s.ensureBackupBucket(ctx); err != nil {
+		return nil, fmt.Errorf("ensure backup bucket: %w", err)
+	}
+	if err := s.s3.PutObject(ctx, s.bucket, key, bytes.NewReader(data), int64(len(data)), contentType, metadata); err != nil {
+		return nil, fmt.Errorf("upload imported backup: %w", err)
+	}
+
+	slog.Info("backup imported", "key", key, "projectId", projectID, "size", len(data))
+
+	return &BackupMetadata{
+		ID:        key,
+		Name:      strings.TrimSuffix(fileName, ext),
+		ProjectID: projectID,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		Size:      int64(len(data)),
+		Type:      backupType,
+	}, nil
+}
+
+func sanitizeImportedBackupStem(stem string) string {
+	stem = strings.TrimSpace(stem)
+	var b strings.Builder
+	for _, r := range strings.ToLower(stem) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		case r == ' ', r == '.':
+			b.WriteRune('_')
+		}
+	}
+	out := strings.Trim(b.String(), "_")
+	if out == "" {
+		return "backup"
+	}
+	if len(out) > 80 {
+		out = out[:80]
+	}
+	return out
 }
 
 func (s *Service) ListBackups(ctx context.Context, projectID int) ([]BackupMetadata, error) {
@@ -175,7 +265,7 @@ func (s *Service) DownloadBackup(ctx context.Context, projectID int, filename st
 
 func (s *Service) RestoreBackup(ctx context.Context, projectID int, filename string, dropExisting bool) error {
 	if strings.HasSuffix(strings.ToLower(filename), ".zip") {
-		return ErrProjectRestoreRequiresSQL
+		return s.restoreFullZipIntoProject(ctx, projectID, filename, dropExisting)
 	}
 
 	schema, err := s.store.GetProjectSchema(ctx, projectID)
@@ -322,6 +412,9 @@ func (s *Service) CreateFullBackup(ctx context.Context, projectID int, name, des
 		s3Meta["description"] = description
 	}
 
+	if err := s.ensureBackupBucket(ctx); err != nil {
+		return nil, fmt.Errorf("ensure backup bucket: %w", err)
+	}
 	if err := s.s3.PutObject(ctx, s.bucket, key, bytes.NewReader(zipBytes), int64(len(zipBytes)), "application/zip", s3Meta); err != nil {
 		return nil, fmt.Errorf("upload full backup: %w", err)
 	}
@@ -339,48 +432,175 @@ func (s *Service) CreateFullBackup(ctx context.Context, projectID int, name, des
 	}, nil
 }
 
-func (s *Service) RestoreFullBackup(ctx context.Context, backupID, newProjectName string, organizationID int, userID string) (map[string]any, error) {
-	if !strings.HasSuffix(strings.ToLower(backupID), ".zip") {
-		return nil, ErrFullRestoreRequiresZip
+// remapFullBackupSQL rewrites schema and project_id references from the backup manifest
+// (source project / schema) onto the restore target.
+func remapFullBackupSQL(sql string, manifest fullBackupManifest, targetSchema string, targetProjectID int) string {
+	oldSchema := manifest.SchemaName
+	sql = strings.ReplaceAll(sql, fmt.Sprintf(`"%s"`, oldSchema), fmt.Sprintf(`"%s"`, targetSchema))
+	sql = strings.ReplaceAll(sql, oldSchema, targetSchema)
+	if manifest.ProjectID != targetProjectID {
+		oldPID, newPID := manifest.ProjectID, targetProjectID
+		sql = strings.ReplaceAll(sql, fmt.Sprintf("project_id = %d", oldPID), fmt.Sprintf("project_id = %d", newPID))
+		sql = strings.ReplaceAll(sql, fmt.Sprintf("'%d'", oldPID), fmt.Sprintf("'%d'", newPID))
 	}
+	return sql
+}
 
-	rc, err := s.s3.GetObject(ctx, s.bucket, backupID)
+func truncateForLog(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
+
+// execSQLStatementsInTx runs split statements against an open transaction (no BEGIN/COMMIT).
+func execSQLStatementsInTx(ctx context.Context, tx pgx.Tx, sqlContent string) error {
+	sqlContent = strings.TrimSpace(sqlContent)
+	if sqlContent == "" {
+		return nil
+	}
+	statements := splitSQLStatements(sqlContent)
+	stmtNum := 0
+	for _, st := range statements {
+		st = strings.TrimSpace(st)
+		if st == "" {
+			continue
+		}
+		stmtNum++
+		if _, err := tx.Exec(ctx, st); err != nil {
+			return fmt.Errorf("statement %d: %w\n-- %s", stmtNum, err, truncateForLog(st, 500))
+		}
+	}
+	return nil
+}
+
+func (s *Service) readFullBackupZipFromObject(ctx context.Context, objectKey string) (map[string][]byte, fullBackupManifest, error) {
+	if !strings.HasSuffix(strings.ToLower(objectKey), ".zip") {
+		return nil, fullBackupManifest{}, fmt.Errorf("full backup object must be a .zip")
+	}
+	rc, err := s.s3.GetObject(ctx, s.bucket, objectKey)
 	if err != nil {
-		return nil, fmt.Errorf("backup not found: %w", err)
+		return nil, fullBackupManifest{}, fmt.Errorf("backup not found: %w", err)
 	}
 	defer rc.Close()
 
 	zipData, err := io.ReadAll(rc)
 	if err != nil {
-		return nil, fmt.Errorf("read backup: %w", err)
+		return nil, fullBackupManifest{}, fmt.Errorf("read backup: %w", err)
 	}
 
 	zr, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
-		return nil, fmt.Errorf("open zip: %w", err)
+		return nil, fullBackupManifest{}, fmt.Errorf("open zip: %w", err)
 	}
 
 	files := make(map[string][]byte)
 	for _, f := range zr.File {
 		fr, err := f.Open()
 		if err != nil {
-			return nil, fmt.Errorf("open zip entry %s: %w", f.Name, err)
+			return nil, fullBackupManifest{}, fmt.Errorf("open zip entry %s: %w", f.Name, err)
 		}
 		data, err := io.ReadAll(fr)
 		fr.Close()
 		if err != nil {
-			return nil, fmt.Errorf("read zip entry %s: %w", f.Name, err)
+			return nil, fullBackupManifest{}, fmt.Errorf("read zip entry %s: %w", f.Name, err)
 		}
 		files[f.Name] = data
+		// Allow nested zip paths (e.g. folder/project_data.sql) to resolve as project_data.sql
+		if base := filepath.Base(f.Name); base != "" && base != "." && base != f.Name {
+			if _, exists := files[base]; !exists {
+				files[base] = data
+			}
+		}
 	}
 
 	var manifest fullBackupManifest
 	if md, ok := files["metadata.json"]; ok {
 		if err := json.Unmarshal(md, &manifest); err != nil {
-			return nil, fmt.Errorf("parse metadata: %w", err)
+			return nil, fullBackupManifest{}, fmt.Errorf("parse metadata: %w", err)
 		}
 	} else {
-		return nil, fmt.Errorf("metadata.json not found in backup")
+		return nil, fullBackupManifest{}, fmt.Errorf("metadata.json not found in backup")
+	}
+	return files, manifest, nil
+}
+
+// restoreFullZipIntoProject applies a full-backup .zip from this project's backup prefix onto the
+// same project (schema + system rows remapped to the current project id).
+func (s *Service) restoreFullZipIntoProject(ctx context.Context, projectID int, filename string, dropExisting bool) error {
+	key := fmt.Sprintf("backups/%d/%s", projectID, filename)
+	files, manifest, err := s.readFullBackupZipFromObject(ctx, key)
+	if err != nil {
+		return err
+	}
+
+	targetSchema, err := s.store.GetProjectSchema(ctx, projectID)
+	if err != nil {
+		return fmt.Errorf("project not found: %w", err)
+	}
+
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection: %w", err)
+	}
+	defer conn.Release()
+
+	if dropExisting {
+		rows, err := conn.Query(ctx, `
+			SELECT table_name FROM information_schema.tables
+			WHERE table_schema = $1 AND table_type = 'BASE TABLE'`, targetSchema)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var t string
+				rows.Scan(&t)
+				conn.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS "%s"."%s" CASCADE`, targetSchema, t))
+			}
+		}
+	}
+
+	projectSQL, ok := files["project_data.sql"]
+	if !ok || len(projectSQL) == 0 {
+		return fmt.Errorf("zip missing or empty project_data.sql (from metadata backup %q / schema %q)",
+			manifest.BackupName, manifest.SchemaName)
+	}
+	sqlProject := remapFullBackupSQL(string(projectSQL), manifest, targetSchema, projectID)
+
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	if err := execSQLStatementsInTx(ctx, tx, sqlProject); err != nil {
+		_ = tx.Rollback(ctx)
+		return fmt.Errorf("project_data.sql: %w", err)
+	}
+	slog.Info("project data restored into existing project", "projectId", projectID, "sourceSchema", manifest.SchemaName, "targetSchema", targetSchema)
+
+	if systemSQL, ok := files["system_settings.sql"]; ok && len(systemSQL) > 0 {
+		sqlSys := remapFullBackupSQL(string(systemSQL), manifest, targetSchema, projectID)
+		if err := execSQLStatementsInTx(ctx, tx, sqlSys); err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("system_settings.sql: %w", err)
+		}
+		slog.Info("system settings restored into existing project", "projectId", projectID)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit full restore: %w", err)
+	}
+	slog.Info("full backup restored into project", "key", key, "projectId", projectID)
+	return nil
+}
+
+func (s *Service) RestoreFullBackup(ctx context.Context, backupID, newProjectName string, organizationID int, userID string) (map[string]any, error) {
+	if !strings.HasSuffix(strings.ToLower(backupID), ".zip") {
+		return nil, ErrFullRestoreRequiresZip
+	}
+
+	files, manifest, err := s.readFullBackupZipFromObject(ctx, backupID)
+	if err != nil {
+		return nil, err
 	}
 
 	sanitized := strings.ToLower(newProjectName)
@@ -409,24 +629,31 @@ func (s *Service) RestoreFullBackup(ctx context.Context, backupID, newProjectNam
 	}
 	defer conn.Release()
 
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+
 	if projectSQL, ok := files["project_data.sql"]; ok && len(projectSQL) > 0 {
-		sql := string(projectSQL)
-		sql = strings.ReplaceAll(sql, manifest.SchemaName, newSchema)
-		if _, err := conn.Exec(ctx, sql); err != nil {
-			slog.Warn("project data restore had errors", "error", err)
+		sql := remapFullBackupSQL(string(projectSQL), manifest, newSchema, newProject.ID)
+		if err := execSQLStatementsInTx(ctx, tx, sql); err != nil {
+			_ = tx.Rollback(ctx)
+			return nil, fmt.Errorf("project_data.sql: %w", err)
 		}
 		slog.Info("project data restored")
 	}
 
 	if systemSQL, ok := files["system_settings.sql"]; ok && len(systemSQL) > 0 {
-		sql := string(systemSQL)
-		sql = strings.ReplaceAll(sql, fmt.Sprintf("project_id = %d", manifest.ProjectID), fmt.Sprintf("project_id = %d", newProject.ID))
-		sql = strings.ReplaceAll(sql, fmt.Sprintf("'%d'", manifest.ProjectID), fmt.Sprintf("'%d'", newProject.ID))
-		sql = strings.ReplaceAll(sql, manifest.SchemaName, newSchema)
-		if _, err := conn.Exec(ctx, sql); err != nil {
-			slog.Warn("system settings restore had errors", "error", err)
+		sql := remapFullBackupSQL(string(systemSQL), manifest, newSchema, newProject.ID)
+		if err := execSQLStatementsInTx(ctx, tx, sql); err != nil {
+			_ = tx.Rollback(ctx)
+			return nil, fmt.Errorf("system_settings.sql: %w", err)
 		}
 		slog.Info("system settings restored")
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit full restore: %w", err)
 	}
 
 	return map[string]any{
@@ -855,9 +1082,69 @@ func pgLiteral(v any) string {
 	case map[string]any, []any:
 		b, _ := json.Marshal(val)
 		return fmt.Sprintf("'%s'::jsonb", strings.ReplaceAll(string(b), "'", "''"))
+	case pgtype.Numeric:
+		return pgNumericSQLLiteral(val)
+	case *pgtype.Numeric:
+		if val == nil {
+			return "NULL"
+		}
+		return pgNumericSQLLiteral(*val)
 	default:
+		// pgx often returns NUMERIC/DECIMAL as pgtype.Numeric; fmt %v is not valid SQL.
+		if valuer, ok := v.(driver.Valuer); ok {
+			if s, ok := pgNumericFromValuer(valuer); ok {
+				return s
+			}
+		}
 		return fmt.Sprintf("%v", val)
 	}
+}
+
+func pgNumericSQLLiteral(n pgtype.Numeric) string {
+	if !n.Valid {
+		return "NULL"
+	}
+	if n.NaN {
+		return "'NaN'::numeric"
+	}
+	switch n.InfinityModifier {
+	case pgtype.Infinity:
+		return "'Infinity'::numeric"
+	case pgtype.NegativeInfinity:
+		return "'-Infinity'::numeric"
+	}
+	dv, err := n.Value()
+	if err != nil || dv == nil {
+		return "NULL"
+	}
+	s, ok := dv.(string)
+	if !ok || s == "" {
+		return "0"
+	}
+	return s
+}
+
+// pgNumericFromValuer handles *pgtype.Numeric passed as any without a static type switch.
+func pgNumericFromValuer(v driver.Valuer) (string, bool) {
+	dv, err := v.Value()
+	if err != nil {
+		return "NULL", true
+	}
+	if dv == nil {
+		return "NULL", true
+	}
+	s, ok := dv.(string)
+	if !ok {
+		return "", false
+	}
+	// Heuristic: numeric text from pgtype is a decimal/scientific string, not arbitrary text.
+	if len(s) > 0 && (s[0] == '-' || s[0] == '.' || (s[0] >= '0' && s[0] <= '9')) {
+		return s, true
+	}
+	if s == "NaN" {
+		return "'NaN'::numeric", true
+	}
+	return "", false
 }
 
 func sanitizeSchemaName(name string) string {

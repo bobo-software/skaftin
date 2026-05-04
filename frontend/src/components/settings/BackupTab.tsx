@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { 
   Database, 
@@ -14,10 +14,13 @@ import {
   Calendar,
   Power,
   PowerOff,
-  Settings
+  Settings,
+  Upload,
 } from 'lucide-react';
 import BackupService, { Backup } from '../../services/BackupService';
 import ToastUtils from '../../utils/ToastUtils';
+
+const RESTORE_CONFIRM_PHRASE = 'RESTORE';
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 Bytes';
@@ -31,6 +34,8 @@ const BackupTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const [backups, setBackups] = useState<Backup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
   const [creating, setCreating] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [backupName, setBackupName] = useState('');
@@ -41,8 +46,9 @@ const BackupTab = () => {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [restoreBackupId, setRestoreBackupId] = useState<string | null>(null);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [organizationId, setOrganizationId] = useState<number>(1);
+  const [restoreBackupType, setRestoreBackupType] = useState<'database' | 'full' | null>(null);
+  const [dropExisting, setDropExisting] = useState(false);
+  const [restoreConfirmInput, setRestoreConfirmInput] = useState('');
   
   // Automatic backup schedules
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -84,6 +90,33 @@ const BackupTab = () => {
       loadSchedules();
     }
   }, [projectId]);
+
+  const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !projectId) return;
+
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith('.sql') && !lower.endsWith('.zip')) {
+      ToastUtils.error('Only .sql (database) or .zip (full) backup files can be imported.');
+      return;
+    }
+
+    try {
+      setImporting(true);
+      const result = await BackupService.importBackupFromFile(parseInt(projectId, 10), file);
+      if (result.success) {
+        ToastUtils.success('Backup imported. You can restore it from the list below.');
+        await loadBackups();
+      } else {
+        ToastUtils.error(result.error || 'Import failed');
+      }
+    } catch (err: any) {
+      ToastUtils.error(err.message || 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const loadBackups = async () => {
     if (!projectId) return;
@@ -152,23 +185,40 @@ const BackupTab = () => {
     }
   };
 
+  const closeRestoreModal = () => {
+    setShowRestoreModal(false);
+    setRestoreBackupId(null);
+    setRestoreBackupType(null);
+    setDropExisting(false);
+    setRestoreConfirmInput('');
+  };
+
   const handleRestore = async () => {
-    if (!restoreBackupId || !newProjectName || !organizationId) {
-      ToastUtils.error('Please provide a project name');
+    if (!restoreBackupId || !restoreBackupType || !projectId) {
+      ToastUtils.error('Invalid restore selection');
       return;
     }
 
+    if (restoreConfirmInput.trim() !== RESTORE_CONFIRM_PHRASE) {
+      ToastUtils.error(`Type ${RESTORE_CONFIRM_PHRASE} to confirm`);
+      return;
+    }
     try {
       setRestoringId(restoreBackupId);
-      const result = await BackupService.restoreBackup(restoreBackupId, newProjectName, organizationId);
-
+      const result = await BackupService.restoreDatabaseBackup(
+        parseInt(projectId, 10),
+        restoreBackupId,
+        dropExisting
+      );
       if (result.success) {
-        ToastUtils.success(`Backup restored successfully! New project "${newProjectName}" created.`);
-        setShowRestoreModal(false);
-        setRestoreBackupId(null);
-        setNewProjectName('');
-        // Optionally navigate to the new project
-        // navigate(`/projects/${result.project.projectId}`);
+        ToastUtils.success(
+          restoreBackupType === 'full'
+            ? 'Full backup applied to this project (schema + settings).'
+            : 'Database backup applied to this project.'
+        );
+        ToastUtils.info('Reload the app or refresh data if tables do not update immediately.');
+        closeRestoreModal();
+        await loadBackups();
       } else {
         ToastUtils.error(result.error || 'Failed to restore backup');
       }
@@ -444,122 +494,121 @@ const BackupTab = () => {
     || !hasValidRetentionValue
     || (scheduleMode === 'advanced' ? !scheduleCron.trim() : frequency <= 0);
 
+  const inputCls = "w-full px-2.5 py-1.5 text-sm border border-dark-200 dark:border-dark-700 rounded-md bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500";
+  const labelCls = "block text-xs font-medium text-dark-600 dark:text-dark-400 mb-1";
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-dark-900 dark:text-white">Backups</h3>
-          <p className="text-sm text-dark-600 dark:text-dark-300 mt-1">
-            Create and manage database backups for your project
+    <div className="space-y-4">
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-dark-900 dark:text-white">Backups</h3>
+          <p className="text-xs text-dark-500 dark:text-dark-400 mt-0.5 truncate">
+            Create, import (.sql / .zip ≤64&nbsp;MiB), download, or restore. Restores apply to <strong>this</strong> project (database .sql or full .zip).
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="btn-primary flex items-center space-x-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Create Backup</span>
-        </button>
+        <div className="flex gap-1.5 shrink-0">
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".sql,.zip,application/sql,text/sql,application/zip"
+            className="hidden"
+            onChange={handleImportFileChange}
+          />
+          <button
+            type="button"
+            onClick={() => importFileRef.current?.click()}
+            disabled={importing || !projectId}
+            className="btn-secondary inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5"
+            title="Upload a backup file from another environment"
+          >
+            {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            Import
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="btn-primary inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New Backup
+          </button>
+        </div>
       </div>
 
       {/* Backups List */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-primary-600 dark:text-primary-400" />
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-5 h-5 animate-spin text-primary-600 dark:text-primary-400" />
         </div>
       ) : backups.length === 0 ? (
-        <div className="card text-center py-12">
-          <Database className="w-12 h-12 mx-auto text-dark-400 dark:text-dark-500 mb-4" />
-          <h4 className="text-lg font-medium text-dark-900 dark:text-white mb-2">No backups yet</h4>
-          <p className="text-sm text-dark-600 dark:text-dark-300 mb-4">
-            Create your first backup to protect your database
-          </p>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="btn-primary"
-          >
-            Create Backup
-          </button>
+        <div className="rounded-lg border border-dashed border-dark-200 dark:border-dark-700 py-6 text-center">
+          <Database className="w-8 h-8 mx-auto text-dark-300 dark:text-dark-600 mb-2" />
+          <p className="text-xs text-dark-500 dark:text-dark-400 mb-3">No backups yet</p>
+          <div className="flex gap-2 justify-center">
+            <button type="button" onClick={() => importFileRef.current?.click()} className="btn-secondary inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5" disabled={importing || !projectId}>
+              {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              Import
+            </button>
+            <button type="button" onClick={() => setShowCreateModal(true)} className="btn-primary text-xs px-2.5 py-1.5">
+              New Backup
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="rounded-lg border border-dark-200 dark:border-dark-700 divide-y divide-dark-100 dark:divide-dark-700/60 overflow-hidden">
           {backups.map((backup) => (
-            <div
-              key={backup.id}
-              className="card p-4 hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <Database className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-                    <h4 className="font-semibold text-dark-900 dark:text-white">
-                      {backup.name}
-                    </h4>
-                    <span className="px-2 py-1 text-xs rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">
-                      {backup.type}
-                    </span>
-                  </div>
-                  
-                  {backup.description && (
-                    <p className="text-sm text-dark-600 dark:text-dark-300 mb-2">
-                      {backup.description}
-                    </p>
-                  )}
-
-                  <div className="flex items-center space-x-4 text-xs text-dark-500 dark:text-dark-400">
-                    <div className="flex items-center space-x-1">
-                      <Clock className="w-3 h-3" />
-                      <span>{formatDate(backup.createdAt)}</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <HardDrive className="w-3 h-3" />
-                      <span>{formatFileSize(backup.size)}</span>
-                    </div>
-                  </div>
+            <div key={backup.id} className="flex items-center gap-3 px-3 py-2.5 bg-white dark:bg-dark-800 hover:bg-dark-50 dark:hover:bg-dark-750 transition-colors">
+              <Database className="w-4 h-4 text-primary-500 dark:text-primary-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-dark-900 dark:text-white truncate">{backup.name}</span>
+                  <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 shrink-0">{backup.type}</span>
                 </div>
-
-                <div className="flex items-center space-x-2 ml-4">
-                  <button
-                    onClick={() => handleDownload(backup.id)}
-                    disabled={downloadingId === backup.id}
-                    className="p-2 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700 text-dark-600 dark:text-dark-300 transition-colors disabled:opacity-50"
-                    title="Download"
-                  >
-                    {downloadingId === backup.id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Download className="w-4 h-4" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setRestoreBackupId(backup.id);
-                      setShowRestoreModal(true);
-                    }}
-                    disabled={restoringId === backup.id}
-                    className="p-2 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700 text-dark-600 dark:text-dark-300 transition-colors disabled:opacity-50"
-                    title="Restore"
-                  >
-                    {restoringId === backup.id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <RotateCcw className="w-4 h-4" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleDelete(backup.id)}
-                    disabled={deletingId === backup.id}
-                    className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 transition-colors disabled:opacity-50"
-                    title="Delete"
-                  >
-                    {deletingId === backup.id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </button>
+                {backup.description && (
+                  <p className="text-xs text-dark-500 dark:text-dark-400 truncate">{backup.description}</p>
+                )}
+                <div className="flex items-center gap-3 mt-0.5 text-[11px] text-dark-400 dark:text-dark-500">
+                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{formatDate(backup.createdAt)}</span>
+                  <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" />{formatFileSize(backup.size)}</span>
                 </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleDownload(backup.id)}
+                  disabled={downloadingId === backup.id}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-dark-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-dark-600 dark:text-dark-300 hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors disabled:opacity-50"
+                  title="Download backup file"
+                >
+                  {downloadingId === backup.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">Download</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRestoreBackupId(backup.id);
+                    setRestoreBackupType(backup.type);
+                    setRestoreConfirmInput('');
+                    setDropExisting(false);
+                    setShowRestoreModal(true);
+                  }}
+                  disabled={restoringId === backup.id}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors disabled:opacity-50"
+                  title={backup.type === 'full' ? 'Restore full backup (.zip) into this project' : 'Restore database backup (.sql) into this project'}
+                >
+                  {restoringId === backup.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">Restore</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(backup.id)}
+                  disabled={deletingId === backup.id}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-red-200 dark:border-red-800 bg-white dark:bg-dark-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors disabled:opacity-50"
+                  title="Delete this backup"
+                >
+                  {deletingId === backup.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                </button>
               </div>
             </div>
           ))}
@@ -567,122 +616,85 @@ const BackupTab = () => {
       )}
 
       {/* Automatic Backup Schedules Section */}
-      <div className="mt-8 pt-8 border-t border-dark-200 dark:border-dark-700">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-dark-900 dark:text-white flex items-center space-x-2">
-              <Calendar className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-              <span>Automatic Backups</span>
-            </h3>
-            <p className="text-sm text-dark-600 dark:text-dark-300 mt-1">
-              Schedule automatic backups to run at regular intervals
-            </p>
+      <div className="pt-3 border-t border-dark-200 dark:border-dark-700">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-primary-500 dark:text-primary-400" />
+            <h3 className="text-sm font-semibold text-dark-900 dark:text-white">Automatic Backups</h3>
+            <span className="text-xs text-dark-500 dark:text-dark-400">— scheduled at regular intervals</span>
           </div>
           <button
             onClick={() => openScheduleModal()}
-            className="btn-primary flex items-center space-x-2"
+            className="btn-primary inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5"
           >
-            <Plus className="w-4 h-4" />
-            <span>Create Schedule</span>
+            <Plus className="w-3.5 h-3.5" />
+            New Schedule
           </button>
         </div>
 
         {loadingSchedules ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-primary-600 dark:text-primary-400" />
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="w-5 h-5 animate-spin text-primary-600 dark:text-primary-400" />
           </div>
         ) : schedules.length === 0 ? (
-          <div className="card text-center py-8">
-            <Calendar className="w-10 h-10 mx-auto text-dark-400 dark:text-dark-500 mb-3" />
-            <h4 className="text-base font-medium text-dark-900 dark:text-white mb-2">No backup schedules</h4>
-            <p className="text-sm text-dark-600 dark:text-dark-300 mb-4">
-              Create a schedule to automatically backup your database
-            </p>
-            <button
-              onClick={() => openScheduleModal()}
-              className="btn-primary"
-            >
-              Create Schedule
+          <div className="rounded-lg border border-dashed border-dark-200 dark:border-dark-700 py-5 text-center">
+            <Calendar className="w-7 h-7 mx-auto text-dark-300 dark:text-dark-600 mb-2" />
+            <p className="text-xs text-dark-500 dark:text-dark-400 mb-2">No schedules yet</p>
+            <button onClick={() => openScheduleModal()} className="btn-primary text-xs px-2.5 py-1.5">
+              New Schedule
             </button>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="rounded-lg border border-dark-200 dark:border-dark-700 divide-y divide-dark-100 dark:divide-dark-700/60 overflow-hidden">
             {schedules.map((schedule) => (
-              <div
-                key={schedule.id}
-                className="card p-4 hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <Calendar className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-                      <h4 className="font-semibold text-dark-900 dark:text-white">
-                        {schedule.name}
-                      </h4>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        schedule.enabled
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-                      }`}>
-                        {schedule.enabled ? 'Active' : 'Disabled'}
-                      </span>
-                    </div>
-                    
-                    {schedule.description && (
-                      <p className="text-sm text-dark-600 dark:text-dark-300 mb-2">
-                        {schedule.description}
-                      </p>
-                    )}
-
-                    <div className="flex items-center space-x-4 text-xs text-dark-500 dark:text-dark-400">
-                      <div className="flex items-center space-x-1">
-                        <Clock className="w-3 h-3" />
-                        <span className="font-mono">{schedule.schedule}</span>
-                      </div>
-                      {schedule.last_run_at && (
-                        <div className="flex items-center space-x-1">
-                          <span>Last run: {formatDate(schedule.last_run_at)}</span>
-                        </div>
-                      )}
-                      {schedule.retention_days && (
-                        <div className="flex items-center space-x-1">
-                          <span>Retention: {schedule.retention_days} days</span>
-                        </div>
-                      )}
-                    </div>
+              <div key={schedule.id} className="flex items-center gap-3 px-3 py-2.5 bg-white dark:bg-dark-800 hover:bg-dark-50 dark:hover:bg-dark-750 transition-colors">
+                <Calendar className="w-4 h-4 text-primary-500 dark:text-primary-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-dark-900 dark:text-white">{schedule.name}</span>
+                    <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded shrink-0 ${
+                      schedule.enabled
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                        : 'bg-dark-100 dark:bg-dark-700 text-dark-500 dark:text-dark-400'
+                    }`}>
+                      {schedule.enabled ? 'Active' : 'Disabled'}
+                    </span>
                   </div>
-
-                  <div className="flex items-center space-x-2 ml-4">
-                    <button
-                      onClick={() => handleToggleSchedule(schedule)}
-                      className={`p-2 rounded-lg transition-colors ${
-                        schedule.enabled
-                          ? 'hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-600 dark:text-orange-400'
-                          : 'hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600 dark:text-green-400'
-                      }`}
-                      title={schedule.enabled ? 'Disable' : 'Enable'}
-                    >
-                      {schedule.enabled ? (
-                        <PowerOff className="w-4 h-4" />
-                      ) : (
-                        <Power className="w-4 h-4" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => openScheduleModal(schedule)}
-                      className="p-2 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700 text-dark-600 dark:text-dark-300 transition-colors"
-                      title="Edit"
-                    >
-                      <Settings className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteSchedule(schedule.id)}
-                      className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  {schedule.description && (
+                    <p className="text-xs text-dark-500 dark:text-dark-400 truncate">{schedule.description}</p>
+                  )}
+                  <div className="flex items-center gap-3 mt-0.5 text-[11px] text-dark-400 dark:text-dark-500">
+                    <span className="flex items-center gap-1 font-mono"><Clock className="w-3 h-3" />{schedule.schedule}</span>
+                    {schedule.last_run_at && <span>last: {formatDate(schedule.last_run_at)}</span>}
+                    {schedule.retention_days && <span>retain {schedule.retention_days}d</span>}
                   </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleToggleSchedule(schedule)}
+                    className={`p-1.5 rounded transition-colors ${
+                      schedule.enabled
+                        ? 'hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-500 dark:text-orange-400'
+                        : 'hover:bg-green-50 dark:hover:bg-green-900/20 text-green-500 dark:text-green-400'
+                    }`}
+                    title={schedule.enabled ? 'Disable' : 'Enable'}
+                  >
+                    {schedule.enabled ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    onClick={() => openScheduleModal(schedule)}
+                    className="p-1.5 rounded hover:bg-dark-100 dark:hover:bg-dark-700 text-dark-500 dark:text-dark-400 transition-colors"
+                    title="Edit"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSchedule(schedule.id)}
+                    className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 dark:text-red-400 transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -692,94 +704,37 @@ const BackupTab = () => {
 
       {/* Create Backup Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-dark-800 rounded-xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between p-6 border-b border-dark-200 dark:border-dark-700">
-              <h3 className="text-lg font-semibold text-dark-900 dark:text-white">Create Backup</h3>
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setBackupName('');
-                  setBackupDescription('');
-                }}
-                className="p-2 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700"
-              >
-                <X className="w-5 h-5 text-dark-600 dark:text-dark-300" />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-dark-800 rounded-lg shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-dark-200 dark:border-dark-700">
+              <h3 className="text-sm font-semibold text-dark-900 dark:text-white">Create Backup</h3>
+              <button onClick={() => { setShowCreateModal(false); setBackupName(''); setBackupDescription(''); }} className="p-1 rounded hover:bg-dark-100 dark:hover:bg-dark-700">
+                <X className="w-4 h-4 text-dark-500 dark:text-dark-400" />
               </button>
             </div>
-
-            <form onSubmit={handleCreateBackup} className="p-6 space-y-4">
+            <form onSubmit={handleCreateBackup} className="p-4 space-y-3">
               <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Backup Type *
-                </label>
-                <select
-                  value={backupType}
-                  onChange={(e) => setBackupType(e.target.value as 'database' | 'full')}
-                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
-                >
+                <label className={labelCls}>Type *</label>
+                <select value={backupType} onChange={(e) => setBackupType(e.target.value as 'database' | 'full')} className={inputCls}>
                   <option value="database">Database Only (Schema + Data)</option>
-                  <option value="full">Full Backup (Database + Settings)</option>
+                  <option value="full">Full (Database + Settings)</option>
                 </select>
-                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                  {backupType === 'database' 
-                    ? 'Backs up only your project schema and data' 
-                    : 'Backs up everything: database, users, roles, settings, and providers'}
+                <p className="text-[11px] text-dark-400 dark:text-dark-500 mt-1">
+                  {backupType === 'database' ? 'Schema and data only' : 'Database, users, roles, settings, providers'}
                 </p>
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Backup Name (optional)
-                </label>
-                <input
-                  type="text"
-                  value={backupName}
-                  onChange={(e) => setBackupName(e.target.value)}
-                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
-                  placeholder="Auto-generated if not provided"
-                />
+                <label className={labelCls}>Name (optional)</label>
+                <input type="text" value={backupName} onChange={(e) => setBackupName(e.target.value)} className={inputCls} placeholder="Auto-generated if blank" />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Description (optional)
-                </label>
-                <textarea
-                  value={backupDescription}
-                  onChange={(e) => setBackupDescription(e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white resize-none"
-                  placeholder="Add a description for this backup..."
-                />
+                <label className={labelCls}>Description (optional)</label>
+                <textarea value={backupDescription} onChange={(e) => setBackupDescription(e.target.value)} rows={2} className={inputCls + " resize-none"} placeholder="Notes about this backup…" />
               </div>
-
-              <div className="flex items-center space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setBackupName('');
-                    setBackupDescription('');
-                  }}
-                  className="flex-1 btn-secondary"
-                  disabled={creating}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 btn-primary"
-                  disabled={creating}
-                >
-                  {creating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
-                      Creating...
-                    </>
-                  ) : (
-                    'Create Backup'
-                  )}
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={() => { setShowCreateModal(false); setBackupName(''); setBackupDescription(''); }} className="flex-1 btn-secondary text-xs py-1.5" disabled={creating}>Cancel</button>
+                <button type="submit" className="flex-1 btn-primary text-xs py-1.5" disabled={creating}>
+                  {creating ? <><Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1.5" />Creating…</> : 'Create'}
                 </button>
               </div>
             </form>
@@ -788,79 +743,44 @@ const BackupTab = () => {
       )}
 
       {/* Restore Backup Modal */}
-      {showRestoreModal && restoreBackupId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-dark-800 rounded-xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between p-6 border-b border-dark-200 dark:border-dark-700">
-              <h3 className="text-lg font-semibold text-dark-900 dark:text-white">Restore Backup</h3>
-              <button
-                onClick={() => {
-                  setShowRestoreModal(false);
-                  setRestoreBackupId(null);
-                }}
-                className="p-2 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700"
-              >
-                <X className="w-5 h-5 text-dark-600 dark:text-dark-300" />
+      {showRestoreModal && restoreBackupId && restoreBackupType && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-dark-800 rounded-lg shadow-2xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-dark-200 dark:border-dark-700">
+              <h3 className="text-sm font-semibold text-dark-900 dark:text-white">
+                {restoreBackupType === 'full' ? 'Restore full backup to this project' : 'Restore database backup'}
+              </h3>
+              <button type="button" onClick={closeRestoreModal} className="p-1 rounded hover:bg-dark-100 dark:hover:bg-dark-700">
+                <X className="w-4 h-4 text-dark-500 dark:text-dark-400" />
               </button>
             </div>
-
-            <div className="p-6 space-y-4">
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                <div className="flex items-start space-x-3">
-                  <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-                  <div>
-                    <h4 className="font-medium text-blue-900 dark:text-blue-200 mb-1">
-                      Create New Project from Backup
-                    </h4>
-                    <p className="text-sm text-blue-700 dark:text-blue-300">
-                      This will create a brand new project with the backup data. Your current project will not be affected.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  New Project Name *
-                </label>
-                <input
-                  type="text"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
-                  placeholder="Enter name for the new project"
-                  required
-                />
-                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                  A new project will be created with this name
+            <div className="p-4 space-y-3">
+              <div className="flex items-start gap-2.5 p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                <AlertCircle className="w-4 h-4 text-amber-500 dark:text-amber-400 mt-0.5 shrink-0" />
+                <p className="text-xs text-amber-800 dark:text-amber-300">
+                  {restoreBackupType === 'full'
+                    ? 'Applies this .zip to this project: schema data and system settings are remapped here. Irreversible.'
+                    : 'SQL runs against this project schema. Irreversible data changes possible.'}
                 </p>
               </div>
-
-              <div className="flex items-center space-x-3 pt-4">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input type="checkbox" checked={dropExisting} onChange={(e) => setDropExisting(e.target.checked)} className="mt-0.5 rounded border-dark-300" />
+                <span className="text-xs text-dark-600 dark:text-dark-300">Drop existing tables before restore (clean replay; destructive)</span>
+              </label>
+              <div>
+                <label className={labelCls}>Confirmation *</label>
+                <input type="text" value={restoreConfirmInput} onChange={(e) => setRestoreConfirmInput(e.target.value)} className={inputCls + " font-mono"} placeholder={RESTORE_CONFIRM_PHRASE} autoComplete="off" />
+                <p className="text-[11px] text-dark-400 dark:text-dark-500 mt-1">Type <span className="font-mono font-semibold">{RESTORE_CONFIRM_PHRASE}</span> to confirm.</p>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={closeRestoreModal} className="flex-1 btn-secondary text-xs py-1.5" disabled={restoringId === restoreBackupId}>Cancel</button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowRestoreModal(false);
-                    setRestoreBackupId(null);
-                  }}
-                  className="flex-1 btn-secondary"
-                  disabled={restoringId === restoreBackupId}
-                >
-                  Cancel
-                </button>
-                <button
                   onClick={handleRestore}
-                  className="flex-1 btn-primary bg-amber-600 hover:bg-amber-700"
-                  disabled={restoringId === restoreBackupId}
+                  className="flex-1 btn-primary text-xs py-1.5 bg-amber-600 hover:bg-amber-700"
+                  disabled={restoringId === restoreBackupId || restoreConfirmInput.trim() !== RESTORE_CONFIRM_PHRASE}
                 >
-                  {restoringId === restoreBackupId ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
-                      Restoring...
-                    </>
-                  ) : (
-                    'Restore Backup'
-                  )}
+                  {restoringId === restoreBackupId ? <><Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1.5" />Restoring…</> : 'Restore'}
                 </button>
               </div>
             </div>
@@ -870,212 +790,114 @@ const BackupTab = () => {
 
       {/* Backup Schedule Modal */}
       {showScheduleModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-dark-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-dark-200 dark:border-dark-700">
-              <h3 className="text-lg font-semibold text-dark-900 dark:text-white">
-                {editingSchedule ? 'Edit Backup Schedule' : 'Create Backup Schedule'}
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-dark-800 rounded-lg shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-dark-200 dark:border-dark-700">
+              <h3 className="text-sm font-semibold text-dark-900 dark:text-white">
+                {editingSchedule ? 'Edit Schedule' : 'New Schedule'}
               </h3>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setScheduleMode(scheduleMode === 'simple' ? 'advanced' : 'simple')}
-                  className="px-3 py-1.5 text-sm text-dark-600 dark:text-dark-400 hover:bg-dark-100 dark:hover:bg-dark-700 rounded-lg transition-colors"
+                  className="px-2.5 py-1 text-xs text-dark-500 dark:text-dark-400 hover:bg-dark-100 dark:hover:bg-dark-700 rounded transition-colors"
                 >
                   {scheduleMode === 'simple' ? 'Advanced' : 'Simple'}
                 </button>
-                <button
-                  onClick={() => {
-                    setShowScheduleModal(false);
-                    setEditingSchedule(null);
-                    resetScheduleForm();
-                  }}
-                  className="p-2 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700"
-                >
-                  <X className="w-5 h-5 text-dark-600 dark:text-dark-300" />
+                <button onClick={() => { setShowScheduleModal(false); setEditingSchedule(null); resetScheduleForm(); }} className="p-1 rounded hover:bg-dark-100 dark:hover:bg-dark-700">
+                  <X className="w-4 h-4 text-dark-500 dark:text-dark-400" />
                 </button>
               </div>
             </div>
 
-            <form onSubmit={editingSchedule ? handleUpdateSchedule : handleCreateSchedule} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Schedule Name *
-                </label>
-                <input
-                  type="text"
-                  value={scheduleName}
-                  onChange={(e) => setScheduleName(e.target.value)}
-                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
-                  placeholder="Daily Backup"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Description (optional)
-                </label>
-                <textarea
-                  value={scheduleDescription}
-                  onChange={(e) => setScheduleDescription(e.target.value)}
-                  rows={2}
-                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white resize-none"
-                  placeholder="Automatic daily backup of production database"
-                />
+            <form onSubmit={editingSchedule ? handleUpdateSchedule : handleCreateSchedule} className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className={labelCls}>Name *</label>
+                  <input type="text" value={scheduleName} onChange={(e) => setScheduleName(e.target.value)} className={inputCls} placeholder="Daily Backup" required />
+                </div>
+                <div className="col-span-2">
+                  <label className={labelCls}>Description</label>
+                  <input type="text" value={scheduleDescription} onChange={(e) => setScheduleDescription(e.target.value)} className={inputCls} placeholder="Optional notes…" />
+                </div>
               </div>
 
               {scheduleMode === 'simple' ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                      Frequency
-                    </label>
-                    <div className="flex items-center space-x-3">
-                      <select
-                        value={intervalType}
-                        onChange={(e) => setIntervalType(e.target.value as any)}
-                        className="px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
-                      >
-                        <option value="minute">Minute(s)</option>
-                        <option value="hour">Hour(s)</option>
-                        <option value="day">Day(s)</option>
-                        <option value="week">Week(s)</option>
-                        <option value="month">Month(s)</option>
-                      </select>
-                      <input
-                        type="number"
-                        min="1"
-                        value={frequency}
-                        onChange={(e) => setFrequency(parseInt(e.target.value) || 1)}
-                        className="w-24 px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
-                      />
-                    </div>
-                    <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                      Cron: <code className="font-mono">{scheduleCron}</code>
-                    </p>
+                <div>
+                  <label className={labelCls}>Frequency</label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-dark-500 dark:text-dark-400 shrink-0">Every</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={frequency}
+                      onChange={(e) => setFrequency(parseInt(e.target.value) || 1)}
+                      className="w-16 px-2.5 py-1.5 text-sm border border-dark-200 dark:border-dark-700 rounded-md bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    />
+                    <select value={intervalType} onChange={(e) => setIntervalType(e.target.value as any)} className="flex-1 px-2.5 py-1.5 text-sm border border-dark-200 dark:border-dark-700 rounded-md bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500">
+                      <option value="minute">Minute(s)</option>
+                      <option value="hour">Hour(s)</option>
+                      <option value="day">Day(s)</option>
+                      <option value="week">Week(s)</option>
+                      <option value="month">Month(s)</option>
+                    </select>
                   </div>
+                  <p className="text-[11px] text-dark-400 dark:text-dark-500 mt-1 font-mono">{scheduleCron}</p>
                 </div>
               ) : (
                 <div>
-                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                    Cron Expression *
-                  </label>
-                  <input
-                    type="text"
-                    value={scheduleCron}
-                    onChange={(e) => setScheduleCron(e.target.value)}
-                    className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white font-mono"
-                    placeholder="0 2 * * *"
-                    required
-                  />
-                  <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                    Format: minute hour day month weekday (e.g., "0 2 * * *" = daily at 2 AM)
-                  </p>
+                  <label className={labelCls}>Cron Expression *</label>
+                  <input type="text" value={scheduleCron} onChange={(e) => setScheduleCron(e.target.value)} className={inputCls + " font-mono"} placeholder="0 2 * * *" required />
+                  <p className="text-[11px] text-dark-400 dark:text-dark-500 mt-1">min hour day month weekday — e.g. <code>0 2 * * *</code> = daily 2 AM</p>
                 </div>
               )}
 
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Backup Type
-                </label>
-                <select
-                  value={scheduleBackupType}
-                  onChange={(e) => setScheduleBackupType(e.target.value as 'database' | 'full')}
-                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
-                >
-                  <option value="database">Database Only</option>
-                  <option value="full">Full Backup (Database + Settings)</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Backup Type</label>
+                  <select value={scheduleBackupType} onChange={(e) => setScheduleBackupType(e.target.value as 'database' | 'full')} className={inputCls}>
+                    <option value="database">Database Only</option>
+                    <option value="full">Full (DB + Settings)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Name Prefix</label>
+                  <input type="text" value={schedulePrefix} onChange={(e) => setSchedulePrefix(e.target.value)} className={inputCls} placeholder="auto-backup" />
+                </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Backup Name Prefix (optional)
-                </label>
-                <input
-                  type="text"
-                  value={schedulePrefix}
-                  onChange={(e) => setSchedulePrefix(e.target.value)}
-                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
-                  placeholder="daily-backup"
-                />
-                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                  Backups will be named: {schedulePrefix || 'auto-backup'}-{new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19)}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Retention Policy
-                </label>
-                <select
-                  value={retentionPolicy}
-                  onChange={(e) => setRetentionPolicy(e.target.value as any)}
-                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
-                >
-                  <option value="keep_all">Keep All Backups</option>
-                  <option value="keep_count">Keep Last N Backups</option>
-                  <option value="keep_days">Keep Backups from Last N Days</option>
+                <label className={labelCls}>Retention Policy</label>
+                <select value={retentionPolicy} onChange={(e) => setRetentionPolicy(e.target.value as any)} className={inputCls}>
+                  <option value="keep_all">Keep All</option>
+                  <option value="keep_count">Keep Last N</option>
+                  <option value="keep_days">Keep Last N Days</option>
                 </select>
               </div>
 
               {retentionPolicy !== 'keep_all' && (
                 <div>
-                  <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                    {retentionPolicy === 'keep_count' ? 'Number of Backups to Keep' : 'Number of Days to Keep'}
-                  </label>
+                  <label className={labelCls}>{retentionPolicy === 'keep_count' ? 'Backups to keep' : 'Days to keep'}</label>
                   <input
                     type="number"
                     min="1"
                     value={retentionValue || ''}
                     onChange={(e) => setRetentionValue(e.target.value ? parseInt(e.target.value) : undefined)}
-                    className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                    className={inputCls}
                     placeholder={retentionPolicy === 'keep_count' ? '5' : '30'}
                     required
                   />
-                  <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                    {retentionPolicy === 'keep_count' 
-                      ? 'Old backups beyond this count will be automatically deleted'
-                      : 'Backups older than this will be automatically deleted'}
-                  </p>
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
-                  Legacy Retention Days (optional, deprecated)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={retentionDays || ''}
-                  onChange={(e) => setRetentionDays(e.target.value ? parseInt(e.target.value) : undefined)}
-                  className="w-full px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
-                  placeholder="30"
-                />
-                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1">
-                  Use the Retention Policy above instead. This field is kept for backwards compatibility.
-                </p>
+                <label className={labelCls}>Legacy Retention Days <span className="text-dark-400">(deprecated)</span></label>
+                <input type="number" min="1" value={retentionDays || ''} onChange={(e) => setRetentionDays(e.target.value ? parseInt(e.target.value) : undefined)} className={inputCls} placeholder="30" />
               </div>
 
-              <div className="flex items-center space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowScheduleModal(false);
-                    setEditingSchedule(null);
-                    resetScheduleForm();
-                  }}
-                  className="flex-1 btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 btn-primary"
-                  disabled={isScheduleSubmitDisabled}
-                >
-                  {editingSchedule ? 'Update Schedule' : 'Create Schedule'}
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={() => { setShowScheduleModal(false); setEditingSchedule(null); resetScheduleForm(); }} className="flex-1 btn-secondary text-xs py-1.5">Cancel</button>
+                <button type="submit" className="flex-1 btn-primary text-xs py-1.5" disabled={isScheduleSubmitDisabled}>
+                  {editingSchedule ? 'Update' : 'Create'}
                 </button>
               </div>
             </form>

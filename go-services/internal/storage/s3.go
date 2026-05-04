@@ -44,6 +44,18 @@ func (s *S3Client) BucketExists(ctx context.Context, bucket string) (bool, error
 	return s.client.BucketExists(ctx, bucket)
 }
 
+// EnsureBucket creates the bucket if it does not exist (idempotent for local MinIO).
+func (s *S3Client) EnsureBucket(ctx context.Context, bucket string) error {
+	exists, err := s.client.BucketExists(ctx, bucket)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	return s.client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
+}
+
 // ListObjects lists objects in a bucket with an optional prefix and max key limit.
 func (s *S3Client) ListObjects(ctx context.Context, bucket, prefix string, maxKeys int) ([]ObjectInfo, error) {
 	opts := minio.ListObjectsOptions{
