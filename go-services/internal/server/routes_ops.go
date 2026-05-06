@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/skaftin/go-services/internal/appcron"
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/backups"
 	"github.com/skaftin/go-services/internal/communications"
@@ -110,8 +111,12 @@ func registerOperationalRoutes(
 		return nil, err
 	}
 
+	appCronScheduler := appcron.NewScheduler(pool)
+	appCronScheduler.Start()
+
 	healthCron := healthcron.New()
 	if err := healthCron.Start(); err != nil {
+		appCronScheduler.Stop()
 		maintenanceScheduler.Stop()
 		workflowScheduler.Stop()
 		backupScheduler.Stop()
@@ -120,6 +125,7 @@ func registerOperationalRoutes(
 
 	cleanup := func() {
 		healthCron.Stop()
+		appCronScheduler.Stop()
 		backupScheduler.Stop()
 		workflowScheduler.Stop()
 		maintenanceScheduler.Stop()

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Clock,
   Play,
@@ -16,7 +16,6 @@ import RequestUtils from '../../utils/RequestUtils';
 import ApiRoutes from '../../constants/ApiRoutes';
 
 const COMMAND_PREVIEW_LEN = 96;
-const CLIENT_CRON_INTERVAL_MS = 30_000;
 
 /** Preset schedules (UTC). `custom` uses the cron text field. */
 type SchedulePreset = 'weekly' | 'daily' | 'hourly' | 'minute' | '30seconds' | 'custom';
@@ -66,16 +65,6 @@ interface CronManagerProps {
   projectId: string;
 }
 
-function slotKey(job: CronJob): string {
-  return `${job.jobid}|${job.schedule.trim()}`;
-}
-
-interface ClientRunInfo {
-  at: string;
-  ok: boolean;
-  err?: string;
-}
-
 const CronManager = ({ projectId }: CronManagerProps) => {
   const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,11 +75,6 @@ const CronManager = ({ projectId }: CronManagerProps) => {
   const [selectedJob, setSelectedJob] = useState<CronJob | null>(null);
   const [jobHistory, setJobHistory] = useState<CronJobHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [clientRunByJob, setClientRunByJob] = useState<Record<number, ClientRunInfo>>({});
-
-  const cronJobsRef = useRef<CronJob[]>([]);
-  const lastClientSlotRef = useRef<Record<string, number>>({});
-
   // Form state
   const [formData, setFormData] = useState({
     jobName: '',
@@ -98,20 +82,6 @@ const CronManager = ({ projectId }: CronManagerProps) => {
     command: '',
   });
   const [schedulePreset, setSchedulePreset] = useState<SchedulePreset>('daily');
-
-  useEffect(() => {
-    cronJobsRef.current = cronJobs;
-  }, [cronJobs]);
-
-  useEffect(() => {
-    const valid = new Set(cronJobs.map((j) => slotKey(j)));
-    const slots = lastClientSlotRef.current;
-    for (const k of Object.keys(slots)) {
-      if (!valid.has(k)) {
-        delete slots[k];
-      }
-    }
-  }, [cronJobs]);
 
   const fetchCronJobs = useCallback(async () => {
     setLoading(true);
@@ -135,91 +105,6 @@ const CronManager = ({ projectId }: CronManagerProps) => {
   useEffect(() => {
     fetchCronJobs();
   }, [fetchCronJobs]);
-
-  const recordCronClientRun = useCallback(
-    async (job: CronJob, success: boolean, message: string) => {
-      try {
-        const token = localStorage.getItem('skaftin-token') || '';
-        if (!token || !projectId) return;
-        const cmd = job.command.length > 4000 ? job.command.slice(0, 4000) : job.command;
-        await RequestUtils.post(`/api/database/${projectId}/cron/${job.jobid}/runs`, token, {
-          success,
-          message,
-          command: cmd,
-        });
-      } catch {
-        // best-effort history; ignore logging failures
-      }
-    },
-    [projectId]
-  );
-
-  const runClientCronTick = useCallback(async () => {
-    const token = localStorage.getItem('skaftin-token') || '';
-    if (!token || !projectId) return;
-
-    const jobs = cronJobsRef.current.filter((j) => j.active);
-    for (const job of jobs) {
-      const parts = job.schedule.trim().split(/\s+/);
-      if (parts.length !== 5 && parts.length !== 6) continue;
-
-      const key = slotKey(job);
-      try {
-        const interval = CronExpressionParser.parse(job.schedule.trim(), {
-          currentDate: new Date(),
-          tz: 'UTC',
-        });
-        const prevMs = interval.prev().toDate().getTime();
-        const last = lastClientSlotRef.current[key] ?? 0;
-        if (prevMs <= last) continue;
-
-        const response = await RequestUtils.post(
-          ApiRoutes.DATABASE.EXECUTE_QUERY(projectId),
-          token,
-          { query: job.command }
-        );
-
-        if (response?.success) {
-          lastClientSlotRef.current[key] = prevMs;
-          setClientRunByJob((prev) => ({
-            ...prev,
-            [job.jobid]: { at: new Date().toISOString(), ok: true },
-          }));
-          void recordCronClientRun(job, true, '');
-        } else {
-          const errMsg = response?.message || 'Query execution failed';
-          setClientRunByJob((prev) => ({
-            ...prev,
-            [job.jobid]: {
-              at: new Date().toISOString(),
-              ok: false,
-              err: errMsg,
-            },
-          }));
-          void recordCronClientRun(job, false, errMsg);
-        }
-      } catch (err: any) {
-        console.error('Client cron tick error', job.jobid, err);
-        const errMsg = err?.message || String(err);
-        setClientRunByJob((prev) => ({
-          ...prev,
-          [job.jobid]: {
-            at: new Date().toISOString(),
-            ok: false,
-            err: errMsg,
-          },
-        }));
-        void recordCronClientRun(job, false, errMsg);
-      }
-    }
-  }, [projectId, recordCronClientRun]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      void runClientCronTick();
-    }, CLIENT_CRON_INTERVAL_MS);
-    return () => window.clearInterval(id);
-  }, [runClientCronTick]);
 
   const fetchJobHistory = async (jobId: number) => {
     setHistoryLoading(true);
@@ -408,9 +293,8 @@ const CronManager = ({ projectId }: CronManagerProps) => {
             Schedule and manage automated database tasks
           </p>
           <p className="text-xs text-dark-500 dark:text-dark-400 mt-2 max-w-3xl">
-            Jobs are stored in your project schema (not pg_cron). While this tab is open, the app
-            checks every 30 seconds for active jobs whose schedule matches the current time (UTC)
-            and runs their SQL via the query API. Closing this tab stops scheduled runs.
+            Jobs are stored in your project schema (not pg_cron) and are executed server-side by
+            the API scheduler in UTC, even when this page is closed.
           </p>
         </div>
         <button
@@ -468,9 +352,6 @@ const CronManager = ({ projectId }: CronManagerProps) => {
                   <th scope="col" className="px-4 py-3 font-medium whitespace-nowrap">
                     Active
                   </th>
-                  <th scope="col" className="px-4 py-3 font-medium whitespace-nowrap">
-                    Last client run
-                  </th>
                   <th scope="col" className="px-4 py-3 font-medium text-right whitespace-nowrap">
                     Actions
                   </th>
@@ -478,7 +359,6 @@ const CronManager = ({ projectId }: CronManagerProps) => {
               </thead>
               <tbody>
                 {cronJobs.map((job) => {
-                  const run = clientRunByJob[job.jobid];
                   const cmdPreview =
                     job.command.length > COMMAND_PREVIEW_LEN
                       ? `${job.command.slice(0, COMMAND_PREVIEW_LEN)}…`
@@ -508,16 +388,6 @@ const CronManager = ({ projectId }: CronManagerProps) => {
                         >
                           {job.active ? 'Yes' : 'No'}
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-dark-600 dark:text-dark-400 text-xs min-w-[10rem]">
-                        {run ? (
-                          <span className={run.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                            {new Date(run.at).toLocaleString()}
-                            {!run.ok && run.err ? ` — ${run.err}` : ''}
-                          </span>
-                        ) : (
-                          <span className="text-dark-400">—</span>
-                        )}
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
