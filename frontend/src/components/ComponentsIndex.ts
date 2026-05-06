@@ -28,6 +28,8 @@ export { default as CreateTableModal } from './modals/CreateTableModal';
 export { default as ExportModal } from './modals/ExportModal';
 export { default as ScheduleWorkflowModal } from './modals/ScheduleWorkflowModal';
 export { default as WorkflowExecutionHistoryModal } from './modals/WorkflowExecutionHistoryModal';
+export { default as CronJobFormModal } from './modals/CronJobFormModal';
+export { default as CronJobHistoryModal } from './modals/CronJobHistoryModal';
 
 // ---------- Database Components ---------- //
 export { default as TableViewer } from './database/TableViewer';
