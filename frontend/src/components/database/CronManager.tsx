@@ -3,6 +3,7 @@ import { Clock, Play, Pause, Trash2, Plus, Edit2, History, AlertCircle } from 'l
 import RequestUtils from '../../utils/RequestUtils';
 import CronJobFormModal from '../modals/CronJobFormModal';
 import CronJobHistoryModal from '../modals/CronJobHistoryModal';
+import DeleteConfirmModal from '../modals/DeleteConfirmModal';
 
 const COMMAND_PREVIEW_LEN = 72;
 
@@ -30,6 +31,8 @@ const CronManager = ({ projectId }: CronManagerProps) => {
   const [historyJobId, setHistoryJobId] = useState<number | null>(null);
   const [historyJobName, setHistoryJobName] = useState('');
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [deleteJobId, setDeleteJobId] = useState<number | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const fetchCronJobs = useCallback(async () => {
     setLoading(true);
@@ -88,14 +91,21 @@ const CronManager = ({ projectId }: CronManagerProps) => {
     }
   };
 
-  const handleDeleteJob = async (jobId: number) => {
-    if (!confirm('Delete this cron job?')) return;
+  const confirmDelete = async () => {
+    if (deleteJobId == null) return;
+    setDeleteLoading(true);
     try {
       const token = localStorage.getItem('skaftin-token') || '';
-      const response = await RequestUtils.delete(`/api/database/${projectId}/cron/${jobId}`, token, {});
-      if (response.success) fetchCronJobs();
+      const response = await RequestUtils.delete(`/api/database/${projectId}/cron/${deleteJobId}`, token, {});
+      if (response.success) {
+        setDeleteJobId(null);
+        fetchCronJobs();
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to delete cron job');
+      setDeleteJobId(null);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -238,7 +248,7 @@ const CronManager = ({ projectId }: CronManagerProps) => {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDeleteJob(job.jobid)}
+                            onClick={() => setDeleteJobId(job.jobid)}
                             className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                             title="Delete"
                           >
@@ -269,6 +279,15 @@ const CronManager = ({ projectId }: CronManagerProps) => {
         jobName={historyJobName}
         projectId={projectId}
         onClose={() => { setShowHistoryModal(false); setHistoryJobId(null); }}
+      />
+
+      <DeleteConfirmModal
+        isOpen={deleteJobId != null}
+        onClose={() => setDeleteJobId(null)}
+        onConfirm={confirmDelete}
+        itemName="cron job"
+        message="This will permanently delete the job and all its run history. This action cannot be undone."
+        loading={deleteLoading}
       />
     </div>
   );
