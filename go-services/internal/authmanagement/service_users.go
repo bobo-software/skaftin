@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -57,6 +58,24 @@ func (s *Service) SetUserPassword(ctx context.Context, projectID, userID int, pa
 	if err != nil {
 		return err
 	}
+	user, err := s.store.GetUser(ctx, schema, userID)
+	if err != nil {
+		return fmt.Errorf("load user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+
+	// SuperTokens is the source of truth for login, so sync it first and surface
+	// any failure. If we only updated the local bcrypt hash and ST silently kept
+	// the old password, the user would be locked out: ST sign-in would fail,
+	// the bcrypt fallback would try to migrate by signing the user up in ST,
+	// but the existing ST identity makes SignUp return EMAIL_ALREADY_EXISTS_ERROR,
+	// so login would always end with ErrInvalidCredentials.
+	if err := s.syncSuperTokensPassword(ctx, schema, projectID, user, password); err != nil {
+		return fmt.Errorf("update SuperTokens password: %w", err)
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
@@ -64,28 +83,97 @@ func (s *Service) SetUserPassword(ctx context.Context, projectID, userID int, pa
 	if err := s.store.SetUserPassword(ctx, schema, userID, string(hash)); err != nil {
 		return err
 	}
-	user, err := s.store.GetUser(ctx, schema, userID)
-	if err != nil || user == nil {
-		return err
+	return nil
+}
+
+// syncSuperTokensPassword aligns SuperTokens with the requested password,
+// recovering from stale or missing recipe identities (UNKNOWN_USER_ID_ERROR,
+// orphaned ST records, etc.) by falling back to delete + sign up. Mirrors the
+// recovery flow in (*Service).ChangePasswordRequest.
+func (s *Service) syncSuperTokensPassword(ctx context.Context, schema string, projectID int, user *AppUser, password string) error {
+	var stEmail string
+	if user.Email != nil && *user.Email != "" {
+		stEmail = supertokens.CreateProjectScopedEmail(*user.Email, projectID)
+	} else if user.Phone != nil && *user.Phone != "" {
+		stEmail = supertokens.CreatePhoneScopedEmail(*user.Phone, projectID)
 	}
+	if stEmail == "" {
+		slog.Warn("SetUserPassword: skipping SuperTokens sync (user has no email or phone)",
+			"projectId", projectID, "userId", user.ID)
+		return nil
+	}
+
 	if user.SupertokensUserID != nil && *user.SupertokensUserID != "" {
-		_, _ = s.st.UpdateEmailOrPassword(ctx, supertokens.UpdatePasswordRequest{
-			RecipeUserID: *user.SupertokensUserID, Password: password,
-		})
-	} else if user.Email != nil && *user.Email != "" {
-		stEmail := supertokens.CreateProjectScopedEmail(*user.Email, projectID)
-		users, _ := s.st.ListUsersByAccountInfo(ctx, "public", stEmail)
-		if len(users) > 0 {
-			_, _ = s.st.UpdateEmailOrPassword(ctx, supertokens.UpdatePasswordRequest{
-				RecipeUserID: users[0].ID, Password: password,
-			})
-			_ = s.store.SetUserSuperTokensID(ctx, schema, userID, users[0].ID)
+		if err := updateSTPassword(ctx, s.st, *user.SupertokensUserID, password); err == nil {
+			return nil
 		} else {
-			resp, _ := s.st.SignUp(ctx, "public", stEmail, password)
-			if resp != nil && resp.Status == "OK" && resp.User != nil {
-				_ = s.store.SetUserSuperTokensID(ctx, schema, userID, resp.User.ID)
+			slog.Warn("SetUserPassword: direct SuperTokens update failed; attempting recovery",
+				"projectId", projectID,
+				"userId", user.ID,
+				"stUserId", *user.SupertokensUserID,
+				"err", err.Error(),
+			)
+		}
+	}
+
+	existing, listErr := s.st.ListUsersByAccountInfo(ctx, "public", stEmail)
+	if listErr != nil {
+		slog.Warn("SetUserPassword: SuperTokens lookup by email failed",
+			"projectId", projectID, "userId", user.ID, "err", listErr.Error())
+	}
+	if len(existing) > 0 {
+		stUserID := existing[0].ID
+		if err := updateSTPassword(ctx, s.st, stUserID, password); err == nil {
+			if err := s.store.SetUserSuperTokensID(ctx, schema, user.ID, stUserID); err != nil {
+				return fmt.Errorf("link SuperTokens user: %w", err)
+			}
+			return nil
+		} else {
+			slog.Warn("SetUserPassword: SuperTokens update on resolved user failed; recreating",
+				"projectId", projectID, "userId", user.ID, "stUserId", stUserID, "err", err.Error())
+			if delErr := s.st.DeleteUser(ctx, stUserID); delErr != nil {
+				return fmt.Errorf("delete stale SuperTokens user: %w", delErr)
 			}
 		}
+	} else if user.SupertokensUserID != nil && *user.SupertokensUserID != "" {
+		// Stored ST id no longer corresponds to anything reachable by email; clear it
+		// so the recreate path below produces a clean record.
+		_ = s.st.DeleteUser(ctx, *user.SupertokensUserID)
+	}
+
+	resp, err := s.st.SignUp(ctx, "public", stEmail, password)
+	if err != nil {
+		return fmt.Errorf("supertokens signup: %w", err)
+	}
+	if resp == nil || resp.Status != "OK" || resp.User == nil {
+		status := ""
+		if resp != nil {
+			status = resp.Status
+		}
+		return fmt.Errorf("supertokens signup status %q", status)
+	}
+	if err := s.store.SetUserSuperTokensID(ctx, schema, user.ID, resp.User.ID); err != nil {
+		return fmt.Errorf("link SuperTokens user: %w", err)
+	}
+	return nil
+}
+
+// updateSTPassword wraps UpdateEmailOrPassword and treats a non-OK response
+// status as an error so callers can trigger the recreate fallback.
+func updateSTPassword(ctx context.Context, st *supertokens.Client, recipeUserID, password string) error {
+	resp, err := st.UpdateEmailOrPassword(ctx, supertokens.UpdatePasswordRequest{
+		RecipeUserID: recipeUserID,
+		Password:     password,
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil || resp.Status != "OK" {
+		status := ""
+		if resp != nil {
+			status = resp.Status
+		}
+		return fmt.Errorf("supertokens update status %q", status)
 	}
 	return nil
 }
@@ -351,6 +439,15 @@ func (s *Service) ImportUsers(ctx context.Context, projectID int, sqlContent str
 		successCount++
 	}
 
+	// Imported INSERTs include explicit `id` values, which Postgres does not
+	// use to advance the underlying SERIAL sequence. Without this resync the
+	// next "natural" INSERT (e.g. role assignment, user creation) calls
+	// nextval(), gets a low value that already exists in the table, and fails
+	// with skaftin_system_user_roles_pkey / skaftin_system_users_pkey.
+	if err := resyncSerialSequences(ctx, tx, schema, importedSerialTables); err != nil {
+		return nil, fmt.Errorf("resync sequences: %w", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
@@ -368,6 +465,51 @@ func (s *Service) ImportUsers(ctx context.Context, projectID int, sqlContent str
 		"errors":        errors,
 		"message":       message,
 	}, nil
+}
+
+// importedSerialTables lists the tables ImportUsers may insert into that own a
+// SERIAL `id` column. Resyncing their sequences after explicit-id imports keeps
+// downstream natural inserts working.
+var importedSerialTables = []string{
+	"skaftin_system_users",
+	"skaftin_system_roles",
+	"skaftin_system_user_roles",
+	"skaftin_system_user_custom_fields",
+	"skaftin_system_otp_verifications",
+}
+
+// resyncSerialSequences advances each table's `id` sequence to MAX(id) so the
+// next nextval() call produces a fresh, conflict-free id. Tables that don't
+// exist or don't have a serial id column are skipped silently.
+func resyncSerialSequences(ctx context.Context, tx pgx.Tx, schema string, tables []string) error {
+	for _, table := range tables {
+		exists, err := tableExistsInSchema(ctx, tx, schema, table)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
+		// pg_get_serial_sequence returns NULL when the column has no owned sequence
+		// (e.g. composite PK schemas). Guard with a DO block so those tables are
+		// no-ops without leaking a function-call NULL into setval.
+		_, err = tx.Exec(ctx, fmt.Sprintf(`DO $resync$
+DECLARE
+  seq text := pg_get_serial_sequence('%[1]s.%[2]s', 'id');
+  max_id bigint;
+BEGIN
+  IF seq IS NULL THEN RETURN; END IF;
+  EXECUTE 'SELECT COALESCE(MAX(id), 0) FROM %[1]s.%[2]s' INTO max_id;
+  PERFORM setval(seq, GREATEST(max_id, 1), max_id > 0);
+END $resync$;`,
+			pgx.Identifier{schema}.Sanitize(),
+			pgx.Identifier{table}.Sanitize(),
+		))
+		if err != nil {
+			return fmt.Errorf("resync %s.%s: %w", schema, table, err)
+		}
+	}
+	return nil
 }
 
 func tableExistsInSchema(ctx context.Context, tx pgx.Tx, schema, table string) (bool, error) {

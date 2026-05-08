@@ -6,11 +6,13 @@ import CredentialsService, {
   CreateCredentialRequest,
   AvailablePermissions,
 } from '../../services/CredentialsService';
+import { useProjectStore } from '../../stores/StoresIndex';
 import ToastUtils from '../../utils/ToastUtils';
 import { ConfirmModal, CursorIntegrationModal } from '../ComponentsIndex';
 
 const CredentialsTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
+  const { currentProject, getProjectById } = useProjectStore();
   const [credentials, setCredentials] = useState<ApiCredential[]>([]);
   const [mcpKey, setMcpKey] = useState<ApiCredential | null>(null);
   const [availablePermissions, setAvailablePermissions] = useState<AvailablePermissions | null>(null);
@@ -24,6 +26,7 @@ const CredentialsTab = () => {
   const [newCredential, setNewCredential] = useState<ApiCredential | null>(null);
   const [showMcpConfirm, setShowMcpConfirm] = useState(false);
   const [showCursorIntegration, setShowCursorIntegration] = useState(false);
+  const [isNameManuallyEdited, setIsNameManuallyEdited] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -32,11 +35,42 @@ const CredentialsTab = () => {
     expires_in_days: undefined as number | undefined,
   });
 
+  const normalizeProjectName = (name: string) =>
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+  const credentialTypeSuffix = (credentialType: 'api_key' | 'access_token') =>
+    credentialType === 'api_key' ? 'api-key' : 'access-token';
+
+  const buildDefaultCredentialName = (credentialType: 'api_key' | 'access_token') => {
+    const baseName = normalizeProjectName(currentProject?.name || '');
+    if (!baseName) return '';
+    return `${baseName}-${credentialTypeSuffix(credentialType)}`;
+  };
+
   useEffect(() => {
     if (projectId) {
       loadData();
     }
   }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId || currentProject?.id === projectId) return;
+    void getProjectById(projectId);
+  }, [projectId, currentProject?.id, getProjectById]);
+
+  useEffect(() => {
+    if (!showModal || isNameManuallyEdited) return;
+    const baseName = normalizeProjectName(currentProject?.name || '');
+    if (!baseName) return;
+    setFormData((prev) => ({
+      ...prev,
+      name: `${baseName}-${credentialTypeSuffix(prev.credential_type)}`,
+    }));
+  }, [showModal, isNameManuallyEdited, currentProject?.name, formData.credential_type]);
 
   const loadData = async () => {
     try {
@@ -94,6 +128,7 @@ const CredentialsTab = () => {
       permissions: [],
       expires_in_days: undefined,
     });
+    setIsNameManuallyEdited(false);
   };
 
   const handleCopyToken = async (token: string, credentialId: number) => {
@@ -505,7 +540,10 @@ const CredentialsTab = () => {
                 <input
                   type="text"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e) => {
+                    setIsNameManuallyEdited(true);
+                    setFormData({ ...formData, name: e.target.value });
+                  }}
                   className="w-full px-4 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-900 text-dark-900 dark:text-white"
                   placeholder="e.g., Production API Key"
                   required
@@ -520,7 +558,13 @@ const CredentialsTab = () => {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setFormData({ ...formData, credential_type: 'api_key' })}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        credential_type: 'api_key',
+                        name: isNameManuallyEdited ? prev.name : buildDefaultCredentialName('api_key'),
+                      }))
+                    }
                     className={`p-4 border-2 rounded-lg transition-colors ${
                       formData.credential_type === 'api_key'
                         ? 'border-primary-600 bg-primary-50 dark:bg-primary-900/20'
@@ -534,7 +578,13 @@ const CredentialsTab = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFormData({ ...formData, credential_type: 'access_token' })}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        credential_type: 'access_token',
+                        name: isNameManuallyEdited ? prev.name : buildDefaultCredentialName('access_token'),
+                      }))
+                    }
                     className={`p-4 border-2 rounded-lg transition-colors ${
                       formData.credential_type === 'access_token'
                         ? 'border-primary-600 bg-primary-50 dark:bg-primary-900/20'

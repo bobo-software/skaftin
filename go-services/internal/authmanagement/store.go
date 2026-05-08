@@ -1222,19 +1222,21 @@ func (s *Store) AssignRole(ctx context.Context, schema string, userID, roleID in
 	if err != nil {
 		return err
 	}
-	var existing int
-	err = s.pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT id FROM %s.skaftin_system_user_roles WHERE %s = $1 AND role_id = $2`,
-			pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize()), userID, roleID).Scan(&existing)
-	if err == nil {
-		return nil
-	}
-	if err != pgx.ErrNoRows {
-		return err
-	}
+	// Idempotent insert: relies on the UNIQUE(<user_id_column>, role_id)
+	// constraint that exists on every supported schema. Avoids the
+	// SELECT-then-INSERT race that previously caused duplicate-key errors
+	// (e.g. skaftin_system_user_roles_pkey violations when a SERIAL sequence
+	// was out of sync after a data import).
 	_, err = s.pool.Exec(ctx,
-		fmt.Sprintf(`INSERT INTO %s.skaftin_system_user_roles (%s, role_id, assigned_by) VALUES ($1, $2, $3)`,
-			pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize()), userID, roleID, assignedBy)
+		fmt.Sprintf(
+			`INSERT INTO %s.skaftin_system_user_roles (%s, role_id, assigned_by)
+			 VALUES ($1, $2, $3)
+			 ON CONFLICT (%s, role_id) DO NOTHING`,
+			pgx.Identifier{schema}.Sanitize(),
+			pgx.Identifier{userRoleUserIDColumn}.Sanitize(),
+			pgx.Identifier{userRoleUserIDColumn}.Sanitize(),
+		),
+		userID, roleID, assignedBy)
 	return err
 }
 
