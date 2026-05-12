@@ -54,7 +54,7 @@ func (p *projectTools) getProjectInfo(ctx context.Context, req *sdkmcp.CallToolR
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -90,7 +90,7 @@ func (p *projectTools) updateProjectSettings(ctx context.Context, req *sdkmcp.Ca
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}

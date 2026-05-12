@@ -102,6 +102,126 @@ func TestToolsListFilteringByEndpoint(t *testing.T) {
 	}
 }
 
+func TestToolsList_ClientInputSchemaOmitsProjectIDFromRequired(t *testing.T) {
+	srv := New(nil)
+	adminHandler := NewHTTPHandler(srv, false)
+	clientHandler := NewHTTPHandler(srv, true)
+
+	adminMux := http.NewServeMux()
+	adminHandler.RegisterRoutes(adminMux, "/api/mcp")
+	clientMux := http.NewServeMux()
+	clientHandler.RegisterRoutes(clientMux, "/app-api/mcp")
+
+	adminRec := httptest.NewRecorder()
+	adminMux.ServeHTTP(adminRec, httptest.NewRequest(http.MethodGet, "/api/mcp/tools", nil))
+	clientRec := httptest.NewRecorder()
+	clientMux.ServeHTTP(clientRec, httptest.NewRequest(http.MethodGet, "/app-api/mcp/tools", nil))
+
+	if adminRec.Code != http.StatusOK || clientRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for both tool lists, admin=%d client=%d", adminRec.Code, clientRec.Code)
+	}
+
+	var adminResp struct {
+		Tools []struct {
+			Name        string         `json:"name"`
+			InputSchema map[string]any `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	var clientResp struct {
+		Tools []struct {
+			Name        string         `json:"name"`
+			InputSchema map[string]any `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(adminRec.Body.Bytes(), &adminResp); err != nil {
+		t.Fatalf("admin tools: %v", err)
+	}
+	if err := json.Unmarshal(clientRec.Body.Bytes(), &clientResp); err != nil {
+		t.Fatalf("client tools: %v", err)
+	}
+
+	adminProj := requiredContainsProjectID(t, adminResp.Tools, "get_project_info")
+	clientProj := requiredContainsProjectID(t, clientResp.Tools, "get_project_info")
+	if !adminProj {
+		t.Fatalf("expected admin get_project_info to list projectId as required")
+	}
+	if clientProj {
+		t.Fatalf("expected client get_project_info not to list projectId as required")
+	}
+
+	adminBulk := requiredContainsProjectID(t, adminResp.Tools, "bulk_create_app_users")
+	clientBulk := requiredContainsProjectID(t, clientResp.Tools, "bulk_create_app_users")
+	if !adminBulk {
+		t.Fatalf("expected admin bulk_create_app_users to list projectId as required")
+	}
+	if clientBulk {
+		t.Fatalf("expected client bulk_create_app_users not to list projectId as required")
+	}
+
+	// Multi-field tool: projectId dropped, other required fields preserved
+	clientBatch := requiredFieldNamesFromSchema(findToolSchema(t, clientResp.Tools, "execute_batch_operations"))
+	hasOperations := false
+	hasProj := false
+	for _, f := range clientBatch {
+		if f == "operations" {
+			hasOperations = true
+		}
+		if f == "projectId" {
+			hasProj = true
+		}
+	}
+	if !hasOperations {
+		t.Fatalf("expected client execute_batch_operations to still require operations, got %v", clientBatch)
+	}
+	if hasProj {
+		t.Fatalf("expected client execute_batch_operations not to require projectId, got %v", clientBatch)
+	}
+}
+
+func requiredContainsProjectID(t *testing.T, tools []struct {
+	Name        string         `json:"name"`
+	InputSchema map[string]any `json:"inputSchema"`
+}, toolName string,
+) bool {
+	t.Helper()
+	for _, tool := range tools {
+		if tool.Name != toolName {
+			continue
+		}
+		for _, f := range requiredFieldNamesFromSchema(tool.InputSchema) {
+			if f == "projectId" {
+				return true
+			}
+		}
+		return false
+	}
+	t.Fatalf("tool %q not found in list", toolName)
+	return false
+}
+
+func findToolSchema(t *testing.T, tools []struct {
+	Name        string         `json:"name"`
+	InputSchema map[string]any `json:"inputSchema"`
+}, toolName string,
+) map[string]any {
+	t.Helper()
+	for _, tool := range tools {
+		if tool.Name == toolName {
+			return tool.InputSchema
+		}
+	}
+	t.Fatalf("tool %q not found", toolName)
+	return nil
+}
+
+func requiredFieldNamesFromSchema(schema map[string]any) []string {
+	raw, ok := schema["required"]
+	if !ok || raw == nil {
+		return nil
+	}
+	return requiredFieldNames(raw)
+}
+
 func TestClientCallTool_AllowsOmittedProjectIDWhenTokenContextExists(t *testing.T) {
 	srv := New(nil)
 	clientHandler := NewHTTPHandler(srv, true)

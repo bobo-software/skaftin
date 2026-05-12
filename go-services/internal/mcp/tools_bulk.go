@@ -72,7 +72,7 @@ type bulkTools struct {
 }
 
 func (b *bulkTools) acquireConn(ctx context.Context, args map[string]any) (*dbproxy.ProjectConn, error) {
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return nil, err
 	}

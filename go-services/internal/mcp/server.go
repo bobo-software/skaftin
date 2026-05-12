@@ -123,7 +123,7 @@ func (c *toolCatalog) clientSafeTools() []*mcp.Tool {
 	filtered := make([]*mcp.Tool, 0, len(c.order))
 	for _, tool := range c.order {
 		if clientSafeToolNames[tool.Name] {
-			filtered = append(filtered, tool)
+			filtered = append(filtered, toolWithOptionalProjectIDInSchema(tool))
 		}
 	}
 	return filtered

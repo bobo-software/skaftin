@@ -138,7 +138,7 @@ func (c *commsTools) listEmailProviders(ctx context.Context, req *sdkmcp.CallToo
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -155,7 +155,7 @@ func (c *commsTools) getEmailProvider(ctx context.Context, req *sdkmcp.CallToolR
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -177,7 +177,7 @@ func (c *commsTools) createEmailProvider(ctx context.Context, req *sdkmcp.CallTo
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -205,7 +205,7 @@ func (c *commsTools) updateEmailProvider(ctx context.Context, req *sdkmcp.CallTo
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -256,7 +256,7 @@ func (c *commsTools) deleteEmailProvider(ctx context.Context, req *sdkmcp.CallTo
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -280,7 +280,7 @@ func (c *commsTools) listSmsProviders(ctx context.Context, req *sdkmcp.CallToolR
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -297,7 +297,7 @@ func (c *commsTools) getSmsProvider(ctx context.Context, req *sdkmcp.CallToolReq
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -319,7 +319,7 @@ func (c *commsTools) createSmsProvider(ctx context.Context, req *sdkmcp.CallTool
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -337,7 +337,7 @@ func (c *commsTools) updateSmsProvider(ctx context.Context, req *sdkmcp.CallTool
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}
@@ -377,7 +377,7 @@ func (c *commsTools) deleteSmsProvider(ctx context.Context, req *sdkmcp.CallTool
 	if err != nil {
 		return errorResult(err.Error())
 	}
-	pid, err := parseProjectID(args["projectId"])
+	pid, err := projectIDFromArgs(ctx, args)
 	if err != nil {
 		return errorResult(err.Error())
 	}

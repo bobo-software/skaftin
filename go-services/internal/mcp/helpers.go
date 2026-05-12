@@ -103,6 +103,12 @@ func resolveProjectID(ctx context.Context, args map[string]any, clientEndpoint b
 	return tokenProjectID, nil
 }
 
+// projectIDFromArgs resolves project ID using the same rules as resolveProjectID,
+// based on whether the request is on the client MCP endpoint (token-scoped).
+func projectIDFromArgs(ctx context.Context, args map[string]any) (int, error) {
+	return resolveProjectID(ctx, args, isClientEndpointContext(ctx))
+}
+
 func withClientEndpointContext(ctx context.Context, clientEndpoint bool) context.Context {
 	return context.WithValue(ctx, clientEndpointContextKey, clientEndpoint)
 }
