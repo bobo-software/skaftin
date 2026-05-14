@@ -103,20 +103,29 @@ class AuthUsersService {
       is_active?: boolean;
       page?: number;
       limit?: number;
+      metadata?: Record<string, unknown>;
     }
   ): Promise<UsersListResponse> {
     try {
-      const params = new URLSearchParams();
-      if (options?.search) params.append('search', options.search);
-      if (options?.role_id) params.append('role_id', options.role_id);
-      if (options?.is_active !== undefined) params.append('is_active', String(options.is_active));
-      if (options?.page) params.append('page', String(options.page));
-      if (options?.limit) params.append('limit', String(options.limit));
+      const roleIDNum =
+        options?.role_id !== undefined && options.role_id !== ''
+          ? Number(options.role_id)
+          : undefined;
+      const payload: Record<string, unknown> = {};
+      if (options?.search) payload.search = options.search;
+      if (roleIDNum !== undefined && !Number.isNaN(roleIDNum)) payload.role_id = roleIDNum;
+      if (options?.is_active !== undefined) payload.is_active = options.is_active;
+      if (options?.page) payload.page = options.page;
+      if (options?.limit) payload.limit = options.limit;
+      if (options?.metadata && Object.keys(options.metadata).length > 0) {
+        payload.metadata = options.metadata;
+      }
 
-      const queryString = params.toString();
-      const url = `/api/auth/${projectId}/users${queryString ? `?${queryString}` : ''}`;
-
-      const response = await RequestUtils.get(url, this.getToken());
+      const response = await RequestUtils.post(
+        `/api/auth/${projectId}/users/list`,
+        this.getToken(),
+        payload
+      );
 
       if (response.success) {
         return response.data;

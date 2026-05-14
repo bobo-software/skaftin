@@ -1,41 +1,65 @@
 package authmanagement
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
-func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
+// ListUsersPOST lists users; all filters and pagination are read from the JSON body.
+// App API: POST /app-api/auth/users/list — JWT API: POST /api/auth/{projectId}/users/list
+func (h *Handler) ListUsersPOST(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := parseProjectID(w, r)
 	if !ok {
 		return
 	}
-	q := r.URL.Query()
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		httputil.WriteError(w, 400, "Failed to read request body")
+		return
+	}
+	_ = r.Body.Close()
+	if len(bytes.TrimSpace(raw)) == 0 {
+		raw = []byte("{}")
+	}
+	var body struct {
+		Search   string         `json:"search"`
+		RoleID   *int           `json:"role_id"`
+		IsActive *bool          `json:"is_active"`
+		Page     int            `json:"page"`
+		Limit    int            `json:"limit"`
+		Metadata map[string]any `json:"metadata"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		httputil.WriteError(w, 400, "Invalid JSON body")
+		return
+	}
 	filters := map[string]any{}
-	if s := q.Get("search"); s != "" {
-		filters["search"] = s
+	if body.Search != "" {
+		filters["search"] = body.Search
 	}
-	if v := q.Get("role_id"); v != "" {
-		if id, err := strconv.Atoi(v); err == nil {
-			filters["role_id"] = id
-		}
+	if body.RoleID != nil && *body.RoleID > 0 {
+		filters["role_id"] = *body.RoleID
 	}
-	if v := q.Get("is_active"); v != "" {
-		filters["is_active"] = v == "true"
+	if body.IsActive != nil {
+		filters["is_active"] = *body.IsActive
+	}
+	if len(body.Metadata) > 0 {
+		filters["metadata"] = body.Metadata
 	}
 	limit := 50
-	if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 {
-		limit = v
+	if body.Limit > 0 {
+		limit = body.Limit
 	}
-	offset := 0
 	page := 1
-	if v, err := strconv.Atoi(q.Get("page")); err == nil && v > 1 {
-		page = v
+	if body.Page > 1 {
+		page = body.Page
 	}
-	offset = (page - 1) * limit
+	offset := (page - 1) * limit
 
 	users, total, err := h.service.ListUsers(r.Context(), projectID, filters, limit, offset)
 	if err != nil {

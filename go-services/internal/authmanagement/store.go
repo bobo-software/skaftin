@@ -810,6 +810,21 @@ func (s *Store) ListUsers(ctx context.Context, schema string, filters map[string
 		args = append(args, v)
 		idx++
 	}
+	if v, ok := filters["metadata"]; ok && v != nil {
+		metaMap, ok := v.(map[string]any)
+		if !ok {
+			return nil, 0, fmt.Errorf("metadata filter must be a JSON object")
+		}
+		if len(metaMap) > 0 {
+			metaJSON, err := json.Marshal(metaMap)
+			if err != nil {
+				return nil, 0, err
+			}
+			whereClauses = append(whereClauses, fmt.Sprintf(`u.metadata @> $%d::jsonb`, idx))
+			args = append(args, string(metaJSON))
+			idx++
+		}
+	}
 
 	where := ""
 	if len(whereClauses) > 0 {

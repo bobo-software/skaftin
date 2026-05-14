@@ -332,7 +332,10 @@ Response: { status: 'OK', accessToken, refreshToken }
 ### Admin User Management
 
 ```typescript
-GET /app-api/auth/users
+POST /app-api/auth/users/list
+Content-Type: application/json
+
+{ "page": 1, "limit": 50, "role_id": 6, "metadata": { "association_id": 30 } }
 
 Headers: {
   'Cookie': 'sAccessToken=...'  // Platform admin session

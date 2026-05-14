@@ -13,6 +13,8 @@ Examples below use **`{userId}`**, **`{roleId}`** path segments (Go `ServeMux` s
 
 **App API path rule:** For a **project URL** `/api/auth/{projectId}/foo`, the app client URL is **`/app-api/auth/foo`** (drop `{projectId}`; project comes from **`x-api-key`**). Example: `GET /api/auth/3/users/5` → `GET /app-api/auth/users/5`.
 
+**Listing users:** Use **`POST .../users/list`** on both mounts with a JSON body. The old **`GET .../users`** list endpoint (query-string filters) is **not** supported.
+
 **Authentication:** Use **`x-api-key`** on `/app-api/auth/...`. Use **`Authorization: Bearer`** (platform JWT) on `/api/auth/{projectId}/...`.
 
 ---
@@ -21,23 +23,41 @@ Examples below use **`{userId}`**, **`{roleId}`** path segments (Go `ServeMux` s
 
 ### 1. List Users
 
-Get all users for the project.
+List and filter users for the project (paginated). **`POST /app-api/auth/users`** remains **create user** only, so listing uses a dedicated path: **`.../users/list`**.
 
-**Project URL:** `GET /api/auth/{projectId}/users`  
-**App API:** `GET /app-api/auth/users`
+**Project URL:** `POST /api/auth/{projectId}/users/list`  
+**App API:** `POST /app-api/auth/users/list`
 
-**Query Parameters:**
-| Parameter | Type | Description |
-|-----------|------|-------------|
+**Method:** `POST`  
+**Headers:** `Content-Type: application/json`, plus auth for the mount (`Authorization: Bearer` on project API; `x-api-key` and session/JWT as required on app API).
+
+**JSON body:** Send a JSON object. **All fields are optional**; send `{}` to use defaults (`page` 1, `limit` 50, no filters).
+
+| Field | Type | Description |
+|-------|------|-------------|
 | page | number | Page number (default: 1) |
-| limit | number | Items per page (default: 50) |
-| search | string | Search by name or email |
-| role_id | number | Filter by role ID |
-| is_active | boolean | Filter by active status |
+| limit | number | Page size (default: 50) |
+| search | string | Case-insensitive match on name, email, or phone |
+| role_id | number | Restrict to users assigned this role |
+| is_active | boolean | Filter by active flag |
+| metadata | object | Users whose `metadata` JSON **contains** this object (server uses JSON containment). Example: `{ "association_id": 30 }` replaces legacy query style `metadata.association_id=30`. |
 
-**Example:**
+**Example (project API):**
+```http
+POST /api/auth/3/users/list HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer <platform-jwt>
+
+{"page":1,"limit":20,"search":"john","is_active":true,"role_id":2,"metadata":{"association_id":30}}
 ```
-GET /api/auth/3/users?page=1&limit=20&search=john&is_active=true
+
+**Example (app API):**
+```http
+POST /app-api/auth/users/list HTTP/1.1
+Content-Type: application/json
+x-api-key: <your-api-key>
+
+{"role_id":6,"limit":5000,"metadata":{"association_id":30}}
 ```
 
 **Response:**

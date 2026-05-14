@@ -328,14 +328,15 @@ Base URL: `/app-api/auth`
 ### List Users
 
 ```typescript
-GET /app-api/auth/users
+POST /app-api/auth/users/list
 
-Query Parameters:
-- search?: string         // Search by name or email
-- role_id?: number        // Filter by role
-- is_active?: boolean     // Filter by status
-- page?: number           // Page number (default: 1)
-- limit?: number          // Items per page (default: 50)
+Body (JSON, all fields optional; use {} for defaults):
+- search?: string
+- role_id?: number
+- is_active?: boolean
+- page?: number           // default 1
+- limit?: number          // default 50
+- metadata?: object       // containment on user metadata, e.g. { association_id: 30 }
 
 Response:
 {
@@ -2271,7 +2272,7 @@ headers: {
 
 Use project-scoped endpoints (requires platform admin session):
 ```typescript
-GET /app-api/auth/users
+POST /app-api/auth/users/list
 POST /app-api/auth/users
 PUT /app-api/auth/users/:userId
 DELETE /app-api/auth/users/:userId
@@ -2296,7 +2297,7 @@ POST /app-api/auth/users/:userId/manual-verify  // Manual verification
 ### Admin Endpoints (Requires Auth)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/app-api/auth/users` | List all users |
+| POST | `/app-api/auth/users/list` | List users (JSON body: filters + pagination) |
 | GET | `/app-api/auth/users/:userId` | Get user details |
 | POST | `/app-api/auth/users` | Create new user |
 | PUT | `/app-api/auth/users/:userId` | Update user |

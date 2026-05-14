@@ -90,7 +90,7 @@ func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /app-api/auth/auth/cancel-account-deletion", h.withAppAPIProject(h.CancelAccountDeletion))
 
 	// Users
-	mux.HandleFunc("GET /app-api/auth/users", h.withAppAPIProject(h.ListUsers))
+	mux.HandleFunc("POST /app-api/auth/users/list", h.withAppAPIProject(h.ListUsersPOST))
 	// Keep role-user lookup on /roles to avoid ServeMux overlap with /users/{userId}/password.
 	mux.HandleFunc("GET /app-api/auth/roles/{roleId}/users", h.withAppAPIProject(h.GetUsersByRole))
 	mux.HandleFunc("GET /app-api/auth/users/{userId}", h.withAppAPIProject(h.GetUserHandler))
@@ -151,7 +151,7 @@ func (h *Handler) RegisterProtectedRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/{projectId}/auth/cancel-account-deletion", h.CancelAccountDeletion)
 
 	// Users
-	mux.HandleFunc("GET /api/auth/{projectId}/users", h.ListUsers)
+	mux.HandleFunc("POST /api/auth/{projectId}/users/list", h.ListUsersPOST)
 	mux.HandleFunc("GET /api/auth/{projectId}/users/{userId}", h.GetUserHandler)
 	mux.HandleFunc("GET /api/auth/{projectId}/users/{userId}/password", h.GetUserPasswordHandler)
 	mux.HandleFunc("POST /api/auth/{projectId}/users/{userId}/password", h.SetUserPasswordHandler)
