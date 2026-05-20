@@ -638,6 +638,96 @@ If OTP is **enabled**:
 
 ---
 
+## 17. Google Sign-In
+
+Exchange a Google ID token (obtained on the mobile device via `@react-native-google-signin/google-signin`) for a Skaftin session. The platform verifies the token cryptographically — the client never sends a password or client secret.
+
+**Must be enabled per project** via `PUT /app-api/auth/settings` with `google_sign_in_enabled: true` and `google_web_client_ids` set to the project's allowed Web OAuth client IDs.
+
+### App-api route (recommended for mobile)
+
+```
+POST /app-api/auth/auth/google-sign-in
+```
+
+**Headers**
+
+```
+Content-Type: application/json
+x-api-key: <project-api-key>
+```
+
+**Request body**
+
+```json
+{
+  "idToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6Ij..."
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `idToken` | string | Yes | Google ID token from the mobile SDK (`user.data.idToken`) |
+
+**Success response — HTTP 200** (mirrors the standard login response)
+
+```json
+{
+  "success": true,
+  "message": "Login successful",
+  "data": {
+    "user": {
+      "id": 1,
+      "name": "Jane",
+      "last_name": "Doe",
+      "email": "jane@example.com",
+      "phone": null,
+      "is_active": true,
+      "roles": [
+        { "id": 2, "role_name": "User", "role_key": "user" }
+      ]
+    },
+    "session": {
+      "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+    },
+    "organisation_id": null,
+    "organisation_name": null,
+    "is_admin": false
+  }
+}
+```
+
+**Error responses**
+
+| HTTP | `message` | Cause |
+|------|-----------|-------|
+| 400 | `idToken is required` | Body missing `idToken` field |
+| 401 | `invalid or expired Google token` | Signature invalid, token expired, wrong `aud` |
+| 401 | `invalid credentials` | Matched user is inactive |
+| 403 | `Google sign-in is disabled for this project` | Feature flag off |
+| 403 | `registration is disabled for this project` | New user, `google_auto_register` is false |
+| 403 | `authentication is disabled` | `auth_enabled` is false |
+
+### Project-scoped route (optional)
+
+```
+POST /api/auth/{projectId}/auth/google-sign-in
+```
+
+Same body, same response shape.
+
+### Project settings (admin)
+
+Configure via `PUT /app-api/auth/settings`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `google_sign_in_enabled` | boolean | Master feature flag |
+| `google_web_client_ids` | string[] | Allowed OAuth `aud` values (Web client IDs from Google Cloud). Must include the app's `EXPO_PUBLIC_WEB_CLIENT_ID`. |
+| `google_auto_register` | boolean | If true, create a new app user on first Google login; if false, only existing users can sign in. |
+
+---
+
 ## Error responses
 
 ### Invalid credentials (login)

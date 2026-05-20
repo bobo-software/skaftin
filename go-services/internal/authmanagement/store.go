@@ -199,6 +199,29 @@ func (s *Store) EnsureAuthSchemaCompatibility(ctx context.Context, schema string
 		  AND aset.project_id = p.id
 		  AND aset.default_role_id IS NULL
 	`, roleTable), schema)
+	if err != nil {
+		return err
+	}
+
+	authProvidersTable := fmt.Sprintf("%s.app_user_auth_providers", pgx.Identifier{schema}.Sanitize())
+	usersTable := fmt.Sprintf("%s.skaftin_system_users", pgx.Identifier{schema}.Sanitize())
+	_, err = s.pool.Exec(ctx, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			id               SERIAL PRIMARY KEY,
+			app_user_id      INTEGER      NOT NULL REFERENCES %s(id) ON DELETE CASCADE,
+			provider         VARCHAR(32)  NOT NULL,
+			provider_subject VARCHAR(255) NOT NULL,
+			email            VARCHAR(255),
+			created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+			UNIQUE (provider, provider_subject)
+		)
+	`, authProvidersTable, usersTable))
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, fmt.Sprintf(`
+		CREATE INDEX IF NOT EXISTS idx_app_user_auth_providers_user ON %s(app_user_id)
+	`, authProvidersTable))
 	return err
 }
 
@@ -247,7 +270,8 @@ const authSettingsCols = `id, project_id, allow_duplicate_emails, require_email_
 	send_registration_email, send_verification_email, send_password_reset_email, send_welcome_email,
 	settings_json, created_at, updated_at, otp_length,
 	send_registration_sms, send_verification_sms, send_password_reset_sms, send_welcome_sms,
-	require_email, require_otp_for_password_change, require_otp_for_account_deletion`
+	require_email, require_otp_for_password_change, require_otp_for_account_deletion,
+	google_sign_in_enabled, google_web_client_ids, google_auto_register`
 
 func scanAuthSettings(row pgx.Row) (*AuthSettings, error) {
 	var as AuthSettings
@@ -259,6 +283,7 @@ func scanAuthSettings(row pgx.Row) (*AuthSettings, error) {
 		&as.SettingsJSON, &as.CreatedAt, &as.UpdatedAt, &as.OtpLength,
 		&as.SendRegistrationSMS, &as.SendVerificationSMS, &as.SendPasswordResetSMS, &as.SendWelcomeSMS,
 		&as.RequireEmail, &as.RequireOtpForPasswordChange, &as.RequireOtpForAccountDeletion,
+		&as.GoogleSignInEnabled, &as.GoogleWebClientIDs, &as.GoogleAutoRegister,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -306,6 +331,55 @@ func (s *Store) UpdateAuthSettings(ctx context.Context, projectID int, fields ma
 		strings.Join(setClauses, ", "), i)
 
 	return scanAuthSettings(s.pool.QueryRow(ctx, query, args...))
+}
+
+// ─── Auth Providers ──────────────────────────────────────────────────
+
+// GetUserByAuthProvider returns the app user linked to (provider, providerSubject), or nil.
+func (s *Store) GetUserByAuthProvider(ctx context.Context, schema, provider, providerSubject string) (*AppUser, error) {
+	userRoleCol, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return nil, err
+	}
+	schemaIdent := pgx.Identifier{schema}.Sanitize()
+	query := fmt.Sprintf(`
+		SELECT u.id, u.supertokens_user_id, u.name, u.last_name, u.email, u.password,
+		       u.phone, u.metadata, u.organisation_id, u.is_active, u.email_verified,
+		       u.phone_verified, u.deletion_requested_at, u.deletion_scheduled_at,
+		       u.deletion_reason, u.deleted_at, u.created_at, u.updated_at,
+		       u.custom_field_1, u.custom_field_2,
+		       COALESCE(json_agg(json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key))
+		         FILTER (WHERE r.id IS NOT NULL), '[]') AS roles
+		FROM %[1]s.skaftin_system_users u
+		JOIN %[1]s.app_user_auth_providers p ON p.app_user_id = u.id
+		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.%[2]s
+		LEFT JOIN %[1]s.skaftin_system_roles r ON ur.role_id = r.id
+		WHERE p.provider = $1 AND p.provider_subject = $2
+		  AND u.deleted_at IS NULL
+		GROUP BY u.id
+		LIMIT 1
+	`, schemaIdent, pgx.Identifier{userRoleCol}.Sanitize())
+	var u AppUser
+	err = s.pool.QueryRow(ctx, query, provider, providerSubject).Scan(
+		&u.ID, &u.SupertokensUserID, &u.Name, &u.LastName, &u.Email, &u.Password, &u.Phone,
+		&u.Metadata, &u.OrganisationID, &u.IsActive, &u.EmailVerified, &u.PhoneVerified,
+		&u.DeletionRequestedAt, &u.DeletionScheduledAt, &u.DeletionReason, &u.DeletedAt,
+		&u.CreatedAt, &u.UpdatedAt, &u.CustomField1, &u.CustomField2, &u.Roles)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &u, err
+}
+
+// LinkAuthProvider upserts a (provider, providerSubject) → app_user_id mapping.
+func (s *Store) LinkAuthProvider(ctx context.Context, schema string, appUserID int, provider, providerSubject, email string) error {
+	schemaIdent := pgx.Identifier{schema}.Sanitize()
+	_, err := s.pool.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s.app_user_auth_providers (app_user_id, provider, provider_subject, email)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (provider, provider_subject) DO NOTHING
+	`, schemaIdent), appUserID, provider, providerSubject, nilIfEmpty(email))
+	return err
 }
 
 // ─── Roles ───────────────────────────────────────────────────────────

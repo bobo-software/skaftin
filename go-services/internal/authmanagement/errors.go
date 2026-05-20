@@ -3,9 +3,12 @@ package authmanagement
 import "errors"
 
 var (
-	ErrInvalidCredentials   = errors.New("invalid credentials")
-	ErrAuthenticationClosed = errors.New("authentication is disabled")
-	ErrMissingLoginIdentity = errors.New("user has no email or phone identity configured for login")
+	ErrInvalidCredentials        = errors.New("invalid credentials")
+	ErrAuthenticationClosed      = errors.New("authentication is disabled")
+	ErrMissingLoginIdentity      = errors.New("user has no email or phone identity configured for login")
+	ErrGoogleSignInDisabled      = errors.New("Google sign-in is disabled for this project")
+	ErrInvalidGoogleToken        = errors.New("invalid or expired Google token")
+	ErrGoogleAutoRegisterDisabled = errors.New("registration is disabled for this project")
 
 	ErrSettingsRecipientRequired          = errors.New("user_id_or_email, user_id, or email is required")
 	ErrSettingsRecipientInvalid           = errors.New("invalid user identifier")

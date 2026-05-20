@@ -28,6 +28,9 @@ export interface AuthSettings {
   settings_json: any;
   created_at: string;
   updated_at: string;
+  google_sign_in_enabled: boolean;
+  google_web_client_ids: string[];
+  google_auto_register: boolean;
 }
 
 export interface UpdateAuthSettingsRequest {
@@ -54,6 +57,9 @@ export interface UpdateAuthSettingsRequest {
   require_otp_for_account_deletion?: boolean;
   otp_length?: number;
   settings_json?: any;
+  google_sign_in_enabled?: boolean;
+  google_web_client_ids?: string[];
+  google_auto_register?: boolean;
 }
 
 export interface EmailProvider {

@@ -1205,3 +1205,143 @@ func resolveRegistrationOTPRoute(settings *AuthSettings, otpMethodInput, email, 
 		return "", "", false, fmt.Errorf("registration OTP is enabled but no destination is available")
 	}
 }
+
+// ─── Google Sign-In ───────────────────────────────────────────────────
+
+func (s *Service) GoogleSignIn(ctx context.Context, projectID int, body map[string]any) (map[string]any, error) {
+	schema, err := s.resolveSchema(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	settings, err := s.store.GetAuthSettings(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if settings != nil && !settings.AuthEnabled {
+		return nil, ErrAuthenticationClosed
+	}
+	if settings == nil || !settings.GoogleSignInEnabled {
+		return nil, ErrGoogleSignInDisabled
+	}
+
+	rawToken, _ := body["idToken"].(string)
+	if rawToken == "" {
+		return nil, fmt.Errorf("idToken is required")
+	}
+
+	claims, err := verifyGoogleIDToken(ctx, rawToken, settings.GoogleWebClientIDs)
+	if err != nil {
+		return nil, ErrInvalidGoogleToken
+	}
+
+	// 1. Look up by linked Google identity (provider + sub).
+	user, err := s.store.GetUserByAuthProvider(ctx, schema, "google", claims.Sub)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Fall back to email match (links Google to an existing email/password account).
+	if user == nil && claims.Email != "" {
+		user, err = s.store.GetUserByCredential(ctx, schema, "email", claims.Email)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// 3. Auto-register if allowed.
+	if user == nil {
+		if settings == nil || !settings.GoogleAutoRegister {
+			return nil, ErrGoogleAutoRegisterDisabled
+		}
+		if settings.RegistrationEnabled == false {
+			return nil, fmt.Errorf("registration is disabled")
+		}
+
+		name := claims.GivenName
+		if name == "" {
+			name = claims.Name
+		}
+		lastName := claims.FamilyName
+
+		userData := map[string]any{
+			"name":           name,
+			"last_name":      nilIfEmpty(lastName),
+			"email":          nilIfEmpty(claims.Email),
+			"is_active":      true,
+			"email_verified": claims.EmailVerified,
+		}
+		user, err = s.store.CreateUser(ctx, schema, userData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create user: %w", err)
+		}
+		if settings.DefaultRoleID != nil {
+			_ = s.store.AssignRole(ctx, schema, user.ID, *settings.DefaultRoleID, "system")
+		}
+		// Re-fetch with roles populated.
+		user, err = s.store.GetUser(ctx, schema, user.ID)
+		if err != nil || user == nil {
+			return nil, fmt.Errorf("failed to fetch created user: %w", err)
+		}
+	}
+
+	if !user.IsActive {
+		return nil, ErrInvalidCredentials
+	}
+
+	// Resolve / create the SuperTokens identity (passwordless pattern from SingleCredentialLogin).
+	stEmail := supertokens.CreateProjectScopedEmail(claims.Email, projectID)
+	var stUserID string
+	if user.SupertokensUserID != nil && *user.SupertokensUserID != "" {
+		stUserID = *user.SupertokensUserID
+	} else {
+		users, _ := s.st.ListUsersByAccountInfo(ctx, "public", stEmail)
+		if len(users) > 0 {
+			stUserID = users[0].ID
+		} else {
+			pw := randomHex(32)
+			resp, _ := s.st.SignUp(ctx, "public", stEmail, pw)
+			if resp != nil && resp.Status == "OK" && resp.User != nil {
+				stUserID = resp.User.ID
+			}
+		}
+		if stUserID != "" {
+			_ = s.store.SetUserSuperTokensID(ctx, schema, user.ID, stUserID)
+		}
+	}
+	if stUserID == "" {
+		return nil, fmt.Errorf("failed to resolve authentication identity")
+	}
+
+	// Persist the Google → user link (idempotent).
+	if err := s.store.LinkAuthProvider(ctx, schema, user.ID, "google", claims.Sub, claims.Email); err != nil {
+		slog.Warn("failed to link Google auth provider", "error", err, "userID", user.ID)
+	}
+
+	var rolesRaw []Role
+	_ = json.Unmarshal(user.Roles, &rolesRaw)
+	orgCtx := ResolveOrgContext(ctx, s.pool, schema, user, rolesRaw)
+
+	payload := SessionPayload{
+		ProjectID:        projectID,
+		AppUserID:        user.ID,
+		Email:            user.Email,
+		Roles:            user.Roles,
+		OrganisationName: orgCtx.OrganisationName,
+		OrganisationID:   orgCtx.OrganisationID,
+		IsAdmin:          orgCtx.IsAdmin,
+	}
+	sessionResp, err := s.st.CreateSession(ctx, "public", supertokens.CreateSessionRequest{
+		UserID:                stUserID,
+		UserDataInAccessToken: payload,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("session creation failed: %w", err)
+	}
+
+	return map[string]any{
+		"user":        user,
+		"accessToken": sessionResp.AccessToken.Token,
+		"message":     "Login successful",
+	}, nil
+}

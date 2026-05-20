@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, KeyboardEvent } from 'react';
 import { useParams } from 'react-router-dom';
-import { Save, Mail, AlertCircle, CheckCircle } from 'lucide-react';
+import { Save, Mail, AlertCircle, CheckCircle, X, Plus } from 'lucide-react';
 import AuthSettingsService, { AuthSettings } from '../../../../../services/AuthSettingsService';
 import RolesService, { Role } from '../../../../../services/RolesService';
 import { AppButton } from '../../../../../components/ComponentsIndex';
@@ -10,6 +10,8 @@ const AuthGeneralSettingsTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const [settings, setSettings] = useState<AuthSettings | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
+  const [clientIdInput, setClientIdInput] = useState('');
+  const clientIdInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -77,6 +79,9 @@ const AuthGeneralSettingsTab = () => {
         email_provider_id: settings.email_provider_id,
         sms_provider_id: settings.sms_provider_id,
         otp_length: settings.otp_length,
+        google_sign_in_enabled: settings.google_sign_in_enabled,
+        google_web_client_ids: settings.google_web_client_ids,
+        google_auto_register: settings.google_auto_register,
       });
       setMessage({ type: 'success', text: 'Settings saved successfully!' });
       setTimeout(() => setMessage(null), 3000);
@@ -448,6 +453,135 @@ const AuthGeneralSettingsTab = () => {
               <p className="text-sm text-dark-600 dark:text-dark-400 mt-1">
                 Automatically assign this role to new users upon registration
               </p>
+            </div>
+          </div>
+
+          {/* Google Sign-In */}
+          <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6">
+            <div className="flex items-center gap-3 mb-1">
+              <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              <h3 className="text-lg font-semibold text-dark-900 dark:text-white">Google Sign-In</h3>
+            </div>
+            <p className="text-sm text-dark-600 dark:text-dark-400 mb-5">
+              Allow users to sign in with their Google account. Requires a Google Cloud Web OAuth client ID.
+            </p>
+
+            <div className="space-y-5">
+              {/* Enable toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="font-medium text-dark-900 dark:text-white">Enable Google Sign-In</label>
+                  <p className="text-sm text-dark-600 dark:text-dark-400">
+                    Allow users to authenticate using a Google account
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.google_sign_in_enabled}
+                    onChange={(e) => setSettings({ ...settings, google_sign_in_enabled: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </label>
+              </div>
+
+              {/* Auto-register toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="font-medium text-dark-900 dark:text-white">Auto-register New Users</label>
+                  <p className="text-sm text-dark-600 dark:text-dark-400">
+                    Automatically create an account for first-time Google sign-ins. When off, only existing users can sign in with Google.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.google_auto_register}
+                    onChange={(e) => setSettings({ ...settings, google_auto_register: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </label>
+              </div>
+
+              {/* Web Client IDs */}
+              <div>
+                <label className="block font-medium text-dark-900 dark:text-white mb-1">
+                  Allowed Web Client IDs
+                </label>
+                <p className="text-sm text-dark-600 dark:text-dark-400 mb-3">
+                  Add the OAuth 2.0 Web client ID(s) from Google Cloud Console. The mobile app's <code className="px-1 py-0.5 bg-dark-100 dark:bg-dark-700 rounded text-xs font-mono">EXPO_PUBLIC_WEB_CLIENT_ID</code> must be listed here.
+                </p>
+
+                {/* Existing tags */}
+                {settings.google_web_client_ids.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {settings.google_web_client_ids.map((id) => (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-700 font-mono"
+                      >
+                        {id}
+                        <button
+                          type="button"
+                          onClick={() => setSettings({
+                            ...settings,
+                            google_web_client_ids: settings.google_web_client_ids.filter((c) => c !== id),
+                          })}
+                          className="text-primary-500 hover:text-primary-700 dark:hover:text-primary-200 transition-colors"
+                          aria-label={`Remove ${id}`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add new ID */}
+                <div className="flex gap-2">
+                  <input
+                    ref={clientIdInputRef}
+                    type="text"
+                    value={clientIdInput}
+                    onChange={(e) => setClientIdInput(e.target.value)}
+                    onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const val = clientIdInput.trim();
+                        if (val && !settings.google_web_client_ids.includes(val)) {
+                          setSettings({ ...settings, google_web_client_ids: [...settings.google_web_client_ids, val] });
+                        }
+                        setClientIdInput('');
+                      }
+                    }}
+                    placeholder="e.g. 123456789-abc.apps.googleusercontent.com"
+                    className="flex-1 px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white font-mono text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = clientIdInput.trim();
+                      if (val && !settings.google_web_client_ids.includes(val)) {
+                        setSettings({ ...settings, google_web_client_ids: [...settings.google_web_client_ids, val] });
+                      }
+                      setClientIdInput('');
+                      clientIdInputRef.current?.focus();
+                    }}
+                    className="px-3 py-2 rounded-lg border border-dark-300 dark:border-dark-600 text-dark-600 dark:text-dark-300 hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors"
+                    aria-label="Add client ID"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1.5">Press Enter or click + to add. Duplicates are ignored.</p>
+              </div>
             </div>
           </div>
 

@@ -90,6 +90,9 @@ type AuthSettings struct {
 	RequireEmail                bool             `json:"require_email"`
 	RequireOtpForPasswordChange  bool            `json:"require_otp_for_password_change"`
 	RequireOtpForAccountDeletion bool            `json:"require_otp_for_account_deletion"`
+	GoogleSignInEnabled          bool            `json:"google_sign_in_enabled"`
+	GoogleWebClientIDs           []string        `json:"google_web_client_ids"`
+	GoogleAutoRegister           bool            `json:"google_auto_register"`
 }
 
 type OTPVerification struct {

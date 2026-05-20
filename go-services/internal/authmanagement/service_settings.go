@@ -34,6 +34,7 @@ func (s *Service) UpdateAuthSettings(ctx context.Context, projectID int, fields 
 		"default_role_id": true, "enable_password_reset": true, "require_otp_for_password_change": true,
 		"require_otp_for_account_deletion": true, "allow_duplicate_emails": true,
 		"enable_mfa": true,
+		"google_sign_in_enabled": true, "google_web_client_ids": true, "google_auto_register": true,
 	}
 	filtered := make(map[string]any)
 	for k, v := range fields {
