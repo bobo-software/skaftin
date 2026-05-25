@@ -186,11 +186,18 @@ x-api-key: your-api-key
       "email": "john.doe@example.com"
     },
     "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "has_password": true,
     "message": "Login successful"
   },
   "timestamp": "..."
 }
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `has_password` | boolean | Whether the user has an app-level password stored in `skaftin_system_users.password` (bcrypt). Use after Google or OTP login to decide if the client should prompt the user to set a password. `false` for Google-only auto-registration; `true` if the account was linked from an existing email/password user. Not based on SuperTokens credentials alone. |
+
+The `user` object never includes a `password` field (hash is stripped server-side).
 
 Organization context is carried in the JWT access token payload, not as separate fields in this JSON.
 
@@ -229,7 +236,7 @@ You may use **`email`** instead of **`credential`** when the method is email.
 | credential / email | string | Yes | User identifier value |
 | method | string | No | Defaults to **`email`** |
 
-**Response:** Same shape as password login (`user`, `accessToken`, `message` inside `data`).
+**Response:** Same shape as password login (`user`, `accessToken`, `has_password`, `message` inside `data`).
 
 ---
 
@@ -287,11 +294,14 @@ or `{ "phone": "+27821234567" }`.
   "data": {
     "user": { "id": 1, "email": "john.doe@example.com" },
     "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "has_password": false,
     "message": "OTP verified successfully"
   },
   "timestamp": "..."
 }
 ```
+
+Includes `has_password` (see [Login (with password)](#2-login-with-password) for semantics).
 
 **Typical error responses** (HTTP **400**, `success: false`): e.g. `"invalid OTP code"`, `"OTP has expired"`, `"too many attempts"`, `"no pending OTP found"`, `"user not found"`.
 
@@ -687,15 +697,14 @@ x-api-key: <project-api-key>
         { "id": 2, "role_name": "User", "role_key": "user" }
       ]
     },
-    "session": {
-      "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-    },
-    "organisation_id": null,
-    "organisation_name": null,
-    "is_admin": false
+    "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "has_password": false,
+    "message": "Login successful"
   }
 }
 ```
+
+`has_password` is typically **`false`** after first-time Google auto-registration (no app password yet). Route users to a set-password screen when `has_password === false`. It is **`true`** when Google sign-in linked an existing email/password account. See [Login (with password)](#2-login-with-password) for full semantics.
 
 **Error responses**
 

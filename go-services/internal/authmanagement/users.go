@@ -133,12 +133,11 @@ func (h *Handler) GetUserPasswordHandler(w http.ResponseWriter, r *http.Request)
 		httputil.WriteError(w, 400, "User ID is required")
 		return
 	}
-	pw, err := h.service.GetUserPassword(r.Context(), projectID, userID)
+	hasPassword, err := h.service.UserHasPassword(r.Context(), projectID, userID)
 	if err != nil {
 		httputil.WriteError(w, 500, err.Error())
 		return
 	}
-	hasPassword := pw != nil && *pw != ""
 	httputil.WriteSuccess(w, 200, "Password status fetched", map[string]bool{"has_password": hasPassword})
 }
 

@@ -53,6 +53,27 @@ func (s *Service) GetUserPassword(ctx context.Context, projectID, userID int) (*
 	return s.store.GetUserPassword(ctx, schema, userID)
 }
 
+// UserHasPassword reports whether the app user has a non-empty password hash in skaftin_system_users.
+// This reflects the app-level credential (not SuperTokens-only identities).
+func (s *Service) UserHasPassword(ctx context.Context, projectID, userID int) (bool, error) {
+	pw, err := s.GetUserPassword(ctx, projectID, userID)
+	if err != nil {
+		return false, err
+	}
+	return passwordHashSet(pw), nil
+}
+
+func passwordHashSet(pw *string) bool {
+	return pw != nil && *pw != ""
+}
+
+// stripUserPassword clears the password hash before serializing AppUser in API responses.
+func stripUserPassword(user *AppUser) {
+	if user != nil {
+		user.Password = nil
+	}
+}
+
 func (s *Service) SetUserPassword(ctx context.Context, projectID, userID int, password string) error {
 	schema, err := s.resolveSchema(ctx, projectID)
 	if err != nil {

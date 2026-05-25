@@ -277,6 +277,7 @@ func (s *Service) Register(ctx context.Context, projectID int, body map[string]a
 		slog.Warn("failed to create session", "error", err)
 	}
 
+	stripUserPassword(user)
 	result := map[string]any{
 		"user":    user,
 		"message": "User registered successfully",
@@ -387,12 +388,7 @@ func (s *Service) Login(ctx context.Context, projectID int, body map[string]any)
 		return nil, fmt.Errorf("session creation failed: %w", err)
 	}
 
-	result := map[string]any{
-		"user":        user,
-		"accessToken": sessionResp.AccessToken.Token,
-		"message":     "Login successful",
-	}
-	return result, nil
+	return s.buildLoginSessionResult(ctx, projectID, user, sessionResp.AccessToken.Token, "Login successful")
 }
 
 func (s *Service) SingleCredentialLogin(ctx context.Context, projectID int, body map[string]any) (map[string]any, error) {
@@ -463,7 +459,7 @@ func (s *Service) SingleCredentialLogin(ctx context.Context, projectID int, body
 		return nil, fmt.Errorf("session creation failed: %w", err)
 	}
 
-	return map[string]any{"user": user, "accessToken": sessionResp.AccessToken.Token, "message": "Login successful"}, nil
+	return s.buildLoginSessionResult(ctx, projectID, user, sessionResp.AccessToken.Token, "Login successful")
 }
 
 func (s *Service) RequestOTPLogin(ctx context.Context, projectID int, body map[string]any) error {
@@ -591,7 +587,7 @@ func (s *Service) VerifyOTPLogin(ctx context.Context, projectID int, body map[st
 		return nil, fmt.Errorf("session creation failed: %w", err)
 	}
 
-	return map[string]any{"user": user, "accessToken": sessionResp.AccessToken.Token, "message": "OTP verified successfully"}, nil
+	return s.buildLoginSessionResult(ctx, projectID, user, sessionResp.AccessToken.Token, "OTP verified successfully")
 }
 
 func (s *Service) Verify(ctx context.Context, projectID int, accessToken string) (map[string]any, error) {
@@ -1339,9 +1335,20 @@ func (s *Service) GoogleSignIn(ctx context.Context, projectID int, body map[stri
 		return nil, fmt.Errorf("session creation failed: %w", err)
 	}
 
+	return s.buildLoginSessionResult(ctx, projectID, user, sessionResp.AccessToken.Token, "Login successful")
+}
+
+// buildLoginSessionResult returns the standard login payload with has_password and without password hash on user.
+func (s *Service) buildLoginSessionResult(ctx context.Context, projectID int, user *AppUser, accessToken, message string) (map[string]any, error) {
+	hasPassword, err := s.UserHasPassword(ctx, projectID, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	stripUserPassword(user)
 	return map[string]any{
-		"user":        user,
-		"accessToken": sessionResp.AccessToken.Token,
-		"message":     "Login successful",
+		"user":         user,
+		"accessToken":  accessToken,
+		"has_password": hasPassword,
+		"message":      message,
 	}, nil
 }

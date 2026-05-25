@@ -88,15 +88,14 @@ x-api-key: <project-api-key>
         { "id": 2, "role_name": "User", "role_key": "user" }
       ]
     },
-    "session": {
-      "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-    },
-    "organisation_id": null,
-    "organisation_name": null,
-    "is_admin": false
+    "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "has_password": false,
+    "message": "Login successful"
   }
 }
 ```
+
+`has_password` indicates whether the app user has a stored app-level password (not SuperTokens). After Google-only signup it is `false`; clients can prompt the user to set a password. Organization context is in the JWT access token payload, not in this JSON.
 
 **Error responses** (examples):
 

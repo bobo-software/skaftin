@@ -6,11 +6,10 @@
       "command": "/home/bobo/Development/bobosoftware/skaftin/skaftin/go-services/mcp",
       "args": [],
       "env": {
-        "DB_HOST": "localhost",
-        "DB_PORT": "5440",
-        "DB_USER": "skaftin_user",
-        "DB_PASSWORD": "skaftin_password",
-        "DB_NAME": "skaftin_db"
+        "DB_PORT": "5431",
+        "DB_USER": "postgres",
+        "DB_PASSWORD": "LoZF1sLw6cgLvKaxA2zAHfxZQy4g1k3eDMNsXBIFV0M3EA0dzFKyai2J9O9GurLx",
+        "DB_NAME": "postgres"
       }
     }
   }
