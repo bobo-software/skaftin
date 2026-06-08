@@ -423,7 +423,7 @@ func (h *Handler) ensureFrontToken(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	accessExpiry := time.UnixMilli(sessionResp.AccessToken.Expiry)
 	if sessionResp.AccessToken.Expiry == 0 {
-		accessExpiry = now.Add(1 * time.Hour)
+		accessExpiry = now.Add(24 * time.Hour)
 	}
 	payload, _ := sessionResp.Session.UserDataInAccessToken.(map[string]any)
 	if payload == nil {
@@ -452,7 +452,7 @@ func setSessionCookiesAndHeaders(w http.ResponseWriter, session *supertokens.Cre
 	now := time.Now()
 	accessExpiry := time.UnixMilli(session.AccessToken.Expiry)
 	if session.AccessToken.Expiry == 0 {
-		accessExpiry = now.Add(1 * time.Hour)
+		accessExpiry = now.Add(24 * time.Hour)
 	}
 	refreshExpiry := time.UnixMilli(session.RefreshToken.Expiry)
 	if session.RefreshToken.Expiry == 0 {

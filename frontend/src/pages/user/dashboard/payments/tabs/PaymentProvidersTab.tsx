@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import {
   CreditCard, Plus, Edit2, Trash2, TestTube, Power, PowerOff, X,
   ExternalLink, AlertCircle, CheckCircle, Globe, Play, Loader2
@@ -35,6 +35,9 @@ interface PaymentProviderFormData {
   fnb_api_key_3d: string;
   fnb_api_inst_3d: string;
   fnb_secret_key: string;
+  // Paystack fields
+  paystack_secret_key: string;
+  paystack_public_key: string;
 }
 
 interface TestPaymentFormData {
@@ -55,10 +58,13 @@ interface FnbTestPaymentFormData {
 const PROVIDER_TYPES: { value: PaymentProviderType; label: string; description: string }[] = [
   { value: 'payfast', label: 'PayFast', description: 'South African payment gateway' },
   { value: 'fnb_pay', label: 'FNB Payment', description: 'FNB 3D Secure card payments' },
+  { value: 'paystack', label: 'Paystack', description: 'Africa-focused payment gateway' },
 ];
 
 const PaymentProvidersTab = () => {
   const { projectId } = useParams<{ projectId: string }>();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // Zustand store
   const {
@@ -94,6 +100,8 @@ const PaymentProvidersTab = () => {
     fnb_api_key_3d: '',
     fnb_api_inst_3d: '',
     fnb_secret_key: '',
+    paystack_secret_key: '',
+    paystack_public_key: '',
   });
 
   // Test Payment Modal State
@@ -119,6 +127,16 @@ const PaymentProvidersTab = () => {
     }
   }, [projectId, fetchProviders]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const trxref = params.get('trxref');
+    const reference = params.get('reference');
+    if (trxref || reference) {
+      ToastUtils.success('Payment Successful!');
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.search, location.pathname, navigate]);
+
   const handleOpenModal = (provider?: PaymentProvider) => {
     if (provider) {
       setEditingProvider(provider);
@@ -143,6 +161,8 @@ const PaymentProvidersTab = () => {
         fnb_api_key_3d: meta.fnb_api_key_3d || '',
         fnb_api_inst_3d: meta.fnb_api_inst_3d || '',
         fnb_secret_key: meta.fnb_secret_key || '',
+        paystack_secret_key: '',
+        paystack_public_key: '',
       });
     } else {
       setEditingProvider(null);
@@ -166,6 +186,8 @@ const PaymentProvidersTab = () => {
         fnb_api_key_3d: '',
         fnb_api_inst_3d: '',
         fnb_secret_key: '',
+        paystack_secret_key: '',
+        paystack_public_key: '',
       });
     }
     setShowModal(true);
@@ -205,6 +227,14 @@ const PaymentProvidersTab = () => {
             fnb_secret_key: formData.fnb_secret_key || undefined,
           };
         }
+        if (formData.provider_type === 'paystack') {
+          if (formData.paystack_secret_key) {
+            updateData.api_secret = formData.paystack_secret_key;
+          }
+          if (formData.paystack_public_key) {
+            updateData.public_key = formData.paystack_public_key;
+          }
+        }
 
         const result = await updateProvider(
           projectId!,
@@ -225,8 +255,8 @@ const PaymentProvidersTab = () => {
           merchant_key: formData.merchant_key || undefined,
           passphrase: formData.passphrase || undefined,
           api_key: formData.api_key || undefined,
-          api_secret: formData.api_secret || undefined,
-          public_key: formData.public_key || undefined,
+          api_secret: formData.provider_type === 'paystack' ? (formData.paystack_secret_key || undefined) : (formData.api_secret || undefined),
+          public_key: formData.provider_type === 'paystack' ? (formData.paystack_public_key || undefined) : (formData.public_key || undefined),
           return_url: formData.return_url || undefined,
           cancel_url: formData.cancel_url || undefined,
           notify_url: formData.notify_url || undefined,
@@ -293,11 +323,6 @@ const PaymentProvidersTab = () => {
     }
   };
 
-  const getWebhookUrl = () => {
-    const baseUrl = window.location.origin.replace(':3005', ':4006'); // Backend port
-    return `${baseUrl}/api/payments/webhook/payfast/${projectId}`;
-  };
-
   const openTestPaymentModal = (provider: PaymentProvider) => {
     setTestPaymentProvider(provider);
     if (provider.provider_type === 'fnb_pay') {
@@ -316,6 +341,11 @@ const PaymentProvidersTab = () => {
       });
     }
     setShowTestPaymentModal(true);
+  };
+
+  const getWebhookUrlForProvider = (providerType: string) => {
+    const baseUrl = window.location.origin.replace(':3005', ':4006');
+    return `${baseUrl}/api/payments/webhook/${providerType}/${projectId}`;
   };
 
   const handleFnbTestPayment = async (e: React.FormEvent) => {
@@ -425,6 +455,7 @@ const PaymentProvidersTab = () => {
           customer_email: testPaymentFormData.customer_email || undefined,
           customer_name: testPaymentFormData.customer_name || undefined,
           payment_type: testPaymentFormData.payment_type,
+          return_url: window.location.origin + location.pathname,
         }),
       });
 
@@ -578,6 +609,50 @@ const PaymentProvidersTab = () => {
     </div>
   );
 
+  const renderPaystackFields = () => (
+    <div className="space-y-4">
+      <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
+        <p className="text-sm text-green-700 dark:text-green-300">
+          <strong>Paystack</strong> — Africa-focused payment gateway. Obtain your API keys from the{' '}
+          <a href="https://dashboard.paystack.com/#/settings/developers" target="_blank" rel="noopener noreferrer" className="underline">
+            Paystack Dashboard
+          </a>.
+        </p>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+          Secret Key {!editingProvider && '*'}
+        </label>
+        <input
+          type="password"
+          value={formData.paystack_secret_key}
+          onChange={(e) => setFormData({ ...formData, paystack_secret_key: e.target.value })}
+          className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+          placeholder={editingProvider ? '(unchanged)' : 'sk_test_... or sk_live_...'}
+          required={!editingProvider}
+        />
+        <p className="text-xs text-dark-500 mt-1">
+          Used server-side to authenticate API requests. Keep this secret.
+        </p>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+          Public Key
+        </label>
+        <input
+          type="text"
+          value={formData.paystack_public_key}
+          onChange={(e) => setFormData({ ...formData, paystack_public_key: e.target.value })}
+          className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+          placeholder="pk_test_... or pk_live_..."
+        />
+        <p className="text-xs text-dark-500 mt-1">
+          Used client-side for inline payments (optional).
+        </p>
+      </div>
+    </div>
+  );
+
   const renderGenericFields = () => (
     <>
       <div className="grid grid-cols-2 gap-4">
@@ -653,13 +728,24 @@ const PaymentProvidersTab = () => {
         <div className="flex items-start gap-3">
           <Globe className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
           <div className="flex-1">
-            <h3 className="text-sm font-medium text-blue-800 dark:text-blue-300">Webhook URL (ITN)</h3>
+            <h3 className="text-sm font-medium text-blue-800 dark:text-blue-300">Webhook URLs</h3>
             <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
-              Configure this URL in your payment gateway dashboard for payment notifications:
+              Configure these URLs in your payment gateway dashboard for payment notifications:
             </p>
-            <code className="block mt-2 p-2 bg-blue-100 dark:bg-blue-900/40 rounded text-xs text-blue-800 dark:text-blue-200 break-all">
-              {getWebhookUrl()}
-            </code>
+            <div className="mt-2 space-y-1.5">
+              <div>
+                <span className="text-xs font-medium text-blue-700 dark:text-blue-300">PayFast / Generic:</span>
+                <code className="block mt-0.5 p-2 bg-blue-100 dark:bg-blue-900/40 rounded text-xs text-blue-800 dark:text-blue-200 break-all">
+                  {getWebhookUrlForProvider('payfast')}
+                </code>
+              </div>
+              <div>
+                <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Paystack:</span>
+                <code className="block mt-0.5 p-2 bg-blue-100 dark:bg-blue-900/40 rounded text-xs text-blue-800 dark:text-blue-200 break-all">
+                  {getWebhookUrlForProvider('paystack')}
+                </code>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -861,7 +947,13 @@ const PaymentProvidersTab = () => {
               </div>
 
               {/* Provider-specific fields */}
-              {formData.provider_type === 'payfast' ? renderPayFastFields() : formData.provider_type === 'fnb_pay' ? renderFnbFields() : null}
+              {formData.provider_type === 'payfast'
+                ? renderPayFastFields()
+                : formData.provider_type === 'fnb_pay'
+                ? renderFnbFields()
+                : formData.provider_type === 'paystack'
+                ? renderPaystackFields()
+                : null}
 
               {/* URL Configuration */}
               <div className="pt-4 border-t border-dark-200 dark:border-dark-700">
@@ -902,7 +994,7 @@ const PaymentProvidersTab = () => {
                       value={formData.notify_url}
                       onChange={(e) => setFormData({ ...formData, notify_url: e.target.value })}
                       className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
-                      placeholder={getWebhookUrl()}
+                      placeholder={getWebhookUrlForProvider(formData.provider_type)}
                     />
                     <p className="text-xs text-dark-500 mt-1">
                       Leave empty to use the default webhook URL shown above
@@ -970,7 +1062,11 @@ const PaymentProvidersTab = () => {
             <div className="flex items-center justify-between p-4 border-b border-dark-200 dark:border-dark-700">
               <div>
                 <h2 className="text-lg font-semibold text-dark-900 dark:text-white">
-                  {testPaymentProvider.provider_type === 'fnb_pay' ? 'Test FNB Payment' : 'Test Payment'}
+                  {testPaymentProvider.provider_type === 'fnb_pay'
+                    ? 'Test FNB Payment'
+                    : testPaymentProvider.provider_type === 'paystack'
+                    ? 'Test Paystack Payment'
+                    : 'Test Payment'}
                 </h2>
                 <p className="text-sm text-dark-500 dark:text-dark-400">
                   Testing with <span className="font-medium text-primary-600 dark:text-primary-400">{testPaymentProvider.name}</span>
@@ -1073,7 +1169,7 @@ const PaymentProvidersTab = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
-                        Customer Email
+                        Customer Email{testPaymentProvider?.provider_type === 'paystack' && ' *'}
                       </label>
                       <input
                         type="email"
@@ -1081,6 +1177,7 @@ const PaymentProvidersTab = () => {
                         onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, customer_email: e.target.value })}
                         className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
                         placeholder="test@example.com"
+                        required={testPaymentProvider?.provider_type === 'paystack'}
                       />
                     </div>
                     <div>
@@ -1118,6 +1215,8 @@ const PaymentProvidersTab = () => {
                 <p className="text-sm text-blue-700 dark:text-blue-300">
                   {testPaymentProvider.provider_type === 'fnb_pay'
                     ? 'You will be redirected to FNB\'s hosted payment page to complete the test.'
+                    : testPaymentProvider.provider_type === 'paystack'
+                    ? 'You will be redirected to Paystack\'s secure checkout page. Customer email is required.'
                     : `The ${getProviderDisplayName(testPaymentProvider.provider_type)} payment page will open in a new tab.`}
                   {testPaymentProvider.sandbox_mode && ' This is a sandbox/test transaction.'}
                 </p>
@@ -1148,7 +1247,11 @@ const PaymentProvidersTab = () => {
                   ) : (
                     <>
                       <Play className="w-4 h-4" />
-                      {testPaymentProvider.provider_type === 'fnb_pay' ? 'Test FNB Payment' : 'Start Test Payment'}
+                      {testPaymentProvider.provider_type === 'fnb_pay'
+                        ? 'Test FNB Payment'
+                        : testPaymentProvider.provider_type === 'paystack'
+                        ? 'Test Paystack Payment'
+                        : 'Start Test Payment'}
                     </>
                   )}
                 </button>

@@ -5,7 +5,7 @@ import ApiRoutes from '../../constants/ApiRoutes';
 
 // ---------- Types ----------
 
-export type PaymentProviderType = 'payfast' | 'fnb_pay';
+export type PaymentProviderType = 'payfast' | 'fnb_pay' | 'paystack';
 export type PaymentType = 'once_off' | 'subscription';
 export type TransactionStatus = 'pending' | 'processing' | 'complete' | 'failed' | 'cancelled' | 'refunded';
 
@@ -417,6 +417,7 @@ export const getProviderDisplayName = (providerType: PaymentProviderType): strin
   const names: Record<PaymentProviderType, string> = {
     payfast: 'PayFast',
     fnb_pay: 'FNB Payment',
+    paystack: 'Paystack',
   };
   return names[providerType] || providerType;
 };

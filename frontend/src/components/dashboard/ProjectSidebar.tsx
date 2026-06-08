@@ -38,7 +38,7 @@ const ProjectSidebar = ({ projectName, projectDescription, isOpen }: ProjectSide
     <aside
       className={`${ isOpen ? 'translate-x-0' : '-translate-x-full'} fixed lg:translate-x-0 inset-y-0 left-0 z-30 ${
         shouldShowFull ? 'w-64' : 'w-14'
-      } bg-white dark:bg-dark-800 border-r border-dark-200 dark:border-dark-700 transition-all duration-200 ease-in-out flex flex-col shadow-lg z-50`}
+      } bg-white dark:bg-dark-800 border-r border-dark-200 dark:border-dark-700 flex flex-col shadow-lg z-50`}
     >
       {/* Project Info */}
       <div className="p-4 border-b border-dark-200 dark:border-dark-700 overflow-hidden">

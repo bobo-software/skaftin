@@ -54,12 +54,21 @@ const AnimatedPage = ({ children }: { children: ReactNode }) => (
   </motion.div>
 );
 
+const StaticPage = ({ children }: { children: ReactNode }) => (
+  <div className="min-h-screen">{children}</div>
+);
+
 function AppRoutes() {
   const location = useLocation();
 
+  const parts = location.pathname.split('/');
+  const routeKey = parts[1] === 'projects' && parts[2]
+    ? `${parts[1]}/${parts[2]}`
+    : location.pathname;
+
   return (
     <AnimatePresence mode="wait" initial={false}>
-      <Routes location={location} key={location.pathname}>
+      <Routes location={location} key={routeKey}>
         <Route path="/" element={<AnimatedPage><HomePage /></AnimatedPage>} />
         <Route path="/auth/*" element={<AnimatedPage><LoginPage /></AnimatedPage>} />
         <Route path="/login" element={<AnimatedPage><LoginPage /></AnimatedPage>} />
@@ -72,66 +81,66 @@ function AppRoutes() {
         <Route
           path="/organizations/select"
           element={
-            <AnimatedPage>
+            <StaticPage>
               <ProtectedRoute>
                 <SelectOrganizationPage />
               </ProtectedRoute>
-            </AnimatedPage>
+            </StaticPage>
           }
         />
         <Route
           path="/organizations/create"
           element={
-            <AnimatedPage>
+            <StaticPage>
               <ProtectedRoute>
                 <CreateOrganizationPage />
               </ProtectedRoute>
-            </AnimatedPage>
+            </StaticPage>
           }
         />
         <Route
           path="/organizations/settings"
           element={
-            <AnimatedPage>
+            <StaticPage>
               <ProtectedRoute>
                 <OrganizationSettingsPage />
               </ProtectedRoute>
-            </AnimatedPage>
+            </StaticPage>
           }
         />
         <Route
           path="/projects"
           element={
-            <AnimatedPage>
+            <StaticPage>
               <ProtectedRoute>
                 <ProjectsOverviewPage />
               </ProtectedRoute>
-            </AnimatedPage>
+            </StaticPage>
           }
         />
         <Route
           path="/projects/:projectId/*"
           element={
-            <AnimatedPage>
+            <StaticPage>
               <ProtectedRoute>
                 <ProjectDashboardPage />
               </ProtectedRoute>
-            </AnimatedPage>
+            </StaticPage>
           }
         />
         <Route
           path="/profile"
           element={
-            <AnimatedPage>
+            <StaticPage>
               <ProtectedRoute>
                 <UserProfile />
               </ProtectedRoute>
-            </AnimatedPage>
+            </StaticPage>
           }
         />
-        <Route path="/payments/return" element={<AnimatedPage><PaymentReturnPage /></AnimatedPage>} />
-        <Route path="/payments/cancel" element={<AnimatedPage><PaymentCancelPage /></AnimatedPage>} />
-        <Route path="/thankyou/:reference" element={<AnimatedPage><FNBThankYouPage /></AnimatedPage>} />
+        <Route path="/payments/return" element={<StaticPage><PaymentReturnPage /></StaticPage>} />
+        <Route path="/payments/cancel" element={<StaticPage><PaymentCancelPage /></StaticPage>} />
+        <Route path="/thankyou/:reference" element={<StaticPage><FNBThankYouPage /></StaticPage>} />
       </Routes>
     </AnimatePresence>
   );

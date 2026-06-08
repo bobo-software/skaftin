@@ -25,6 +25,10 @@ services:
       
       # Password reset token expires after 15 minutes (in milliseconds)
       PASSWORD_RESET_TOKEN_LIFETIME: 900000
+
+      # Session token lifetimes
+      ACCESS_TOKEN_VALIDITY: "86400"       # 24 hours (in seconds)
+      REFRESH_TOKEN_VALIDITY: "2592000"    # 30 days (in seconds)
     networks:
       - skaftin-network
     restart: unless-stopped

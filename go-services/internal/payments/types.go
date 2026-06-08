@@ -5,8 +5,9 @@ import "time"
 type ProviderType string
 
 const (
-	ProviderTypePayFast ProviderType = "payfast"
-	ProviderTypeFNBPay  ProviderType = "fnb_pay"
+	ProviderTypePayFast  ProviderType = "payfast"
+	ProviderTypeFNBPay   ProviderType = "fnb_pay"
+	ProviderTypePaystack ProviderType = "paystack"
 )
 
 type PaymentProviderRecord struct {
@@ -150,6 +151,19 @@ type FNBInitiateResult struct {
 	Reference string
 	Error     string
 	Code      string
+}
+
+type PaystackProviderConfig struct {
+	SecretKey string
+	CallbackURL string
+}
+
+type PaystackInitiateResult struct {
+	Success      bool
+	AuthorizationURL string
+	Reference    string
+	AccessCode   string
+	Error        string
 }
 
 type WebhookValidationResult struct {

@@ -92,6 +92,8 @@ func (s *Service) TestProvider(ctx context.Context, projectID, providerID int) (
 		return pingPayFast(provider), nil
 	case ProviderTypeFNBPay:
 		return pingFNB(provider), nil
+	case ProviderTypePaystack:
+		return pingPaystack(provider), nil
 	default:
 		return PingResponse{Success: false, Error: "Unsupported provider type"}, nil
 	}
@@ -280,6 +282,26 @@ func (s *Service) InitiatePayment(ctx context.Context, projectID int, req Initia
 				Error:         err.Error(),
 			}, nil
 		}
+	case ProviderTypePaystack:
+		callbackURL := firstNonNilString(req.ReturnURL, provider.ReturnURL)
+		paystackResult, psErr := initiatePaystackTransaction(ctx, provider, transactionID, req.Amount, req.CustomerEmail, callbackURL, req.ItemName, req.Metadata)
+		if psErr != nil {
+			return InitiatePaymentResult{
+				Success:       false,
+				TransactionID: transactionID,
+				PaymentURL:    "",
+				Error:         psErr.Error(),
+			}, nil
+		}
+		if !paystackResult.Success {
+			return InitiatePaymentResult{
+				Success:       false,
+				TransactionID: transactionID,
+				PaymentURL:    "",
+				Error:         paystackResult.Error,
+			}, nil
+		}
+		paymentURL = paystackResult.AuthorizationURL
 	default:
 		return InitiatePaymentResult{
 			Success:       false,
@@ -586,6 +608,22 @@ func (s *Service) ProcessWebhook(ctx context.Context, projectID int, providerTyp
 			}
 		}
 		return result, nil
+	case ProviderTypePaystack:
+		result := validatePaystackWebhook(provider, rawBody)
+		if result.Valid && result.TransactionID != "" {
+			if err := s.store.UpdateTransactionFromWebhook(
+				ctx,
+				schema,
+				projectID,
+				result.TransactionID,
+				result.Status,
+				result.ExternalPaymentID,
+				result.RawData,
+			); err != nil {
+				return WebhookValidationResult{}, err
+			}
+		}
+		return result, nil
 	default:
 		return WebhookValidationResult{Valid: false, Error: "Unsupported provider type"}, nil
 	}
@@ -838,6 +876,182 @@ func generatePayFastPaymentSignature(params []payFastParam, passphrase *string) 
 	}
 	sum := md5.Sum([]byte(strings.Join(pieces, "&")))
 	return hex.EncodeToString(sum[:])
+}
+
+func pingPaystack(provider *PaymentProviderRecord) PingResponse {
+	secretKey := ""
+	if provider.APISecret != nil {
+		secretKey = strings.TrimSpace(*provider.APISecret)
+	}
+	if secretKey == "" {
+		return PingResponse{Success: false, Error: "Missing Paystack secret key. Add it in provider settings."}
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, "https://api.paystack.co/bank", nil)
+	req.Header.Set("Authorization", "Bearer "+secretKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return PingResponse{Success: false, Error: err.Error()}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return PingResponse{Success: true, Message: "Paystack connection successful"}
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	return PingResponse{Success: false, Error: strings.TrimSpace(string(body))}
+}
+
+func initiatePaystackTransaction(ctx context.Context, provider *PaymentProviderRecord, reference string, amount float64, customerEmail *string, callbackURL, itemName string, metadata map[string]any) (PaystackInitiateResult, error) {
+	secretKey := ""
+	if provider.APISecret != nil {
+		secretKey = strings.TrimSpace(*provider.APISecret)
+	}
+	if secretKey == "" {
+		return PaystackInitiateResult{Success: false, Error: "Missing Paystack secret key. Add it in provider settings."}, nil
+	}
+
+	email := ""
+	if customerEmail != nil {
+		email = strings.TrimSpace(*customerEmail)
+	}
+	if email == "" {
+		return PaystackInitiateResult{Success: false, Error: "Customer email is required for Paystack payments."}, nil
+	}
+
+	// Paystack amounts are in the smallest currency unit (kobo for NGN, pesewas for GHS, cents for USD/ZAR)
+	amountInt := int64(amount * 100)
+
+	body := map[string]any{
+		"email":     email,
+		"amount":    amountInt,
+		"reference": reference,
+	}
+	if strings.TrimSpace(callbackURL) != "" {
+		body["callback_url"] = strings.TrimSpace(callbackURL)
+	}
+	if strings.TrimSpace(itemName) != "" {
+		body["metadata"] = map[string]any{
+			"item_name": itemName,
+			"custom_fields": []map[string]any{
+				{"display_name": "Item", "variable_name": "item_name", "value": itemName},
+			},
+		}
+		if metadata != nil {
+			// Merge extra metadata into the metadata object
+			if existing, ok := body["metadata"].(map[string]any); ok {
+				for k, v := range metadata {
+					existing[k] = v
+				}
+			}
+		}
+	}
+
+	raw, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.paystack.co/transaction/initialize", strings.NewReader(string(raw)))
+	if err != nil {
+		return PaystackInitiateResult{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+secretKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return PaystackInitiateResult{Success: false, Error: "Paystack API request failed: " + err.Error()}, nil
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	var result map[string]any
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return PaystackInitiateResult{Success: false, Error: "Invalid Paystack response"}, nil
+	}
+
+	if status, _ := result["status"].(bool); !status {
+		msg, _ := result["message"].(string)
+		if msg == "" {
+			msg = "Paystack initialization failed"
+		}
+		return PaystackInitiateResult{Success: false, Error: msg}, nil
+	}
+
+	data, _ := result["data"].(map[string]any)
+	if data == nil {
+		return PaystackInitiateResult{Success: false, Error: "Missing data in Paystack response"}, nil
+	}
+
+	authURL, _ := data["authorization_url"].(string)
+	accessCode, _ := data["access_code"].(string)
+	ref, _ := data["reference"].(string)
+
+	if authURL == "" {
+		return PaystackInitiateResult{Success: false, Error: "Paystack did not return an authorization URL"}, nil
+	}
+
+	return PaystackInitiateResult{
+		Success:          true,
+		AuthorizationURL: authURL,
+		Reference:        ref,
+		AccessCode:       accessCode,
+	}, nil
+}
+
+func validatePaystackWebhook(provider *PaymentProviderRecord, rawBody string) WebhookValidationResult {
+	secretKey := ""
+	if provider.APISecret != nil {
+		secretKey = strings.TrimSpace(*provider.APISecret)
+	}
+
+	// Verify HMAC-SHA512 signature if secret key is present
+	if secretKey != "" {
+		// The signature header is checked in the HTTP handler; here we just parse the body
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(rawBody), &payload); err != nil {
+		return WebhookValidationResult{Valid: false, Error: "Invalid JSON payload"}
+	}
+
+	event, _ := payload["event"].(string)
+	data, _ := payload["data"].(map[string]any)
+	if data == nil {
+		return WebhookValidationResult{Valid: false, Error: "Missing data in webhook payload"}
+	}
+
+	// Reference is our transactionID
+	reference, _ := data["reference"].(string)
+	if reference == "" {
+		return WebhookValidationResult{Valid: false, Error: "Missing reference in webhook data"}
+	}
+
+	externalID, _ := data["id"].(float64)
+	externalIDStr := strconv.FormatInt(int64(externalID), 10)
+
+	amount := 0.0
+	if amountRaw, ok := data["amount"].(float64); ok {
+		amount = amountRaw / 100.0
+	}
+
+	status := "pending"
+	switch event {
+	case "charge.success":
+		status = "complete"
+	case "transfer.failed", "charge.dispute.create":
+		status = "failed"
+	}
+
+	return WebhookValidationResult{
+		Valid:             true,
+		TransactionID:     reference,
+		ExternalPaymentID: externalIDStr,
+		Status:            status,
+		Amount:            amount,
+		RawData:           payload,
+	}
 }
 
 func cancelPayFastSubscription(ctx context.Context, provider *PaymentProviderRecord, subscriptionToken string) error {

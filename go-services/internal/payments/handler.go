@@ -1,6 +1,9 @@
 package payments
 
 import (
+	"crypto/hmac"
+	"crypto/sha512"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
@@ -43,6 +46,7 @@ func (h *Handler) RegisterProjectRoutes(mux *http.ServeMux) {
 
 func (h *Handler) RegisterWebhookRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/payments/webhook/payfast/{projectId}", h.PayFastWebhook)
+	mux.HandleFunc("POST /api/payments/webhook/paystack/{projectId}", h.PaystackWebhook)
 	mux.HandleFunc("POST /api/payments/webhook/{providerType}/{projectId}", h.GenericWebhook)
 }
 
@@ -129,10 +133,10 @@ func (h *Handler) CreateProvider(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if req.ProviderType != ProviderTypePayFast && req.ProviderType != ProviderTypeFNBPay {
+	if req.ProviderType != ProviderTypePayFast && req.ProviderType != ProviderTypeFNBPay && req.ProviderType != ProviderTypePaystack {
 		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
 			"success": false,
-			"error":   "Invalid provider_type. Must be one of: payfast, fnb_pay",
+			"error":   "Invalid provider_type. Must be one of: payfast, fnb_pay, paystack",
 		})
 		return
 	}
@@ -508,6 +512,51 @@ func (h *Handler) PayFastWebhook(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.ProcessWebhook(r.Context(), projectID, ProviderTypePayFast, string(rawBody), parsed)
 	if err != nil {
 		slog.Error("failed to process PayFast webhook", "error", err, "projectId", projectID)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if result.Valid {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+		return
+	}
+	http.Error(w, result.Error, http.StatusBadRequest)
+}
+
+func (h *Handler) PaystackWebhook(w http.ResponseWriter, r *http.Request) {
+	projectID, err := strconv.Atoi(r.PathValue("projectId"))
+	if err != nil || projectID <= 0 {
+		http.Error(w, "Invalid project ID", http.StatusBadRequest)
+		return
+	}
+
+	rawBody, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Verify Paystack HMAC-SHA512 signature using the provider's secret key
+	signature := r.Header.Get("x-paystack-signature")
+	if signature != "" {
+		provider, provErr := h.service.GetProviderByType(r.Context(), projectID, ProviderTypePaystack)
+		if provErr == nil && provider != nil && provider.APISecret != nil {
+			secretKey := strings.TrimSpace(*provider.APISecret)
+			if secretKey != "" {
+				mac := hmac.New(sha512.New, []byte(secretKey))
+				mac.Write(rawBody)
+				expected := hex.EncodeToString(mac.Sum(nil))
+				if !hmac.Equal([]byte(signature), []byte(expected)) {
+					http.Error(w, "Invalid signature", http.StatusUnauthorized)
+					return
+				}
+			}
+		}
+	}
+
+	result, err := h.service.ProcessWebhook(r.Context(), projectID, ProviderTypePaystack, string(rawBody), nil)
+	if err != nil {
+		slog.Error("failed to process Paystack webhook", "error", err, "projectId", projectID)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}

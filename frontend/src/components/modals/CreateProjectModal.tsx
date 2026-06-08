@@ -92,42 +92,41 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-dark-800 rounded-2xl shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between p-6 border-b border-dark-200 dark:border-dark-700">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center">
-              <Database className="w-5 h-5 text-white" />
+      <div className="bg-white dark:bg-dark-800 rounded-xl shadow-xl w-full max-w-sm">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-dark-200 dark:border-dark-700">
+          <div className="flex items-center space-x-2">
+            <div className="w-7 h-7 bg-primary-500 rounded-md flex items-center justify-center">
+              <Database className="w-4 h-4 text-white" />
             </div>
-            <h2 className="text-xl font-bold text-dark-900 dark:text-white">
-              Create New Project
+            <h2 className="text-base font-semibold text-dark-900 dark:text-white">
+              New Project
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-dark-100 dark:hover:bg-dark-700 transition-colors"
+            className="p-1 rounded-md hover:bg-dark-100 dark:hover:bg-dark-700"
           >
-            <X className="w-5 h-5 text-dark-600 dark:text-dark-300" />
+            <X className="w-4 h-4 text-dark-500 dark:text-dark-400" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="p-4 space-y-3">
           {/* Organization Selection */}
           <div>
-            <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-2">
+            <label className="block text-xs font-medium text-dark-700 dark:text-dark-300 mb-1">
               Organization *
             </label>
             {hasOrganizations ? (
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Building2 className="w-4 h-4 text-dark-400" />
+                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                  <Building2 className="w-3.5 h-3.5 text-dark-400" />
                 </div>
                 <select
                   value={projectData.organization_id}
                   onChange={(e) => handleInputChange('organization_id', Number(e.target.value))}
-                  className="w-full pl-10 pr-4 py-2.5 border border-dark-200 dark:border-dark-700 rounded-lg 
-                           bg-white dark:bg-dark-700 text-dark-900 dark:text-white 
-                           focus:ring-2 focus:ring-primary-500 focus:border-transparent
-                           transition-colors"
+                  className="w-full pl-8 pr-3 py-2 text-sm border border-dark-200 dark:border-dark-700 rounded-lg
+                           bg-white dark:bg-dark-700 text-dark-900 dark:text-white
+                           focus:ring-1 focus:ring-primary-500 focus:border-transparent"
                   required
                 >
                   {creatableOrgs.map((org) => (
@@ -138,16 +137,16 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
                 </select>
               </div>
             ) : (
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-                <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                <p className="text-xs text-amber-700 dark:text-amber-300 mb-2">
                   You need an organization before you can create a project.
                 </p>
                 <button
                   type="button"
                   onClick={() => setShowCreateOrgModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 text-white text-xs font-medium rounded-lg hover:bg-primary-700"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                   Create Organization
                 </button>
               </div>
@@ -171,14 +170,13 @@ const CreateProjectModal = ({ isOpen, onClose, onSuccess }: CreateProjectModalPr
             disabled={!hasOrganizations}
           />
 
-
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+              <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
             </div>
           )}
 
-          <div className="flex space-x-3">
+          <div className="flex space-x-2 pt-1">
             <AppButton
               type="button"
               variant="secondary"
