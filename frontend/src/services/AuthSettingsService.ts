@@ -31,6 +31,9 @@ export interface AuthSettings {
   google_sign_in_enabled: boolean;
   google_web_client_ids: string[];
   google_auto_register: boolean;
+  apple_sign_in_enabled: boolean;
+  apple_client_ids: string[];
+  apple_auto_register: boolean;
 }
 
 export interface UpdateAuthSettingsRequest {
@@ -60,6 +63,9 @@ export interface UpdateAuthSettingsRequest {
   google_sign_in_enabled?: boolean;
   google_web_client_ids?: string[];
   google_auto_register?: boolean;
+  apple_sign_in_enabled?: boolean;
+  apple_client_ids?: string[];
+  apple_auto_register?: boolean;
 }
 
 export interface EmailProvider {

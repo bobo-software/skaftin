@@ -12,6 +12,8 @@ const AuthGeneralSettingsTab = () => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [clientIdInput, setClientIdInput] = useState('');
   const clientIdInputRef = useRef<HTMLInputElement>(null);
+  const [appleClientIdInput, setAppleClientIdInput] = useState('');
+  const appleClientIdInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -30,7 +32,13 @@ const AuthGeneralSettingsTab = () => {
     setLoading(true);
     try {
       const data = await AuthSettingsService.getAuthSettings(projectId);
-      setSettings(data);
+      setSettings({
+        ...data,
+        google_web_client_ids: data.google_web_client_ids ?? [],
+        apple_client_ids: data.apple_client_ids ?? [],
+        apple_sign_in_enabled: data.apple_sign_in_enabled ?? false,
+        apple_auto_register: data.apple_auto_register ?? false,
+      });
     } catch (error: any) {
       console.error('Error fetching settings:', error);
       setMessage({ type: 'error', text: error.message });
@@ -82,6 +90,9 @@ const AuthGeneralSettingsTab = () => {
         google_sign_in_enabled: settings.google_sign_in_enabled,
         google_web_client_ids: settings.google_web_client_ids,
         google_auto_register: settings.google_auto_register,
+        apple_sign_in_enabled: settings.apple_sign_in_enabled,
+        apple_client_ids: settings.apple_client_ids,
+        apple_auto_register: settings.apple_auto_register,
       });
       setMessage({ type: 'success', text: 'Settings saved successfully!' });
       setTimeout(() => setMessage(null), 3000);
@@ -576,6 +587,127 @@ const AuthGeneralSettingsTab = () => {
                     }}
                     className="px-3 py-2 rounded-lg border border-dark-300 dark:border-dark-600 text-dark-600 dark:text-dark-300 hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors"
                     aria-label="Add client ID"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-xs text-dark-500 dark:text-dark-400 mt-1.5">Press Enter or click + to add. Duplicates are ignored.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Apple Sign-In */}
+          <div className="bg-white dark:bg-dark-800 rounded-lg border border-dark-200 dark:border-dark-700 p-6">
+            <div className="flex items-center gap-3 mb-1">
+              <svg className="w-5 h-5 flex-shrink-0 text-dark-900 dark:text-white" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path fill="currentColor" d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+              </svg>
+              <h3 className="text-lg font-semibold text-dark-900 dark:text-white">Apple Sign-In</h3>
+            </div>
+            <p className="text-sm text-dark-600 dark:text-dark-400 mb-5">
+              Allow users to sign in with Apple on iOS. Requires the app&apos;s iOS bundle identifier as the allowed JWT audience.
+            </p>
+
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="font-medium text-dark-900 dark:text-white">Enable Apple Sign-In</label>
+                  <p className="text-sm text-dark-600 dark:text-dark-400">
+                    Allow users to authenticate using Sign in with Apple
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.apple_sign_in_enabled}
+                    onChange={(e) => setSettings({ ...settings, apple_sign_in_enabled: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="font-medium text-dark-900 dark:text-white">Auto-register New Users</label>
+                  <p className="text-sm text-dark-600 dark:text-dark-400">
+                    Automatically create an account for first-time Apple sign-ins. When off, only existing users can sign in with Apple.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.apple_auto_register}
+                    onChange={(e) => setSettings({ ...settings, apple_auto_register: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                </label>
+              </div>
+
+              <div>
+                <label className="block font-medium text-dark-900 dark:text-white mb-1">
+                  Allowed Bundle IDs (Client IDs)
+                </label>
+                <p className="text-sm text-dark-600 dark:text-dark-400 mb-3">
+                  Add the iOS bundle identifier(s) from your app (e.g. <code className="px-1 py-0.5 bg-dark-100 dark:bg-dark-700 rounded text-xs font-mono">com.bobosoftware.rydnex</code>). Must match the JWT <code className="px-1 py-0.5 bg-dark-100 dark:bg-dark-700 rounded text-xs font-mono">aud</code> claim from Apple.
+                </p>
+
+                {settings.apple_client_ids.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {settings.apple_client_ids.map((id) => (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-700 font-mono"
+                      >
+                        {id}
+                        <button
+                          type="button"
+                          onClick={() => setSettings({
+                            ...settings,
+                            apple_client_ids: settings.apple_client_ids.filter((c) => c !== id),
+                          })}
+                          className="text-primary-500 hover:text-primary-700 dark:hover:text-primary-200 transition-colors"
+                          aria-label={`Remove ${id}`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <input
+                    ref={appleClientIdInputRef}
+                    type="text"
+                    value={appleClientIdInput}
+                    onChange={(e) => setAppleClientIdInput(e.target.value)}
+                    onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const val = appleClientIdInput.trim();
+                        if (val && !settings.apple_client_ids.includes(val)) {
+                          setSettings({ ...settings, apple_client_ids: [...settings.apple_client_ids, val] });
+                        }
+                        setAppleClientIdInput('');
+                      }
+                    }}
+                    placeholder="e.g. com.bobosoftware.rydnex"
+                    className="flex-1 px-4 py-2 border border-dark-300 dark:border-dark-600 rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-dark-700 dark:text-white font-mono text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = appleClientIdInput.trim();
+                      if (val && !settings.apple_client_ids.includes(val)) {
+                        setSettings({ ...settings, apple_client_ids: [...settings.apple_client_ids, val] });
+                      }
+                      setAppleClientIdInput('');
+                      appleClientIdInputRef.current?.focus();
+                    }}
+                    className="px-3 py-2 rounded-lg border border-dark-300 dark:border-dark-600 text-dark-600 dark:text-dark-300 hover:bg-dark-50 dark:hover:bg-dark-700 transition-colors"
+                    aria-label="Add bundle ID"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
