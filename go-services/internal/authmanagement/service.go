@@ -1338,6 +1338,179 @@ func (s *Service) GoogleSignIn(ctx context.Context, projectID int, body map[stri
 	return s.buildLoginSessionResult(ctx, projectID, user, sessionResp.AccessToken.Token, "Login successful")
 }
 
+// ─── Apple Sign-In ────────────────────────────────────────────────────
+
+func parseAppleFullName(body map[string]any) (givenName, familyName string) {
+	fullName, ok := body["fullName"].(map[string]any)
+	if !ok || fullName == nil {
+		return "", ""
+	}
+	givenName, _ = fullName["givenName"].(string)
+	familyName, _ = fullName["familyName"].(string)
+	return strings.TrimSpace(givenName), strings.TrimSpace(familyName)
+}
+
+func appleDisplayName(givenName, familyName, email string) (name, lastName string) {
+	if givenName != "" {
+		name = givenName
+		lastName = familyName
+		return name, lastName
+	}
+	if email != "" {
+		if at := strings.Index(email, "@"); at > 0 {
+			return email[:at], ""
+		}
+	}
+	return "Apple User", ""
+}
+
+func (s *Service) AppleSignIn(ctx context.Context, projectID int, body map[string]any) (map[string]any, error) {
+	schema, err := s.resolveSchema(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	settings, err := s.store.GetAuthSettings(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if settings != nil && !settings.AuthEnabled {
+		return nil, ErrAuthenticationClosed
+	}
+	if settings == nil || !settings.AppleSignInEnabled {
+		return nil, ErrAppleSignInDisabled
+	}
+
+	rawToken, _ := body["identityToken"].(string)
+	if rawToken == "" {
+		return nil, fmt.Errorf("identityToken is required")
+	}
+
+	claims, err := verifyAppleIdentityToken(ctx, rawToken, settings.AppleClientIDs)
+	if err != nil {
+		return nil, ErrInvalidAppleToken
+	}
+
+	isNewUser := false
+
+	user, err := s.store.GetUserByAuthProvider(ctx, schema, "apple", claims.Sub)
+	if err != nil {
+		return nil, err
+	}
+
+	if user == nil && claims.Email != "" {
+		user, err = s.store.GetUserByCredential(ctx, schema, "email", claims.Email)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if user == nil {
+		if settings == nil || !settings.AppleAutoRegister {
+			return nil, ErrAppleAutoRegisterDisabled
+		}
+		if settings.RegistrationEnabled == false {
+			return nil, fmt.Errorf("registration is disabled")
+		}
+
+		givenName, familyName := parseAppleFullName(body)
+		name, lastName := appleDisplayName(givenName, familyName, claims.Email)
+
+		userData := map[string]any{
+			"name":           name,
+			"last_name":      nilIfEmpty(lastName),
+			"email":          nilIfEmpty(claims.Email),
+			"is_active":      true,
+			"email_verified": claims.EmailVerified,
+		}
+		user, err = s.store.CreateUser(ctx, schema, userData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create user: %w", err)
+		}
+		if settings.DefaultRoleID != nil {
+			_ = s.store.AssignRole(ctx, schema, user.ID, *settings.DefaultRoleID, "system")
+		}
+		user, err = s.store.GetUser(ctx, schema, user.ID)
+		if err != nil || user == nil {
+			return nil, fmt.Errorf("failed to fetch created user: %w", err)
+		}
+		isNewUser = true
+	}
+
+	if !user.IsActive {
+		return nil, ErrInvalidCredentials
+	}
+
+	emailForST := claims.Email
+	if emailForST == "" && user.Email != nil {
+		emailForST = strings.TrimSpace(*user.Email)
+	}
+	if emailForST == "" {
+		return nil, fmt.Errorf("no email available for authentication identity")
+	}
+
+	stEmail := supertokens.CreateProjectScopedEmail(emailForST, projectID)
+	var stUserID string
+	if user.SupertokensUserID != nil && *user.SupertokensUserID != "" {
+		stUserID = *user.SupertokensUserID
+	} else {
+		users, _ := s.st.ListUsersByAccountInfo(ctx, "public", stEmail)
+		if len(users) > 0 {
+			stUserID = users[0].ID
+		} else {
+			pw := randomHex(32)
+			resp, _ := s.st.SignUp(ctx, "public", stEmail, pw)
+			if resp != nil && resp.Status == "OK" && resp.User != nil {
+				stUserID = resp.User.ID
+			}
+		}
+		if stUserID != "" {
+			_ = s.store.SetUserSuperTokensID(ctx, schema, user.ID, stUserID)
+		}
+	}
+	if stUserID == "" {
+		return nil, fmt.Errorf("failed to resolve authentication identity")
+	}
+
+	linkEmail := claims.Email
+	if linkEmail == "" && user.Email != nil {
+		linkEmail = strings.TrimSpace(*user.Email)
+	}
+	if err := s.store.LinkAuthProvider(ctx, schema, user.ID, "apple", claims.Sub, linkEmail); err != nil {
+		slog.Warn("failed to link Apple auth provider", "error", err, "userID", user.ID)
+	}
+
+	var rolesRaw []Role
+	_ = json.Unmarshal(user.Roles, &rolesRaw)
+	orgCtx := ResolveOrgContext(ctx, s.pool, schema, user, rolesRaw)
+
+	payload := SessionPayload{
+		ProjectID:        projectID,
+		AppUserID:        user.ID,
+		Email:            user.Email,
+		Roles:            user.Roles,
+		OrganisationName: orgCtx.OrganisationName,
+		OrganisationID:   orgCtx.OrganisationID,
+		IsAdmin:          orgCtx.IsAdmin,
+	}
+	sessionResp, err := s.st.CreateSession(ctx, "public", supertokens.CreateSessionRequest{
+		UserID:                stUserID,
+		UserDataInAccessToken: payload,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("session creation failed: %w", err)
+	}
+
+	result, err := s.buildLoginSessionResult(ctx, projectID, user, sessionResp.AccessToken.Token, "Login successful")
+	if err != nil {
+		return nil, err
+	}
+	if isNewUser {
+		result["is_new_user"] = true
+	}
+	return result, nil
+}
+
 // buildLoginSessionResult returns the standard login payload with has_password and without password hash on user.
 func (s *Service) buildLoginSessionResult(ctx context.Context, projectID int, user *AppUser, accessToken, message string) (map[string]any, error) {
 	hasPassword, err := s.UserHasPassword(ctx, projectID, user.ID)

@@ -9,6 +9,9 @@ var (
 	ErrGoogleSignInDisabled      = errors.New("Google sign-in is disabled for this project")
 	ErrInvalidGoogleToken        = errors.New("invalid or expired Google token")
 	ErrGoogleAutoRegisterDisabled = errors.New("registration is disabled for this project")
+	ErrAppleSignInDisabled       = errors.New("Apple sign-in is disabled for this project")
+	ErrInvalidAppleToken         = errors.New("invalid or expired Apple token")
+	ErrAppleAutoRegisterDisabled = errors.New("registration is disabled for this project")
 
 	ErrSettingsRecipientRequired          = errors.New("user_id_or_email, user_id, or email is required")
 	ErrSettingsRecipientInvalid           = errors.New("invalid user identifier")

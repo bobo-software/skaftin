@@ -93,6 +93,9 @@ type AuthSettings struct {
 	GoogleSignInEnabled          bool            `json:"google_sign_in_enabled"`
 	GoogleWebClientIDs           []string        `json:"google_web_client_ids"`
 	GoogleAutoRegister           bool            `json:"google_auto_register"`
+	AppleSignInEnabled           bool            `json:"apple_sign_in_enabled"`
+	AppleClientIDs               []string        `json:"apple_client_ids"`
+	AppleAutoRegister            bool            `json:"apple_auto_register"`
 }
 
 type OTPVerification struct {

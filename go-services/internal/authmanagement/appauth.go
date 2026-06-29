@@ -219,6 +219,38 @@ func (h *Handler) GoogleSignIn(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteSuccess(w, http.StatusOK, "Login successful", result)
 }
 
+func (h *Handler) AppleSignIn(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	var body map[string]any
+	if err := httputil.ReadJSON(r, &body); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	result, err := h.service.AppleSignIn(r.Context(), projectID, body)
+	if err != nil {
+		writeAppleSignInError(w, err)
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Login successful", result)
+}
+
+func writeAppleSignInError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrInvalidAppleToken):
+		httputil.WriteError(w, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, ErrAppleSignInDisabled), errors.Is(err, ErrAppleAutoRegisterDisabled),
+		errors.Is(err, ErrAuthenticationClosed):
+		httputil.WriteError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, ErrInvalidCredentials):
+		httputil.WriteError(w, http.StatusUnauthorized, err.Error())
+	default:
+		httputil.WriteError(w, http.StatusBadRequest, err.Error())
+	}
+}
+
 func writeGoogleSignInError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidGoogleToken):

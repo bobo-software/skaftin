@@ -271,7 +271,8 @@ const authSettingsCols = `id, project_id, allow_duplicate_emails, require_email_
 	settings_json, created_at, updated_at, otp_length,
 	send_registration_sms, send_verification_sms, send_password_reset_sms, send_welcome_sms,
 	require_email, require_otp_for_password_change, require_otp_for_account_deletion,
-	google_sign_in_enabled, google_web_client_ids, google_auto_register`
+	google_sign_in_enabled, google_web_client_ids, google_auto_register,
+	apple_sign_in_enabled, apple_client_ids, apple_auto_register`
 
 func scanAuthSettings(row pgx.Row) (*AuthSettings, error) {
 	var as AuthSettings
@@ -284,6 +285,7 @@ func scanAuthSettings(row pgx.Row) (*AuthSettings, error) {
 		&as.SendRegistrationSMS, &as.SendVerificationSMS, &as.SendPasswordResetSMS, &as.SendWelcomeSMS,
 		&as.RequireEmail, &as.RequireOtpForPasswordChange, &as.RequireOtpForAccountDeletion,
 		&as.GoogleSignInEnabled, &as.GoogleWebClientIDs, &as.GoogleAutoRegister,
+		&as.AppleSignInEnabled, &as.AppleClientIDs, &as.AppleAutoRegister,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil

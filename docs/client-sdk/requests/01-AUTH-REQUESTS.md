@@ -737,6 +737,103 @@ Configure via `PUT /app-api/auth/settings`:
 
 ---
 
+## 18. Apple Sign-In
+
+Exchange an Apple identity token (obtained on iOS via `expo-apple-authentication`) for a Skaftin session. The platform verifies the token cryptographically against Apple's JWKS — the client never sends a password or `.p8` key material.
+
+**Must be enabled per project** via `PUT /app-api/auth/settings` with `apple_sign_in_enabled: true` and `apple_client_ids` set to the app's iOS bundle ID(s).
+
+### App-api route (recommended for mobile)
+
+```
+POST /app-api/auth/auth/apple-sign-in
+```
+
+**Headers**
+
+```
+Content-Type: application/json
+x-api-key: <project-api-key>
+```
+
+**Request body**
+
+```json
+{
+  "identityToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6Ij...",
+  "authorizationCode": "optional-one-time-code",
+  "fullName": {
+    "givenName": "Jane",
+    "familyName": "Doe"
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `identityToken` | string | Yes | Apple identity token JWT from the native SDK |
+| `authorizationCode` | string | No | One-time code from Apple (not required for session issuance) |
+| `fullName` | object | No | User's name — only sent on **first** authorization; persist when creating a new user |
+
+**Success response — HTTP 200** (same shape as Google Sign-In)
+
+```json
+{
+  "success": true,
+  "message": "Login successful",
+  "data": {
+    "user": {
+      "id": 1,
+      "name": "Jane",
+      "last_name": "Doe",
+      "email": "abc123@privaterelay.appleid.com",
+      "phone": null,
+      "is_active": true,
+      "roles": [
+        { "id": 2, "role_name": "User", "role_key": "user" }
+      ]
+    },
+    "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "has_password": false,
+    "is_new_user": true,
+    "message": "Login successful"
+  }
+}
+```
+
+`is_new_user` is `true` when the server auto-registered a new app user on this sign-in. The app may also infer a new account from `user.created_at` within ~90 seconds of sign-in.
+
+**Error responses**
+
+| HTTP | `message` | Cause |
+|------|-----------|-------|
+| 400 | `identityToken is required` | Body missing `identityToken` field |
+| 401 | `invalid or expired Apple token` | Signature invalid, token expired, wrong `aud` |
+| 401 | `invalid credentials` | Matched user is inactive |
+| 403 | `Apple sign-in is disabled for this project` | Feature flag off |
+| 403 | `registration is disabled for this project` | New user, `apple_auto_register` is false |
+| 403 | `authentication is disabled` | `auth_enabled` is false |
+
+### Project-scoped route (optional)
+
+```
+POST /api/auth/{projectId}/auth/apple-sign-in
+```
+
+Same body, same response shape.
+
+### Project settings (admin)
+
+Configure via `PUT /app-api/auth/settings`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `apple_sign_in_enabled` | boolean | Master feature flag |
+| `apple_client_ids` | string[] | Allowed JWT `aud` values (native iOS bundle IDs, e.g. `com.bobosoftware.rydnex`) |
+| `apple_auto_register` | boolean | If true, create a new app user on first Apple login; if false, only existing users can sign in |
+
+---
+
 ## Error responses
 
 ### Invalid credentials (login)

@@ -29,6 +29,7 @@ var startupMigrations = []string{
 	"0040_public_workflows_and_backup_baseline.sql",
 	"0042_public_sms_providers_baseline.sql",
 	"0043_google_sign_in_settings.sql",
+	"0044_apple_sign_in_settings.sql",
 }
 
 // RunMigrations executes the startup allowlist against dir.
