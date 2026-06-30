@@ -1,13 +1,12 @@
 # Database Requests
 
-Project data is exposed under **`/app-api/database`** (full client API) and **`/app-api-2/database`** (restricted “public” subset). On the reference Go server, both are wrapped with **`auth.APIKey`** only — send **`x-api-key`**; project is taken from the key (no `projectId` in the path).
+Project data is exposed under **`/app-api/database`**. On the reference Go server, routes are wrapped with **`auth.APIKey`** only — send **`x-api-key`**; project is taken from the key (no `projectId` in the path).
 
 ## Base URLs
 
 | Surface | Prefix | Notes |
 |---------|--------|--------|
 | App API | `/app-api/database` | Full CRUD: tables, columns, constraints, cron, import/export, row update/delete, etc. |
-| App API 2 | `/app-api-2/database` | GET/POST-only style routes (aligned with legacy Node); no `PUT`/`DELETE` verbs on many resources — see route list in code if you rely on this surface |
 
 **Project / admin API:** `/api/database/{projectId}/...` uses the same handlers but requires **platform JWT** and project access middleware (see `routes_data.go`).
 

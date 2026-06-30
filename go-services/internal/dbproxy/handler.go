@@ -36,50 +36,6 @@ func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 	h.registerRoutesWithBase(mux, "/app-api/database")
 }
 
-// RegisterAppAPI2Routes registers public client-facing database routes
-// (GET/POST only), matching Node's /app-api-2 behavior.
-func (h *Handler) RegisterAppAPI2Routes(mux *http.ServeMux) {
-	base := "/app-api-2/database"
-
-	// Tables
-	mux.HandleFunc("GET "+base+"/tables", h.ListTables)
-	mux.HandleFunc("GET "+base+"/tables/{tableName}/schema", h.GetTableSchema)
-	mux.HandleFunc("GET "+base+"/tables/{tableName}/select", h.SelectDataGet)
-	mux.HandleFunc("POST "+base+"/tables/create", h.CreateTable)
-	mux.HandleFunc("POST "+base+"/tables/{tableName}/rename", h.RenameTable)
-	mux.HandleFunc("POST "+base+"/tables/{tableName}/select", h.SelectData)
-	mux.HandleFunc("POST "+base+"/tables/{tableName}/insert", h.InsertData)
-	mux.HandleFunc("POST "+base+"/tables/{tableName}/bulk-insert", h.BulkInsertData)
-
-	// Columns
-	mux.HandleFunc("POST "+base+"/tables/{tableName}/columns", h.AddColumn)
-
-	// Constraints
-	mux.HandleFunc("GET "+base+"/tables/{tableName}/constraints", h.ListConstraints)
-	mux.HandleFunc("GET "+base+"/tables/{tableName}/foreign-keys", h.ListForeignKeys)
-	mux.HandleFunc("POST "+base+"/tables/{tableName}/constraints/foreign-key", h.CreateForeignKey)
-	mux.HandleFunc("POST "+base+"/tables/{tableName}/constraints/unique", h.CreateUniqueConstraint)
-	mux.HandleFunc("POST "+base+"/tables/{tableName}/constraints/primary-key", h.CreatePrimaryKeyConstraint)
-	mux.HandleFunc("POST "+base+"/tables/{tableName}/constraints/check", h.CreateCheckConstraint)
-
-	// Query
-	mux.HandleFunc("POST "+base+"/query", h.ExecuteQuery)
-
-	// Cron
-	mux.HandleFunc("GET "+base+"/cron", h.ListCronJobs)
-	mux.HandleFunc("GET "+base+"/cron/{jobId}/history", h.GetCronJobHistory)
-	mux.HandleFunc("POST "+base+"/cron", h.CreateCronJob)
-
-	// Import / Export
-	mux.HandleFunc("POST "+base+"/import", h.ImportDatabaseDump)
-	mux.HandleFunc("POST "+base+"/export", h.ExportDatabaseDump)
-
-	// Users
-	mux.HandleFunc("POST "+base+"/users/select", h.SelectUsers)
-	mux.HandleFunc("POST "+base+"/users/insert", h.CreateUser)
-	mux.HandleFunc("POST "+base+"/users/change_password", h.ChangePassword)
-}
-
 func (h *Handler) registerRoutesWithBase(mux *http.ServeMux, base string) {
 	// Tables
 	mux.HandleFunc("GET "+base+"/tables", h.ListTables)

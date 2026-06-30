@@ -1,6 +1,6 @@
 # Storage Requests (MinIO)
 
-Client storage is served at **`/app-api/storage`** (and **`/app-api-2/storage`** for the parallel public surface). On the Go server, these routes use **`x-api-key`** middleware; project is resolved from the key.
+Client storage is served at **`/app-api/storage`**. On the Go server, these routes use **`x-api-key`** middleware; project is resolved from the key.
 
 ## Base URL
 ```
@@ -548,13 +548,13 @@ DELETE /app-api/storage/documents/folders/old-reports/
 
 ---
 
-## Public API (No User Auth)
+## Browse / catalog access (API key only)
 
-These endpoints only require an API key (no user JWT).
+These endpoints only require an API key (no app user JWT). Use a read-scoped credential (`storage:read`) for catalog-style access.
 
 ### Base URL
 ```
-/app-api-2/storage
+/app-api/storage
 ```
 
 ### Available Endpoints
@@ -572,7 +572,7 @@ These endpoints only require an API key (no user JWT).
 
 **Example:**
 ```bash
-curl -X GET "http://localhost:4006/app-api-2/storage/uploads/files" \
+curl -X GET "http://localhost:4006/app-api/storage/uploads/files" \
   -H "x-api-key: your-api-key"
 ```
 

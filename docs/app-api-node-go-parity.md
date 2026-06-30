@@ -7,14 +7,16 @@ This contract defines behavior expected from the Go handlers that now own former
 - `/app-api/request-logs/*`
 - `/app-api/communications/*`
 - `/app-api/payments/*`
-- `/app-api-2/database/*`
-- `/app-api-2/storage/*`
+- `/app-api/database/*`
+- `/app-api/storage/*`
+
+> **Removed (2026):** `/app-api-2/*` was a legacy restricted subset of database/storage routes. All client apps now use `/app-api/*` only.
 
 ## Auth and Project Context
 
-- `/app-api/*` and `/app-api-2/*` require API key/access token auth at the gateway (`X-API-Key` or `Authorization: Bearer` credential token).
+- `/app-api/*` requires API key/access token auth at the gateway (`X-API-Key` or `Authorization: Bearer` credential token).
 - Project context is resolved from the credential (`project_id`) and may fall back to route params for compatibility endpoints.
-- `/auth/*` and full SuperTokens session flows remain Node-owned.
+- `/auth/*` and full SuperTokens session flows are Go-owned via `platformauth`.
 
 ## Response Contract
 
@@ -33,16 +35,11 @@ This contract defines behavior expected from the Go handlers that now own former
   - `/app-api/request-logs/`
   - `/app-api/communications/`
   - `/app-api/payments/`
-  - `/app-api-2/database/`
-  - `/app-api-2/storage/`
-  - then catch-all `/app-api/` and `/app-api-2/`.
-
-## Public API (`/app-api-2`) Restrictions
-
-- Only GET and POST operations are exposed for public database and storage routes.
-- Mutating methods that were not public in Node (`PUT`, `PATCH`, `DELETE`) are intentionally not mounted under `/app-api-2/*`.
+  - `/app-api/database/`
+  - `/app-api/storage/`
+  - then catch-all `/app-api/`.
 
 ## Non-goals in this migration
 
-- Moving SuperTokens core middleware endpoints (`/auth/*`).
+- Moving SuperTokens core middleware endpoints (`/auth/*`) beyond existing Go handlers.
 - Migrating non-compat session-specific auth flows under `/app-api/auth/*` beyond existing compatibility paths.

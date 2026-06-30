@@ -84,25 +84,6 @@ func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /app-api/storage/{bucketName}/folders/{folderPath...}", h.DeleteFolder)
 }
 
-// RegisterAppAPI2Routes registers public storage routes (GET/POST only),
-// matching Node's /app-api-2 behavior.
-func (h *Handler) RegisterAppAPI2Routes(mux *http.ServeMux) {
-	// Non-project routes (bucket/path in body or query).
-	mux.HandleFunc("GET /app-api-2/storage/files/download", h.DownloadFileFromQuery)
-	mux.HandleFunc("POST /app-api-2/storage/files", h.UploadFileFromForm)
-
-	// Project-scoped routes (project resolved from API key/access token).
-	mux.HandleFunc("GET /app-api-2/storage/buckets", h.ListBuckets)
-	mux.HandleFunc("GET /app-api-2/storage/{bucketName}/files", h.ListFiles)
-	mux.HandleFunc("POST /app-api-2/storage/{bucketName}/search", h.SearchFiles)
-	mux.HandleFunc("POST /app-api-2/storage/{bucketName}/upload", h.UploadFile)
-	mux.HandleFunc("POST /app-api-2/storage/{bucketName}/upload-multipart", h.UploadFileMultipart)
-
-	// Wildcard routes for file download and metadata retrieval.
-	mux.HandleFunc("GET /app-api-2/storage/{bucketName}/download/{filePath...}", h.DownloadFile)
-	mux.HandleFunc("GET /app-api-2/storage/{bucketName}/files/{rest...}", h.FilePathDispatch)
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

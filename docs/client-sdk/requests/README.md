@@ -6,8 +6,7 @@ This folder documents HTTP (and WebSocket) requests that **client applications**
 
 | Surface | Base path | Authentication (reference server) |
 |---------|-----------|----------------------------------|
-| **App API** (primary for mobile / public clients) | `/app-api/...` | **`x-api-key`** — project is resolved from the key |
-| **App API 2** (restricted DB/storage helpers) | `/app-api-2/...` | **`x-api-key`** only |
+| **App API** (client apps) | `/app-api/...` | **`x-api-key`** — project is resolved from the key |
 | **Project HTTP API** (dashboard / server-side) | `/api/...` with `projectId` in path where applicable | **Platform JWT** (`Authorization: Bearer`) + project access middleware |
 | **GraphQL** | `/api/graphql` | **Platform JWT** (same as other `/api/` routes; browser cookies work when logged into the admin app) |
 
@@ -32,7 +31,7 @@ Authorization: Bearer <token>
 |----------|-------------|
 | [01-AUTH-REQUESTS.md](./01-AUTH-REQUESTS.md) | App user authentication (register, login, OTP, password reset, session) |
 | [02-USER-REQUESTS.md](./02-USER-REQUESTS.md) | App user CRUD, roles, custom auth fields, auth settings |
-| [03-DATABASE-REQUESTS.md](./03-DATABASE-REQUESTS.md) | Database tables, rows, constraints, cron (app-api + app-api-2) |
+| [03-DATABASE-REQUESTS.md](./03-DATABASE-REQUESTS.md) | Database tables, rows, constraints, cron |
 | [04-STORAGE-REQUESTS.md](./04-STORAGE-REQUESTS.md) | Object storage (buckets, upload, download) |
 | [05-GRAPHQL-REQUESTS.md](./05-GRAPHQL-REQUESTS.md) | GraphQL queries and mutations |
 | [06-COMMUNICATIONS-REQUESTS.md](./06-COMMUNICATIONS-REQUESTS.md) | Email, SMS, WhatsApp, templates, providers |

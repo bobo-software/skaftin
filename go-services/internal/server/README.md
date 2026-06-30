@@ -28,7 +28,6 @@ Order is critical when using `http.ServeMux` path matching:
    - `/auth/`
    - `/api/`
    - `/app-api/`
-   - `/app-api-2/`
 
 If a new `/app-api/...` route is added, ensure it is mounted before `/app-api/`.
 
@@ -36,7 +35,6 @@ If a new `/app-api/...` route is added, ensure it is mounted before `/app-api/`.
 
 - Unknown `/api/*` paths return a Go JSON `404` contract.
 - Unknown `/app-api/*` paths return a Go JSON `404` contract.
-- Unknown `/app-api-2/*` paths return a Go JSON `404` contract.
 
 ## Compatibility Migration Checklist
 

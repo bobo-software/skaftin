@@ -3,7 +3,6 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -293,58 +292,6 @@ func TestAppAPIPaymentsRouteWinsOverAppAPIPrefix(t *testing.T) {
 	}
 }
 
-func TestAppAPI2DatabaseRouteWinsOverAppAPI2Prefix(t *testing.T) {
-	mux := http.NewServeMux()
-
-	var databaseHit, prefixHit bool
-
-	mux.Handle("/app-api-2/database/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		databaseHit = true
-		w.WriteHeader(http.StatusOK)
-	}))
-	mux.Handle("/app-api-2/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		prefixHit = true
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/app-api-2/database/tables", nil)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-
-	if !databaseHit {
-		t.Fatalf("expected /app-api-2/database/ route to handle request")
-	}
-	if prefixHit {
-		t.Fatalf("expected /app-api-2/ prefix route to not handle database request")
-	}
-}
-
-func TestAppAPI2StorageRouteWinsOverAppAPI2Prefix(t *testing.T) {
-	mux := http.NewServeMux()
-
-	var storageHit, prefixHit bool
-
-	mux.Handle("/app-api-2/storage/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		storageHit = true
-		w.WriteHeader(http.StatusOK)
-	}))
-	mux.Handle("/app-api-2/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		prefixHit = true
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/app-api-2/storage/buckets", nil)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-
-	if !storageHit {
-		t.Fatalf("expected /app-api-2/storage/ route to handle request")
-	}
-	if prefixHit {
-		t.Fatalf("expected /app-api-2/ prefix route to not handle storage request")
-	}
-}
-
 func TestAPIMCPRouteWinsOverAPIPrefix(t *testing.T) {
 	mux := http.NewServeMux()
 
@@ -394,32 +341,6 @@ func TestAPIAuthImportRouteWinsOverAPIPrefix(t *testing.T) {
 	}
 	if prefixHit {
 		t.Fatalf("expected /api/ prefix route to not handle auth import request")
-	}
-}
-
-func TestAppAPI2DatabaseRouteWinsOverAppAPIPrefix(t *testing.T) {
-	mux := http.NewServeMux()
-
-	var appAPI2Hit, prefixHit bool
-
-	mux.Handle("/app-api-2/database/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		appAPI2Hit = true
-		w.WriteHeader(http.StatusOK)
-	}))
-	mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		prefixHit = true
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/app-api-2/database/tables", nil)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-
-	if !appAPI2Hit {
-		t.Fatalf("expected /app-api-2/database/ route to handle request")
-	}
-	if prefixHit {
-		t.Fatalf("expected /app-api/ prefix route to not handle app-api-2 database request")
 	}
 }
 
@@ -516,18 +437,6 @@ func TestKnownAppAPIEndpointsPreferExplicitGoRoutes(t *testing.T) {
 			path:           "/app-api/mcp/tools",
 			explicitPrefix: "/app-api/mcp/",
 		},
-		{
-			name:           "public db tables",
-			method:         http.MethodGet,
-			path:           "/app-api-2/database/tables",
-			explicitPrefix: "/app-api-2/database/",
-		},
-		{
-			name:           "public storage buckets",
-			method:         http.MethodGet,
-			path:           "/app-api-2/storage/buckets",
-			explicitPrefix: "/app-api-2/storage/",
-		},
 	}
 
 	for _, tc := range testCases {
@@ -540,17 +449,10 @@ func TestKnownAppAPIEndpointsPreferExplicitGoRoutes(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			}))
 
-			if strings.HasPrefix(tc.explicitPrefix, "/app-api-2/") {
-				mux.Handle("/app-api-2/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					prefixHit = true
-					w.WriteHeader(http.StatusOK)
-				}))
-			} else {
-				mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					prefixHit = true
-					w.WriteHeader(http.StatusOK)
-				}))
-			}
+			mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				prefixHit = true
+				w.WriteHeader(http.StatusOK)
+			}))
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()

@@ -60,8 +60,6 @@ func classifyRoute(path string) (string, string) {
 	switch {
 	case strings.HasPrefix(path, "/app-api/"):
 		return "app-api", "🟣"
-	case strings.HasPrefix(path, "/app-api-2/"):
-		return "app-api-2", "🟪"
 	case strings.HasPrefix(path, "/api/"):
 		return "api", "🔵"
 	default:

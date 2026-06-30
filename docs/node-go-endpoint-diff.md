@@ -4,8 +4,8 @@ This file captures the endpoint groups that were Node-owned at migration start a
 
 ## Previously Node-owned groups
 
-- `/app-api-2/database/*` -> now served by Go via existing db proxy handlers.
-- `/app-api-2/storage/*` -> now served by Go via existing storage handlers.
+- `/app-api/database/*` -> served by Go (`internal/dbproxy`).
+- `/app-api/storage/*` -> served by Go (`internal/storage`).
 - `/app-api/request-logs/*` -> now served by Go (`POST /{projectId}` create-log compatibility).
 - `/app-api/communications/*` -> now served by Go using communications compatibility routes.
 - `/app-api/payments/*` -> now served by Go using app-api payment compatibility handlers.

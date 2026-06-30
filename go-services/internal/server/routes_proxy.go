@@ -29,10 +29,6 @@ func registerProxyRoutes(
 
 	// Client API fallback: unknown paths return explicit Go 404.
 	mux.Handle("/app-api/", auth.APIKey(pool)(requestLogger.Middleware(appAPINotFoundHandler("/app-api/"))))
-
-	// Public client API v2 is Go-only: unknown paths return a standardized Go 404.
-	mux.Handle("/app-api-2/", auth.APIKey(pool)(requestLogger.Middleware(appAPINotFoundHandler("/app-api-2/"))))
-
 }
 func appAPINotFoundHandler(routePrefix string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
