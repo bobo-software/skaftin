@@ -15,10 +15,13 @@ type Credential struct {
 
 // AuthContext holds the authenticated credential and resolved project info.
 // Attached to the request context by the API key middleware.
+// For /app-api2 dual-auth, Credential is the access_token (permissions) and
+// APIKeyCredential is the api_key used to resolve the project.
 type AuthContext struct {
-	Credential *Credential
-	ProjectID  int
-	SchemaName string
+	Credential       *Credential
+	APIKeyCredential *Credential
+	ProjectID        int
+	SchemaName       string
 }
 
 // UserContext holds the authenticated platform user's information

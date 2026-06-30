@@ -20,21 +20,24 @@ This package is the HTTP composition root for the Go API.
 
 Order is critical when using `http.ServeMux` path matching:
 
-1. Register specific `/app-api/...` compatibility routes first.
+1. Register specific `/app-api/...` and `/app-api2/...` compatibility routes first.
    - `/app-api/mcp/`
+   - `/app-api2/database/`, `/app-api2/storage/`
 2. Register broad JWT/API domain routes next.
    - `/api/mcp/`
 3. Register fallback routes last:
    - `/auth/`
    - `/api/`
    - `/app-api/`
+   - `/app-api2/`
 
-If a new `/app-api/...` route is added, ensure it is mounted before `/app-api/`.
+If a new `/app-api/...` or `/app-api2/...` route is added, ensure it is mounted before the matching catch-all prefix.
 
 ## Strict Fallback Behavior
 
 - Unknown `/api/*` paths return a Go JSON `404` contract.
 - Unknown `/app-api/*` paths return a Go JSON `404` contract.
+- Unknown `/app-api2/*` paths return a Go JSON `404` contract.
 
 ## Compatibility Migration Checklist
 

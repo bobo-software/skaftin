@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -437,6 +438,18 @@ func TestKnownAppAPIEndpointsPreferExplicitGoRoutes(t *testing.T) {
 			path:           "/app-api/mcp/tools",
 			explicitPrefix: "/app-api/mcp/",
 		},
+		{
+			name:           "app-api2 database select",
+			method:         http.MethodPost,
+			path:           "/app-api2/database/tables/companies/select",
+			explicitPrefix: "/app-api2/database/",
+		},
+		{
+			name:           "app-api2 storage download",
+			method:         http.MethodGet,
+			path:           "/app-api2/storage/files/download",
+			explicitPrefix: "/app-api2/storage/",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -449,10 +462,17 @@ func TestKnownAppAPIEndpointsPreferExplicitGoRoutes(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			}))
 
-			mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				prefixHit = true
-				w.WriteHeader(http.StatusOK)
-			}))
+			if strings.HasPrefix(tc.explicitPrefix, "/app-api2/") {
+				mux.Handle("/app-api2/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					prefixHit = true
+					w.WriteHeader(http.StatusOK)
+				}))
+			} else {
+				mux.Handle("/app-api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					prefixHit = true
+					w.WriteHeader(http.StatusOK)
+				}))
+			}
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()

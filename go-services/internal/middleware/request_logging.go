@@ -125,7 +125,7 @@ func (rl *RequestLogger) worker() {
 }
 
 func shouldLogPath(path string) bool {
-	if strings.HasPrefix(path, "/app-api/") {
+	if strings.HasPrefix(path, "/app-api/") || strings.HasPrefix(path, "/app-api2/") {
 		return !strings.Contains(path, "/request-logs")
 	}
 	return false

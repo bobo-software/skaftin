@@ -84,6 +84,11 @@ func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /app-api/storage/{bucketName}/folders/{folderPath...}", h.DeleteFolder)
 }
 
+// RegisterAppAPI2Routes registers read-only open-browse storage routes at /app-api2.
+func (h *Handler) RegisterAppAPI2Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /app-api2/storage/files/download", h.DownloadFileFromQueryOpenBrowse)
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -402,7 +407,18 @@ func (h *Handler) DownloadFileFromQuery(w http.ResponseWriter, r *http.Request) 
 	if !requireAuth(w, r) {
 		return
 	}
+	h.serveDownloadFromQuery(w, r, false)
+}
 
+// DownloadFileFromQueryOpenBrowse handles GET /app-api2/storage/files/download.
+func (h *Handler) DownloadFileFromQueryOpenBrowse(w http.ResponseWriter, r *http.Request) {
+	if !requireAuth(w, r) {
+		return
+	}
+	h.serveDownloadFromQuery(w, r, true)
+}
+
+func (h *Handler) serveDownloadFromQuery(w http.ResponseWriter, r *http.Request, openBrowse bool) {
 	bucketName := r.URL.Query().Get("bucket")
 	filePath := r.URL.Query().Get("path")
 
@@ -413,6 +429,29 @@ func (h *Handler) DownloadFileFromQuery(w http.ResponseWriter, r *http.Request) 
 	if filePath == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "File path is required in query parameters")
 		return
+	}
+
+	if openBrowse {
+		pid, ok := projectID(w, r)
+		if !ok {
+			return
+		}
+		msg, err := h.service.ValidatePublicBucket(r.Context(), pid, bucketName)
+		if err != nil {
+			slog.Error("bucket validation failed", "error", err)
+			httputil.WriteError(w, http.StatusInternalServerError, "Internal server error")
+			return
+		}
+		if msg != "" {
+			status := http.StatusBadRequest
+			if strings.Contains(msg, "not available") {
+				status = http.StatusForbidden
+			} else if strings.Contains(msg, "not found") {
+				status = http.StatusNotFound
+			}
+			httputil.WriteError(w, status, msg)
+			return
+		}
 	}
 
 	decodedPath, _ := url.QueryUnescape(filePath)

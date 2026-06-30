@@ -30,6 +30,8 @@ This document tracks which API routes are handled by Go gateway vs Node backend.
 - `/app-api/request-logs/*`
 - `/app-api/communications/*`
 - `/app-api/payments/*`
+- `/app-api2/database/*` (read-only: `POST` table select)
+- `/app-api2/storage/*` (read-only: `GET` file download)
 
 ## App-API consumer inventory (frontend -> Go route owner)
 
@@ -58,6 +60,10 @@ served by explicit Go registrations (not Node business handlers):
 - `/app-api/mcp/*`
   - frontend refs: `CLIENT_MCP`
   - Go owner: `internal/mcp` via `registerMCPRoutes`
+- `/app-api2/database/*`, `/app-api2/storage/*`
+  - client refs: open browse / catalog flows
+  - Go owner: `internal/dbproxy`, `internal/storage` via `registerDataRoutes`
+  - auth: dual credential (`api_key` + `access_token`, same project)
 
 ## Node-owned routes (current)
 
@@ -82,4 +88,5 @@ served by explicit Go registrations (not Node business handlers):
 
 - Unknown `/api/*` paths return Go `404`.
 - Unknown `/app-api/*` paths return Go `404`.
+- Unknown `/app-api2/*` paths return Go `404`.
 

@@ -58,6 +58,8 @@ func Logging(next http.Handler) http.Handler {
 
 func classifyRoute(path string) (string, string) {
 	switch {
+	case strings.HasPrefix(path, "/app-api2/"):
+		return "app-api2", "🟩"
 	case strings.HasPrefix(path, "/app-api/"):
 		return "app-api", "🟣"
 	case strings.HasPrefix(path, "/api/"):

@@ -36,6 +36,12 @@ func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 	h.registerRoutesWithBase(mux, "/app-api/database")
 }
 
+// RegisterAppAPI2Routes registers read-only open-browse database routes at /app-api2.
+func (h *Handler) RegisterAppAPI2Routes(mux *http.ServeMux) {
+	base := "/app-api2/database"
+	mux.HandleFunc("POST "+base+"/tables/{tableName}/select", h.SelectDataOpenBrowse)
+}
+
 func (h *Handler) registerRoutesWithBase(mux *http.ServeMux, base string) {
 	// Tables
 	mux.HandleFunc("GET "+base+"/tables", h.ListTables)

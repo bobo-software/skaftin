@@ -7,6 +7,7 @@ This folder documents HTTP (and WebSocket) requests that **client applications**
 | Surface | Base path | Authentication (reference server) |
 |---------|-----------|----------------------------------|
 | **App API** (client apps) | `/app-api/...` | **`x-api-key`** — project is resolved from the key |
+| **App API 2** (open browse, read-only) | `/app-api2/...` | **`x-api-key`** + **`Authorization: Bearer`** access token (same project); permissions from access token |
 | **Project HTTP API** (dashboard / server-side) | `/api/...` with `projectId` in path where applicable | **Platform JWT** (`Authorization: Bearer`) + project access middleware |
 | **GraphQL** | `/api/graphql` | **Platform JWT** (same as other `/api/` routes; browser cookies work when logged into the admin app) |
 
@@ -36,6 +37,7 @@ Authorization: Bearer <token>
 | [05-GRAPHQL-REQUESTS.md](./05-GRAPHQL-REQUESTS.md) | GraphQL queries and mutations |
 | [06-COMMUNICATIONS-REQUESTS.md](./06-COMMUNICATIONS-REQUESTS.md) | Email, SMS, WhatsApp, templates, providers |
 | [07-WEBSOCKET-REQUESTS.md](./07-WEBSOCKET-REQUESTS.md) | Real-time `/app-api/ws` |
+| [08-APP-API2-OPEN-BROWSE.md](./08-APP-API2-OPEN-BROWSE.md) | Read-only open browse (`POST` select, `GET` download) |
 | [03-PAYMENT-REQUESTS.md](./03-PAYMENT-REQUESTS.md) | Payments (PayFast, etc.) under `/app-api/payments/...` |
 | [STORAGE-UPLOAD-CLIENT-NOTES.md](./STORAGE-UPLOAD-CLIENT-NOTES.md) | Multipart upload pitfalls for `POST /app-api/storage/files` |
 

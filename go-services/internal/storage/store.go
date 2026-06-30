@@ -42,6 +42,23 @@ func (s *Store) ValidateBucketForProject(ctx context.Context, projectID int, buc
 	return true, nil
 }
 
+// GetBucketAccessPolicy returns the access_policy for a project bucket.
+// The second return value is false when the bucket does not belong to the project.
+func (s *Store) GetBucketAccessPolicy(ctx context.Context, projectID int, bucketName string) (string, bool, error) {
+	var policy string
+	err := s.pool.QueryRow(ctx,
+		`SELECT access_policy FROM skaftin_system_project_buckets WHERE project_id = $1 AND bucket_name = $2`,
+		projectID, bucketName,
+	).Scan(&policy)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return policy, true, nil
+}
+
 // ListProjectBuckets returns all buckets belonging to a project.
 func (s *Store) ListProjectBuckets(ctx context.Context, projectID int) ([]Bucket, error) {
 	rows, err := s.pool.Query(ctx,

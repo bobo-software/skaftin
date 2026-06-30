@@ -109,6 +109,24 @@ func (s *Service) ValidateBucket(ctx context.Context, projectID int, bucketName 
 	return "", nil
 }
 
+// ValidatePublicBucket ensures the bucket belongs to the project and has public access policy.
+func (s *Service) ValidatePublicBucket(ctx context.Context, projectID int, bucketName string) (string, error) {
+	if bucketName == "" {
+		return "Bucket name is required", nil
+	}
+	policy, ok, err := s.store.GetBucketAccessPolicy(ctx, projectID, bucketName)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "Bucket not found or does not belong to this project", nil
+	}
+	if policy != "public" {
+		return "Bucket is not available for open browse access", nil
+	}
+	return "", nil
+}
+
 // ListBuckets returns all buckets for a project, optionally with file stats.
 func (s *Service) ListBuckets(ctx context.Context, projectID int, includeStats bool) ([]BucketInfo, error) {
 	buckets, err := s.store.ListProjectBuckets(ctx, projectID)

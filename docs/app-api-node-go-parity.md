@@ -9,12 +9,15 @@ This contract defines behavior expected from the Go handlers that now own former
 - `/app-api/payments/*`
 - `/app-api/database/*`
 - `/app-api/storage/*`
+- `/app-api2/database/*` (open browse: POST select only)
+- `/app-api2/storage/*` (open browse: GET download only)
 
-> **Removed (2026):** `/app-api-2/*` was a legacy restricted subset of database/storage routes. All client apps now use `/app-api/*` only.
+> **Removed (2026):** `/app-api-2/*` (hyphenated legacy path). Use `/app-api2/*` for open browse.
 
 ## Auth and Project Context
 
 - `/app-api/*` requires API key/access token auth at the gateway (`X-API-Key` or `Authorization: Bearer` credential token).
+- `/app-api2/*` requires **both** `X-API-Key` (`api_key`) and `Authorization: Bearer` (`access_token`) from the same project; permissions are enforced from the access token.
 - Project context is resolved from the credential (`project_id`) and may fall back to route params for compatibility endpoints.
 - `/auth/*` and full SuperTokens session flows are Go-owned via `platformauth`.
 
@@ -37,7 +40,9 @@ This contract defines behavior expected from the Go handlers that now own former
   - `/app-api/payments/`
   - `/app-api/database/`
   - `/app-api/storage/`
-  - then catch-all `/app-api/`.
+  - `/app-api2/database/`
+  - `/app-api2/storage/`
+  - then catch-all `/app-api/` and `/app-api2/`.
 
 ## Non-goals in this migration
 

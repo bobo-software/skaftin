@@ -102,6 +102,21 @@ func (h *Handler) SelectDataGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) SelectData(w http.ResponseWriter, r *http.Request) {
+	h.selectDataPost(w, r, selectDataOptions{allowDecrypt: true})
+}
+
+// SelectDataOpenBrowse handles POST /app-api2/database/tables/{tableName}/select.
+// Field decryption is not allowed; a default limit of 100 rows applies when omitted.
+func (h *Handler) SelectDataOpenBrowse(w http.ResponseWriter, r *http.Request) {
+	h.selectDataPost(w, r, selectDataOptions{allowDecrypt: false, defaultLimit: 100})
+}
+
+type selectDataOptions struct {
+	allowDecrypt bool
+	defaultLimit int
+}
+
+func (h *Handler) selectDataPost(w http.ResponseWriter, r *http.Request, opts selectDataOptions) {
 	pc, pid := h.acquireConn(w, r)
 	if pc == nil {
 		return
@@ -119,6 +134,15 @@ func (h *Handler) SelectData(w http.ResponseWriter, r *http.Request) {
 		Decrypt        []string       `json:"decrypt"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
+
+	if !opts.allowDecrypt && len(body.Decrypt) > 0 {
+		httputil.WriteError(w, http.StatusForbidden, "Field decryption is not allowed on open browse routes")
+		return
+	}
+	if opts.defaultLimit > 0 && body.Limit == nil {
+		limit := opts.defaultLimit
+		body.Limit = &limit
+	}
 
 	selectClause := "*"
 	if len(body.Columns) > 0 {
