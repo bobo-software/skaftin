@@ -10,19 +10,20 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/config"
+	"github.com/skaftin/go-services/internal/pkg/bulkresult"
 )
 
 const presignExpiry = 1 * time.Hour
 
 // BucketInfo is the API representation of a bucket, optionally with stats.
 type BucketInfo struct {
-	ID           int        `json:"id"`
-	Name         string     `json:"name"`
-	Description  *string    `json:"description"`
-	CreationDate time.Time  `json:"creationDate"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
-	FileCount    *int       `json:"fileCount,omitempty"`
-	TotalSize    *int64     `json:"totalSize,omitempty"`
+	ID           int       `json:"id"`
+	Name         string    `json:"name"`
+	Description  *string   `json:"description"`
+	CreationDate time.Time `json:"creationDate"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+	FileCount    *int      `json:"fileCount,omitempty"`
+	TotalSize    *int64    `json:"totalSize,omitempty"`
 }
 
 // FileListResult is the response shape for list/search operations.
@@ -242,6 +243,39 @@ func (s *Service) DownloadURL(ctx context.Context, bucket, key string) (*url.URL
 // DeleteFile removes a single file from a bucket.
 func (s *Service) DeleteFile(ctx context.Context, bucket, key string) error {
 	return s.s3.RemoveObject(ctx, bucket, key)
+}
+
+func (s *Service) DeleteFiles(ctx context.Context, bucket string, keys []string) bulkresult.Summary {
+	summary := bulkresult.Summary{Results: make([]bulkresult.ItemResult, 0, len(keys))}
+	if len(keys) == 0 {
+		return summary
+	}
+
+	deletedCount, err := s.s3.RemoveObjects(ctx, bucket, keys)
+	if err == nil && deletedCount == len(keys) {
+		for idx, key := range keys {
+			summary.AddSuccess(bulkresult.ItemResult{
+				Index: idx,
+				ID:    key,
+				Data:  map[string]any{"filePath": key, "bucket": bucket},
+			})
+		}
+		return summary
+	}
+
+	for idx, key := range keys {
+		result := bulkresult.ItemResult{
+			Index: idx,
+			ID:    key,
+			Data:  map[string]any{"filePath": key, "bucket": bucket},
+		}
+		if deleteErr := s.DeleteFile(ctx, bucket, key); deleteErr != nil {
+			summary.AddFailure(result, deleteErr.Error())
+			continue
+		}
+		summary.AddSuccess(result)
+	}
+	return summary
 }
 
 // GetFileMetadata returns metadata for a single file.

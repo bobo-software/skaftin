@@ -9,7 +9,7 @@ These routes manage **app users** (end users of your project). The same handlers
 
 Examples below use **`{userId}`**, **`{roleId}`** path segments (Go `ServeMux` style). Replace with numeric IDs in real requests.
 
-**Note:** **`POST .../users/import`** is only registered on the **project** API (`/api/auth/{projectId}/users/import` with JWT), not under `/app-api/auth/`. Export and all other operations listed here exist on **both** mounts unless stated otherwise.
+**Note:** Import and export now exist on **both** mounts. Bulk user create, bulk role assignment, bulk resend OTP, and bulk verify also exist on both mounts and return partial-success summaries.
 
 **App API path rule:** For a **project URL** `/api/auth/{projectId}/foo`, the app client URL is **`/app-api/auth/foo`** (drop `{projectId}`; project comes from **`x-api-key`**). Example: `GET /api/auth/3/users/5` → `GET /app-api/auth/users/5`.
 
@@ -205,6 +205,35 @@ Create a new user (admin creation, bypasses registration flow).
   "timestamp": "..."
 }
 ```
+
+---
+
+### 4a. Bulk Create Users
+
+Create multiple users in one request.
+
+**Project URL:** `POST /api/auth/{projectId}/users/bulk`  
+**App API:** `POST /app-api/auth/users/bulk`
+
+**Request Body:**
+```json
+{
+  "users": [
+    {
+      "name": "Jane",
+      "email": "jane@example.com",
+      "role_ids": [2]
+    },
+    {
+      "name": "John",
+      "phone": "+27821234567",
+      "metadata": { "source": "import" }
+    }
+  ]
+}
+```
+
+**Response:** HTTP `200` with `succeeded`, `failed`, `skipped`, and `results[]`. Duplicate users are reported as `skipped`.
 
 ---
 
@@ -484,12 +513,14 @@ Returns SQL content as a downloadable file (`Content-Type: application/sql`).
 
 Import users from SQL dump.
 
-**Project URL only (not on app API):** `POST /api/auth/{projectId}/users/import`
+**Project URL:** `POST /api/auth/{projectId}/users/import`  
+**App API:** `POST /app-api/auth/users/import`
 
 **Headers:**
 ```
 Content-Type: application/json
 Authorization: Bearer <platform-jwt>
+x-api-key: your-api-key
 ```
 
 **Request Body:** provide either **`sql`** or **`sqlContent`** (both names are accepted).
@@ -515,6 +546,55 @@ Authorization: Bearer <platform-jwt>
   }
 }
 ```
+
+---
+
+### 15a. Bulk Assign or Remove a Role
+
+Apply one role to many users in one request.
+
+**Project URL:** `POST /api/auth/{projectId}/users/bulk-roles`  
+**App API:** `POST /app-api/auth/users/bulk-roles`
+
+```json
+{
+  "user_ids": [1, 2, 3],
+  "role_id": 5,
+  "action": "assign"
+}
+```
+
+`action` may be `assign` or `remove`. The response is a partial-success summary with `results[]`.
+
+---
+
+### 15b. Bulk Resend OTP
+
+**Project URL:** `POST /api/auth/{projectId}/users/bulk-resend-otp`  
+**App API:** `POST /app-api/auth/users/bulk-resend-otp`
+
+```json
+{
+  "user_ids": [1, 2, 3]
+}
+```
+
+---
+
+### 15c. Bulk Verify Users
+
+Manual verify multiple users.
+
+**Project URL:** `POST /api/auth/{projectId}/users/bulk-verify`  
+**App API:** `POST /app-api/auth/users/bulk-verify`
+
+```json
+{
+  "user_ids": [1, 2, 3]
+}
+```
+
+All new bulk auth endpoints accept up to `500` items per request and return HTTP `200` with `succeeded`, `failed`, `skipped`, and per-item `results`.
 
 ---
 

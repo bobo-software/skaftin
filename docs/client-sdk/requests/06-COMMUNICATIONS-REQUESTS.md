@@ -94,6 +94,58 @@ x-api-key: your-api-key
 
 ---
 
+### 1a. Send Bulk Email
+
+Send many email messages in one request, each with its own recipient and content.
+
+**Endpoint:** `POST /app-api/communications/email/send-bulk`
+
+**Request Body:**
+```json
+{
+  "provider_id": 1,
+  "messages": [
+    {
+      "to": "alice@example.com",
+      "subject": "Welcome",
+      "html": "<p>Hello Alice</p>"
+    },
+    {
+      "to": "bob@example.com",
+      "subject": "Welcome",
+      "text": "Hello Bob"
+    }
+  ]
+}
+```
+
+**Response:** HTTP `200` with per-message partial success:
+```json
+{
+  "success": true,
+  "message": "Bulk email send completed",
+  "data": {
+    "succeeded": 2,
+    "failed": 0,
+    "skipped": 0,
+    "results": [
+      {
+        "index": 0,
+        "id": "alice@example.com",
+        "success": true,
+        "data": {
+          "messageId": "<skaftin-123@example.com>"
+        }
+      }
+    ]
+  }
+}
+```
+
+**Batch limit:** up to `500` messages per request.
+
+---
+
 ## SMS Operations
 
 ### 2. Send Single SMS

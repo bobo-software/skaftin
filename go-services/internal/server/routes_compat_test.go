@@ -409,9 +409,39 @@ func TestKnownAppAPIEndpointsPreferExplicitGoRoutes(t *testing.T) {
 			explicitPrefix: "/app-api/storage/",
 		},
 		{
+			name:           "storage bulk delete",
+			method:         http.MethodDelete,
+			path:           "/app-api/storage/files/bulk",
+			explicitPrefix: "/app-api/storage/",
+		},
+		{
+			name:           "storage bulk upload",
+			method:         http.MethodPost,
+			path:           "/app-api/storage/uploads/upload-bulk",
+			explicitPrefix: "/app-api/storage/",
+		},
+		{
 			name:           "database tables",
 			method:         http.MethodGet,
 			path:           "/app-api/database/tables",
+			explicitPrefix: "/app-api/database/",
+		},
+		{
+			name:           "database bulk delete",
+			method:         http.MethodPost,
+			path:           "/app-api/database/tables/customers/bulk-delete",
+			explicitPrefix: "/app-api/database/",
+		},
+		{
+			name:           "database bulk update",
+			method:         http.MethodPut,
+			path:           "/app-api/database/tables/customers/bulk-update",
+			explicitPrefix: "/app-api/database/",
+		},
+		{
+			name:           "database bulk upsert",
+			method:         http.MethodPost,
+			path:           "/app-api/database/tables/customers/bulk-upsert",
 			explicitPrefix: "/app-api/database/",
 		},
 		{
@@ -425,6 +455,42 @@ func TestKnownAppAPIEndpointsPreferExplicitGoRoutes(t *testing.T) {
 			method:         http.MethodPost,
 			path:           "/app-api/communications/sms/send",
 			explicitPrefix: "/app-api/communications/",
+		},
+		{
+			name:           "communications send bulk email",
+			method:         http.MethodPost,
+			path:           "/app-api/communications/email/send-bulk",
+			explicitPrefix: "/app-api/communications/",
+		},
+		{
+			name:           "auth users bulk create",
+			method:         http.MethodPost,
+			path:           "/app-api/auth/users/bulk",
+			explicitPrefix: "/app-api/auth/",
+		},
+		{
+			name:           "auth users import",
+			method:         http.MethodPost,
+			path:           "/app-api/auth/users/import",
+			explicitPrefix: "/app-api/auth/",
+		},
+		{
+			name:           "auth users bulk roles",
+			method:         http.MethodPost,
+			path:           "/app-api/auth/users/bulk-roles",
+			explicitPrefix: "/app-api/auth/",
+		},
+		{
+			name:           "auth users bulk resend otp",
+			method:         http.MethodPost,
+			path:           "/app-api/auth/users/bulk-resend-otp",
+			explicitPrefix: "/app-api/auth/",
+		},
+		{
+			name:           "auth users bulk verify",
+			method:         http.MethodPost,
+			path:           "/app-api/auth/users/bulk-verify",
+			explicitPrefix: "/app-api/auth/",
 		},
 		{
 			name:           "payments initiate",

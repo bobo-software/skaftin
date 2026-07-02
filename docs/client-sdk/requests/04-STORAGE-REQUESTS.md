@@ -256,6 +256,49 @@ curl -X POST "http://localhost:4006/app-api/storage/uploads/upload-multipart" \
 
 ---
 
+### 5a. Upload Files (Bulk Multipart)
+
+Upload multiple files to the same bucket in one request.
+
+**Endpoint:** `POST /app-api/storage/{bucketName}/upload-bulk`
+
+**Headers:**
+```
+x-api-key: your-api-key
+```
+
+**Form Data:**
+| Field | Type | Description |
+|-------|------|-------------|
+| files / files[] | File | Repeat this field for each upload |
+| paths / paths[] | string | Optional explicit storage path for each file; if provided, the count must match the file count |
+
+**Response:** HTTP `201` with partial-success data:
+```json
+{
+  "success": true,
+  "message": "Bulk upload completed",
+  "data": {
+    "succeeded": 2,
+    "failed": 1,
+    "skipped": 0,
+    "results": [
+      {
+        "index": 0,
+        "id": "invoice.pdf",
+        "success": true,
+        "data": {
+          "filePath": "docs/invoice.pdf",
+          "bucket": "uploads"
+        }
+      }
+    ]
+  }
+}
+```
+
+---
+
 ### 6. Upload File (Form with Bucket)
 
 Upload a file with bucket and path in form data. Use this when the bucket and path are not in the URL (e.g. dynamic bucket/path from the client).
@@ -441,6 +484,27 @@ x-api-key: your-api-key
   }
 }
 ```
+
+---
+
+### 10a. Delete Files (Bulk Request Body)
+
+Delete multiple files using bucket and `paths[]` in the request body.
+
+**Endpoint:** `DELETE /app-api/storage/files/bulk`
+
+**Request Body:**
+```json
+{
+  "bucket": "documents",
+  "paths": [
+    "reports/old-report.pdf",
+    "reports/old-report-2.pdf"
+  ]
+}
+```
+
+All new bulk storage endpoints accept up to `500` items per request and return `succeeded`, `failed`, `skipped`, and per-item `results`.
 
 ---
 

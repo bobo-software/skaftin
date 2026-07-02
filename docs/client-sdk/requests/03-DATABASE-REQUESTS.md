@@ -416,6 +416,106 @@ x-api-key: your-api-key
 }
 ```
 
+**Note:** `bulk-insert` keeps the older fail-fast behavior. If one row fails, the request returns an error instead of partial success results.
+
+---
+
+### 9a. Bulk Delete Data
+
+Delete multiple rows by identifier in one request.
+
+**Endpoint:** `POST /app-api/database/tables/{tableName}/bulk-delete`
+
+**Headers:**
+```
+Content-Type: application/json
+x-api-key: your-api-key
+```
+
+**Request Body:**
+```json
+{
+  "ids": [15, 16, 99],
+  "idColumn": "id"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| ids | array | Required. Up to 500 identifiers. |
+| idColumn | string | Optional identifier column. Defaults to `id`. |
+
+**Response:** HTTP `200` with per-item partial success details.
+```json
+{
+  "success": true,
+  "message": "Bulk delete completed: 2 succeeded, 1 failed",
+  "data": {
+    "succeeded": 2,
+    "failed": 1,
+    "skipped": 0,
+    "results": [
+      { "index": 0, "id": 15, "success": true, "data": { "deletedCount": 1 } },
+      { "index": 2, "id": 99, "success": false, "error": "No rows were deleted. The specified row may not exist or may not match the identifier." }
+    ]
+  }
+}
+```
+
+---
+
+### 9b. Bulk Update Data
+
+Update multiple rows in one request. Each item carries its own `where` clause and update payload.
+
+**Endpoint:** `PUT /app-api/database/tables/{tableName}/bulk-update`
+
+**Request Body:**
+```json
+{
+  "updates": [
+    {
+      "where": { "id": 15 },
+      "data": { "status": "paid" }
+    },
+    {
+      "where": { "id": 16 },
+      "data": { "status": "failed" }
+    }
+  ]
+}
+```
+
+**Response:** HTTP `200` with `succeeded`, `failed`, `skipped`, and `results[]`.
+
+---
+
+### 9c. Bulk Upsert Data
+
+Insert or update many rows using the table primary key columns as the conflict target.
+
+**Endpoint:** `POST /app-api/database/tables/{tableName}/bulk-upsert`
+
+**Request Body:**
+```json
+{
+  "conflictColumns": ["id"],
+  "dataArray": [
+    { "id": 1, "name": "Updated Product", "price": 12.99 },
+    { "id": 2, "name": "New Product", "price": 14.99 }
+  ],
+  "encrypt": ["user_card_number"]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| conflictColumns | array | Required. Must reference primary-key columns on the target table. |
+| dataArray | array | Required. Up to 500 rows. |
+| encrypt | array | Optional. Same field encryption behavior as `bulk-insert`. |
+
+**Response:** HTTP `200` with per-row results. Each successful item includes `operation: "insert"` or `operation: "update"`.
+
 ---
 
 ### 10. Update Data

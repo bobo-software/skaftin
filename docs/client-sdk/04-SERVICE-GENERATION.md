@@ -407,6 +407,30 @@ async bulkCreate(items: CreateVehicleDto[]): Promise<Vehicle[]> {
   );
   return response.data;
 }
+
+async bulkDelete(ids: number[]): Promise<BulkSummary> {
+  const response = await post<BulkSummary>(
+    `/app-api/database/tables/${this.tableName}/bulk-delete`,
+    { ids }
+  );
+  return response.data;
+}
+
+async bulkUpdate(updates: Array<{ where: Record<string, unknown>; data: Partial<Vehicle> }>): Promise<BulkSummary> {
+  const response = await put<BulkSummary>(
+    `/app-api/database/tables/${this.tableName}/bulk-update`,
+    { updates }
+  );
+  return response.data;
+}
+
+async bulkUpsert(items: Array<Partial<Vehicle> & { id: number }>): Promise<BulkSummary> {
+  const response = await post<BulkSummary>(
+    `/app-api/database/tables/${this.tableName}/bulk-upsert`,
+    { conflictColumns: ['id'], dataArray: items }
+  );
+  return response.data;
+}
 ```
 
 ### Transactions

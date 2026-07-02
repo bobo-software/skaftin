@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/auth"
 	"github.com/skaftin/go-services/internal/config"
+	"github.com/skaftin/go-services/internal/pkg/bulkresult"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
@@ -45,6 +47,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/storage/files/download", h.DownloadFileFromQuery)
 	mux.HandleFunc("POST /api/storage/files", h.UploadFileFromForm)
 	mux.HandleFunc("DELETE /api/storage/files", h.DeleteFileFromBody)
+	mux.HandleFunc("DELETE /api/storage/files/bulk", h.BulkDeleteFilesFromBody)
 
 	// Project-scoped simple routes
 	mux.HandleFunc("GET /api/storage/{projectId}/buckets", h.ListBuckets)
@@ -52,6 +55,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/storage/{projectId}/{bucketName}/search", h.SearchFiles)
 	mux.HandleFunc("POST /api/storage/{projectId}/{bucketName}/upload", h.UploadFile)
 	mux.HandleFunc("POST /api/storage/{projectId}/{bucketName}/upload-multipart", h.UploadFileMultipart)
+	mux.HandleFunc("POST /api/storage/{projectId}/{bucketName}/upload-bulk", h.UploadFilesMultipart)
 	mux.HandleFunc("PUT /api/storage/{projectId}/{bucketName}/folders/rename", h.RenameFolder)
 
 	// Wildcard routes for file download, delete, metadata, and folder delete
@@ -68,6 +72,7 @@ func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /app-api/storage/files/download", h.DownloadFileFromQuery)
 	mux.HandleFunc("POST /app-api/storage/files", h.UploadFileFromForm)
 	mux.HandleFunc("DELETE /app-api/storage/files", h.DeleteFileFromBody)
+	mux.HandleFunc("DELETE /app-api/storage/files/bulk", h.BulkDeleteFilesFromBody)
 
 	// Project-scoped routes (project resolved from auth context).
 	mux.HandleFunc("GET /app-api/storage/buckets", h.ListBuckets)
@@ -75,6 +80,7 @@ func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /app-api/storage/{bucketName}/search", h.SearchFiles)
 	mux.HandleFunc("POST /app-api/storage/{bucketName}/upload", h.UploadFile)
 	mux.HandleFunc("POST /app-api/storage/{bucketName}/upload-multipart", h.UploadFileMultipart)
+	mux.HandleFunc("POST /app-api/storage/{bucketName}/upload-bulk", h.UploadFilesMultipart)
 	mux.HandleFunc("PUT /app-api/storage/{bucketName}/folders/rename", h.RenameFolder)
 
 	// Wildcard routes for file download, delete, metadata, and folder delete
@@ -348,6 +354,87 @@ func (h *Handler) UploadFileMultipart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) UploadFilesMultipart(w http.ResponseWriter, r *http.Request) {
+	if !requireAuth(w, r) {
+		return
+	}
+	pid, ok := projectID(w, r)
+	if !ok {
+		return
+	}
+	bucketName := r.PathValue("bucketName")
+	if !h.validateBucket(w, r, pid, bucketName) {
+		return
+	}
+
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Failed to parse multipart form")
+		return
+	}
+
+	files := make([]*multipart.FileHeader, 0)
+	if r.MultipartForm != nil {
+		files = append(files, r.MultipartForm.File["files"]...)
+		files = append(files, r.MultipartForm.File["files[]"]...)
+		files = append(files, r.MultipartForm.File["file"]...)
+	}
+	if len(files) == 0 {
+		httputil.WriteError(w, http.StatusBadRequest, "No files uploaded")
+		return
+	}
+	if len(files) > bulkresult.MaxBatchSize {
+		httputil.WriteError(w, http.StatusBadRequest, fmt.Sprintf("Maximum batch size is %d", bulkresult.MaxBatchSize))
+		return
+	}
+
+	paths := append([]string{}, r.MultipartForm.Value["paths"]...)
+	if len(paths) == 0 {
+		paths = append(paths, r.MultipartForm.Value["paths[]"]...)
+	}
+	if len(paths) > 0 && len(paths) != len(files) {
+		httputil.WriteError(w, http.StatusBadRequest, "paths count must match uploaded files")
+		return
+	}
+
+	summary := bulkresult.Summary{Results: make([]bulkresult.ItemResult, 0, len(files))}
+	for idx, header := range files {
+		result := bulkresult.ItemResult{Index: idx, ID: header.Filename}
+		file, err := header.Open()
+		if err != nil {
+			summary.AddFailure(result, "Failed to open uploaded file")
+			continue
+		}
+
+		filePath := fmt.Sprintf("%d-%s", timeNowUnixMilli(), header.Filename)
+		if len(paths) > idx && strings.TrimSpace(paths[idx]) != "" {
+			filePath = paths[idx]
+		}
+		contentType := header.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
+		uploadErr := h.service.Upload(r.Context(), bucketName, filePath, file, header.Size, contentType, nil)
+		file.Close()
+		if uploadErr != nil {
+			slog.Error("failed to upload bulk multipart file", "error", uploadErr, "file", header.Filename)
+			summary.AddFailure(result, "Failed to upload file")
+			continue
+		}
+
+		result.Data = map[string]any{
+			"filePath":     filePath,
+			"originalName": header.Filename,
+			"size":         header.Size,
+			"contentType":  contentType,
+			"bucket":       bucketName,
+		}
+		summary.AddSuccess(result)
+	}
+
+	httputil.WriteSuccess(w, http.StatusCreated, "Bulk upload completed", summary)
+}
+
 // UploadFileFromForm handles POST /api/storage/files (multipart with bucket/path in form)
 func (h *Handler) UploadFileFromForm(w http.ResponseWriter, r *http.Request) {
 	if !requireAuth(w, r) {
@@ -564,6 +651,36 @@ func (h *Handler) DeleteFileFromBody(w http.ResponseWriter, r *http.Request) {
 		"filePath": body.Path,
 		"bucket":   body.Bucket,
 	})
+}
+
+func (h *Handler) BulkDeleteFilesFromBody(w http.ResponseWriter, r *http.Request) {
+	if !requireAuth(w, r) {
+		return
+	}
+
+	var body struct {
+		Bucket string   `json:"bucket"`
+		Paths  []string `json:"paths"`
+	}
+	if err := httputil.DecodeBody(r, &body); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if body.Bucket == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "Bucket name is required in request body")
+		return
+	}
+	if len(body.Paths) == 0 {
+		httputil.WriteError(w, http.StatusBadRequest, "paths array is required")
+		return
+	}
+	if len(body.Paths) > bulkresult.MaxBatchSize {
+		httputil.WriteError(w, http.StatusBadRequest, fmt.Sprintf("Maximum batch size is %d", bulkresult.MaxBatchSize))
+		return
+	}
+
+	summary := h.service.DeleteFiles(r.Context(), body.Bucket, body.Paths)
+	httputil.WriteSuccess(w, http.StatusOK, "Bulk delete completed", summary)
 }
 
 // DeleteFile handles DELETE /api/storage/{projectId}/{bucketName}/files/{filePath...}

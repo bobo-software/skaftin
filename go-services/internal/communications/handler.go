@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/auth"
+	"github.com/skaftin/go-services/internal/pkg/bulkresult"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
@@ -39,6 +40,7 @@ func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 	h.registerProjectRoutesWithBase(mux, "/app-api/communications/{projectId}")
 	mux.HandleFunc("POST /app-api/communications/{projectId}/sms/webhook", h.SMSWebhook)
 	mux.HandleFunc("POST /app-api/communications/email/send", h.SendEmail)
+	mux.HandleFunc("POST /app-api/communications/email/send-bulk", h.SendEmailBulk)
 	mux.HandleFunc("POST /app-api/communications/sms/send", h.SendSMS)
 	mux.HandleFunc("POST /app-api/communications/sms/send-basic", h.SendSMSBasic)
 	mux.HandleFunc("GET /app-api/communications/sms/providers", h.ListSMSProviders)
@@ -65,6 +67,7 @@ func (h *Handler) registerProjectRoutesWithBase(mux *http.ServeMux, base string)
 	mux.HandleFunc("DELETE "+base+"/email/providers/{providerId}", h.DeleteEmailProvider)
 	mux.HandleFunc("POST "+base+"/email/providers/{providerId}/test", h.TestEmailProvider)
 	mux.HandleFunc("POST "+base+"/email/send", h.SendEmail)
+	mux.HandleFunc("POST "+base+"/email/send-bulk", h.SendEmailBulk)
 
 	mux.HandleFunc("GET "+base+"/email/templates", h.ListEmailTemplates)
 	mux.HandleFunc("GET "+base+"/email/templates/{templateId}", h.GetEmailTemplate)
@@ -493,6 +496,61 @@ func (h *Handler) SendEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteSuccess(w, 200, "Email sent successfully", data)
+}
+
+func (h *Handler) SendEmailBulk(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		ProviderID int `json:"provider_id"`
+		Messages   []struct {
+			To          string            `json:"to"`
+			Subject     string            `json:"subject"`
+			Text        string            `json:"text"`
+			HTML        string            `json:"html"`
+			CC          []string          `json:"cc"`
+			BCC         []string          `json:"bcc"`
+			Attachments []EmailAttachment `json:"attachments"`
+		} `json:"messages"`
+	}
+	if err := httputil.DecodeBody(r, &req); err != nil {
+		httputil.WriteError(w, 400, "Invalid request body")
+		return
+	}
+	if req.ProviderID == 0 {
+		httputil.WriteError(w, 400, "provider_id is required")
+		return
+	}
+	if len(req.Messages) == 0 {
+		httputil.WriteError(w, 400, "messages array is required")
+		return
+	}
+	if len(req.Messages) > bulkresult.MaxBatchSize {
+		httputil.WriteError(w, http.StatusBadRequest, fmt.Sprintf("Maximum batch size is %d", bulkresult.MaxBatchSize))
+		return
+	}
+
+	summary := bulkresult.Summary{Results: make([]bulkresult.ItemResult, 0, len(req.Messages))}
+	for idx, msg := range req.Messages {
+		result := bulkresult.ItemResult{Index: idx, ID: msg.To}
+		if strings.TrimSpace(msg.To) == "" || strings.TrimSpace(msg.Subject) == "" || (strings.TrimSpace(msg.Text) == "" && strings.TrimSpace(msg.HTML) == "") {
+			summary.AddFailure(result, "Each message requires to, subject, and either text or html")
+			continue
+		}
+
+		data, err := h.service.SendEmail(r.Context(), projectID, req.ProviderID, []string{msg.To}, msg.CC, msg.BCC, msg.Subject, msg.Text, msg.HTML, msg.Attachments)
+		if err != nil {
+			summary.AddFailure(result, err.Error())
+			continue
+		}
+		result.Data = data
+		summary.AddSuccess(result)
+	}
+
+	httputil.WriteSuccess(w, http.StatusOK, "Bulk email send completed", summary)
 }
 
 func (h *Handler) ListEmailTemplates(w http.ResponseWriter, r *http.Request) {
