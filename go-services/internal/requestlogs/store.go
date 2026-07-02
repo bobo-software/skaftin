@@ -118,6 +118,7 @@ type LogFilters struct {
 	StartDate  *time.Time
 	EndDate    *time.Time
 	HasError   bool
+	URLSearch  *string
 }
 
 // LogListResult holds the paginated list result.
@@ -339,6 +340,11 @@ func (s *Store) ListLogs(ctx context.Context, projectID int, f LogFilters) (*Log
 	}
 	if f.HasError {
 		conditions = append(conditions, "(error_message IS NOT NULL OR status_code >= 400)")
+	}
+	if f.URLSearch != nil {
+		conditions = append(conditions, fmt.Sprintf("url ILIKE $%d", idx))
+		args = append(args, "%"+*f.URLSearch+"%")
+		idx++
 	}
 
 	where := "WHERE " + conditions[0]

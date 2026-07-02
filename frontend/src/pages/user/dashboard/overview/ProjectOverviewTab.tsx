@@ -9,9 +9,13 @@ import {
   Clock
 } from 'lucide-react';
 
+const StatValueSkeleton = () => (
+  <div className="h-8 w-16 bg-dark-200 dark:bg-dark-700 rounded animate-pulse"></div>
+);
+
 const ProjectOverviewTab = () => {
   const { currentProject, projectStats, getProjectStats } = useProjectStore();
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const loadProjectStats = useCallback(async () => {
     setIsLoading(true);
@@ -62,7 +66,7 @@ const ProjectOverviewTab = () => {
               <p className="text-sm text-dark-600 dark:text-dark-300">Database Tables</p>
               <p className="text-2xl font-bold text-dark-900 dark:text-white">
                 {isLoading ? (
-                  <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+                  <StatValueSkeleton />
                 ) : (
                   projectStats?.tableCount || 0
                 )}
@@ -77,7 +81,7 @@ const ProjectOverviewTab = () => {
               <p className="text-sm text-dark-600 dark:text-dark-300">Storage Files</p>
               <p className="text-2xl font-bold text-dark-900 dark:text-white">
                 {isLoading ? (
-                  <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+                  <StatValueSkeleton />
                 ) : (
                   projectStats?.fileCount || 0
                 )}
@@ -92,7 +96,7 @@ const ProjectOverviewTab = () => {
               <p className="text-sm text-dark-600 dark:text-dark-300">API Calls</p>
               <p className="text-2xl font-bold text-dark-900 dark:text-white">
                 {isLoading ? (
-                  <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+                  <StatValueSkeleton />
                 ) : (
                   projectStats?.apiCalls || 0
                 )}

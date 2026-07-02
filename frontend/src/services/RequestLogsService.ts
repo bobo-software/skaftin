@@ -93,6 +93,7 @@ export interface LogsFilter {
   start_date?: string;
   end_date?: string;
   has_error?: boolean;
+  url?: string;
   limit?: number;
   offset?: number;
 }
@@ -157,6 +158,7 @@ class RequestLogsService {
       if (filters?.start_date) queryParams.set('start_date', filters.start_date);
       if (filters?.end_date) queryParams.set('end_date', filters.end_date);
       if (filters?.has_error !== undefined) queryParams.set('has_error', String(filters.has_error));
+      if (filters?.url) queryParams.set('url', filters.url);
       if (filters?.limit) queryParams.set('limit', String(filters.limit));
       if (filters?.offset) queryParams.set('offset', String(filters.offset));
 

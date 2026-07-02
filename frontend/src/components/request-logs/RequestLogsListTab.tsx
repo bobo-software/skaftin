@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useProjectStore, useRealtimeStore, useRequestLogsStore } from '../../stores/StoresIndex';
-import { Loader2, RefreshCw, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
+import { Loader2, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Search } from 'lucide-react';
 import { RequestLogDetailModal } from '@components/ComponentsIndex';
 
 const RequestLogsListTab = () => {
@@ -27,6 +27,7 @@ const RequestLogsListTab = () => {
   } = useRequestLogsStore();
 
   const [statusCodeInput, setStatusCodeInput] = useState('');
+  const [urlSearchInput, setUrlSearchInput] = useState('');
   const lastRealtimeRefreshRef = useRef(0);
 
   // Initialize realtime websocket listeners once for this page session
@@ -71,12 +72,23 @@ const RequestLogsListTab = () => {
     return () => clearTimeout(timer);
   }, [statusCodeInput]);
 
-  // Fetch when filters change (except status_code which is handled above)
+  // Debounce URL search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const url = urlSearchInput.trim() || undefined;
+      if (filters.url !== url) {
+        setFilters({ url });
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [urlSearchInput]);
+
+  // Fetch when filters change (except status_code/url which are handled above)
   useEffect(() => {
     if (currentProject?.id) {
       fetchLogs(String(currentProject.id), filters);
     }
-  }, [filters.method, filters.status_code, filters.has_error]);
+  }, [filters.method, filters.status_code, filters.has_error, filters.url]);
 
   // Auto-refresh when backend emits request_log_created for this project
   useEffect(() => {
@@ -111,6 +123,7 @@ const RequestLogsListTab = () => {
 
   const handleClearFilters = () => {
     setStatusCodeInput('');
+    setUrlSearchInput('');
     clearFilters();
   };
 
@@ -138,12 +151,22 @@ const RequestLogsListTab = () => {
     }
   };
 
-  const hasActiveFilters = filters.method || filters.status_code || filters.has_error;
+  const hasActiveFilters = filters.method || filters.status_code || filters.has_error || filters.url;
 
   return (
     <div className="space-y-3">
       {/* Compact Filters Bar */}
       <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-dark-400" />
+          <input
+            type="text"
+            value={urlSearchInput}
+            onChange={(e) => setUrlSearchInput(e.target.value)}
+            placeholder="Search URL..."
+            className="pl-7 pr-2 py-1 text-xs border border-dark-200 dark:border-dark-700 rounded bg-white dark:bg-dark-700 text-dark-900 dark:text-white w-48"
+          />
+        </div>
         <select
           value={filters.method || ''}
           onChange={(e) => updateFilter('method', e.target.value || undefined)}

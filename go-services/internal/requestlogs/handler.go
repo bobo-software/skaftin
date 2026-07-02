@@ -282,6 +282,9 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 			filters.EndDate = &t
 		}
 	}
+	if v := strings.TrimSpace(q.Get("url")); v != "" {
+		filters.URLSearch = &v
+	}
 
 	result, err := h.service.ListLogs(r.Context(), pid, filters)
 	if err != nil {
