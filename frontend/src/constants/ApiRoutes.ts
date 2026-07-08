@@ -183,6 +183,11 @@ const ApiRoutes = {
     SEND_WHATSAPP: (projectId: string) => `/api/communications/${projectId}/whatsapp/send`,
     SEND_WHATSAPP_BASIC: (projectId: string) => `/api/communications/${projectId}/whatsapp/send-basic`,
     SEND_WHATSAPP_TEMPLATE: (projectId: string) => `/api/communications/${projectId}/whatsapp/template`,
+    // Push notifications
+    GET_PUSH_SETTINGS: (projectId: string) => `/api/communications/${projectId}/push/settings`,
+    UPDATE_PUSH_SETTINGS: (projectId: string) => `/api/communications/${projectId}/push/settings`,
+    LIST_PUSH_TOKENS: (projectId: string) => `/api/communications/${projectId}/push/tokens`,
+    TEST_PUSH: (projectId: string) => `/api/communications/${projectId}/push/test`,
   },
   
   // Invitations routes
@@ -248,6 +253,9 @@ const ApiRoutes = {
     CREATE_SMS_TEMPLATE: () => '/app-api/communications/sms/templates',
     UPDATE_SMS_TEMPLATE: (templateId: string) => `/app-api/communications/sms/templates/${templateId}`,
     DELETE_SMS_TEMPLATE: (templateId: string) => `/app-api/communications/sms/templates/${templateId}`,
+    // Push notifications
+    REGISTER_PUSH_TOKEN: () => '/app-api/communications/push/register',
+    UNREGISTER_PUSH_TOKEN: () => '/app-api/communications/push/unregister',
   },
   
   // Health routes

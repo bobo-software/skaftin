@@ -201,30 +201,38 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
     }
   };
 
-  const handleCsvImport = async (dataArray: any[]) => {
-    if (!selectedTable) return;
-    
+  // CsvImportModal owns the batching loop (chunked to the backend's 500-row bulk-insert cap);
+  // this just performs the network call for a single batch.
+  const handleCsvImportBatch = async (batch: any[]): Promise<{ success: boolean; message?: string }> => {
+    if (!selectedTable) return { success: false, message: 'No table selected' };
+
     try {
       const token = localStorage.getItem('skaftin-token') || '';
       const result = await RequestUtils.post(
         ApiRoutes.DATABASE.BULK_INSERT(projectId, selectedTable),
         token,
-        { dataArray }
+        { dataArray: batch }
       );
-      
-      if (result.success) {
-        console.log(`Successfully imported ${dataArray.length} rows`);
-        setShowCsvImportModal(false);
-        await fetchTableData(selectedTable);
-        ToastUtils.success(`Successfully imported ${dataArray.length} rows from CSV!`);
-      } else {
-        console.error('Failed to import CSV:', result.message);
-        ToastUtils.error('Failed to import CSV data. Please try again.');
+
+      if (!result.success) {
+        console.error('Failed to import CSV batch:', result.message);
       }
+      return { success: !!result.success, message: result.message };
     } catch (error) {
-      console.error('Error importing CSV:', error);
-      ToastUtils.error('Error importing CSV data. Please try again.');
+      console.error('Error importing CSV batch:', error);
+      return { success: false, message: 'Network error while importing batch.' };
     }
+  };
+
+  const handleCsvImportComplete = async (insertedCount: number, totalRows: number) => {
+    if (insertedCount > 0 && selectedTable) {
+      await fetchTableData(selectedTable);
+    }
+    if (totalRows > 0 && insertedCount === totalRows) {
+      setShowCsvImportModal(false);
+      ToastUtils.success(`Successfully imported ${insertedCount} rows from CSV!`);
+    }
+    // Partial/failed imports leave the modal open - it already shows the error inline.
   };
 
   const handleBulkDelete = (selectedRows: any[]) => {
@@ -824,9 +832,9 @@ const TableViewer = ({ projectId }: TableViewerProps) => {
         <CsvImportModal
           isOpen={showCsvImportModal}
           onClose={() => setShowCsvImportModal(false)}
-          onImport={handleCsvImport}
+          onImportBatch={handleCsvImportBatch}
+          onImportComplete={handleCsvImportComplete}
           tableColumns={currentTable.columns || []}
-          loading={dataLoading}
         />
       )}
 

@@ -17,6 +17,7 @@ import (
 	"github.com/skaftin/go-services/internal/middleware"
 	"github.com/skaftin/go-services/internal/payments"
 	"github.com/skaftin/go-services/internal/projects"
+	"github.com/skaftin/go-services/internal/pushnotifications"
 	"github.com/skaftin/go-services/internal/storage"
 	"github.com/skaftin/go-services/internal/supertokens"
 	"github.com/skaftin/go-services/internal/workflows"
@@ -51,12 +52,16 @@ func registerOperationalRoutes(
 	communicationsHandler.RegisterPublicRoutes(communicationsPublicMux)
 	mux.Handle("/api/communications/{projectId}/sms/webhook", communicationsPublicMux)
 
+	pushHandler := pushnotifications.NewHandler(pool)
+
 	communicationsProjectMux := http.NewServeMux()
 	communicationsHandler.RegisterProjectRoutes(communicationsProjectMux)
+	pushHandler.RegisterProjectRoutes(communicationsProjectMux)
 	mux.Handle("/api/communications/", auth.JWTAuth(jwks)(auth.VerifyProjectAccessForPrefix(pool, "/api/communications/")(communicationsProjectMux)))
 
 	communicationsAppMux := http.NewServeMux()
 	communicationsHandler.RegisterAppAPIRoutes(communicationsAppMux)
+	pushHandler.RegisterAppAPIRoutes(communicationsAppMux)
 	mux.Handle("/app-api/communications/", auth.APIKey(pool)(requestLogger.Middleware(communicationsAppMux)))
 
 	// Payments webhook routes are public and handled by Go.

@@ -1,225 +1,532 @@
-import React, { useState, useRef } from 'react';
-import { X, Upload, FileText, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import React, { useState, useRef, useMemo } from 'react';
+import { X, Upload, FileText, AlertCircle, CheckCircle, Loader2, Wand2, Eraser, Info } from 'lucide-react';
 import { AppButton } from '../ComponentsIndex';
+
+interface TableColumnDef {
+  column_name: string;
+  data_type: string;
+  is_nullable: boolean;
+}
 
 interface CsvImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImport: (data: any[], columnMapping: any) => void;
-  tableColumns: Array<{
-    column_name: string;
-    data_type: string;
-    is_nullable: boolean;
-  }>;
-  loading?: boolean;
+  /** Inserts a single batch (at most BULK_INSERT_BATCH_SIZE rows). Called once per batch. */
+  onImportBatch: (batch: any[], columnMapping: Record<number, string>) => Promise<{ success: boolean; message?: string }>;
+  /** Called once after the loop finishes, whether it completed fully or stopped early on a failed batch. */
+  onImportComplete: (insertedCount: number, totalRows: number) => void;
+  tableColumns: TableColumnDef[];
 }
 
 interface ParsedCsvData {
   headers: string[];
-  rows: any[][];
-  preview: any[];
+  rows: string[][];
+  duplicateHeaders: string[];
+  malformedRowCount: number;
 }
+
+type MatchLevel = 'exact' | 'high' | 'low';
+
+const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20MB
+const PREVIEW_ROW_COUNT = 8;
+const VALIDATION_SAMPLE_SIZE = 500;
+
+// Backend hard-caps /bulk-insert at 500 rows per request (bulkresult.MaxBatchSize) - large CSVs
+// are chunked into sequential batches of this size so the request isn't rejected outright.
+const BULK_INSERT_BATCH_SIZE = 500;
+
+const DELIMITER_OPTIONS: { value: string; label: string }[] = [
+  { value: ',', label: 'Comma (,)' },
+  { value: ';', label: 'Semicolon (;)' },
+  { value: '\t', label: 'Tab' },
+  { value: '|', label: 'Pipe (|)' },
+];
+
+// Groups of interchangeable field names used to boost auto-matching beyond exact string equality.
+const SYNONYM_GROUPS: string[][] = [
+  ['id', 'identifier', 'uid', 'uuid', 'pk', 'recordid'],
+  ['email', 'emailaddress', 'mail', 'emailid'],
+  ['phone', 'phonenumber', 'mobile', 'cell', 'cellphone', 'telephone', 'tel', 'contactnumber'],
+  ['firstname', 'fname', 'givenname'],
+  ['lastname', 'lname', 'surname', 'familyname'],
+  ['fullname', 'name', 'displayname'],
+  ['address', 'addr', 'street', 'streetaddress', 'addressline1'],
+  ['city', 'town'],
+  ['state', 'province', 'region'],
+  ['zip', 'zipcode', 'postalcode', 'postcode'],
+  ['country', 'nation'],
+  ['createdat', 'created', 'datecreated', 'creationdate'],
+  ['updatedat', 'updated', 'dateupdated', 'modifiedat', 'lastmodified'],
+  ['description', 'desc', 'details', 'notes', 'comment', 'comments'],
+  ['price', 'cost', 'amount', 'unitprice'],
+  ['quantity', 'qty', 'stock'],
+  ['url', 'link', 'website', 'site', 'webaddress'],
+  ['active', 'isactive', 'enabled'],
+  ['company', 'organization', 'org', 'companyname', 'employer'],
+  ['title', 'jobtitle', 'position', 'role'],
+  ['image', 'photo', 'picture', 'avatar', 'img'],
+  ['category', 'type', 'cat'],
+];
+
+const SYNONYM_INDEX: Map<string, number> = (() => {
+  const map = new Map<string, number>();
+  SYNONYM_GROUPS.forEach((group, idx) => group.forEach(term => map.set(term, idx)));
+  return map;
+})();
+
+const normalizeKey = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const levenshtein = (a: string, b: string): number => {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const prev = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let prevDiag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const temp = prev[j];
+      prev[j] = a[i - 1] === b[j - 1] ? prevDiag : 1 + Math.min(prevDiag, prev[j], prev[j - 1]);
+      prevDiag = temp;
+    }
+  }
+  return prev[b.length];
+};
+
+const similarity = (a: string, b: string): number => {
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+  return 1 - levenshtein(a, b) / maxLen;
+};
+
+/** Scores how likely a CSV header refers to the same field as a table column, 0..1. */
+const matchScore = (headerRaw: string, columnRaw: string): number => {
+  const header = normalizeKey(headerRaw);
+  const column = normalizeKey(columnRaw);
+  if (!header || !column) return 0;
+  if (header === column) return 1;
+
+  const headerGroup = SYNONYM_INDEX.get(header);
+  const columnGroup = SYNONYM_INDEX.get(column);
+  if (headerGroup !== undefined && headerGroup === columnGroup) return 0.97;
+
+  if (header.includes(column) || column.includes(header)) {
+    const longer = Math.max(header.length, column.length);
+    const shorter = Math.min(header.length, column.length);
+    return 0.75 + 0.15 * (shorter / longer);
+  }
+
+  return similarity(header, column) * 0.85;
+};
+
+/** Greedy best-score bipartite assignment so no CSV header or table column is matched twice. */
+const autoMapColumns = (
+  headers: string[],
+  tableColumns: TableColumnDef[]
+): { mapping: Record<number, string>; confidence: Record<number, MatchLevel> } => {
+  const candidates: { headerIdx: number; columnName: string; score: number }[] = [];
+  headers.forEach((header, headerIdx) => {
+    tableColumns.forEach(col => {
+      const score = matchScore(header, col.column_name);
+      if (score >= 0.4) candidates.push({ headerIdx, columnName: col.column_name, score });
+    });
+  });
+  candidates.sort((a, b) => b.score - a.score);
+
+  const mapping: Record<number, string> = {};
+  const confidence: Record<number, MatchLevel> = {};
+  const usedHeaders = new Set<number>();
+  const usedColumns = new Set<string>();
+
+  for (const c of candidates) {
+    if (usedHeaders.has(c.headerIdx) || usedColumns.has(c.columnName)) continue;
+    mapping[c.headerIdx] = c.columnName;
+    confidence[c.headerIdx] = c.score >= 0.95 ? 'exact' : c.score >= 0.7 ? 'high' : 'low';
+    usedHeaders.add(c.headerIdx);
+    usedColumns.add(c.columnName);
+  }
+
+  return { mapping, confidence };
+};
+
+const detectDelimiter = (sample: string): string => {
+  const firstLine = sample.split(/\r\n|\r|\n/, 1)[0] || '';
+  let best = ',';
+  let bestCount = 0;
+  for (const candidate of [',', ';', '\t', '|']) {
+    let count = 0;
+    let inQuotes = false;
+    for (const ch of firstLine) {
+      if (ch === '"') inQuotes = !inQuotes;
+      else if (ch === candidate && !inQuotes) count++;
+    }
+    if (count > bestCount) {
+      bestCount = count;
+      best = candidate;
+    }
+  }
+  return best;
+};
+
+/** RFC4180-style parser: handles quoted fields with embedded delimiters, newlines, and escaped quotes. */
+const parseCsvText = (text: string, delimiter: string): string[][] => {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += char;
+      }
+      continue;
+    }
+    if (char === '"') inQuotes = true;
+    else if (char === delimiter) {
+      row.push(field);
+      field = '';
+    } else if (char === '\r') {
+      // ignore, paired \n handles the line break
+    } else if (char === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else {
+      field += char;
+    }
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows.map(r => r.map(cell => cell.trim()));
+};
+
+const buildParsedData = (text: string, delimiter: string): ParsedCsvData | null => {
+  const rawRows = parseCsvText(text, delimiter);
+  const nonEmptyRows = rawRows.filter(r => !(r.length === 1 && r[0] === ''));
+  if (nonEmptyRows.length < 2) return null;
+
+  const headers = nonEmptyRows[0];
+  const headerCounts = new Map<string, number>();
+  headers.forEach(h => headerCounts.set(h, (headerCounts.get(h) || 0) + 1));
+  const duplicateHeaders = Array.from(headerCounts.entries()).filter(([, c]) => c > 1).map(([h]) => h);
+
+  let malformedRowCount = 0;
+  const rows = nonEmptyRows.slice(1).map(r => {
+    if (r.length !== headers.length) malformedRowCount++;
+    return headers.map((_, i) => r[i] ?? '');
+  });
+
+  return { headers, rows, duplicateHeaders, malformedRowCount };
+};
+
+const isNumericType = (type: string) =>
+  type.includes('NUMERIC') || type.includes('DECIMAL') || type.includes('FLOAT') || type.includes('DOUBLE') || type.includes('REAL');
+
+const isTypeMismatch = (raw: string, dataType: string): boolean => {
+  const value = raw.trim();
+  if (value === '') return false;
+  const type = dataType.toUpperCase();
+  if (type.includes('BOOL')) return !['true', 'false', 't', 'f', '1', '0', 'yes', 'no', 'y', 'n'].includes(value.toLowerCase());
+  if (type.includes('INT') || type.includes('SERIAL')) return !/^-?\d+$/.test(value);
+  if (isNumericType(type)) return !/^-?\d+(\.\d+)?$/.test(value);
+  if (type.includes('DATE') || type.includes('TIME')) return isNaN(Date.parse(value));
+  return false;
+};
+
+const coerceValue = (raw: string, dataType: string): any => {
+  const value = raw.trim();
+  if (value === '') return null;
+  const type = dataType.toUpperCase();
+  if (type.includes('BOOL')) {
+    const v = value.toLowerCase();
+    if (['true', 't', '1', 'yes', 'y'].includes(v)) return true;
+    if (['false', 'f', '0', 'no', 'n'].includes(v)) return false;
+    return value;
+  }
+  if (type.includes('INT') || type.includes('SERIAL')) return /^-?\d+$/.test(value) ? Number(value) : value;
+  if (isNumericType(type)) return /^-?\d+(\.\d+)?$/.test(value) ? Number(value) : value;
+  return value;
+};
+
+const MatchBadge = ({ level }: { level?: MatchLevel }) => {
+  if (!level) return null;
+  const isLow = level === 'low';
+  const styles = isLow
+    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+    : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+  return (
+    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${styles}`}>
+      {isLow ? 'Possible match' : 'Auto-matched'}
+    </span>
+  );
+};
 
 const CsvImportModal = ({
   isOpen,
   onClose,
-  onImport,
-  tableColumns,
-  loading = false
+  onImportBatch,
+  onImportComplete,
+  tableColumns
 }: CsvImportModalProps) => {
   const [step, setStep] = useState<'upload' | 'mapping' | 'preview'>('upload');
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [rawText, setRawText] = useState<string>('');
+  const [delimiter, setDelimiter] = useState<string>(',');
   const [csvData, setCsvData] = useState<ParsedCsvData | null>(null);
-  const [columnMapping, setColumnMapping] = useState<{[key: string]: string}>({});
+  const [columnMapping, setColumnMapping] = useState<Record<number, string>>({});
+  const [matchConfidence, setMatchConfidence] = useState<Record<number, MatchLevel>>({});
   const [errors, setErrors] = useState<string[]>([]);
   const [importError, setImportError] = useState<string>('');
   const [dragActive, setDragActive] = useState(false);
   const [excludeIdColumn, setExcludeIdColumn] = useState(true);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      processFile(file);
-    }
+    if (file) processFile(file);
   };
 
   const processFile = (file: File) => {
-    // Check if it's a CSV file by extension or MIME type
-    if (file.name.endsWith('.csv') || file.type === 'text/csv' || file.type === 'text/plain') {
-      setCsvFile(file);
-      setImportError('');
-      parseCsvFile(file);
-    } else {
-      setImportError('Please select a valid CSV file.');
+    const validExtension = /\.(csv|tsv|txt)$/i.test(file.name);
+    const validMime = ['text/csv', 'text/tab-separated-values', 'text/plain', 'application/vnd.ms-excel', ''].includes(file.type);
+    if (!validExtension && !validMime) {
+      setImportError('Please select a valid CSV or TSV file.');
+      return;
     }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setImportError(`File is too large. Maximum size is ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB.`);
+      return;
+    }
+    setCsvFile(file);
+    setImportError('');
+    parseCsvFile(file);
   };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
+    if (e.type === 'dragenter' || e.type === 'dragover') setDragActive(true);
+    else if (e.type === 'dragleave') setDragActive(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+  };
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
-    }
+  const applyAutoMap = (headers: string[]) => {
+    const { mapping, confidence } = autoMapColumns(headers, tableColumns);
+    setColumnMapping(mapping);
+    setMatchConfidence(confidence);
   };
 
   const parseCsvFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const text = e.target?.result as string;
-        const lines = text.split('\n').filter(line => line.trim());
-        
-        if (lines.length < 2) {
+        let text = e.target?.result as string;
+        if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // strip BOM
+
+        const detectedDelimiter = detectDelimiter(text);
+        const parsed = buildParsedData(text, detectedDelimiter);
+        if (!parsed) {
           setImportError('CSV file must have at least a header row and one data row.');
           return;
         }
 
-        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-        const rows = lines.slice(1).map(line => 
-          line.split(',').map(cell => cell.trim().replace(/"/g, ''))
-        );
-
-        // Create preview (first 5 rows)
-        const preview = rows.slice(0, 5).map(row => {
-          const obj: any = {};
-          headers.forEach((header, index) => {
-            obj[header] = row[index] || '';
-          });
-          return obj;
-        });
-
-        setCsvData({
-          headers,
-          rows,
-          preview
-        });
-
-        // Auto-map columns with similar names
-        const autoMapping: {[key: string]: string} = {};
-        headers.forEach(header => {
-          const tableColumn = tableColumns.find(col => 
-            col.column_name.toLowerCase() === header.toLowerCase() ||
-            col.column_name.toLowerCase().includes(header.toLowerCase()) ||
-            header.toLowerCase().includes(col.column_name.toLowerCase())
-          );
-          if (tableColumn) {
-            autoMapping[header] = tableColumn.column_name;
-          }
-        });
-        setColumnMapping(autoMapping);
+        setRawText(text);
+        setDelimiter(detectedDelimiter);
+        setCsvData(parsed);
+        applyAutoMap(parsed.headers);
         setStep('mapping');
-
       } catch (error) {
         setImportError('Error parsing CSV file. Please check the file format.');
         console.error('CSV parsing error:', error);
       }
     };
+    reader.onerror = () => setImportError('Failed to read the file.');
     reader.readAsText(file);
   };
 
-  const handleColumnMapping = (csvColumn: string, tableColumn: string) => {
-    setColumnMapping(prev => ({
-      ...prev,
-      [csvColumn]: tableColumn
-    }));
+  const handleDelimiterChange = (newDelimiter: string) => {
+    if (!rawText) return;
+    const parsed = buildParsedData(rawText, newDelimiter);
+    if (!parsed) {
+      setImportError('No data rows were found using this delimiter.');
+      return;
+    }
+    setDelimiter(newDelimiter);
+    setCsvData(parsed);
+    applyAutoMap(parsed.headers);
+  };
+
+  const handleColumnMapping = (headerIdx: number, tableColumn: string) => {
+    setColumnMapping(prev => {
+      const next = { ...prev };
+      if (tableColumn) next[headerIdx] = tableColumn;
+      else delete next[headerIdx];
+      return next;
+    });
+    setMatchConfidence(prev => {
+      const next = { ...prev };
+      delete next[headerIdx]; // manual edit supersedes the auto-match badge
+      return next;
+    });
+  };
+
+  const handleReAutoMatch = () => {
+    if (csvData) applyAutoMap(csvData.headers);
+  };
+
+  const handleClearMapping = () => {
+    setColumnMapping({});
+    setMatchConfidence({});
   };
 
   const validateMapping = () => {
-    const errors: string[] = [];
+    const validationErrors: string[] = [];
     const mappedColumns = Object.values(columnMapping).filter(Boolean);
-    
-    // Check for duplicate mappings
-    const duplicates = mappedColumns.filter((item, index) => mappedColumns.indexOf(item) !== index);
+
+    const duplicates = Array.from(new Set(mappedColumns.filter((item, index) => mappedColumns.indexOf(item) !== index)));
     if (duplicates.length > 0) {
-      errors.push('Each table column can only be mapped once.');
+      validationErrors.push(`Each table column can only be mapped once. Duplicate mapping: ${duplicates.join(', ')}`);
     }
 
-    // Check for required columns (non-nullable)
-    // Exclude 'id' column from required check if excludeIdColumn is enabled
     const requiredColumns = tableColumns.filter(col => {
-      if (!col.is_nullable) {
-        // If we're excluding ID column and this is the ID column, don't require it
-        if (excludeIdColumn && col.column_name.toLowerCase() === 'id') {
-          return false; // ID column is optional when excludeIdColumn is true
-        }
-        return true;
-      }
-      return false;
+      if (col.is_nullable) return false;
+      if (excludeIdColumn && col.column_name.toLowerCase() === 'id') return false;
+      return true;
     });
-    
-    const mappedRequiredColumns = requiredColumns.filter(col => 
-      Object.values(columnMapping).includes(col.column_name)
-    );
-    
+    const mappedRequiredColumns = requiredColumns.filter(col => mappedColumns.includes(col.column_name));
     if (mappedRequiredColumns.length !== requiredColumns.length) {
-      const missing = requiredColumns
-        .filter(col => !Object.values(columnMapping).includes(col.column_name))
-        .map(col => col.column_name);
-      errors.push(`Required columns must be mapped: ${missing.join(', ')}`);
+      const missing = requiredColumns.filter(col => !mappedColumns.includes(col.column_name)).map(col => col.column_name);
+      validationErrors.push(`Required columns must be mapped: ${missing.join(', ')}`);
     }
 
-    setErrors(errors);
-    return errors.length === 0;
+    setErrors(validationErrors);
+    return validationErrors.length === 0;
   };
 
   const handleNext = () => {
     if (step === 'mapping') {
-      // Run validation to show any errors, but always allow proceeding to preview
       validateMapping();
       setStep('preview');
     }
   };
 
-  const handleImport = () => {
-    if (!csvData || !csvFile) return;
+  const handleImport = async () => {
+    if (!csvData) return;
 
-    // Transform data according to mapping
     const transformedData = csvData.rows.map(row => {
       const obj: any = {};
-      csvData.headers.forEach((header, index) => {
-        const tableColumn = columnMapping[header];
-        // Skip ID column if excludeIdColumn is true and it's mapped to 'id'
-        if (tableColumn && row[index] !== undefined) {
-          // Exclude ID column if option is enabled and column is 'id' (case-insensitive)
-          if (!(excludeIdColumn && tableColumn.toLowerCase() === 'id')) {
-            obj[tableColumn] = row[index] || null;
-          }
-        }
+      csvData.headers.forEach((_, idx) => {
+        const tableColumn = columnMapping[idx];
+        if (!tableColumn) return;
+        if (excludeIdColumn && tableColumn.toLowerCase() === 'id') return;
+        const col = tableColumns.find(c => c.column_name === tableColumn);
+        obj[tableColumn] = coerceValue(row[idx] ?? '', col?.data_type || '');
       });
       return obj;
-    }).filter(obj => Object.keys(obj).length > 0); // Remove empty objects
+    }).filter(obj => Object.keys(obj).length > 0);
 
-    onImport(transformedData, columnMapping);
+    const totalRows = transformedData.length;
+    const batches: any[][] = [];
+    for (let i = 0; i < transformedData.length; i += BULK_INSERT_BATCH_SIZE) {
+      batches.push(transformedData.slice(i, i + BULK_INSERT_BATCH_SIZE));
+    }
+
+    setIsImporting(true);
+    setImportError('');
+    let insertedCount = 0;
+    let failureMessage: string | undefined;
+
+    for (const batch of batches) {
+      setImportProgress({ done: insertedCount, total: totalRows });
+      const result = await onImportBatch(batch, columnMapping);
+      if (!result.success) {
+        failureMessage = result.message;
+        break;
+      }
+      insertedCount += batch.length;
+    }
+
+    setImportProgress(null);
+    setIsImporting(false);
+
+    if (failureMessage) {
+      setImportError(
+        insertedCount > 0
+          ? `Import stopped after ${insertedCount} of ${totalRows} rows: ${failureMessage}`
+          : `Failed to import CSV data: ${failureMessage}`
+      );
+    }
+
+    onImportComplete(insertedCount, totalRows);
   };
 
-  // Check if CSV has an 'id' column mapped
-  const hasIdColumn = csvData ? csvData.headers.some(header => {
-    const mappedColumn = columnMapping[header];
-    return mappedColumn && mappedColumn.toLowerCase() === 'id';
-  }) : false;
+  const hasIdColumn = Object.values(columnMapping).some(col => col.toLowerCase() === 'id');
+
+  const dataQualityWarnings = useMemo(() => {
+    if (!csvData) return [];
+    const warnings: string[] = [];
+    const sampleRows = csvData.rows.slice(0, VALIDATION_SAMPLE_SIZE);
+
+    csvData.headers.forEach((header, idx) => {
+      const tableColumnName = columnMapping[idx];
+      if (!tableColumnName) return;
+      const col = tableColumns.find(c => c.column_name === tableColumnName);
+      if (!col) return;
+
+      let mismatchCount = 0;
+      let emptyCount = 0;
+      sampleRows.forEach(row => {
+        const raw = row[idx] ?? '';
+        if (raw.trim() === '') { emptyCount++; return; }
+        if (isTypeMismatch(raw, col.data_type)) mismatchCount++;
+      });
+
+      if (mismatchCount > 0) {
+        warnings.push(`"${header}" → ${col.column_name}: ${mismatchCount} value(s) don't look like a valid ${col.data_type}`);
+      }
+      if (!col.is_nullable && emptyCount > 0 && !(excludeIdColumn && col.column_name.toLowerCase() === 'id')) {
+        warnings.push(`"${header}" → ${col.column_name}: ${emptyCount} empty value(s) but this column is required`);
+      }
+    });
+
+    return warnings;
+  }, [csvData, columnMapping, tableColumns, excludeIdColumn]);
 
   const handleClose = () => {
     setStep('upload');
     setCsvFile(null);
+    setRawText('');
+    setDelimiter(',');
     setCsvData(null);
     setColumnMapping({});
+    setMatchConfidence({});
     setErrors([]);
     setImportError('');
     setDragActive(false);
     setExcludeIdColumn(true);
+    setIsImporting(false);
+    setImportProgress(null);
     onClose();
   };
 
@@ -247,7 +554,7 @@ const CsvImportModal = ({
           <button
             onClick={handleClose}
             className="text-dark-400 hover:text-dark-600 dark:hover:text-dark-300 transition-colors"
-            disabled={loading}
+            disabled={isImporting}
           >
             <X className="w-6 h-6" />
           </button>
@@ -294,8 +601,12 @@ const CsvImportModal = ({
                 <h4 className="text-lg font-semibold text-dark-900 dark:text-white mb-2">
                   Select CSV File
                 </h4>
-                <p className="text-dark-600 dark:text-dark-300 mb-6">
+                <p className="text-dark-600 dark:text-dark-300 mb-2">
                   Choose a CSV file to import data into your table
+                </p>
+                <p className="text-xs text-dark-500 dark:text-dark-400">
+                  Supports comma, semicolon, tab, or pipe delimited files up to {MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB.
+                  Quoted fields with embedded commas or line breaks are handled automatically.
                 </p>
               </div>
 
@@ -313,7 +624,7 @@ const CsvImportModal = ({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".csv,text/csv,text/plain"
+                  accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
                   onChange={handleFileSelect}
                   className="hidden"
                 />
@@ -359,51 +670,81 @@ const CsvImportModal = ({
 
           {step === 'mapping' && csvData && (
             <div className="space-y-6">
-              <div>
-                <h4 className="text-lg font-semibold text-dark-900 dark:text-white mb-2">
-                  Map CSV Columns to Table Columns
-                </h4>
-                <p className="text-dark-600 dark:text-dark-300">
-                  Match your CSV columns with the table columns
-                </p>
+              <div className="flex items-start justify-between flex-wrap gap-3">
+                <div>
+                  <h4 className="text-lg font-semibold text-dark-900 dark:text-white mb-2">
+                    Map CSV Columns to Table Columns
+                  </h4>
+                  <p className="text-dark-600 dark:text-dark-300">
+                    Match your CSV columns with the table columns
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <label className="text-sm text-dark-600 dark:text-dark-300">Delimiter</label>
+                  <select
+                    value={delimiter}
+                    onChange={(e) => handleDelimiterChange(e.target.value)}
+                    className="px-2 py-1.5 text-sm border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white"
+                  >
+                    {DELIMITER_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <h5 className="font-medium text-dark-900 dark:text-white mb-3">CSV Columns</h5>
-                  <div className="space-y-2">
-                    {csvData.headers.map((header, index) => (
-                      <div key={index} className="flex items-center space-x-2 p-2 bg-dark-50 dark:bg-dark-700 rounded">
-                        <span className="text-sm font-medium text-dark-700 dark:text-dark-300">
-                          {header}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+              {(csvData.duplicateHeaders.length > 0 || csvData.malformedRowCount > 0) && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-1">
+                  {csvData.duplicateHeaders.length > 0 && (
+                    <div className="flex items-start space-x-2 text-sm text-amber-800 dark:text-amber-300">
+                      <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <span>Duplicate CSV header name(s) detected: {csvData.duplicateHeaders.join(', ')}. Each column is still mapped independently by position.</span>
+                    </div>
+                  )}
+                  {csvData.malformedRowCount > 0 && (
+                    <div className="flex items-start space-x-2 text-sm text-amber-800 dark:text-amber-300">
+                      <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <span>{csvData.malformedRowCount} row(s) had a different number of fields than the header row and were padded/truncated to match.</span>
+                    </div>
+                  )}
                 </div>
+              )}
 
-                <div>
-                  <h5 className="font-medium text-dark-900 dark:text-white mb-3">Table Columns</h5>
-                  <div className="space-y-2">
-                    {csvData.headers.map((header, index) => (
-                      <div key={index} className="flex items-center space-x-2">
-                        <select
-                          value={columnMapping[header] || ''}
-                          onChange={(e) => handleColumnMapping(header, e.target.value)}
-                          className="flex-1 px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                        >
-                          <option value="">-- Skip this column --</option>
-                          {tableColumns.map(col => (
-                            <option key={col.column_name} value={col.column_name}>
-                              {col.column_name} {getDataTypeIcon(col.data_type)} ({col.data_type})
-                              {!col.is_nullable && ' *'}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
+              <div className="flex items-center justify-end space-x-2">
+                <AppButton variant="secondary" onClick={handleReAutoMatch} icon={<Wand2 className="w-4 h-4" />}>
+                  Re-run Auto Match
+                </AppButton>
+                <AppButton variant="secondary" onClick={handleClearMapping} icon={<Eraser className="w-4 h-4" />}>
+                  Clear All
+                </AppButton>
+              </div>
+
+              <div className="space-y-2">
+                {csvData.headers.map((header, idx) => (
+                  <div key={idx} className="flex items-center space-x-3 p-2 bg-dark-50 dark:bg-dark-700 rounded-lg">
+                    <div className="w-1/3 min-w-0">
+                      <span className="text-sm font-medium text-dark-700 dark:text-dark-300 truncate block" title={header}>
+                        {header}
+                      </span>
+                    </div>
+                    <select
+                      value={columnMapping[idx] || ''}
+                      onChange={(e) => handleColumnMapping(idx, e.target.value)}
+                      className="flex-1 px-3 py-2 border border-dark-200 dark:border-dark-700 rounded-lg bg-white dark:bg-dark-700 text-dark-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    >
+                      <option value="">-- Skip this column --</option>
+                      {tableColumns.map(col => (
+                        <option key={col.column_name} value={col.column_name}>
+                          {col.column_name} {getDataTypeIcon(col.data_type)} ({col.data_type})
+                          {!col.is_nullable && ' *'}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="w-28 flex-shrink-0 text-right">
+                      <MatchBadge level={matchConfidence[idx]} />
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
 
               {errors.length > 0 && (
@@ -452,10 +793,37 @@ const CsvImportModal = ({
                         Exclude ID column (let database generate new IDs)
                       </label>
                       <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                        {excludeIdColumn 
+                        {excludeIdColumn
                           ? 'The ID column will be excluded from import. New rows will get auto-generated IDs.'
                           : 'Warning: Including the ID column may cause duplicate key errors if IDs already exist in the table.'}
                       </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {importError && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                  <div className="flex items-start space-x-2">
+                    <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <span className="text-sm text-red-800 dark:text-red-200">{importError}</span>
+                  </div>
+                </div>
+              )}
+
+              {dataQualityWarnings.length > 0 && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                  <div className="flex items-start space-x-2">
+                    <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h6 className="font-medium text-amber-800 dark:text-amber-200 mb-1">
+                        Data quality warnings {csvData.rows.length > VALIDATION_SAMPLE_SIZE && `(based on first ${VALIDATION_SAMPLE_SIZE} rows)`}
+                      </h6>
+                      <ul className="text-sm text-amber-700 dark:text-amber-300 space-y-1">
+                        {dataQualityWarnings.map((warning, index) => (
+                          <li key={index}>• {warning}</li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
                 </div>
@@ -466,19 +834,22 @@ const CsvImportModal = ({
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-dark-200 dark:border-dark-600">
-                        {Object.keys(csvData.preview[0] || {}).map((header, index) => (
-                          <th key={index} className="text-left py-2 px-3 font-medium text-dark-700 dark:text-dark-300">
-                            {header}
+                        {csvData.headers.map((header, colIdx) => (
+                          <th key={colIdx} className="text-left py-2 px-3 font-medium text-dark-700 dark:text-dark-300">
+                            <div>{header}</div>
+                            <div className="text-xs font-normal opacity-70">
+                              {columnMapping[colIdx] ? `→ ${columnMapping[colIdx]}` : <span className="italic">(skipped)</span>}
+                            </div>
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {csvData.preview.map((row, rowIndex) => (
+                      {csvData.rows.slice(0, PREVIEW_ROW_COUNT).map((row, rowIndex) => (
                         <tr key={rowIndex} className="border-b border-dark-200 dark:border-dark-600">
-                          {Object.values(row).map((cell, cellIndex) => (
-                            <td key={cellIndex} className="py-2 px-3 text-dark-600 dark:text-dark-300">
-                              {String(cell)}
+                          {csvData.headers.map((_, colIdx) => (
+                            <td key={colIdx} className="py-2 px-3 text-dark-600 dark:text-dark-300">
+                              {row[colIdx]}
                             </td>
                           ))}
                         </tr>
@@ -486,9 +857,9 @@ const CsvImportModal = ({
                     </tbody>
                   </table>
                 </div>
-                {csvData.rows.length > 5 && (
+                {csvData.rows.length > PREVIEW_ROW_COUNT && (
                   <p className="text-sm text-dark-500 dark:text-dark-400 mt-2">
-                    ... and {csvData.rows.length - 5} more rows
+                    ... and {csvData.rows.length - PREVIEW_ROW_COUNT} more rows
                   </p>
                 )}
               </div>
@@ -521,21 +892,23 @@ const CsvImportModal = ({
               <AppButton
                 variant="primary"
                 onClick={handleImport}
-                loading={loading}
-                disabled={loading}
-                icon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                loading={isImporting}
+                disabled={isImporting}
+                icon={isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
               >
-                {loading ? 'Importing...' : `Import ${csvData?.rows.length || 0} Rows`}
+                {isImporting
+                  ? importProgress ? `Importing ${importProgress.done}/${importProgress.total}...` : 'Importing...'
+                  : `Import ${csvData?.rows.length || 0} Rows`}
               </AppButton>
             )}
           </div>
-          
+
           <div className="flex items-center space-x-2">
             {step !== 'upload' && (
               <AppButton
                 variant="secondary"
                 onClick={() => setStep(step === 'preview' ? 'mapping' : 'upload')}
-                disabled={loading}
+                disabled={isImporting}
               >
                 Back
               </AppButton>
@@ -543,7 +916,7 @@ const CsvImportModal = ({
             <AppButton
               variant="secondary"
               onClick={handleClose}
-              disabled={loading}
+              disabled={isImporting}
             >
               Cancel
             </AppButton>

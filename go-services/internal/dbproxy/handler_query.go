@@ -51,7 +51,12 @@ func (h *Handler) ExecuteQuery(w http.ResponseWriter, r *http.Request) {
 		colNames[i] = d.Name
 	}
 
-	result := collectRows(rows)
+	result, err := collectRows(rows)
+	if err != nil {
+		slog.Error("execute query failed", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Query failed: %v", err))
+		return
+	}
 	execTime := time.Since(start).Milliseconds()
 
 	httputil.WriteSuccess(w, http.StatusOK, "Query executed successfully", map[string]any{
@@ -91,7 +96,12 @@ func (h *Handler) ListCronJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	result := collectRows(rows)
+	result, err := collectRows(rows)
+	if err != nil {
+		slog.Error("list cron jobs failed", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to fetch cron jobs")
+		return
+	}
 	httputil.WriteSuccess(w, http.StatusOK, "Cron jobs fetched successfully", result)
 }
 
@@ -137,7 +147,12 @@ func (h *Handler) GetCronJobHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	result := collectRows(rows)
+	result, err := collectRows(rows)
+	if err != nil {
+		slog.Error("get cron job history failed", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to fetch cron job history")
+		return
+	}
 	httputil.WriteSuccess(w, http.StatusOK, "Cron job history fetched successfully", result)
 }
 

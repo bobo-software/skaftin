@@ -12,7 +12,12 @@ import (
 )
 
 // collectRows reads all rows from a pgx.Rows into a slice of maps.
-func collectRows(rows pgx.Rows) []map[string]any {
+//
+// pgx executes the query lazily: a failure (e.g. a constraint violation) doesn't
+// surface from the initial Query() call but only once rows.Next() is driven to
+// completion, via rows.Err(). Callers MUST check the returned error - ignoring it
+// turns a failed statement into a silent "0 rows" success.
+func collectRows(rows pgx.Rows) ([]map[string]any, error) {
 	descs := rows.FieldDescriptions()
 	var result []map[string]any
 
@@ -29,10 +34,14 @@ func collectRows(rows pgx.Rows) []map[string]any {
 		result = append(result, row)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	if result == nil {
 		result = []map[string]any{}
 	}
-	return result
+	return result, nil
 }
 
 func normalizeUUIDValue(v any) any {

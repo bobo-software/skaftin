@@ -7,6 +7,8 @@ Communications are exposed under **`/app-api/communications`** with **two path s
 
 Always send **`x-api-key`** unless your gateway adds it for you.
 
+**Expo push notifications** (register / unregister device tokens) are documented separately: [09-PUSH-NOTIFICATION-REQUESTS.md](./09-PUSH-NOTIFICATION-REQUESTS.md).
+
 ## Base URL
 ```
 /app-api/communications

@@ -12,6 +12,9 @@
   5. `0034_public_system_tables_baseline.sql` — auth settings, API credentials, buckets, templates, invitations, members, metrics.
   6. `0036_bucket_access_policy_idempotent.sql` — adds `access_policy` on `skaftin_system_project_buckets` (required by the Go projects store).
   7. `0040_public_workflows_and_backup_baseline.sql` — `workflow_execution_status` enum, `skaftin_system_workflows` (+ nodes, edges, executions, node_executions, schedules), and `skaftin_system_backup_schedules` (including `backup_type` / `retention_*` columns). Runs after `0036` so `skaftin_system_projects` exists for foreign keys.
+  8. `0042_public_sms_providers_baseline.sql` — `public.sms_providers` for communications/workflows.
+  9. `0043_google_sign_in_settings.sql` / `0044_apple_sign_in_settings.sql` — auth settings columns for social sign-in.
+  10. `0045_public_push_notifications_baseline.sql` — `public.skaftin_system_expo_push_settings` (project-level pause/enable for Expo push). Device tokens live in each project schema as `skaftin_system_expo_notifications` (created on project init and ensured on first push API use). Turning push off pauses sending/register without deleting tokens.
 - If any startup migration fails, the process **exits with a non-zero status**; the HTTP/MCP server does not start.
 - After migrations succeed, [`startup.ValidatePlatformSchema`](../../go-services/internal/startup/schema_validate.go) checks required `public` tables (and `access_policy`), then checks `supertokens.apps`, `supertokens.tenants`, and `supertokens.session_info`. On failure, the process **exits with a non-zero status**.
 
@@ -48,5 +51,6 @@ Core loads tenant metadata from Postgres at process start and **refreshes it on 
    - `public.skaftin_system_organizations`, `public.skaftin_system_projects`
    - `public.skaftin_system_auth_settings`, `public.skaftin_system_project_buckets` (with column `access_policy`)
    - `public.skaftin_system_workflows`, `public.skaftin_system_backup_schedules`
+   - `public.skaftin_system_expo_push_settings`
    - `supertokens.apps`, `supertokens.tenants`, `supertokens.tenant_configs` (one row: empty `connection_uri_domain`, `app_id`/`tenant_id` `public`, `email_password_enabled` true), `supertokens.session_info` (may be empty until users sign in)
 4. SuperTokens HTTP: `curl -sS http://localhost:3567/hello` should return `Hello` when Core is up (see [`docs/DOCKER_LOCAL.md`](../DOCKER_LOCAL.md) for compose layout).

@@ -49,8 +49,13 @@ func (h *Handler) BulkDeleteData(w http.ResponseWriter, r *http.Request) {
 			summary.AddFailure(result, bulkDeleteErrorMessage(err))
 			continue
 		}
-		deleted := collectRows(rows)
+		deleted, err := collectRows(rows)
 		rows.Close()
+		if err != nil {
+			slog.Error("bulk delete row failed", "error", err, "table", tableName, "idColumn", idColumn, "id", id)
+			summary.AddFailure(result, bulkDeleteErrorMessage(err))
+			continue
+		}
 		if len(deleted) == 0 {
 			summary.AddFailure(result, "No rows were deleted. The specified row may not exist or may not match the identifier.")
 			continue
@@ -108,8 +113,13 @@ func (h *Handler) BulkUpdateData(w http.ResponseWriter, r *http.Request) {
 			summary.AddFailure(result, bulkUpdateErrorMessage(err))
 			continue
 		}
-		updated := collectRows(rows)
+		updated, err := collectRows(rows)
 		rows.Close()
+		if err != nil {
+			slog.Error("bulk update row failed", "error", err, "table", tableName)
+			summary.AddFailure(result, bulkUpdateErrorMessage(err))
+			continue
+		}
 		if len(updated) == 0 {
 			summary.AddFailure(result, "No rows were updated. The specified row may not exist or may not match the where clause.")
 			continue
@@ -203,8 +213,13 @@ func (h *Handler) BulkUpsertData(w http.ResponseWriter, r *http.Request) {
 			summary.AddFailure(result, "Failed to bulk upsert data")
 			continue
 		}
-		upserted := collectRows(rows)
+		upserted, err := collectRows(rows)
 		rows.Close()
+		if err != nil {
+			slog.Error("bulk upsert row failed", "error", err, "table", tableName)
+			summary.AddFailure(result, "Failed to bulk upsert data")
+			continue
+		}
 		if len(upserted) == 0 {
 			summary.AddFailure(result, "Upsert did not return a row")
 			continue

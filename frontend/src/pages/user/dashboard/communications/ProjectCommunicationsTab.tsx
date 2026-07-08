@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { Mail, MessageSquare } from 'lucide-react';
+import { Mail, MessageSquare, Bell } from 'lucide-react';
 import EmailComsTab from './tabs/EmailComsTab';
 import SmsComsTab from './tabs/SmsComsTab';
+import PushComsTab from './tabs/PushComsTab';
 
 const ProjectCommunicationsTab = () => {
-  const [activeTab, setActiveTab] = useState<'email' | 'sms'>('email');
+  const [activeTab, setActiveTab] = useState<'email' | 'sms' | 'push'>('email');
 
   const tabs = [
     { id: 'email' as const, name: 'Email', icon: Mail, component: EmailComsTab },
     { id: 'sms' as const, name: 'SMS', icon: MessageSquare, component: SmsComsTab },
+    { id: 'push' as const, name: 'Push notifications', icon: Bell, component: PushComsTab },
   ];
 
   const renderContent = () => {
@@ -28,7 +30,7 @@ const ProjectCommunicationsTab = () => {
           Communications
         </h1>
         <p className="text-dark-600 dark:text-dark-400 mt-1">
-          Manage email and SMS providers and communication settings
+          Manage email, SMS, and push notification providers and settings
         </p>
       </div>
 

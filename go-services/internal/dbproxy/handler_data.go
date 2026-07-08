@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/skaftin/go-services/internal/pkg/bulkresult"
 	"github.com/skaftin/go-services/internal/pkg/encryption"
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
@@ -80,7 +81,12 @@ func (h *Handler) SelectDataGet(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	decryptFields := parseDecryptFieldsFromQuery(r.URL.Query().Get("decrypt"))
-	result := collectRows(rows)
+	result, err := collectRows(rows)
+	if err != nil {
+		slog.Error("select data get failed", "error", err, "table", tableName)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to select data")
+		return
+	}
 	if len(decryptFields) > 0 {
 		key, err := encryption.GetProjectFieldEncryptionKey(r.Context(), h.service.store.pool, pid)
 		if err != nil {
@@ -195,7 +201,12 @@ func (h *Handler) selectDataPost(w http.ResponseWriter, r *http.Request, opts se
 	}
 	defer rows.Close()
 
-	result := collectRows(rows)
+	result, err := collectRows(rows)
+	if err != nil {
+		slog.Error("select data failed", "error", err, "table", tableName)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to select data")
+		return
+	}
 	if len(body.Decrypt) > 0 {
 		key, err := encryption.GetProjectFieldEncryptionKey(r.Context(), h.service.store.pool, pid)
 		if err != nil {
@@ -291,7 +302,12 @@ func (h *Handler) InsertData(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	result := collectRows(rows)
+	result, err := collectRows(rows)
+	if err != nil {
+		slog.Error("insert data failed", "error", err, "table", tableName)
+		httputil.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to insert data: %v", err))
+		return
+	}
 	var row any
 	if len(result) > 0 {
 		row = result[0]
@@ -316,6 +332,10 @@ func (h *Handler) BulkInsertData(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "Data array is required")
 		return
 	}
+	if len(body.DataArray) > bulkresult.MaxBatchSize {
+		httputil.WriteError(w, http.StatusBadRequest, fmt.Sprintf("Maximum batch size is %d rows per request. Split the data into smaller batches.", bulkresult.MaxBatchSize))
+		return
+	}
 
 	autoIncrCols := getAutoIncrementColumns(r.Context(), pc, tableName)
 	var inserted []map[string]any
@@ -334,7 +354,7 @@ func (h *Handler) BulkInsertData(w http.ResponseWriter, r *http.Request) {
 		encKey = key
 	}
 
-	for _, data := range body.DataArray {
+	for rowIdx, data := range body.DataArray {
 		rowData := filterAutoIncrement(data, autoIncrCols)
 		if encKey != "" {
 			if err := encryption.EncryptFieldsInData(rowData, body.Encrypt, encKey); err != nil {
@@ -360,12 +380,17 @@ func (h *Handler) BulkInsertData(w http.ResponseWriter, r *http.Request) {
 
 		rows, err := pc.Query(r.Context(), query, values...)
 		if err != nil {
-			slog.Error("bulk insert row failed", "error", err, "table", tableName)
-			httputil.WriteError(w, http.StatusInternalServerError, "Failed to bulk insert data")
+			slog.Error("bulk insert row failed", "error", err, "table", tableName, "row", rowIdx)
+			httputil.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Bulk insert failed at row %d (%d of %d rows inserted before the failure): %v", rowIdx, len(inserted), len(body.DataArray), err))
 			return
 		}
-		result := collectRows(rows)
+		result, err := collectRows(rows)
 		rows.Close()
+		if err != nil {
+			slog.Error("bulk insert row failed", "error", err, "table", tableName, "row", rowIdx)
+			httputil.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Bulk insert failed at row %d (%d of %d rows inserted before the failure): %v", rowIdx, len(inserted), len(body.DataArray), err))
+			return
+		}
 		if len(result) > 0 {
 			inserted = append(inserted, result[0])
 		}
@@ -430,7 +455,12 @@ func (h *Handler) UpdateData(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	result := collectRows(rows)
+	result, err := collectRows(rows)
+	if err != nil {
+		slog.Error("update data failed", "error", err, "table", tableName)
+		httputil.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update data: %v", err))
+		return
+	}
 	if len(result) == 0 {
 		httputil.WriteError(w, http.StatusNotFound, "No rows were updated. The specified row may not exist or may not match the where clause.")
 		return
@@ -485,7 +515,12 @@ func (h *Handler) DeleteData(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	result := collectRows(rows)
+	result, err := collectRows(rows)
+	if err != nil {
+		slog.Error("delete data failed", "error", err, "table", tableName)
+		httputil.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to delete data: %v", err))
+		return
+	}
 	if len(result) == 0 {
 		httputil.WriteError(w, http.StatusNotFound, "No rows were deleted. The specified row may not exist or may not match the where clause.")
 		return

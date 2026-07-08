@@ -48,6 +48,7 @@ func TestRequiredPublicPlatformTablesIncludesCore(t *testing.T) {
 		"skaftin_system_project_buckets",
 		"skaftin_system_workflows",
 		"skaftin_system_backup_schedules",
+		"skaftin_system_expo_push_settings",
 	} {
 		if !slices.Contains(names, required) {
 			t.Fatalf("RequiredPublicPlatformTables missing %q: %#v", required, names)

@@ -153,6 +153,26 @@ export interface UpdateSmsTemplateRequest {
   variables?: string[];
 }
 
+export interface PushSettings {
+  id: number;
+  project_id: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PushDeviceToken {
+  id: number;
+  user_id: number;
+  platform: 'ios' | 'android' | string;
+  expo_push_token: string;
+  token_preview: string;
+  device_name?: string | null;
+  last_seen_at: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 class CommunicationsService {
   private getToken(): string {
     return localStorage.getItem('skaftin-token') || 'session-managed-by-supertokens';
@@ -643,6 +663,75 @@ class CommunicationsService {
     } catch (error: any) {
       console.error('Error deleting SMS template:', error);
       throw new Error(error.message || 'Failed to delete SMS template');
+    }
+  }
+
+  async getPushSettings(projectId: string): Promise<PushSettings> {
+    try {
+      const response = await RequestUtils.get(
+        ApiRoutes.COMMUNICATIONS.GET_PUSH_SETTINGS(projectId),
+        this.getToken()
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to load push settings');
+    } catch (error: any) {
+      console.error('Error loading push settings:', error);
+      throw new Error(error.message || 'Failed to load push settings');
+    }
+  }
+
+  async updatePushSettings(projectId: string, isActive: boolean): Promise<PushSettings> {
+    try {
+      const response = await RequestUtils.put(
+        ApiRoutes.COMMUNICATIONS.UPDATE_PUSH_SETTINGS(projectId),
+        this.getToken(),
+        { is_active: isActive }
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to update push settings');
+    } catch (error: any) {
+      console.error('Error updating push settings:', error);
+      throw new Error(error.message || 'Failed to update push settings');
+    }
+  }
+
+  async listPushTokens(projectId: string): Promise<PushDeviceToken[]> {
+    try {
+      const response = await RequestUtils.get(
+        ApiRoutes.COMMUNICATIONS.LIST_PUSH_TOKENS(projectId),
+        this.getToken()
+      );
+      if (response.success) {
+        return response.data || [];
+      }
+      throw new Error(response.error || 'Failed to list push tokens');
+    } catch (error: any) {
+      console.error('Error listing push tokens:', error);
+      throw new Error(error.message || 'Failed to list push tokens');
+    }
+  }
+
+  async testPush(
+    projectId: string,
+    data: { user_id?: number; token_id?: number; title?: string; body?: string }
+  ): Promise<{ sent: number; targeted: number; errors: Array<{ token_id: number; error: string }> }> {
+    try {
+      const response = await RequestUtils.post(
+        ApiRoutes.COMMUNICATIONS.TEST_PUSH(projectId),
+        this.getToken(),
+        data
+      );
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Failed to send test push');
+    } catch (error: any) {
+      console.error('Error sending test push:', error);
+      throw new Error(error.message || 'Failed to send test push');
     }
   }
 }

@@ -543,6 +543,18 @@ func (s *Store) InitializeProjectAuthTables(ctx context.Context, schemaName stri
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`, schemaName, schemaName),
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.skaftin_system_expo_notifications (
+			id SERIAL PRIMARY KEY,
+			user_id INTEGER NOT NULL,
+			platform VARCHAR(16) NOT NULL CHECK (platform IN ('ios', 'android')),
+			expo_push_token TEXT NOT NULL,
+			device_name TEXT,
+			last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE (expo_push_token)
+		)`, schemaName),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_expo_notifications_user_id ON %s.skaftin_system_expo_notifications(user_id)`, schemaName),
 	}
 	for _, q := range queries {
 		if _, err := s.pool.Exec(ctx, q); err != nil {

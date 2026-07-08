@@ -33,4 +33,5 @@ This repository now runs with a Go-only backend runtime (`go-services`) and a Re
 - Runtime SQL files for general migration tooling live in `go-services/migrations/`.
 - API and MCP startup run an ordered allowlist of idempotent migrations from `go-services/internal/startup/sql/` (embedded), then validate required `public` tables before listening.
 - Project database cron jobs (`skaftin_app_cron_jobs`) are executed server-side by the Go API on a 30s UTC tick; the dashboard cron page is management/history UI and no longer drives execution.
+- Expo push (Communications → Push notifications): project enable flag in `public.skaftin_system_expo_push_settings`; device tokens in `{project_schema}.skaftin_system_expo_notifications`. Pause keeps tokens. Client register: `POST /app-api/communications/push/register`.
 

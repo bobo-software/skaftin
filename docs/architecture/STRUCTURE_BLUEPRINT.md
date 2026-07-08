@@ -67,6 +67,7 @@ skaftin/
 - Deploy/local runbooks:
   - `/docs/plans/COOLIFY_QUICKSTART.md`
   - `/docs/plans/DOCKER_LOCAL_SETUP.md`
+- Communications push: `go-services/internal/pushnotifications/` (Expo relay). Public pause flag `skaftin_system_expo_push_settings`; per-project tokens in `{schema}.skaftin_system_expo_notifications`. Dashboard tab under Communications; startup migration `0045`.
 
 ## Non-Goals for This Phase
 

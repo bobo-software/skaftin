@@ -28,6 +28,7 @@ var requiredPublicPlatformTables = []string{
 	"skaftin_system_workflows",
 	"skaftin_system_backup_schedules",
 	"sms_providers",
+	"skaftin_system_expo_push_settings",
 }
 
 // requiredSuperTokensTables lists supertokens schema tables that must exist after startup migrations.

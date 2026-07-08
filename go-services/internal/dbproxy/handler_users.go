@@ -255,7 +255,12 @@ func (h *Handler) SelectUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	result := collectRows(rows)
+	result, err := collectRows(rows)
+	if err != nil {
+		slog.Error("select users failed", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to select users")
+		return
+	}
 	httputil.WriteSuccess(w, http.StatusOK, "Users fetched successfully", result)
 }
 
@@ -366,8 +371,10 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	`, schemaName, schemaName, userRoleUserIDColumn, schemaName), userID)
 	if rows != nil {
 		defer rows.Close()
-		result := collectRows(rows)
-		if len(result) > 0 {
+		result, err := collectRows(rows)
+		if err != nil {
+			slog.Error("fetch created user with roles failed", "error", err, "userID", userID)
+		} else if len(result) > 0 {
 			httputil.WriteSuccess(w, http.StatusCreated, "User created successfully", result[0])
 			return
 		}

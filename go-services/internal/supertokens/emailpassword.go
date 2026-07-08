@@ -54,41 +54,47 @@ type UpdatePasswordResponse struct {
 	Status string `json:"status"`
 }
 
+func updateEmailOrPasswordBody(userIDField, userID, password, email string) map[string]any {
+	body := map[string]any{
+		userIDField: userID,
+	}
+	if password != "" {
+		body["password"] = password
+	}
+	if email != "" {
+		body["email"] = email
+	}
+	return body
+}
+
+func isUnknownUserIDFieldError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Field name 'recipeUserId' is invalid") ||
+		strings.Contains(msg, "Field name 'userId' is invalid")
+}
+
 // UpdateEmailOrPassword updates the email or password for an EmailPassword user.
+//
+// The Go client advertises CDI 2.14, which expects "userId". Newer SuperTokens
+// cores (CDI 5.x) expect "recipeUserId" instead. Try the CDI 2.14 field first,
+// then fall back when the core rejects the field name.
 func (c *Client) UpdateEmailOrPassword(ctx context.Context, req UpdatePasswordRequest) (*UpdatePasswordResponse, error) {
 	var resp UpdatePasswordResponse
-	primaryBody := map[string]any{
-		"recipeUserId": req.RecipeUserID,
-	}
-	if req.Password != "" {
-		primaryBody["password"] = req.Password
-	}
-	if req.Email != "" {
-		primaryBody["email"] = req.Email
-	}
 
-	err := c.do(ctx, "PUT", "/recipe/user", "emailpassword", primaryBody, &resp)
+	err := c.do(ctx, "PUT", "/recipe/user", "emailpassword",
+		updateEmailOrPasswordBody("userId", req.RecipeUserID, req.Password, req.Email), &resp)
 	if err == nil {
 		return &resp, nil
 	}
-
-	// Compatibility fallback for older/newer cores that expect userId.
-	// Retry only when the first request failed due to an unknown recipeUserId field.
-	if !strings.Contains(err.Error(), "Field name 'recipeUserId' is invalid") {
+	if !isUnknownUserIDFieldError(err) {
 		return &resp, err
 	}
 
-	fallbackBody := map[string]any{
-		"userId": req.RecipeUserID,
-	}
-	if req.Password != "" {
-		fallbackBody["password"] = req.Password
-	}
-	if req.Email != "" {
-		fallbackBody["email"] = req.Email
-	}
-
-	err = c.do(ctx, "PUT", "/recipe/user", "emailpassword", fallbackBody, &resp)
+	err = c.do(ctx, "PUT", "/recipe/user", "emailpassword",
+		updateEmailOrPasswordBody("recipeUserId", req.RecipeUserID, req.Password, req.Email), &resp)
 	return &resp, err
 }
 

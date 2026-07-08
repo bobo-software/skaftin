@@ -50,7 +50,12 @@ func (h *Handler) ListConstraints(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	result := collectRows(rows)
+	result, err := collectRows(rows)
+	if err != nil {
+		slog.Error("list constraints failed", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to list constraints")
+		return
+	}
 	httputil.WriteSuccess(w, http.StatusOK, "Constraints fetched successfully", result)
 }
 
@@ -87,7 +92,12 @@ func (h *Handler) ListForeignKeys(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	result := collectRows(rows)
+	result, err := collectRows(rows)
+	if err != nil {
+		slog.Error("list foreign keys failed", "error", err)
+		httputil.WriteError(w, http.StatusInternalServerError, "Failed to list foreign keys")
+		return
+	}
 	httputil.WriteSuccess(w, http.StatusOK, "Foreign keys fetched successfully", result)
 }
 

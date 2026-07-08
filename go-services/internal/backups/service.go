@@ -11,11 +11,13 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skaftin/go-services/internal/projects"
@@ -315,7 +317,7 @@ func (s *Service) RestoreBackup(ctx context.Context, projectID int, filename str
 	for i, stmt := range statements {
 		sp := fmt.Sprintf("sp_%d", i)
 		conn.Exec(ctx, fmt.Sprintf("SAVEPOINT %s", sp))
-		if _, err := conn.Exec(ctx, stmt); err != nil {
+		if err := execSQLStatement(ctx, conn, stmt); err != nil {
 			conn.Exec(ctx, fmt.Sprintf("ROLLBACK TO SAVEPOINT %s", sp))
 			slog.Warn("restore statement failed", "stmt", i+1, "error", err)
 		} else {
@@ -432,12 +434,14 @@ func (s *Service) CreateFullBackup(ctx context.Context, projectID int, name, des
 	}, nil
 }
 
+// quotedProjectSchemaRE matches quoted per-project schema names in backup SQL.
+var quotedProjectSchemaRE = regexp.MustCompile(`"project_[a-z0-9_]+"`)
+
 // remapFullBackupSQL rewrites schema and project_id references from the backup manifest
 // (source project / schema) onto the restore target.
 func remapFullBackupSQL(sql string, manifest fullBackupManifest, targetSchema string, targetProjectID int) string {
-	oldSchema := manifest.SchemaName
-	sql = strings.ReplaceAll(sql, fmt.Sprintf(`"%s"`, oldSchema), fmt.Sprintf(`"%s"`, targetSchema))
-	sql = strings.ReplaceAll(sql, oldSchema, targetSchema)
+	targetQuoted := fmt.Sprintf(`"%s"`, targetSchema)
+	sql = quotedProjectSchemaRE.ReplaceAllString(sql, targetQuoted)
 	if manifest.ProjectID != targetProjectID {
 		oldPID, newPID := manifest.ProjectID, targetProjectID
 		sql = strings.ReplaceAll(sql, fmt.Sprintf("project_id = %d", oldPID), fmt.Sprintf("project_id = %d", newPID))
@@ -454,13 +458,26 @@ func truncateForLog(s string, max int) string {
 	return s[:max] + "…"
 }
 
-// execSQLStatementsInTx runs split statements against an open transaction (no BEGIN/COMMIT).
-func execSQLStatementsInTx(ctx context.Context, tx pgx.Tx, sqlContent string) error {
-	sqlContent = strings.TrimSpace(sqlContent)
-	if sqlContent == "" {
-		return nil
+// execSQLStatement runs one restore statement, including constraint drop-before-add handling.
+func execSQLStatement(ctx context.Context, q interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}, stmt string) error {
+	stmt = prepareSQLStatement(stmt)
+	if dropSQL, addSQL, ok := constraintDropBeforeAdd(stmt); ok {
+		if _, err := q.Exec(ctx, dropSQL); err != nil {
+			return err
+		}
+		stmt = addSQL
 	}
-	statements := splitSQLStatements(sqlContent)
+	_, err := q.Exec(ctx, stmt)
+	return err
+}
+
+// execSQLStatementsList runs prepared statements in order.
+func execSQLStatementsList(ctx context.Context, tx pgx.Tx, statements []string, label string) error {
+	if label == "" {
+		label = "statement"
+	}
 	stmtNum := 0
 	for _, st := range statements {
 		st = strings.TrimSpace(st)
@@ -468,11 +485,65 @@ func execSQLStatementsInTx(ctx context.Context, tx pgx.Tx, sqlContent string) er
 			continue
 		}
 		stmtNum++
-		if _, err := tx.Exec(ctx, st); err != nil {
-			return fmt.Errorf("statement %d: %w\n-- %s", stmtNum, err, truncateForLog(st, 500))
+		if err := execSQLStatement(ctx, tx, st); err != nil {
+			return fmt.Errorf("%s %d: %w\n-- %s", label, stmtNum, err, truncateForLog(st, 500))
 		}
 	}
 	return nil
+}
+
+// partitionSQLStatements splits dump SQL into data DDL/DML and deferred FK constraint statements.
+func partitionSQLStatements(sqlContent string) (main, fkConstraints []string) {
+	for _, st := range splitSQLStatements(sqlContent) {
+		st = strings.TrimSpace(st)
+		if st == "" {
+			continue
+		}
+		if _, _, ok := constraintDropBeforeAdd(st); ok {
+			fkConstraints = append(fkConstraints, st)
+			continue
+		}
+		main = append(main, st)
+	}
+	return main, fkConstraints
+}
+
+// execFullBackupSQLInTx applies project_data.sql, then system_settings.sql, then deferred FK constraints.
+// Full backups omit skaftin_system_* tables from project_data.sql but still emit FKs to them at the end.
+func execFullBackupSQLInTx(ctx context.Context, tx pgx.Tx, projectSQL, systemSQL string) error {
+	projectSQL = strings.TrimSpace(projectSQL)
+	systemSQL = strings.TrimSpace(systemSQL)
+
+	if projectSQL != "" {
+		main, deferredFK := partitionSQLStatements(projectSQL)
+		if err := execSQLStatementsList(ctx, tx, main, "statement"); err != nil {
+			return fmt.Errorf("project_data.sql: %w", err)
+		}
+		if systemSQL != "" {
+			if err := execSQLStatementsInTx(ctx, tx, systemSQL); err != nil {
+				return fmt.Errorf("system_settings.sql: %w", err)
+			}
+		}
+		if err := execSQLStatementsList(ctx, tx, deferredFK, "foreign key statement"); err != nil {
+			return fmt.Errorf("project_data.sql (foreign keys): %w", err)
+		}
+		return nil
+	}
+	if systemSQL != "" {
+		if err := execSQLStatementsInTx(ctx, tx, systemSQL); err != nil {
+			return fmt.Errorf("system_settings.sql: %w", err)
+		}
+	}
+	return nil
+}
+
+// execSQLStatementsInTx runs split statements against an open transaction (no BEGIN/COMMIT).
+func execSQLStatementsInTx(ctx context.Context, tx pgx.Tx, sqlContent string) error {
+	sqlContent = strings.TrimSpace(sqlContent)
+	if sqlContent == "" {
+		return nil
+	}
+	return execSQLStatementsList(ctx, tx, splitSQLStatements(sqlContent), "statement")
 }
 
 func (s *Service) readFullBackupZipFromObject(ctx context.Context, objectKey string) (map[string][]byte, fullBackupManifest, error) {
@@ -558,6 +629,9 @@ func (s *Service) restoreFullZipIntoProject(ctx context.Context, projectID int, 
 				conn.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS "%s"."%s" CASCADE`, targetSchema, t))
 			}
 		}
+		if err := s.projectsStore.InitializeProjectAuthTables(ctx, targetSchema); err != nil {
+			slog.Warn("init auth tables before restore", "error", err, "schema", targetSchema)
+		}
 	}
 
 	projectSQL, ok := files["project_data.sql"]
@@ -566,23 +640,21 @@ func (s *Service) restoreFullZipIntoProject(ctx context.Context, projectID int, 
 			manifest.BackupName, manifest.SchemaName)
 	}
 	sqlProject := remapFullBackupSQL(string(projectSQL), manifest, targetSchema, projectID)
+	sqlSys := ""
+	if systemSQL, ok := files["system_settings.sql"]; ok && len(systemSQL) > 0 {
+		sqlSys = remapFullBackupSQL(string(systemSQL), manifest, targetSchema, projectID)
+	}
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	if err := execSQLStatementsInTx(ctx, tx, sqlProject); err != nil {
+	if err := execFullBackupSQLInTx(ctx, tx, sqlProject, sqlSys); err != nil {
 		_ = tx.Rollback(ctx)
-		return fmt.Errorf("project_data.sql: %w", err)
+		return err
 	}
 	slog.Info("project data restored into existing project", "projectId", projectID, "sourceSchema", manifest.SchemaName, "targetSchema", targetSchema)
-
-	if systemSQL, ok := files["system_settings.sql"]; ok && len(systemSQL) > 0 {
-		sqlSys := remapFullBackupSQL(string(systemSQL), manifest, targetSchema, projectID)
-		if err := execSQLStatementsInTx(ctx, tx, sqlSys); err != nil {
-			_ = tx.Rollback(ctx)
-			return fmt.Errorf("system_settings.sql: %w", err)
-		}
+	if sqlSys != "" {
 		slog.Info("system settings restored into existing project", "projectId", projectID)
 	}
 
@@ -634,21 +706,22 @@ func (s *Service) RestoreFullBackup(ctx context.Context, backupID, newProjectNam
 		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
 
+	sqlProject := ""
 	if projectSQL, ok := files["project_data.sql"]; ok && len(projectSQL) > 0 {
-		sql := remapFullBackupSQL(string(projectSQL), manifest, newSchema, newProject.ID)
-		if err := execSQLStatementsInTx(ctx, tx, sql); err != nil {
-			_ = tx.Rollback(ctx)
-			return nil, fmt.Errorf("project_data.sql: %w", err)
-		}
+		sqlProject = remapFullBackupSQL(string(projectSQL), manifest, newSchema, newProject.ID)
+	}
+	sqlSys := ""
+	if systemSQL, ok := files["system_settings.sql"]; ok && len(systemSQL) > 0 {
+		sqlSys = remapFullBackupSQL(string(systemSQL), manifest, newSchema, newProject.ID)
+	}
+	if err := execFullBackupSQLInTx(ctx, tx, sqlProject, sqlSys); err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, err
+	}
+	if sqlProject != "" {
 		slog.Info("project data restored")
 	}
-
-	if systemSQL, ok := files["system_settings.sql"]; ok && len(systemSQL) > 0 {
-		sql := remapFullBackupSQL(string(systemSQL), manifest, newSchema, newProject.ID)
-		if err := execSQLStatementsInTx(ctx, tx, sql); err != nil {
-			_ = tx.Rollback(ctx)
-			return nil, fmt.Errorf("system_settings.sql: %w", err)
-		}
+	if sqlSys != "" {
 		slog.Info("system settings restored")
 	}
 
@@ -919,9 +992,19 @@ func (s *Service) generateSQLDump(ctx context.Context, schemaName string, includ
 
 	if len(foreignKeys) > 0 {
 		sql.WriteString("\n-- Foreign Key Constraints\n\n")
+		seenFK := make(map[string]bool)
 		for _, fk := range foreignKeys {
+			fkKey := fk.tableName + "\x00" + fk.constraintName
+			if seenFK[fkKey] {
+				continue
+			}
+			seenFK[fkKey] = true
+			foreignSchema := fk.foreignSchema
+			if strings.HasPrefix(foreignSchema, "project_") && foreignSchema != schemaName {
+				foreignSchema = schemaName
+			}
 			sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\".\"%s\" ADD CONSTRAINT \"%s\" FOREIGN KEY (\"%s\") REFERENCES \"%s\".\"%s\" (\"%s\");\n",
-				schemaName, fk.tableName, fk.constraintName, fk.column, fk.foreignSchema, fk.foreignTable, fk.foreignColumn))
+				schemaName, fk.tableName, fk.constraintName, fk.column, foreignSchema, fk.foreignTable, fk.foreignColumn))
 		}
 	}
 
@@ -958,6 +1041,8 @@ func (s *Service) generateSystemSettingsDump(ctx context.Context, projectID int,
 		{"public", "skaftin_system_email_templates", "id", true},
 		{"public", "skaftin_system_sms_templates", "id", true},
 		{"public", "skaftin_system_api_credentials", "id", true},
+		{"public", "skaftin_system_expo_push_settings", "id", true},
+		{schemaName, "skaftin_system_expo_notifications", "id", false},
 	}
 
 	for _, t := range systemTables {
@@ -1089,15 +1174,37 @@ func pgLiteral(v any) string {
 			return "NULL"
 		}
 		return pgNumericSQLLiteral(*val)
+	case pgtype.Time:
+		return pgTimeSQLLiteral(val)
+	case *pgtype.Time:
+		if val == nil {
+			return "NULL"
+		}
+		return pgTimeSQLLiteral(*val)
 	default:
 		// pgx often returns NUMERIC/DECIMAL as pgtype.Numeric; fmt %v is not valid SQL.
 		if valuer, ok := v.(driver.Valuer); ok {
-			if s, ok := pgNumericFromValuer(valuer); ok {
+			if s, ok := pgValuerSQLLiteral(valuer); ok {
 				return s
 			}
 		}
 		return fmt.Sprintf("%v", val)
 	}
+}
+
+func pgTimeSQLLiteral(t pgtype.Time) string {
+	if !t.Valid {
+		return "NULL"
+	}
+	dv, err := t.Value()
+	if err != nil || dv == nil {
+		return "NULL"
+	}
+	s, ok := dv.(string)
+	if !ok || s == "" {
+		return "NULL"
+	}
+	return fmt.Sprintf("'%s'", s)
 }
 
 func pgNumericSQLLiteral(n pgtype.Numeric) string {
@@ -1124,8 +1231,8 @@ func pgNumericSQLLiteral(n pgtype.Numeric) string {
 	return s
 }
 
-// pgNumericFromValuer handles *pgtype.Numeric passed as any without a static type switch.
-func pgNumericFromValuer(v driver.Valuer) (string, bool) {
+// pgValuerSQLLiteral handles pgtype values returned as any without a static type switch.
+func pgValuerSQLLiteral(v driver.Valuer) (string, bool) {
 	dv, err := v.Value()
 	if err != nil {
 		return "NULL", true
@@ -1137,14 +1244,121 @@ func pgNumericFromValuer(v driver.Valuer) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	// Heuristic: numeric text from pgtype is a decimal/scientific string, not arbitrary text.
-	if len(s) > 0 && (s[0] == '-' || s[0] == '.' || (s[0] >= '0' && s[0] <= '9')) {
-		return s, true
-	}
 	if s == "NaN" {
 		return "'NaN'::numeric", true
 	}
-	return "", false
+	if isPlainNumericLiteral(s) {
+		return s, true
+	}
+	return fmt.Sprintf("'%s'", strings.ReplaceAll(s, "'", "''")), true
+}
+
+func isPlainNumericLiteral(s string) bool {
+	if s == "" {
+		return false
+	}
+	i := 0
+	if s[i] == '-' || s[i] == '+' {
+		i++
+	}
+	if i >= len(s) {
+		return false
+	}
+	hasDigit := false
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		hasDigit = true
+		i++
+	}
+	if i < len(s) && s[i] == '.' {
+		i++
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			hasDigit = true
+			i++
+		}
+	}
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		i++
+		if i < len(s) && (s[i] == '+' || s[i] == '-') {
+			i++
+		}
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	}
+	return hasDigit && i == len(s)
+}
+
+var bareTimeLiteralRE = regexp.MustCompile(`^\d{1,2}:\d{2}:\d{2}(?:\.\d+)?$`)
+
+// quoteBareTimeLiterals wraps unquoted HH:MM:SS[.fraction] tokens for legacy backup dumps.
+func quoteBareTimeLiterals(sql string) string {
+	var out strings.Builder
+	inQuote := false
+	for i := 0; i < len(sql); i++ {
+		c := sql[i]
+		if c == '\'' {
+			inQuote = !inQuote
+			out.WriteByte(c)
+			continue
+		}
+		if !inQuote && c >= '0' && c <= '9' {
+			j := i
+			for j < len(sql) && sql[j] != '\'' && sql[j] != ',' && sql[j] != ')' && sql[j] != ';' {
+				j++
+			}
+			token := strings.TrimSpace(sql[i:j])
+			if bareTimeLiteralRE.MatchString(token) {
+				out.WriteByte('\'')
+				out.WriteString(token)
+				out.WriteByte('\'')
+				i = j - 1
+				continue
+			}
+		}
+		out.WriteByte(c)
+	}
+	return out.String()
+}
+
+func prepareSQLStatement(stmt string) string {
+	return quoteBareTimeLiterals(stmt)
+}
+
+// constraintDropBeforeAdd returns DROP CONSTRAINT IF EXISTS + ADD CONSTRAINT for idempotent restore.
+func constraintDropBeforeAdd(stmt string) (dropSQL, addSQL string, ok bool) {
+	trimmed := strings.TrimSpace(stmt)
+	trimmed = strings.TrimSuffix(trimmed, ";")
+	upper := strings.ToUpper(trimmed)
+	addIdx := strings.Index(upper, " ADD CONSTRAINT ")
+	if !strings.HasPrefix(upper, "ALTER TABLE") || addIdx < 0 {
+		return "", "", false
+	}
+	tablePart := strings.TrimSpace(trimmed[:addIdx])
+	constraintName, _ := readDoubleQuotedSQL(strings.TrimSpace(trimmed[addIdx+len(" ADD CONSTRAINT "):]))
+	if tablePart == "" || constraintName == "" {
+		return "", "", false
+	}
+	return fmt.Sprintf(`%s DROP CONSTRAINT IF EXISTS "%s"`, tablePart, constraintName), trimmed, true
+}
+
+func readDoubleQuotedSQL(s string) (name, remainder string) {
+	s = strings.TrimSpace(s)
+	if s == "" || s[0] != '"' {
+		return "", s
+	}
+	var b strings.Builder
+	for i := 1; i < len(s); i++ {
+		if s[i] == '"' {
+			if i+1 < len(s) && s[i+1] == '"' {
+				b.WriteByte('"')
+				i++
+				continue
+			}
+			return b.String(), strings.TrimSpace(s[i+1:])
+		}
+		b.WriteByte(s[i])
+	}
+	return "", s
 }
 
 func sanitizeSchemaName(name string) string {

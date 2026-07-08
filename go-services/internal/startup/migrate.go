@@ -18,7 +18,7 @@ import (
 // Only add idempotent migrations (IF NOT EXISTS / guarded DO blocks). Never add RESET_DATABASE,
 // legacy projects/api_credentials migrations, or one-off data fixes here.
 //
-// Order: 0038 public; 0039 supertokens DDL; 0041 default app/tenant rows; 0037/0034/0036; 0040 workflows; 0042 sms providers; 0043 google sign-in settings.
+// Order: 0038 public; 0039 supertokens DDL; 0041 default app/tenant rows; 0037/0034/0036; 0040 workflows; 0042 sms providers; 0043/0044 social sign-in; 0045 expo push settings.
 var startupMigrations = []string{
 	"0038_ensure_public_schema.sql",
 	"0039_supertokens_schema_baseline.sql",
@@ -30,6 +30,7 @@ var startupMigrations = []string{
 	"0042_public_sms_providers_baseline.sql",
 	"0043_google_sign_in_settings.sql",
 	"0044_apple_sign_in_settings.sql",
+	"0045_public_push_notifications_baseline.sql",
 }
 
 // RunMigrations executes the startup allowlist against dir.
