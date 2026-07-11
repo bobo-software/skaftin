@@ -243,14 +243,16 @@ Delete the row matching `expo_push_token` (and optionally verify it belongs to t
 
 ## Sending notifications (Expo Push API)
 
-### Endpoint
+**Skaftin App API (preferred for product sends):** use `POST /app-api/communications/push/send` and `POST /app-api/communications/push/send-batch` with `x-api-key`. See [09-PUSH-NOTIFICATION-REQUESTS.md](../client-sdk/requests/09-PUSH-NOTIFICATION-REQUESTS.md). Those routes resolve tokens, forward `data` for deep linking, chunk to Expo’s batch limit, and prune `DeviceNotRegistered` tokens.
+
+### Direct Expo endpoint (reference)
 
 ```
 POST https://exp.host/--/api/v2/push/send
 Content-Type: application/json
 ```
 
-For high volume, Expo supports batching (array of messages) and receipt checking. Start with single messages; batch when sending cron-driven digests.
+For high volume, Expo supports batching (array of messages) and receipt checking. Skaftin’s App API send already chunks at 100 messages per Expo HTTP call.
 
 ### Message shape
 

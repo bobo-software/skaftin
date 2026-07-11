@@ -61,3 +61,38 @@ type TestPushRequest struct {
 	Title   string `json:"title"`
 	Body    string `json:"body"`
 }
+
+// SendPushRequest is the body for App API same-payload fan-out sends.
+type SendPushRequest struct {
+	UserIDs []int          `json:"user_ids"`
+	Title   string         `json:"title"`
+	Body    string         `json:"body"`
+	Data    map[string]any `json:"data,omitempty"`
+	Sound   string         `json:"sound,omitempty"`
+}
+
+// BatchPushItem is one per-recipient notification in a batch send.
+type BatchPushItem struct {
+	UserID int            `json:"user_id"`
+	Title  string         `json:"title"`
+	Body   string         `json:"body"`
+	Data   map[string]any `json:"data,omitempty"`
+	Sound  string         `json:"sound,omitempty"`
+}
+
+// BatchPushRequest is the body for App API per-recipient batch sends.
+type BatchPushRequest struct {
+	Notifications []BatchPushItem `json:"notifications"`
+}
+
+// SendResult is the shared response for send, send-batch, and test sends.
+type SendResult struct {
+	TargetedUsers    int              `json:"targeted_users,omitempty"`
+	TargetedTokens   int              `json:"targeted_tokens"`
+	Sent             int              `json:"sent"`
+	SkippedNoTokens  []int            `json:"skipped_no_tokens,omitempty"`
+	Errors           []map[string]any `json:"errors"`
+	Tickets          []ExpoTicket     `json:"tickets"`
+	// Targeted is kept for dashboard TestSend backwards compatibility.
+	Targeted int `json:"targeted,omitempty"`
+}

@@ -10,7 +10,10 @@ import (
 	"time"
 )
 
-const expoPushURL = "https://exp.host/--/api/v2/push/send"
+const (
+	expoPushURL      = "https://exp.host/--/api/v2/push/send"
+	expoMaxBatchSize = 100
+)
 
 // ExpoMessage is a single Expo push payload.
 type ExpoMessage struct {
@@ -46,10 +49,27 @@ func NewExpoClient() *ExpoClient {
 }
 
 // Send pushes one or more messages and returns tickets in the same order.
+// Messages are chunked to expoMaxBatchSize per HTTP request (Expo limit).
 func (c *ExpoClient) Send(ctx context.Context, messages []ExpoMessage) ([]ExpoTicket, error) {
 	if len(messages) == 0 {
 		return nil, nil
 	}
+	out := make([]ExpoTicket, 0, len(messages))
+	for start := 0; start < len(messages); start += expoMaxBatchSize {
+		end := start + expoMaxBatchSize
+		if end > len(messages) {
+			end = len(messages)
+		}
+		tickets, err := c.sendChunk(ctx, messages[start:end])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, tickets...)
+	}
+	return out, nil
+}
+
+func (c *ExpoClient) sendChunk(ctx context.Context, messages []ExpoMessage) ([]ExpoTicket, error) {
 	body, err := json.Marshal(messages)
 	if err != nil {
 		return nil, err

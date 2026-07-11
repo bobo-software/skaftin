@@ -33,9 +33,13 @@ func (h *Handler) RegisterProjectRoutes(mux *http.ServeMux) {
 func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /app-api/communications/push/register", h.RegisterToken)
 	mux.HandleFunc("DELETE /app-api/communications/push/unregister", h.UnregisterToken)
+	mux.HandleFunc("POST /app-api/communications/push/send", h.Send)
+	mux.HandleFunc("POST /app-api/communications/push/send-batch", h.SendBatch)
 	// Also accept project-scoped paths used by some clients.
 	mux.HandleFunc("POST /app-api/communications/{projectId}/push/register", h.RegisterToken)
 	mux.HandleFunc("DELETE /app-api/communications/{projectId}/push/unregister", h.UnregisterToken)
+	mux.HandleFunc("POST /app-api/communications/{projectId}/push/send", h.Send)
+	mux.HandleFunc("POST /app-api/communications/{projectId}/push/send-batch", h.SendBatch)
 }
 
 func parseProjectID(w http.ResponseWriter, r *http.Request) (int, bool) {
@@ -156,6 +160,42 @@ func (h *Handler) UnregisterToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteSuccess(w, http.StatusOK, "Push token unregistered", map[string]any{"deleted": deleted})
+}
+
+func (h *Handler) Send(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	var body SendPushRequest
+	if err := httputil.DecodeBody(r, &body); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	result, err := h.service.Send(r.Context(), projectID, body)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Push notifications sent", result)
+}
+
+func (h *Handler) SendBatch(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	var body BatchPushRequest
+	if err := httputil.DecodeBody(r, &body); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	result, err := h.service.SendBatch(r.Context(), projectID, body)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Push notifications sent", result)
 }
 
 func writeServiceError(w http.ResponseWriter, err error) {
