@@ -54,6 +54,40 @@ func randomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
+// optionalUserRole reads an optional login body field that filters lookup by role_key.
+func optionalUserRole(body map[string]any) string {
+	if body == nil {
+		return ""
+	}
+	raw, _ := body["user_role"].(string)
+	return strings.TrimSpace(raw)
+}
+
+// defaultRoleMatchesUserRole reports whether OAuth auto-register is allowed for the
+// requested user_role. Empty requestedRoleKey means no filter (always allowed).
+func defaultRoleMatchesUserRole(defaultRoleKey, requestedRoleKey string) bool {
+	if requestedRoleKey == "" {
+		return true
+	}
+	return defaultRoleKey != "" && defaultRoleKey == requestedRoleKey
+}
+
+// oauthAutoRegisterRoleAllowed is true when user_role is empty, or when the
+// project's default role role_key matches user_role (never assign the client-requested role).
+func (s *Service) oauthAutoRegisterRoleAllowed(ctx context.Context, schema string, settings *AuthSettings, roleKey string) bool {
+	if roleKey == "" {
+		return true
+	}
+	if settings == nil || settings.DefaultRoleID == nil {
+		return false
+	}
+	role, err := s.store.GetRole(ctx, schema, *settings.DefaultRoleID)
+	if err != nil || role == nil {
+		return false
+	}
+	return defaultRoleMatchesUserRole(role.RoleKey, roleKey)
+}
+
 // ─── App Auth ────────────────────────────────────────────────────────
 
 func (s *Service) Register(ctx context.Context, projectID int, body map[string]any) (map[string]any, error) {
@@ -87,7 +121,7 @@ func (s *Service) Register(ctx context.Context, projectID int, body map[string]a
 	}
 
 	if email != "" {
-		existing, _ := s.store.GetUserByEmail(ctx, schema, email)
+		existing, _ := s.store.GetUserByEmail(ctx, schema, email, "")
 		if existing != nil {
 			return nil, fmt.Errorf("email already registered")
 		}
@@ -318,7 +352,8 @@ func (s *Service) Login(ctx context.Context, projectID int, body map[string]any)
 		return nil, fmt.Errorf("credentials are required")
 	}
 
-	user, err := s.store.GetUserByCredential(ctx, schema, method, credential)
+	roleKey := optionalUserRole(body)
+	user, err := s.store.GetUserByCredential(ctx, schema, method, credential, roleKey)
 	if err != nil {
 		return nil, err
 	}
@@ -409,7 +444,8 @@ func (s *Service) SingleCredentialLogin(ctx context.Context, projectID int, body
 		return nil, fmt.Errorf("credential is required")
 	}
 
-	user, err := s.store.GetUserByCredential(ctx, schema, method, credential)
+	roleKey := optionalUserRole(body)
+	user, err := s.store.GetUserByCredential(ctx, schema, method, credential, roleKey)
 	if err != nil || user == nil {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -477,12 +513,13 @@ func (s *Service) RequestOTPLogin(ctx context.Context, projectID int, body map[s
 
 	email, _ := body["email"].(string)
 	phone, _ := body["phone"].(string)
+	roleKey := optionalUserRole(body)
 
 	var user *AppUser
 	if email != "" {
-		user, _ = s.store.GetUserByEmail(ctx, schema, email)
+		user, _ = s.store.GetUserByEmail(ctx, schema, email, roleKey)
 	} else if phone != "" {
-		user, _ = s.store.GetUserByPhone(ctx, schema, phone)
+		user, _ = s.store.GetUserByPhone(ctx, schema, phone, roleKey)
 	}
 	if user == nil {
 		return nil // Don't reveal if user exists
@@ -518,12 +555,13 @@ func (s *Service) VerifyOTPLogin(ctx context.Context, projectID int, body map[st
 	if code == "" {
 		code, _ = body["otp_code"].(string)
 	}
+	roleKey := optionalUserRole(body)
 
 	var user *AppUser
 	if email != "" {
-		user, _ = s.store.GetUserByCredential(ctx, schema, "email", email)
+		user, _ = s.store.GetUserByCredential(ctx, schema, "email", email, roleKey)
 	} else if phone != "" {
-		user, _ = s.store.GetUserByCredential(ctx, schema, "phone", phone)
+		user, _ = s.store.GetUserByCredential(ctx, schema, "phone", phone, roleKey)
 	}
 	if user == nil {
 		return nil, fmt.Errorf("user not found")
@@ -668,9 +706,9 @@ func (s *Service) SendForgotPasswordOTP(ctx context.Context, projectID int, body
 	phone, _ := body["phone"].(string)
 	var user *AppUser
 	if email != "" {
-		user, _ = s.store.GetUserByEmail(ctx, schema, email)
+		user, _ = s.store.GetUserByEmail(ctx, schema, email, "")
 	} else if phone != "" {
-		user, _ = s.store.GetUserByPhone(ctx, schema, phone)
+		user, _ = s.store.GetUserByPhone(ctx, schema, phone, "")
 	}
 	if user == nil {
 		return nil // Don't reveal
@@ -755,9 +793,9 @@ func (s *Service) VerifyForgotPasswordOTP(ctx context.Context, projectID int, bo
 
 	var user *AppUser
 	if email != "" {
-		user, _ = s.store.GetUserByEmail(ctx, schema, email)
+		user, _ = s.store.GetUserByEmail(ctx, schema, email, "")
 	} else if phone != "" {
-		user, _ = s.store.GetUserByPhone(ctx, schema, phone)
+		user, _ = s.store.GetUserByPhone(ctx, schema, phone, "")
 	}
 	if user == nil {
 		return nil, fmt.Errorf("user not found")
@@ -805,9 +843,9 @@ func (s *Service) ResetPassword(ctx context.Context, projectID int, body map[str
 
 	var user *AppUser
 	if email != "" {
-		user, _ = s.store.GetUserByEmail(ctx, schema, email)
+		user, _ = s.store.GetUserByEmail(ctx, schema, email, "")
 	} else if phone != "" {
-		user, _ = s.store.GetUserByPhone(ctx, schema, phone)
+		user, _ = s.store.GetUserByPhone(ctx, schema, phone, "")
 	}
 	if user == nil {
 		return fmt.Errorf("user not found")
@@ -1231,15 +1269,17 @@ func (s *Service) GoogleSignIn(ctx context.Context, projectID int, body map[stri
 		return nil, ErrInvalidGoogleToken
 	}
 
+	roleKey := optionalUserRole(body)
+
 	// 1. Look up by linked Google identity (provider + sub).
-	user, err := s.store.GetUserByAuthProvider(ctx, schema, "google", claims.Sub)
+	user, err := s.store.GetUserByAuthProvider(ctx, schema, "google", claims.Sub, roleKey)
 	if err != nil {
 		return nil, err
 	}
 
 	// 2. Fall back to email match (links Google to an existing email/password account).
 	if user == nil && claims.Email != "" {
-		user, err = s.store.GetUserByCredential(ctx, schema, "email", claims.Email)
+		user, err = s.store.GetUserByCredential(ctx, schema, "email", claims.Email, roleKey)
 		if err != nil {
 			return nil, err
 		}
@@ -1247,6 +1287,9 @@ func (s *Service) GoogleSignIn(ctx context.Context, projectID int, body map[stri
 
 	// 3. Auto-register if allowed.
 	if user == nil {
+		if !s.oauthAutoRegisterRoleAllowed(ctx, schema, settings, roleKey) {
+			return nil, ErrInvalidCredentials
+		}
 		if settings == nil || !settings.GoogleAutoRegister {
 			return nil, ErrGoogleAutoRegisterDisabled
 		}
@@ -1392,20 +1435,24 @@ func (s *Service) AppleSignIn(ctx context.Context, projectID int, body map[strin
 	}
 
 	isNewUser := false
+	roleKey := optionalUserRole(body)
 
-	user, err := s.store.GetUserByAuthProvider(ctx, schema, "apple", claims.Sub)
+	user, err := s.store.GetUserByAuthProvider(ctx, schema, "apple", claims.Sub, roleKey)
 	if err != nil {
 		return nil, err
 	}
 
 	if user == nil && claims.Email != "" {
-		user, err = s.store.GetUserByCredential(ctx, schema, "email", claims.Email)
+		user, err = s.store.GetUserByCredential(ctx, schema, "email", claims.Email, roleKey)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if user == nil {
+		if !s.oauthAutoRegisterRoleAllowed(ctx, schema, settings, roleKey) {
+			return nil, ErrInvalidCredentials
+		}
 		if settings == nil || !settings.AppleAutoRegister {
 			return nil, ErrAppleAutoRegisterDisabled
 		}

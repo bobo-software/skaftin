@@ -250,7 +250,7 @@ func (s *Service) resolveSettingsRecipient(ctx context.Context, schema, userIDOr
 		}
 		user, err = s.store.GetUser(ctx, schema, parsedID)
 	} else {
-		user, err = s.store.GetUserByEmail(ctx, schema, identifier)
+		user, err = s.store.GetUserByEmail(ctx, schema, identifier, "")
 	}
 	if err != nil {
 		return nil, "", err

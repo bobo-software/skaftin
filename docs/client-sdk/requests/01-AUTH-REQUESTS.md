@@ -155,7 +155,8 @@ x-api-key: your-api-key
 {
   "credential": "john.doe@example.com",
   "password": "SecurePass123!",
-  "method": "email"
+  "method": "email",
+  "user_role": "admin"
 }
 ```
 
@@ -164,11 +165,13 @@ x-api-key: your-api-key
 | credential / email / phone | string | Yes | Login identifier (any one of these keys) |
 | password | string | Yes | User's password |
 | method | string | No | Defaults to **`email`**. One of `email`, `phone`, `custom_field_1`, `custom_field_2` |
+| user_role | string | No | When set, only match a user that has this `role_key` (e.g. `admin`, `user`). Omitted/empty = any role. A non-matching role returns the same failure as invalid credentials. |
 
 **Examples:**
 
 ```json
 { "credential": "john.doe@example.com", "password": "SecurePass123!", "method": "email" }
+{ "credential": "john.doe@example.com", "password": "SecurePass123!", "method": "email", "user_role": "admin" }
 { "credential": "+27821234567", "password": "SecurePass123!", "method": "phone" }
 { "credential": "EMP001", "password": "SecurePass123!", "method": "custom_field_1" }
 ```
@@ -225,7 +228,8 @@ Organization context is carried in the JWT access token payload, not as separate
 ```json
 {
   "credential": "john.doe@example.com",
-  "method": "email"
+  "method": "email",
+  "user_role": "user"
 }
 ```
 
@@ -235,6 +239,7 @@ You may use **`email`** instead of **`credential`** when the method is email.
 |-------|------|----------|-------------|
 | credential / email | string | Yes | User identifier value |
 | method | string | No | Defaults to **`email`** |
+| user_role | string | No | When set, only match a user that has this `role_key`. Non-matching role → same as user not found. |
 
 **Response:** Same shape as password login (`user`, `accessToken`, `has_password`, `message` inside `data`).
 
@@ -250,10 +255,10 @@ You may use **`email`** instead of **`credential`** when the method is email.
 **Request body:**
 
 ```json
-{ "email": "john.doe@example.com" }
+{ "email": "john.doe@example.com", "user_role": "admin" }
 ```
 
-or `{ "phone": "+27821234567" }`.
+or `{ "phone": "+27821234567" }`. Optional **`user_role`** (string, `role_key`) limits lookup to users with that role; when set and no matching user exists, the response is unchanged (still no enumeration).
 
 **Response** — always the same message whether or not the account exists (no user enumeration):
 
@@ -276,7 +281,8 @@ or `{ "phone": "+27821234567" }`.
 ```json
 {
   "email": "john.doe@example.com",
-  "otp": "123456"
+  "otp": "123456",
+  "user_role": "admin"
 }
 ```
 
@@ -284,6 +290,7 @@ or `{ "phone": "+27821234567" }`.
 |-------|------|----------|-------------|
 | email or phone | string | Yes | Same channel used in `otp-login` |
 | otp | string | Yes | Alias: **`otp_code`** |
+| user_role | string | No | When set, only match a user that has this `role_key` (should match the value used in `otp-login` if any). |
 
 **Response:**
 
@@ -671,13 +678,15 @@ x-api-key: <project-api-key>
 
 ```json
 {
-  "idToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6Ij..."
+  "idToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6Ij...",
+  "user_role": "user"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `idToken` | string | Yes | Google ID token from the mobile SDK (`user.data.idToken`) |
+| `user_role` | string | No | When set, only match an existing user with this `role_key`. Auto-register is allowed only when the project's default role matches `user_role`; the client-requested role is never assigned on create. |
 
 **Success response — HTTP 200** (mirrors the standard login response)
 
@@ -712,7 +721,7 @@ x-api-key: <project-api-key>
 |------|-----------|-------|
 | 400 | `idToken is required` | Body missing `idToken` field |
 | 401 | `invalid or expired Google token` | Signature invalid, token expired, wrong `aud` |
-| 401 | `invalid credentials` | Matched user is inactive |
+| 401 | `invalid credentials` | Matched user is inactive, or `user_role` did not match any user (including blocked auto-register when default role ≠ `user_role`) |
 | 403 | `Google sign-in is disabled for this project` | Feature flag off |
 | 403 | `registration is disabled for this project` | New user, `google_auto_register` is false |
 | 403 | `authentication is disabled` | `auth_enabled` is false |
@@ -765,7 +774,8 @@ x-api-key: <project-api-key>
   "fullName": {
     "givenName": "Jane",
     "familyName": "Doe"
-  }
+  },
+  "user_role": "user"
 }
 ```
 
@@ -774,6 +784,7 @@ x-api-key: <project-api-key>
 | `identityToken` | string | Yes | Apple identity token JWT from the native SDK |
 | `authorizationCode` | string | No | One-time code from Apple (not required for session issuance) |
 | `fullName` | object | No | User's name — only sent on **first** authorization; persist when creating a new user |
+| `user_role` | string | No | When set, only match an existing user with this `role_key`. Auto-register is allowed only when the project's default role matches `user_role`; the client-requested role is never assigned on create. |
 
 **Success response — HTTP 200** (same shape as Google Sign-In)
 
@@ -809,7 +820,7 @@ x-api-key: <project-api-key>
 |------|-----------|-------|
 | 400 | `identityToken is required` | Body missing `identityToken` field |
 | 401 | `invalid or expired Apple token` | Signature invalid, token expired, wrong `aud` |
-| 401 | `invalid credentials` | Matched user is inactive |
+| 401 | `invalid credentials` | Matched user is inactive, or `user_role` did not match any user (including blocked auto-register when default role ≠ `user_role`) |
 | 403 | `Apple sign-in is disabled for this project` | Feature flag off |
 | 403 | `registration is disabled for this project` | New user, `apple_auto_register` is false |
 | 403 | `authentication is disabled` | `auth_enabled` is false |

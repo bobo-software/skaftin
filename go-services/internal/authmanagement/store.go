@@ -338,12 +338,24 @@ func (s *Store) UpdateAuthSettings(ctx context.Context, projectID int, fields ma
 // ─── Auth Providers ──────────────────────────────────────────────────
 
 // GetUserByAuthProvider returns the app user linked to (provider, providerSubject), or nil.
-func (s *Store) GetUserByAuthProvider(ctx context.Context, schema, provider, providerSubject string) (*AppUser, error) {
+// When roleKey is non-empty, only users with that role_key are returned.
+func (s *Store) GetUserByAuthProvider(ctx context.Context, schema, provider, providerSubject, roleKey string) (*AppUser, error) {
 	userRoleCol, err := s.getUserRoleUserIDColumn(ctx, schema)
 	if err != nil {
 		return nil, err
 	}
 	schemaIdent := pgx.Identifier{schema}.Sanitize()
+	userRoleColIdent := pgx.Identifier{userRoleCol}.Sanitize()
+	roleFilter := ""
+	args := []any{provider, providerSubject}
+	if roleKey != "" {
+		roleFilter = fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM %[1]s.skaftin_system_user_roles ur2
+			JOIN %[1]s.skaftin_system_roles r2 ON ur2.role_id = r2.id
+			WHERE ur2.%[2]s = u.id AND r2.role_key = $3
+		)`, schemaIdent, userRoleColIdent)
+		args = append(args, roleKey)
+	}
 	query := fmt.Sprintf(`
 		SELECT u.id, u.supertokens_user_id, u.name, u.last_name, u.email, u.password,
 		       u.phone, u.metadata, u.organisation_id, u.is_active, u.email_verified,
@@ -357,12 +369,12 @@ func (s *Store) GetUserByAuthProvider(ctx context.Context, schema, provider, pro
 		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.%[2]s
 		LEFT JOIN %[1]s.skaftin_system_roles r ON ur.role_id = r.id
 		WHERE p.provider = $1 AND p.provider_subject = $2
-		  AND u.deleted_at IS NULL
+		  AND u.deleted_at IS NULL%[3]s
 		GROUP BY u.id
 		LIMIT 1
-	`, schemaIdent, pgx.Identifier{userRoleCol}.Sanitize())
+	`, schemaIdent, userRoleColIdent, roleFilter)
 	var u AppUser
-	err = s.pool.QueryRow(ctx, query, provider, providerSubject).Scan(
+	err = s.pool.QueryRow(ctx, query, args...).Scan(
 		&u.ID, &u.SupertokensUserID, &u.Name, &u.LastName, &u.Email, &u.Password, &u.Phone,
 		&u.Metadata, &u.OrganisationID, &u.IsActive, &u.EmailVerified, &u.PhoneVerified,
 		&u.DeletionRequestedAt, &u.DeletionScheduledAt, &u.DeletionReason, &u.DeletedAt,
@@ -967,12 +979,27 @@ func (s *Store) GetUser(ctx context.Context, schema string, userID int) (*AppUse
 	return &u, err
 }
 
-func (s *Store) GetUserByEmail(ctx context.Context, schema, email string) (*AppUser, error) {
+func (s *Store) GetUserByEmail(ctx context.Context, schema, email, roleKey string) (*AppUser, error) {
+	schemaIdent := pgx.Identifier{schema}.Sanitize()
+	roleFilter := ""
+	args := []any{email}
+	if roleKey != "" {
+		userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+		if err != nil {
+			return nil, err
+		}
+		roleFilter = fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM %[1]s.skaftin_system_user_roles ur2
+			JOIN %[1]s.skaftin_system_roles r2 ON ur2.role_id = r2.id
+			WHERE ur2.%[2]s = skaftin_system_users.id AND r2.role_key = $2
+		)`, schemaIdent, pgx.Identifier{userRoleUserIDColumn}.Sanitize())
+		args = append(args, roleKey)
+	}
 	query := fmt.Sprintf(`SELECT id, supertokens_user_id, name, email, phone, password, metadata,
 		custom_field_1, custom_field_2, is_active, email_verified, phone_verified, organisation_id
-		FROM %s.skaftin_system_users WHERE email = $1`, pgx.Identifier{schema}.Sanitize())
+		FROM %s.skaftin_system_users WHERE email = $1%s`, schemaIdent, roleFilter)
 	var u AppUser
-	err := s.pool.QueryRow(ctx, query, email).Scan(
+	err := s.pool.QueryRow(ctx, query, args...).Scan(
 		&u.ID, &u.SupertokensUserID, &u.Name, &u.Email, &u.Phone, &u.Password, &u.Metadata,
 		&u.CustomField1, &u.CustomField2, &u.IsActive, &u.EmailVerified, &u.PhoneVerified, &u.OrganisationID)
 	if err == pgx.ErrNoRows {
@@ -981,12 +1008,27 @@ func (s *Store) GetUserByEmail(ctx context.Context, schema, email string) (*AppU
 	return &u, err
 }
 
-func (s *Store) GetUserByPhone(ctx context.Context, schema, phone string) (*AppUser, error) {
+func (s *Store) GetUserByPhone(ctx context.Context, schema, phone, roleKey string) (*AppUser, error) {
+	schemaIdent := pgx.Identifier{schema}.Sanitize()
+	roleFilter := ""
+	args := []any{phone}
+	if roleKey != "" {
+		userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+		if err != nil {
+			return nil, err
+		}
+		roleFilter = fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM %[1]s.skaftin_system_user_roles ur2
+			JOIN %[1]s.skaftin_system_roles r2 ON ur2.role_id = r2.id
+			WHERE ur2.%[2]s = skaftin_system_users.id AND r2.role_key = $2
+		)`, schemaIdent, pgx.Identifier{userRoleUserIDColumn}.Sanitize())
+		args = append(args, roleKey)
+	}
 	query := fmt.Sprintf(`SELECT id, supertokens_user_id, name, email, phone, password, metadata,
 		custom_field_1, custom_field_2, is_active, email_verified, phone_verified, organisation_id
-		FROM %s.skaftin_system_users WHERE phone = $1`, pgx.Identifier{schema}.Sanitize())
+		FROM %s.skaftin_system_users WHERE phone = $1%s`, schemaIdent, roleFilter)
 	var u AppUser
-	err := s.pool.QueryRow(ctx, query, phone).Scan(
+	err := s.pool.QueryRow(ctx, query, args...).Scan(
 		&u.ID, &u.SupertokensUserID, &u.Name, &u.Email, &u.Phone, &u.Password, &u.Metadata,
 		&u.CustomField1, &u.CustomField2, &u.IsActive, &u.EmailVerified, &u.PhoneVerified, &u.OrganisationID)
 	if err == pgx.ErrNoRows {
@@ -995,7 +1037,9 @@ func (s *Store) GetUserByPhone(ctx context.Context, schema, phone string) (*AppU
 	return &u, err
 }
 
-func (s *Store) GetUserByCredential(ctx context.Context, schema, method, value string) (*AppUser, error) {
+// GetUserByCredential finds a user by login method/value.
+// When roleKey is non-empty, only users with that role_key are considered.
+func (s *Store) GetUserByCredential(ctx context.Context, schema, method, value, roleKey string) (*AppUser, error) {
 	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
 	if err != nil {
 		return nil, err
@@ -1013,14 +1057,26 @@ func (s *Store) GetUserByCredential(ctx context.Context, schema, method, value s
 	default:
 		col = "email"
 	}
+	schemaIdent := pgx.Identifier{schema}.Sanitize()
+	userRoleColIdent := pgx.Identifier{userRoleUserIDColumn}.Sanitize()
+	roleFilter := ""
+	args := []any{value}
+	if roleKey != "" {
+		roleFilter = fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM %[1]s.skaftin_system_user_roles ur2
+			JOIN %[1]s.skaftin_system_roles r2 ON ur2.role_id = r2.id
+			WHERE ur2.%[2]s = mu.id AND r2.role_key = $2
+		)`, schemaIdent, userRoleColIdent)
+		args = append(args, roleKey)
+	}
 	query := fmt.Sprintf(`
 		WITH matched_user AS (
 			SELECT id, supertokens_user_id, name, last_name, email, phone, password, metadata,
 			       organisation_id, is_active, email_verified, phone_verified,
 			       deletion_requested_at, deletion_scheduled_at, deletion_reason, deleted_at,
 			       created_at, updated_at, custom_field_1, custom_field_2
-			FROM %[1]s.skaftin_system_users
-			WHERE %[2]s = $1
+			FROM %[1]s.skaftin_system_users mu
+			WHERE %[2]s = $1%[4]s
 			ORDER BY is_active DESC, updated_at DESC NULLS LAST, id DESC
 			LIMIT 1
 		)
@@ -1037,9 +1093,9 @@ func (s *Store) GetUserByCredential(ctx context.Context, schema, method, value s
 		       	WHERE ur.%[3]s = u.id
 		       ), '[]') AS roles
 		FROM matched_user u`,
-		pgx.Identifier{schema}.Sanitize(), pgx.Identifier{col}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
+		schemaIdent, pgx.Identifier{col}.Sanitize(), userRoleColIdent, roleFilter)
 	var u AppUser
-	err = s.pool.QueryRow(ctx, query, value).Scan(
+	err = s.pool.QueryRow(ctx, query, args...).Scan(
 		&u.ID, &u.SupertokensUserID, &u.Name, &u.LastName, &u.Email, &u.Phone, &u.Password, &u.Metadata,
 		&u.OrganisationID, &u.IsActive, &u.EmailVerified, &u.PhoneVerified,
 		&u.DeletionRequestedAt, &u.DeletionScheduledAt, &u.DeletionReason, &u.DeletedAt,
