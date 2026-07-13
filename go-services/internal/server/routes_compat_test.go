@@ -469,6 +469,12 @@ func TestKnownAppAPIEndpointsPreferExplicitGoRoutes(t *testing.T) {
 			explicitPrefix: "/app-api/auth/",
 		},
 		{
+			name:           "auth users by ids",
+			method:         http.MethodPost,
+			path:           "/app-api/auth/users/by-ids",
+			explicitPrefix: "/app-api/auth/",
+		},
+		{
 			name:           "auth users import",
 			method:         http.MethodPost,
 			path:           "/app-api/auth/users/import",

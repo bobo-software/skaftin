@@ -2299,6 +2299,7 @@ POST /app-api/auth/users/:userId/manual-verify  // Manual verification
 |--------|----------|-------------|
 | POST | `/app-api/auth/users/list` | List users (JSON body: filters + pagination) |
 | GET | `/app-api/auth/users/:userId` | Get user details |
+| POST | `/app-api/auth/users/by-ids` | Get users by IDs (same `role_id` required) |
 | POST | `/app-api/auth/users` | Create new user |
 | PUT | `/app-api/auth/users/:userId` | Update user |
 | DELETE | `/app-api/auth/users/:userId` | Delete user |

@@ -45,6 +45,23 @@ func (s *Service) GetUsersByRole(ctx context.Context, projectID, roleID int) ([]
 	return s.store.GetUsersByRole(ctx, schema, roleID)
 }
 
+// GetUsersByIDsAndRole fetches users by ID that all hold the given role.
+// Unknown roleID returns "role not found". notFound lists requested IDs with no match.
+func (s *Service) GetUsersByIDsAndRole(ctx context.Context, projectID, roleID int, userIDs []int) ([]AppUser, []int, error) {
+	schema, err := s.resolveSchema(ctx, projectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	role, err := s.store.GetRole(ctx, schema, roleID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if role == nil {
+		return nil, nil, fmt.Errorf("role not found")
+	}
+	return s.store.GetUsersByIDsAndRole(ctx, schema, roleID, userIDs)
+}
+
 func (s *Service) GetUserPassword(ctx context.Context, projectID, userID int) (*string, error) {
 	schema, err := s.resolveSchema(ctx, projectID)
 	if err != nil {

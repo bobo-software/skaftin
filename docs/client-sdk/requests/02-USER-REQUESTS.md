@@ -9,7 +9,7 @@ These routes manage **app users** (end users of your project). The same handlers
 
 Examples below use **`{userId}`**, **`{roleId}`** path segments (Go `ServeMux` style). Replace with numeric IDs in real requests.
 
-**Note:** Import and export now exist on **both** mounts. Bulk user create, bulk role assignment, bulk resend OTP, and bulk verify also exist on both mounts and return partial-success summaries.
+**Note:** Import and export now exist on **both** mounts. Bulk user create, bulk get-by-IDs (same role), bulk role assignment, bulk resend OTP, and bulk verify also exist on both mounts.
 
 **App API path rule:** For a **project URL** `/api/auth/{projectId}/foo`, the app client URL is **`/app-api/auth/foo`** (drop `{projectId}`; project comes from **`x-api-key`**). Example: `GET /api/auth/3/users/5` → `GET /app-api/auth/users/5`.
 
@@ -130,6 +130,53 @@ Get a specific user by ID.
   "timestamp": "..."
 }
 ```
+
+---
+
+### 2a. Get Users by IDs (same role)
+
+Fetch multiple users in one request. All looked-up users must hold the same role; IDs that do not exist or do not have that role are returned in `not_found` (the request still succeeds).
+
+**Project URL:** `POST /api/auth/{projectId}/users/by-ids`  
+**App API:** `POST /app-api/auth/users/by-ids`
+
+**Request Body:**
+```json
+{
+  "role_id": 5,
+  "user_ids": [1513, 1514, 1520]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| role_id | number | Yes | Role every returned user must have |
+| user_ids | number[] | Yes | 1–500 positive user IDs (duplicates ignored) |
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Users fetched successfully",
+  "data": {
+    "users": [
+      {
+        "id": 1513,
+        "name": "John",
+        "last_name": "Doe",
+        "email": "john.doe@example.com",
+        "is_active": true,
+        "roles": [
+          { "id": 5, "role_name": "User", "role_key": "user" }
+        ]
+      }
+    ],
+    "not_found": [1520]
+  }
+}
+```
+
+Unknown `role_id` returns HTTP `400`. Empty body, missing fields, or more than 500 IDs return HTTP `400`.
 
 ---
 

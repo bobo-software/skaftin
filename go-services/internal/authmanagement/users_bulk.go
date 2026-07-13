@@ -9,6 +9,49 @@ import (
 	"github.com/skaftin/go-services/internal/pkg/httputil"
 )
 
+func (h *Handler) GetUsersByIDsHandler(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		RoleID  int   `json:"role_id"`
+		UserIDs []int `json:"user_ids"`
+	}
+	if err := httputil.ReadJSON(r, &body); err != nil || body.RoleID <= 0 || len(body.UserIDs) == 0 {
+		httputil.WriteError(w, http.StatusBadRequest, "user_ids and role_id are required")
+		return
+	}
+	if len(body.UserIDs) > bulkresult.MaxBatchSize {
+		httputil.WriteError(w, http.StatusBadRequest, fmt.Sprintf("Maximum batch size is %d", bulkresult.MaxBatchSize))
+		return
+	}
+
+	users, notFound, err := h.service.GetUsersByIDsAndRole(r.Context(), projectID, body.RoleID, body.UserIDs)
+	if err != nil {
+		if err.Error() == "role not found" {
+			httputil.WriteError(w, http.StatusBadRequest, "role not found")
+			return
+		}
+		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if users == nil {
+		users = []AppUser{}
+	}
+	if notFound == nil {
+		notFound = []int{}
+	}
+	for i := range users {
+		stripUserPassword(&users[i])
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Users fetched successfully", map[string]any{
+		"users":     users,
+		"not_found": notFound,
+	})
+}
+
 func (h *Handler) BulkCreateUsersHandler(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := parseProjectID(w, r)
 	if !ok {

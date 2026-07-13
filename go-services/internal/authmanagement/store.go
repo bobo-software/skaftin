@@ -979,6 +979,95 @@ func (s *Store) GetUser(ctx context.Context, schema string, userID int) (*AppUse
 	return &u, err
 }
 
+// normalizePositiveUniqueIDs drops non-positive IDs and deduplicates while preserving first-seen order.
+func normalizePositiveUniqueIDs(userIDs []int) []int {
+	seen := make(map[int]struct{}, len(userIDs))
+	out := make([]int, 0, len(userIDs))
+	for _, id := range userIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+// missingUserIDs returns requested IDs that are not present in foundIDs, preserving requested order.
+func missingUserIDs(requested, foundIDs []int) []int {
+	found := make(map[int]struct{}, len(foundIDs))
+	for _, id := range foundIDs {
+		found[id] = struct{}{}
+	}
+	missing := make([]int, 0)
+	for _, id := range requested {
+		if _, ok := found[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	return missing
+}
+
+// GetUsersByIDsAndRole returns users that have the given role and whose IDs are in userIDs.
+// notFound lists normalized requested IDs with no matching user+role row.
+func (s *Store) GetUsersByIDsAndRole(ctx context.Context, schema string, roleID int, userIDs []int) ([]AppUser, []int, error) {
+	requested := normalizePositiveUniqueIDs(userIDs)
+	if len(requested) == 0 {
+		return []AppUser{}, []int{}, nil
+	}
+
+	userRoleUserIDColumn, err := s.getUserRoleUserIDColumn(ctx, schema)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Filter to users who hold roleID, but still aggregate all of each user's roles.
+	query := fmt.Sprintf(`
+		SELECT u.id, u.supertokens_user_id, u.name, u.last_name, u.email, u.password, u.phone,
+		       u.metadata, u.organisation_id, u.is_active, u.email_verified, u.phone_verified,
+		       u.deletion_requested_at, u.deletion_scheduled_at, u.deletion_reason, u.deleted_at,
+		       u.created_at, u.updated_at, u.custom_field_1, u.custom_field_2,
+		       COALESCE(json_agg(json_build_object('id', r.id, 'role_name', r.role_name, 'role_key', r.role_key))
+		         FILTER (WHERE r.id IS NOT NULL), '[]') as roles
+		FROM %[1]s.skaftin_system_users u
+		INNER JOIN %[1]s.skaftin_system_user_roles filter_ur
+		  ON u.id = filter_ur.%[2]s AND filter_ur.role_id = $2
+		LEFT JOIN %[1]s.skaftin_system_user_roles ur ON u.id = ur.%[2]s
+		LEFT JOIN %[1]s.skaftin_system_roles r ON ur.role_id = r.id
+		WHERE u.id = ANY($1)
+		GROUP BY u.id
+		ORDER BY u.id`,
+		pgx.Identifier{schema}.Sanitize(), pgx.Identifier{userRoleUserIDColumn}.Sanitize())
+
+	rows, err := s.pool.Query(ctx, query, requested, roleID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	list := make([]AppUser, 0, len(requested))
+	foundIDs := make([]int, 0, len(requested))
+	for rows.Next() {
+		var u AppUser
+		if err := rows.Scan(
+			&u.ID, &u.SupertokensUserID, &u.Name, &u.LastName, &u.Email, &u.Password, &u.Phone,
+			&u.Metadata, &u.OrganisationID, &u.IsActive, &u.EmailVerified, &u.PhoneVerified,
+			&u.DeletionRequestedAt, &u.DeletionScheduledAt, &u.DeletionReason, &u.DeletedAt,
+			&u.CreatedAt, &u.UpdatedAt, &u.CustomField1, &u.CustomField2, &u.Roles); err != nil {
+			return nil, nil, err
+		}
+		list = append(list, u)
+		foundIDs = append(foundIDs, u.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	return list, missingUserIDs(requested, foundIDs), nil
+}
+
 func (s *Store) GetUserByEmail(ctx context.Context, schema, email, roleKey string) (*AppUser, error) {
 	schemaIdent := pgx.Identifier{schema}.Sanitize()
 	roleFilter := ""
