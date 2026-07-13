@@ -10,6 +10,7 @@ import usePaymentProviderStore, {
   getProviderDisplayName,
   CreatePaymentProviderRequest,
 } from '../../../../../stores/data/usePaymentProviderStore';
+import usePaymentPlanStore from '../../../../../stores/data/usePaymentPlanStore';
 import ToastUtils from '../../../../../utils/ToastUtils';
 import RequestUtils from '../../../../../utils/RequestUtils';
 import ApiRoutes from '../../../../../constants/ApiRoutes';
@@ -47,6 +48,7 @@ interface TestPaymentFormData {
   customer_email: string;
   customer_name: string;
   payment_type: 'once_off' | 'subscription';
+  plan_id: string;
 }
 
 // FNB-specific test form - just description and amount with defaults
@@ -115,7 +117,9 @@ const PaymentProvidersTab = () => {
     customer_email: '',
     customer_name: '',
     payment_type: 'once_off',
+    plan_id: '',
   });
+  const { plans, fetchPlans } = usePaymentPlanStore();
   const [fnbTestFormData, setFnbTestFormData] = useState<FnbTestPaymentFormData>({
     description: 'Test Payment - FNB',
     amount: '10.00',
@@ -124,8 +128,9 @@ const PaymentProvidersTab = () => {
   useEffect(() => {
     if (projectId) {
       fetchProviders(projectId);
+      fetchPlans(projectId);
     }
-  }, [projectId, fetchProviders]);
+  }, [projectId, fetchProviders, fetchPlans]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -338,6 +343,7 @@ const PaymentProvidersTab = () => {
         customer_email: '',
         customer_name: '',
         payment_type: 'once_off',
+        plan_id: '',
       });
     }
     setShowTestPaymentModal(true);
@@ -455,6 +461,7 @@ const PaymentProvidersTab = () => {
           customer_email: testPaymentFormData.customer_email || undefined,
           customer_name: testPaymentFormData.customer_name || undefined,
           payment_type: testPaymentFormData.payment_type,
+          plan_id: testPaymentFormData.plan_id ? parseInt(testPaymentFormData.plan_id, 10) : undefined,
           return_url: window.location.origin + location.pathname,
         }),
       });
@@ -1133,7 +1140,8 @@ const PaymentProvidersTab = () => {
                       min="1"
                       value={testPaymentFormData.amount}
                       onChange={(e) => setTestPaymentFormData({ ...testPaymentFormData, amount: e.target.value })}
-                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                      readOnly={!!testPaymentFormData.plan_id}
+                      className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white read-only:opacity-70"
                       placeholder="10.00"
                       required
                     />
@@ -1207,6 +1215,36 @@ const PaymentProvidersTab = () => {
                       <option value="subscription">Subscription</option>
                     </select>
                   </div>
+
+                  {testPaymentProvider.provider_type === 'paystack' && testPaymentFormData.payment_type === 'subscription' && (
+                    <div>
+                      <label className="block text-sm font-medium text-dark-700 dark:text-dark-300 mb-1">
+                        Plan
+                      </label>
+                      <select
+                        value={testPaymentFormData.plan_id}
+                        onChange={(e) => {
+                          const planId = e.target.value;
+                          const plan = plans.find((p) => p.id.toString() === planId);
+                          setTestPaymentFormData({
+                            ...testPaymentFormData,
+                            plan_id: planId,
+                            amount: plan ? plan.amount.toString() : testPaymentFormData.amount,
+                          });
+                        }}
+                        className="w-full px-3 py-2 border border-dark-300 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-dark-900 dark:text-white"
+                      >
+                        <option value="">No plan (one-off charge)</option>
+                        {plans
+                          .filter((p) => p.provider_id === testPaymentProvider.id && p.is_active)
+                          .map((plan) => (
+                            <option key={plan.id} value={plan.id.toString()}>
+                              {plan.name} — {plan.currency} {plan.amount} / {plan.interval}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
                 </>
               )}
 

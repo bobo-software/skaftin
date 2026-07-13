@@ -299,6 +299,13 @@ const ApiRoutes = {
     // Transactions
     LIST_TRANSACTIONS: (projectId: string) => `/api/payments/${projectId}/transactions`,
     GET_TRANSACTION: (projectId: string, transactionId: string) => `/api/payments/${projectId}/transactions/${transactionId}`,
+    // Plans
+    LIST_PLANS: (projectId: string, providerId?: string) => `/api/payments/${projectId}/plans${providerId ? `?provider_id=${providerId}` : ''}`,
+    GET_PLAN: (projectId: string, planId: string) => `/api/payments/${projectId}/plans/${planId}`,
+    CREATE_PLAN: (projectId: string) => `/api/payments/${projectId}/plans`,
+    UPDATE_PLAN: (projectId: string, planId: string) => `/api/payments/${projectId}/plans/${planId}`,
+    DELETE_PLAN: (projectId: string, planId: string) => `/api/payments/${projectId}/plans/${planId}`,
+    SYNC_PLANS: (projectId: string, providerId: string) => `/api/payments/${projectId}/plans/sync?provider_id=${providerId}`,
   },
   
   // App API Payment routes - Client API (API keys, project ID auto-extracted)

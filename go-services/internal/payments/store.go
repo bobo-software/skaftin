@@ -40,7 +40,7 @@ func (s *Store) EnsureProjectPaymentTables(ctx context.Context, schema string) e
 				id SERIAL PRIMARY KEY,
 				project_id INTEGER NOT NULL,
 				name VARCHAR(255) NOT NULL,
-				provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('payfast', 'fnb_pay')),
+				provider_type VARCHAR(50) NOT NULL CHECK (provider_type IN ('payfast', 'fnb_pay', 'paystack')),
 				merchant_id VARCHAR(255),
 				merchant_key VARCHAR(255),
 				passphrase TEXT,
@@ -97,6 +97,28 @@ func (s *Store) EnsureProjectPaymentTables(ctx context.Context, schema string) e
 			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_payment_type ON skaftin_system_payment_transactions(payment_type)`,
 			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_customer_email ON skaftin_system_payment_transactions(customer_email)`,
 			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_created_at ON skaftin_system_payment_transactions(created_at DESC)`,
+			`CREATE TABLE IF NOT EXISTS skaftin_system_payment_plans (
+				id SERIAL PRIMARY KEY,
+				project_id INTEGER NOT NULL,
+				provider_id INTEGER NOT NULL REFERENCES skaftin_system_payment_providers(id) ON DELETE CASCADE,
+				plan_code VARCHAR(255) NOT NULL,
+				name VARCHAR(255) NOT NULL,
+				description TEXT,
+				amount DECIMAL(12,2) NOT NULL,
+				currency VARCHAR(3) DEFAULT 'ZAR',
+				interval VARCHAR(20) NOT NULL CHECK (interval IN ('daily', 'weekly', 'monthly', 'quarterly', 'biannually', 'annually')),
+				is_active BOOLEAN DEFAULT true,
+				metadata JSONB DEFAULT '{}',
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				UNIQUE(provider_id, plan_code)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_plans_project_id ON skaftin_system_payment_plans(project_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_plans_provider_id ON skaftin_system_payment_plans(provider_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_plans_is_active ON skaftin_system_payment_plans(is_active)`,
+			`ALTER TABLE skaftin_system_payment_transactions ADD COLUMN IF NOT EXISTS plan_id INTEGER REFERENCES skaftin_system_payment_plans(id) ON DELETE SET NULL`,
+			`ALTER TABLE skaftin_system_payment_transactions ADD COLUMN IF NOT EXISTS plan_code VARCHAR(255)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_plan_id ON skaftin_system_payment_transactions(plan_id)`,
 		}
 
 		for _, q := range queries {
@@ -205,6 +227,222 @@ func scanTransaction(row pgx.Row) (PaymentTransactionRecord, error) {
 		t.Metadata = map[string]any{}
 	}
 	return t, nil
+}
+
+func scanPlan(row pgx.Row) (PaymentPlanRecord, error) {
+	var p PaymentPlanRecord
+	var metadataRaw []byte
+	err := row.Scan(
+		&p.ID,
+		&p.ProjectID,
+		&p.ProviderID,
+		&p.PlanCode,
+		&p.Name,
+		&p.Description,
+		&p.Amount,
+		&p.Currency,
+		&p.Interval,
+		&p.IsActive,
+		&metadataRaw,
+		&p.CreatedAt,
+		&p.UpdatedAt,
+	)
+	if err != nil {
+		return PaymentPlanRecord{}, err
+	}
+	if len(metadataRaw) > 0 {
+		_ = json.Unmarshal(metadataRaw, &p.Metadata)
+	}
+	if p.Metadata == nil {
+		p.Metadata = map[string]any{}
+	}
+	return p, nil
+}
+
+const planColumns = `id, project_id, provider_id, plan_code, name, description, amount, currency, interval, is_active, metadata, created_at, updated_at`
+
+func (s *Store) ListPlans(ctx context.Context, projectID int, providerID *int, schema string) ([]PaymentPlanRecord, error) {
+	plans := make([]PaymentPlanRecord, 0)
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		query := `SELECT ` + planColumns + ` FROM skaftin_system_payment_plans WHERE project_id = $1`
+		args := []any{projectID}
+		if providerID != nil {
+			query += ` AND provider_id = $2`
+			args = append(args, *providerID)
+		}
+		query += ` ORDER BY created_at DESC`
+		rows, err := tx.Query(ctx, query, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			plan, err := scanPlan(rows)
+			if err != nil {
+				return err
+			}
+			plans = append(plans, plan)
+		}
+		return rows.Err()
+	})
+	return plans, err
+}
+
+func (s *Store) GetPlan(ctx context.Context, projectID, planID int, schema string) (*PaymentPlanRecord, error) {
+	var plan *PaymentPlanRecord
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `SELECT `+planColumns+` FROM skaftin_system_payment_plans WHERE id = $1 AND project_id = $2`, planID, projectID)
+		p, err := scanPlan(row)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			return err
+		}
+		plan = &p
+		return nil
+	})
+	return plan, err
+}
+
+func (s *Store) GetPlanByCode(ctx context.Context, providerID int, planCode, schema string) (*PaymentPlanRecord, error) {
+	var plan *PaymentPlanRecord
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `SELECT `+planColumns+` FROM skaftin_system_payment_plans WHERE provider_id = $1 AND plan_code = $2`, providerID, planCode)
+		p, err := scanPlan(row)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			return err
+		}
+		plan = &p
+		return nil
+	})
+	return plan, err
+}
+
+func (s *Store) InsertPlan(ctx context.Context, req CreatePlanRequest, planCode string, schema string) (*PaymentPlanRecord, error) {
+	var plan *PaymentPlanRecord
+	metaJSON, _ := json.Marshal(req.Metadata)
+	currency := req.Currency
+	if strings.TrimSpace(currency) == "" {
+		currency = "ZAR"
+	}
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			INSERT INTO skaftin_system_payment_plans (
+				project_id, provider_id, plan_code, name, description, amount, currency, interval, metadata
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+			RETURNING `+planColumns+`
+		`,
+			req.ProjectID, req.ProviderID, planCode, req.Name, req.Description, req.Amount, currency, req.Interval, metaJSON)
+		p, err := scanPlan(row)
+		if err != nil {
+			return err
+		}
+		plan = &p
+		return nil
+	})
+	return plan, err
+}
+
+func (s *Store) UpsertPlanFromSync(ctx context.Context, projectID, providerID int, planCode, name string, amount float64, currency, interval string, raw map[string]any, schema string) (*PaymentPlanRecord, error) {
+	var plan *PaymentPlanRecord
+	metaJSON, _ := json.Marshal(raw)
+	if strings.TrimSpace(currency) == "" {
+		currency = "ZAR"
+	}
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			INSERT INTO skaftin_system_payment_plans (
+				project_id, provider_id, plan_code, name, amount, currency, interval, metadata
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+			ON CONFLICT (provider_id, plan_code) DO UPDATE SET
+				name = EXCLUDED.name,
+				amount = EXCLUDED.amount,
+				currency = EXCLUDED.currency,
+				interval = EXCLUDED.interval,
+				metadata = EXCLUDED.metadata,
+				updated_at = CURRENT_TIMESTAMP
+			RETURNING `+planColumns+`
+		`,
+			projectID, providerID, planCode, name, amount, currency, interval, metaJSON)
+		p, err := scanPlan(row)
+		if err != nil {
+			return err
+		}
+		plan = &p
+		return nil
+	})
+	return plan, err
+}
+
+func (s *Store) UpdatePlan(ctx context.Context, projectID, planID int, req UpdatePlanRequest, schema string) (*PaymentPlanRecord, error) {
+	updates := make([]string, 0, 4)
+	args := make([]any, 0, 6)
+	next := 1
+
+	add := func(col string, v any) {
+		updates = append(updates, fmt.Sprintf("%s = $%d", col, next))
+		args = append(args, v)
+		next++
+	}
+
+	if req.Name != nil {
+		add("name", *req.Name)
+	}
+	if req.Description != nil {
+		add("description", *req.Description)
+	}
+	if req.IsActive != nil {
+		add("is_active", *req.IsActive)
+	}
+	if req.Metadata != nil {
+		metaJSON, _ := json.Marshal(req.Metadata)
+		add("metadata", metaJSON)
+	}
+
+	if len(updates) == 0 {
+		return s.GetPlan(ctx, projectID, planID, schema)
+	}
+	updates = append(updates, "updated_at = CURRENT_TIMESTAMP")
+
+	args = append(args, planID, projectID)
+	q := fmt.Sprintf(`
+		UPDATE skaftin_system_payment_plans
+		SET %s
+		WHERE id = $%d AND project_id = $%d
+		RETURNING `+planColumns+`
+	`, strings.Join(updates, ", "), next, next+1)
+
+	var plan *PaymentPlanRecord
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, q, args...)
+		p, err := scanPlan(row)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			return err
+		}
+		plan = &p
+		return nil
+	})
+	return plan, err
+}
+
+func (s *Store) DeletePlan(ctx context.Context, projectID, planID int, schema string) (bool, error) {
+	var deleted bool
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		cmd, err := tx.Exec(ctx, `DELETE FROM skaftin_system_payment_plans WHERE id = $1 AND project_id = $2`, planID, projectID)
+		if err != nil {
+			return err
+		}
+		deleted = cmd.RowsAffected() > 0
+		return nil
+	})
+	return deleted, err
 }
 
 func (s *Store) ListProviders(ctx context.Context, projectID int, schema string) ([]PaymentProviderRecord, error) {

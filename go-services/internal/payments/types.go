@@ -49,6 +49,8 @@ type PaymentTransactionRecord struct {
 	Frequency         *int           `json:"frequency,omitempty"`
 	Cycles            *int           `json:"cycles,omitempty"`
 	SubscriptionToken *string        `json:"subscription_token,omitempty"`
+	PlanID            *int           `json:"plan_id,omitempty"`
+	PlanCode          *string        `json:"plan_code,omitempty"`
 	Status            string         `json:"status"`
 	StatusMessage     *string        `json:"status_message,omitempty"`
 	PaymentURL        *string        `json:"payment_url,omitempty"`
@@ -70,6 +72,50 @@ type TransactionListOptions struct {
 	EndDate     *time.Time
 }
 
+type PaymentPlanRecord struct {
+	ID          int            `json:"id"`
+	ProjectID   int            `json:"project_id"`
+	ProviderID  int            `json:"provider_id"`
+	PlanCode    string         `json:"plan_code"`
+	Name        string         `json:"name"`
+	Description *string        `json:"description,omitempty"`
+	Amount      float64        `json:"amount"`
+	Currency    string         `json:"currency"`
+	Interval    string         `json:"interval"`
+	IsActive    bool           `json:"is_active"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+type CreatePlanRequest struct {
+	ProjectID   int
+	ProviderID  int
+	Name        string
+	Description *string
+	Amount      float64
+	Currency    string
+	Interval    string
+	Metadata    map[string]any
+}
+
+type UpdatePlanRequest struct {
+	Name        *string
+	Description *string
+	IsActive    *bool
+	Metadata    map[string]any
+}
+
+// ValidPlanIntervals enumerates the billing intervals Paystack plans support.
+var ValidPlanIntervals = map[string]bool{
+	"daily":      true,
+	"weekly":     true,
+	"monthly":    true,
+	"quarterly":  true,
+	"biannually": true,
+	"annually":   true,
+}
+
 type InitiatePaymentRequest struct {
 	ProviderID       *int           `json:"provider_id"`
 	Amount           float64        `json:"amount"`
@@ -83,6 +129,8 @@ type InitiatePaymentRequest struct {
 	Frequency        *int           `json:"frequency,omitempty"`
 	Cycles           *int           `json:"cycles,omitempty"`
 	BillingDate      *int           `json:"billing_date,omitempty"`
+	PlanID           *int           `json:"plan_id,omitempty"`
+	PlanCode         *string        `json:"plan_code,omitempty"`
 	Metadata         map[string]any `json:"metadata,omitempty"`
 	ReturnURL        *string        `json:"return_url,omitempty"`
 	CancelURL        *string        `json:"cancel_url,omitempty"`

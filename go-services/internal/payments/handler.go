@@ -42,6 +42,12 @@ func (h *Handler) RegisterProjectRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/payments/{projectId}/providers/{providerId}/test", h.TestProvider)
 	mux.HandleFunc("GET /api/payments/{projectId}/transactions", h.ListTransactions)
 	mux.HandleFunc("GET /api/payments/{projectId}/transactions/{transactionId}", h.GetTransaction)
+	mux.HandleFunc("GET /api/payments/{projectId}/plans", h.ListPlans)
+	mux.HandleFunc("GET /api/payments/{projectId}/plans/{planId}", h.GetPlan)
+	mux.HandleFunc("POST /api/payments/{projectId}/plans", h.CreatePlan)
+	mux.HandleFunc("PUT /api/payments/{projectId}/plans/{planId}", h.UpdatePlan)
+	mux.HandleFunc("DELETE /api/payments/{projectId}/plans/{planId}", h.DeletePlan)
+	mux.HandleFunc("POST /api/payments/{projectId}/plans/sync", h.SyncPlans)
 }
 
 func (h *Handler) RegisterWebhookRoutes(mux *http.ServeMux) {
@@ -270,6 +276,203 @@ func (h *Handler) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteSuccess(w, http.StatusOK, "Payment provider deleted successfully", nil)
+}
+
+func (h *Handler) ListPlans(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	var providerID *int
+	if raw := strings.TrimSpace(r.URL.Query().Get("provider_id")); raw != "" {
+		id, err := strconv.Atoi(raw)
+		if err != nil {
+			httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"success": false, "error": "Invalid provider_id"})
+			return
+		}
+		providerID = &id
+	}
+	plans, err := h.service.ListPlans(r.Context(), projectID, providerID)
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"error":   "Failed to list payment plans",
+			"message": err.Error(),
+		})
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Payment plans listed successfully", plans)
+}
+
+func (h *Handler) GetPlan(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	planID, ok := httputil.PathInt(r, "planId")
+	if !ok {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"success": false, "error": "Invalid project ID or plan ID"})
+		return
+	}
+	plan, err := h.service.GetPlan(r.Context(), projectID, planID)
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"error":   "Failed to get payment plan",
+			"message": err.Error(),
+		})
+		return
+	}
+	if plan == nil {
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"success": false, "error": "Payment plan not found"})
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Payment plan retrieved successfully", plan)
+}
+
+func (h *Handler) CreatePlan(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		ProviderID  int            `json:"provider_id"`
+		Name        string         `json:"name"`
+		Description *string        `json:"description"`
+		Amount      float64        `json:"amount"`
+		Currency    string         `json:"currency"`
+		Interval    string         `json:"interval"`
+		Metadata    map[string]any `json:"metadata"`
+	}
+	if err := httputil.DecodeBody(r, &req); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if req.ProviderID <= 0 || req.Name == "" || req.Amount <= 0 || req.Interval == "" {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   "Missing required fields: provider_id, name, amount and interval are required",
+		})
+		return
+	}
+
+	created, err := h.service.CreatePlan(r.Context(), CreatePlanRequest{
+		ProjectID:   projectID,
+		ProviderID:  req.ProviderID,
+		Name:        req.Name,
+		Description: req.Description,
+		Amount:      req.Amount,
+		Currency:    req.Currency,
+		Interval:    req.Interval,
+		Metadata:    req.Metadata,
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			httputil.WriteJSON(w, http.StatusConflict, map[string]any{
+				"success": false,
+				"error":   "A plan with this code already exists for this provider",
+			})
+			return
+		}
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   "Failed to create payment plan",
+			"message": err.Error(),
+		})
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusCreated, "Payment plan created successfully", created)
+}
+
+func (h *Handler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	planID, ok := httputil.PathInt(r, "planId")
+	if !ok {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"success": false, "error": "Invalid project ID or plan ID"})
+		return
+	}
+	var req struct {
+		Name        *string        `json:"name"`
+		Description *string        `json:"description"`
+		IsActive    *bool          `json:"is_active"`
+		Metadata    map[string]any `json:"metadata"`
+	}
+	if err := httputil.DecodeBody(r, &req); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	updated, err := h.service.UpdatePlan(r.Context(), projectID, planID, UpdatePlanRequest{
+		Name:        req.Name,
+		Description: req.Description,
+		IsActive:    req.IsActive,
+		Metadata:    req.Metadata,
+	})
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"error":   "Failed to update payment plan",
+			"message": err.Error(),
+		})
+		return
+	}
+	if updated == nil {
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"success": false, "error": "Payment plan not found"})
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Payment plan updated successfully", updated)
+}
+
+func (h *Handler) DeletePlan(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	planID, ok := httputil.PathInt(r, "planId")
+	if !ok {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"success": false, "error": "Invalid project ID or plan ID"})
+		return
+	}
+	deleted, err := h.service.DeletePlan(r.Context(), projectID, planID)
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"error":   "Failed to delete payment plan",
+			"message": err.Error(),
+		})
+		return
+	}
+	if !deleted {
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]any{"success": false, "error": "Payment plan not found"})
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Payment plan deleted successfully", nil)
+}
+
+func (h *Handler) SyncPlans(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	providerID, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("provider_id")))
+	if err != nil || providerID <= 0 {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"success": false, "error": "provider_id query param is required"})
+		return
+	}
+	synced, err := h.service.SyncPlansFromPaystack(r.Context(), projectID, providerID)
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   "Failed to sync payment plans",
+			"message": err.Error(),
+		})
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Payment plans synced successfully", synced)
 }
 
 func (h *Handler) TestProvider(w http.ResponseWriter, r *http.Request) {
@@ -601,6 +804,8 @@ func (h *Handler) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		Frequency       *int           `json:"frequency"`
 		Cycles          *int           `json:"cycles"`
 		BillingDate     *int           `json:"billing_date"`
+		PlanID          *int           `json:"plan_id"`
+		PlanCode        *string        `json:"plan_code"`
 		Metadata        map[string]any `json:"metadata"`
 		ReturnURL       *string        `json:"return_url"`
 		CancelURL       *string        `json:"cancel_url"`
@@ -631,6 +836,8 @@ func (h *Handler) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		Frequency:        req.Frequency,
 		Cycles:           req.Cycles,
 		BillingDate:      req.BillingDate,
+		PlanID:           req.PlanID,
+		PlanCode:         req.PlanCode,
 		Metadata:         req.Metadata,
 		ReturnURL:        req.ReturnURL,
 		CancelURL:        req.CancelURL,

@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { CreditCard, Receipt, Settings } from 'lucide-react';
+import { CreditCard, Receipt, Settings, Repeat } from 'lucide-react';
 import PaymentProvidersTab from './tabs/PaymentProvidersTab';
 import PaymentTransactionsTab from './tabs/PaymentTransactionsTab';
+import PaymentPlansTab from './tabs/PaymentPlansTab';
 
 const ProjectPaymentsTab = () => {
-  const [activeTab, setActiveTab] = useState<'providers' | 'transactions'>('providers');
+  const [activeTab, setActiveTab] = useState<'providers' | 'plans' | 'transactions'>('providers');
 
   const tabs = [
     { id: 'providers' as const, name: 'Payment Providers', icon: Settings, component: PaymentProvidersTab },
+    { id: 'plans' as const, name: 'Plans', icon: Repeat, component: PaymentPlansTab },
     { id: 'transactions' as const, name: 'Transactions', icon: Receipt, component: PaymentTransactionsTab },
   ];
 

@@ -78,6 +78,110 @@ func (s *Service) DeleteProvider(ctx context.Context, projectID, providerID int)
 	return s.store.DeleteProvider(ctx, projectID, providerID, schema)
 }
 
+func (s *Service) ListPlans(ctx context.Context, projectID int, providerID *int) ([]PaymentPlanRecord, error) {
+	schema, err := s.store.ProjectSchema(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.ListPlans(ctx, projectID, providerID, schema)
+}
+
+func (s *Service) GetPlan(ctx context.Context, projectID, planID int) (*PaymentPlanRecord, error) {
+	schema, err := s.store.ProjectSchema(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.GetPlan(ctx, projectID, planID, schema)
+}
+
+func (s *Service) CreatePlan(ctx context.Context, req CreatePlanRequest) (*PaymentPlanRecord, error) {
+	provider, err := s.GetProvider(ctx, req.ProjectID, req.ProviderID)
+	if err != nil {
+		return nil, err
+	}
+	if provider == nil {
+		return nil, errors.New("Payment provider not found")
+	}
+	if provider.ProviderType != ProviderTypePaystack {
+		return nil, errors.New("Plans are currently only supported for Paystack providers")
+	}
+	if !ValidPlanIntervals[req.Interval] {
+		return nil, errors.New("Invalid interval. Must be one of: daily, weekly, monthly, quarterly, biannually, annually")
+	}
+	if req.Amount <= 0 || strings.TrimSpace(req.Name) == "" {
+		return nil, errors.New("name and amount are required")
+	}
+
+	description := ""
+	if req.Description != nil {
+		description = *req.Description
+	}
+	psResult, err := createPaystackPlan(ctx, provider, req.Name, description, req.Amount, req.Currency, req.Interval)
+	if err != nil {
+		return nil, err
+	}
+	if !psResult.Success {
+		return nil, errors.New(psResult.Error)
+	}
+
+	schema, err := s.store.ProjectSchema(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.InsertPlan(ctx, req, psResult.PlanCode, schema)
+}
+
+func (s *Service) UpdatePlan(ctx context.Context, projectID, planID int, req UpdatePlanRequest) (*PaymentPlanRecord, error) {
+	schema, err := s.store.ProjectSchema(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.UpdatePlan(ctx, projectID, planID, req, schema)
+}
+
+func (s *Service) DeletePlan(ctx context.Context, projectID, planID int) (bool, error) {
+	schema, err := s.store.ProjectSchema(ctx, projectID)
+	if err != nil {
+		return false, err
+	}
+	return s.store.DeletePlan(ctx, projectID, planID, schema)
+}
+
+func (s *Service) SyncPlansFromPaystack(ctx context.Context, projectID, providerID int) ([]PaymentPlanRecord, error) {
+	provider, err := s.GetProvider(ctx, projectID, providerID)
+	if err != nil {
+		return nil, err
+	}
+	if provider == nil || provider.ProviderType != ProviderTypePaystack {
+		return nil, errors.New("Provider not found or is not a Paystack provider")
+	}
+	remotePlans, err := listPaystackPlans(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	schema, err := s.store.ProjectSchema(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	synced := make([]PaymentPlanRecord, 0, len(remotePlans))
+	for _, rp := range remotePlans {
+		code, _ := rp["plan_code"].(string)
+		if code == "" {
+			continue
+		}
+		name, _ := rp["name"].(string)
+		amt, _ := rp["amount"].(float64)
+		interval, _ := rp["interval"].(string)
+		currency, _ := rp["currency"].(string)
+		rec, err := s.store.UpsertPlanFromSync(ctx, projectID, providerID, code, name, amt/100.0, currency, interval, rp, schema)
+		if err != nil {
+			return nil, err
+		}
+		synced = append(synced, *rec)
+	}
+	return synced, nil
+}
+
 func (s *Service) TestProvider(ctx context.Context, projectID, providerID int) (PingResponse, error) {
 	provider, err := s.GetProvider(ctx, projectID, providerID)
 	if err != nil {
@@ -247,6 +351,34 @@ func (s *Service) InitiatePayment(ctx context.Context, projectID int, req Initia
 		}, nil
 	}
 
+	var plan *PaymentPlanRecord
+	if req.PlanID != nil && *req.PlanID > 0 {
+		plan, err = s.GetPlan(ctx, projectID, *req.PlanID)
+		if err != nil {
+			return InitiatePaymentResult{}, err
+		}
+	} else if req.PlanCode != nil && strings.TrimSpace(*req.PlanCode) != "" {
+		schemaForPlan, schemaErr := s.store.ProjectSchema(ctx, projectID)
+		if schemaErr != nil {
+			return InitiatePaymentResult{}, schemaErr
+		}
+		plan, err = s.store.GetPlanByCode(ctx, provider.ID, strings.TrimSpace(*req.PlanCode), schemaForPlan)
+		if err != nil {
+			return InitiatePaymentResult{}, err
+		}
+	}
+	if plan != nil {
+		if plan.ProviderID != provider.ID {
+			return InitiatePaymentResult{Success: false, Error: "Plan does not belong to the selected provider"}, nil
+		}
+		if provider.ProviderType != ProviderTypePaystack {
+			return InitiatePaymentResult{Success: false, Error: "Plans are only supported for Paystack providers"}, nil
+		}
+		// Paystack charges the plan's own amount when a plan is passed, so keep the
+		// locally stored transaction amount truthful to what will actually be charged.
+		req.Amount = plan.Amount
+	}
+
 	transactionID := uuid.NewString()
 	paymentURL := ""
 
@@ -284,7 +416,11 @@ func (s *Service) InitiatePayment(ctx context.Context, projectID int, req Initia
 		}
 	case ProviderTypePaystack:
 		callbackURL := firstNonNilString(req.ReturnURL, provider.ReturnURL)
-		paystackResult, psErr := initiatePaystackTransaction(ctx, provider, transactionID, req.Amount, req.CustomerEmail, callbackURL, req.ItemName, req.Metadata)
+		planCode := ""
+		if plan != nil {
+			planCode = plan.PlanCode
+		}
+		paystackResult, psErr := initiatePaystackTransaction(ctx, provider, transactionID, req.Amount, req.CustomerEmail, callbackURL, req.ItemName, req.Metadata, planCode)
 		if psErr != nil {
 			return InitiatePaymentResult{
 				Success:       false,
@@ -325,19 +461,28 @@ func (s *Service) InitiatePayment(ctx context.Context, projectID int, req Initia
 		metadataJSON = []byte("{}")
 	}
 
+	var planIDVal *int
+	var planCodeVal *string
+	if plan != nil {
+		planIDVal = &plan.ID
+		planCodeVal = &plan.PlanCode
+	}
+
 	err = s.store.withSchema(ctx, schema, func(tx pgx.Tx) error {
 		_, qErr := tx.Exec(ctx, `
 			INSERT INTO skaftin_system_payment_transactions (
 				project_id, provider_id, transaction_id, amount, currency, item_name,
 				item_description, customer_email, customer_name, customer_phone, payment_type,
-				subscription_type, frequency, cycles, payment_url, return_url, cancel_url, metadata, status
+				subscription_type, frequency, cycles, payment_url, return_url, cancel_url, metadata,
+				plan_id, plan_code, status
 			) VALUES (
-				$1, $2, $3, $4, 'ZAR', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, 'processing'
+				$1, $2, $3, $4, 'ZAR', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18, $19, 'processing'
 			)
 		`,
 			projectID, provider.ID, transactionID, req.Amount, req.ItemName,
 			req.ItemDescription, req.CustomerEmail, req.CustomerName, req.CustomerPhone, paymentType,
-			req.SubscriptionType, req.Frequency, req.Cycles, paymentURL, firstNonNilString(req.ReturnURL, provider.ReturnURL), firstNonNilString(req.CancelURL, provider.CancelURL), metadataJSON)
+			req.SubscriptionType, req.Frequency, req.Cycles, paymentURL, firstNonNilString(req.ReturnURL, provider.ReturnURL), firstNonNilString(req.CancelURL, provider.CancelURL), metadataJSON,
+			planIDVal, planCodeVal)
 		return qErr
 	})
 	if err != nil {
@@ -905,7 +1050,7 @@ func pingPaystack(provider *PaymentProviderRecord) PingResponse {
 	return PingResponse{Success: false, Error: strings.TrimSpace(string(body))}
 }
 
-func initiatePaystackTransaction(ctx context.Context, provider *PaymentProviderRecord, reference string, amount float64, customerEmail *string, callbackURL, itemName string, metadata map[string]any) (PaystackInitiateResult, error) {
+func initiatePaystackTransaction(ctx context.Context, provider *PaymentProviderRecord, reference string, amount float64, customerEmail *string, callbackURL, itemName string, metadata map[string]any, planCode string) (PaystackInitiateResult, error) {
 	secretKey := ""
 	if provider.APISecret != nil {
 		secretKey = strings.TrimSpace(*provider.APISecret)
@@ -932,6 +1077,9 @@ func initiatePaystackTransaction(ctx context.Context, provider *PaymentProviderR
 	}
 	if strings.TrimSpace(callbackURL) != "" {
 		body["callback_url"] = strings.TrimSpace(callbackURL)
+	}
+	if strings.TrimSpace(planCode) != "" {
+		body["plan"] = strings.TrimSpace(planCode)
 	}
 	if strings.TrimSpace(itemName) != "" {
 		body["metadata"] = map[string]any{
@@ -998,6 +1146,129 @@ func initiatePaystackTransaction(ctx context.Context, provider *PaymentProviderR
 		Reference:        ref,
 		AccessCode:       accessCode,
 	}, nil
+}
+
+// PaystackPlanResult mirrors the subset of Paystack's plan object we care about.
+type PaystackPlanResult struct {
+	Success  bool
+	PlanCode string
+	Name     string
+	Amount   float64
+	Interval string
+	Currency string
+	RawData  map[string]any
+	Error    string
+}
+
+func createPaystackPlan(ctx context.Context, provider *PaymentProviderRecord, name, description string, amount float64, currency, interval string) (PaystackPlanResult, error) {
+	secretKey := ""
+	if provider.APISecret != nil {
+		secretKey = strings.TrimSpace(*provider.APISecret)
+	}
+	if secretKey == "" {
+		return PaystackPlanResult{Success: false, Error: "Missing Paystack secret key. Add it in provider settings."}, nil
+	}
+
+	body := map[string]any{
+		"name":     name,
+		"amount":   int64(amount * 100),
+		"interval": interval,
+	}
+	if strings.TrimSpace(description) != "" {
+		body["description"] = description
+	}
+	if strings.TrimSpace(currency) != "" {
+		body["currency"] = strings.ToUpper(currency)
+	}
+
+	raw, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.paystack.co/plan", strings.NewReader(string(raw)))
+	if err != nil {
+		return PaystackPlanResult{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+secretKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return PaystackPlanResult{Success: false, Error: "Paystack API request failed: " + err.Error()}, nil
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	var result map[string]any
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return PaystackPlanResult{Success: false, Error: "Invalid Paystack response"}, nil
+	}
+	if status, _ := result["status"].(bool); !status {
+		msg, _ := result["message"].(string)
+		if msg == "" {
+			msg = "Paystack plan creation failed"
+		}
+		return PaystackPlanResult{Success: false, Error: msg}, nil
+	}
+	data, _ := result["data"].(map[string]any)
+	if data == nil {
+		return PaystackPlanResult{Success: false, Error: "Missing data in Paystack response"}, nil
+	}
+	planCode, _ := data["plan_code"].(string)
+	if planCode == "" {
+		return PaystackPlanResult{Success: false, Error: "Paystack did not return a plan_code"}, nil
+	}
+	amt, _ := data["amount"].(float64)
+	return PaystackPlanResult{
+		Success:  true,
+		PlanCode: planCode,
+		Name:     name,
+		Interval: interval,
+		Amount:   amt / 100.0,
+		RawData:  data,
+	}, nil
+}
+
+// listPaystackPlans fetches up to 100 plans from Paystack for reconciliation via SyncPlansFromPaystack.
+func listPaystackPlans(ctx context.Context, provider *PaymentProviderRecord) ([]map[string]any, error) {
+	secretKey := ""
+	if provider.APISecret != nil {
+		secretKey = strings.TrimSpace(*provider.APISecret)
+	}
+	if secretKey == "" {
+		return nil, errors.New("Missing Paystack secret key. Add it in provider settings.")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.paystack.co/plan?perPage=100", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+secretKey)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Paystack API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var result map[string]any
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, errors.New("Invalid Paystack response")
+	}
+	if status, _ := result["status"].(bool); !status {
+		msg, _ := result["message"].(string)
+		if msg == "" {
+			msg = "Paystack list plan failed"
+		}
+		return nil, errors.New(msg)
+	}
+	rawList, _ := result["data"].([]any)
+	plans := make([]map[string]any, 0, len(rawList))
+	for _, item := range rawList {
+		if m, ok := item.(map[string]any); ok {
+			plans = append(plans, m)
+		}
+	}
+	return plans, nil
 }
 
 func validatePaystackWebhook(provider *PaymentProviderRecord, rawBody string) WebhookValidationResult {

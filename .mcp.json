@@ -7,10 +7,10 @@
       "env": {
         "NODE_ENV": "development",
         "DB_HOST": "localhost",
-        "DB_PORT": "5440",
-        "DB_USER": "skaftin_user",
-        "DB_PASSWORD": "skaftin_password",
-        "DB_NAME": "skaftin_db"
+        "DB_PORT": "5432",
+        "DB_USER": "postgres",
+        "DB_PASSWORD": "postgres",
+        "DB_NAME": "postgres"
       },
       "headers": {
         "Authorization": "Bearer skaftin-token"
