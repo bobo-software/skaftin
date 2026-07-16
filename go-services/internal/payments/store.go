@@ -118,7 +118,9 @@ func (s *Store) EnsureProjectPaymentTables(ctx context.Context, schema string) e
 			`CREATE INDEX IF NOT EXISTS idx_payment_plans_is_active ON skaftin_system_payment_plans(is_active)`,
 			`ALTER TABLE skaftin_system_payment_transactions ADD COLUMN IF NOT EXISTS plan_id INTEGER REFERENCES skaftin_system_payment_plans(id) ON DELETE SET NULL`,
 			`ALTER TABLE skaftin_system_payment_transactions ADD COLUMN IF NOT EXISTS plan_code VARCHAR(255)`,
+			`ALTER TABLE skaftin_system_payment_transactions ADD COLUMN IF NOT EXISTS subscription_email_token VARCHAR(255)`,
 			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_plan_id ON skaftin_system_payment_transactions(plan_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_payment_transactions_subscription_token ON skaftin_system_payment_transactions(subscription_token)`,
 		}
 
 		for _, q := range queries {
@@ -203,6 +205,9 @@ func scanTransaction(row pgx.Row) (PaymentTransactionRecord, error) {
 		&t.Frequency,
 		&t.Cycles,
 		&t.SubscriptionToken,
+		&t.SubscriptionEmailToken,
+		&t.PlanID,
+		&t.PlanCode,
 		&t.Status,
 		&t.StatusMessage,
 		&t.PaymentURL,
@@ -261,14 +266,33 @@ func scanPlan(row pgx.Row) (PaymentPlanRecord, error) {
 
 const planColumns = `id, project_id, provider_id, plan_code, name, description, amount, currency, interval, is_active, metadata, created_at, updated_at`
 
+const transactionColumns = `id, project_id, provider_id, transaction_id, external_payment_id, amount, currency,
+				item_name, item_description, customer_email, customer_name, customer_phone, payment_type,
+				subscription_type, frequency, cycles, subscription_token, subscription_email_token,
+				plan_id, plan_code, status, status_message,
+				payment_url, return_url, cancel_url, metadata, webhook_data, paid_at, created_at, updated_at`
+
 func (s *Store) ListPlans(ctx context.Context, projectID int, providerID *int, schema string) ([]PaymentPlanRecord, error) {
+	return s.listPlans(ctx, projectID, providerID, schema, false)
+}
+
+func (s *Store) ListActivePlans(ctx context.Context, projectID int, providerID *int, schema string) ([]PaymentPlanRecord, error) {
+	return s.listPlans(ctx, projectID, providerID, schema, true)
+}
+
+func (s *Store) listPlans(ctx context.Context, projectID int, providerID *int, schema string, activeOnly bool) ([]PaymentPlanRecord, error) {
 	plans := make([]PaymentPlanRecord, 0)
 	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
 		query := `SELECT ` + planColumns + ` FROM skaftin_system_payment_plans WHERE project_id = $1`
 		args := []any{projectID}
+		next := 2
 		if providerID != nil {
-			query += ` AND provider_id = $2`
+			query += fmt.Sprintf(` AND provider_id = $%d`, next)
 			args = append(args, *providerID)
+			next++
+		}
+		if activeOnly {
+			query += ` AND is_active = true`
 		}
 		query += ` ORDER BY created_at DESC`
 		rows, err := tx.Query(ctx, query, args...)
@@ -683,10 +707,7 @@ func (s *Store) GetTransaction(ctx context.Context, projectID int, transactionID
 	var txRecord *PaymentTransactionRecord
 	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
 		row := tx.QueryRow(ctx, `
-			SELECT id, project_id, provider_id, transaction_id, external_payment_id, amount, currency,
-				item_name, item_description, customer_email, customer_name, customer_phone, payment_type,
-				subscription_type, frequency, cycles, subscription_token, status, status_message,
-				payment_url, return_url, cancel_url, metadata, webhook_data, paid_at, created_at, updated_at
+			SELECT `+transactionColumns+`
 			FROM skaftin_system_payment_transactions
 			WHERE transaction_id = $1 AND project_id = $2
 		`, transactionID, projectID)
@@ -828,10 +849,7 @@ func (s *Store) ListTransactions(ctx context.Context, projectID int, schema stri
 		queryArgs := append([]any{}, args...)
 		queryArgs = append(queryArgs, limit, offset)
 		rows, err := tx.Query(ctx, fmt.Sprintf(`
-			SELECT id, project_id, provider_id, transaction_id, external_payment_id, amount, currency,
-				item_name, item_description, customer_email, customer_name, customer_phone, payment_type,
-				subscription_type, frequency, cycles, subscription_token, status, status_message,
-				payment_url, return_url, cancel_url, metadata, webhook_data, paid_at, created_at, updated_at
+			SELECT `+transactionColumns+`
 			FROM skaftin_system_payment_transactions
 			WHERE %s
 			ORDER BY created_at DESC
@@ -885,18 +903,101 @@ func (s *Store) UpdateTransactionFromWebhook(
 	externalPaymentID string,
 	rawData map[string]any,
 ) error {
-	webhookJSON, _ := json.Marshal(rawData)
+	return s.UpdateTransactionFromWebhookOpts(ctx, schema, projectID, transactionID, WebhookUpdateOpts{
+		Status:            status,
+		ExternalPaymentID: externalPaymentID,
+		RawData:           rawData,
+	})
+}
+
+// WebhookUpdateOpts controls optional fields applied when a webhook updates a transaction.
+type WebhookUpdateOpts struct {
+	Status                 string
+	StatusMessage          *string
+	ExternalPaymentID      string
+	SubscriptionToken      *string
+	SubscriptionEmailToken *string
+	RawData                map[string]any
+}
+
+func (s *Store) UpdateTransactionFromWebhookOpts(
+	ctx context.Context,
+	schema string,
+	projectID int,
+	transactionID string,
+	opts WebhookUpdateOpts,
+) error {
+	var webhookJSON []byte
+	if opts.RawData != nil {
+		webhookJSON, _ = json.Marshal(opts.RawData)
+	}
 	return s.withSchema(ctx, schema, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			UPDATE skaftin_system_payment_transactions
 			SET
-				status = $1,
-				external_payment_id = $2,
-				webhook_data = $3,
+				status = COALESCE(NULLIF($1, ''), status),
+				status_message = COALESCE($2, status_message),
+				external_payment_id = COALESCE(NULLIF($3, ''), external_payment_id),
+				subscription_token = COALESCE($4, subscription_token),
+				subscription_email_token = COALESCE($5, subscription_email_token),
+				webhook_data = COALESCE($6::jsonb, webhook_data),
 				paid_at = CASE WHEN $1 = 'complete' THEN CURRENT_TIMESTAMP ELSE paid_at END,
 				updated_at = CURRENT_TIMESTAMP
-			WHERE transaction_id = $4 AND project_id = $5
-		`, status, externalPaymentID, webhookJSON, transactionID, projectID)
+			WHERE transaction_id = $7 AND project_id = $8
+		`, opts.Status, opts.StatusMessage, opts.ExternalPaymentID, opts.SubscriptionToken, opts.SubscriptionEmailToken, webhookJSON, transactionID, projectID)
 		return err
 	})
+}
+
+// FindSubscriptionTransaction matches the newest plan subscription txn for email+plan without a token yet.
+func (s *Store) FindSubscriptionTransaction(ctx context.Context, projectID int, customerEmail, planCode, schema string) (*PaymentTransactionRecord, error) {
+	var txRecord *PaymentTransactionRecord
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			SELECT `+transactionColumns+`
+			FROM skaftin_system_payment_transactions
+			WHERE project_id = $1
+			  AND LOWER(COALESCE(customer_email, '')) = LOWER($2)
+			  AND plan_code = $3
+			  AND payment_type = 'subscription'
+			  AND (subscription_token IS NULL OR TRIM(subscription_token) = '')
+			  AND status IN ('processing', 'complete')
+			ORDER BY created_at DESC
+			LIMIT 1
+		`, projectID, strings.TrimSpace(customerEmail), strings.TrimSpace(planCode))
+		rec, err := scanTransaction(row)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			return err
+		}
+		txRecord = &rec
+		return nil
+	})
+	return txRecord, err
+}
+
+// FindTransactionBySubscriptionToken looks up a txn by Paystack subscription_code / PayFast token.
+func (s *Store) FindTransactionBySubscriptionToken(ctx context.Context, projectID int, subscriptionToken, schema string) (*PaymentTransactionRecord, error) {
+	var txRecord *PaymentTransactionRecord
+	err := s.withSchema(ctx, schema, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			SELECT `+transactionColumns+`
+			FROM skaftin_system_payment_transactions
+			WHERE project_id = $1 AND subscription_token = $2
+			ORDER BY created_at DESC
+			LIMIT 1
+		`, projectID, strings.TrimSpace(subscriptionToken))
+		rec, err := scanTransaction(row)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return nil
+			}
+			return err
+		}
+		txRecord = &rec
+		return nil
+	})
+	return txRecord, err
 }

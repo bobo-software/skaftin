@@ -39,7 +39,7 @@ Authorization: Bearer <token>
 | [07-WEBSOCKET-REQUESTS.md](./07-WEBSOCKET-REQUESTS.md) | Real-time `/app-api/ws` |
 | [08-APP-API2-OPEN-BROWSE.md](./08-APP-API2-OPEN-BROWSE.md) | Read-only open browse (`POST` select, `GET` download) |
 | [09-PUSH-NOTIFICATION-REQUESTS.md](./09-PUSH-NOTIFICATION-REQUESTS.md) | Expo push token register / unregister |
-| [03-PAYMENT-REQUESTS.md](./03-PAYMENT-REQUESTS.md) | Payments (PayFast, etc.) under `/app-api/payments/...` |
+| [03-PAYMENT-REQUESTS.md](./03-PAYMENT-REQUESTS.md) | Payments (PayFast, FNB Pay, Paystack + plans) under `/app-api/payments/...` |
 | [STORAGE-UPLOAD-CLIENT-NOTES.md](./STORAGE-UPLOAD-CLIENT-NOTES.md) | Multipart upload pitfalls for `POST /app-api/storage/files` |
 
 ## Typical authentication flow (app clients)

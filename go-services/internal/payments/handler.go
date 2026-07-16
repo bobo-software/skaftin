@@ -57,6 +57,7 @@ func (h *Handler) RegisterWebhookRoutes(mux *http.ServeMux) {
 }
 
 func (h *Handler) RegisterAppAPIRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /app-api/payments/plans", h.ListPlansFromAppAPI)
 	mux.HandleFunc("POST /app-api/payments/initiate", h.InitiatePaymentFromAppAPI)
 	mux.HandleFunc("GET /app-api/payments/transaction/{transactionId}", h.GetTransactionStatusFromAppAPI)
 	mux.HandleFunc("POST /app-api/payments/subscription/cancel", h.CancelSubscriptionFromAppAPI)
@@ -764,6 +765,8 @@ func (h *Handler) PaystackWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if result.Valid {
+		// Always ACK valid Paystack payloads (including unmatched subscription events)
+		// so Paystack does not retry forever.
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 		return
@@ -901,14 +904,17 @@ func (h *Handler) GetTransactionStatus(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"success": true,
 		"data": map[string]any{
-			"transaction_id": tx.TransactionID,
-			"status":         tx.Status,
-			"amount":         tx.Amount,
-			"currency":       tx.Currency,
-			"item_name":      tx.ItemName,
-			"payment_type":   tx.PaymentType,
-			"paid_at":        tx.PaidAt,
-			"created_at":     tx.CreatedAt,
+			"transaction_id":     tx.TransactionID,
+			"status":             tx.Status,
+			"amount":             tx.Amount,
+			"currency":           tx.Currency,
+			"item_name":          tx.ItemName,
+			"payment_type":       tx.PaymentType,
+			"plan_id":            tx.PlanID,
+			"plan_code":          tx.PlanCode,
+			"subscription_token": tx.SubscriptionToken,
+			"paid_at":            tx.PaidAt,
+			"created_at":         tx.CreatedAt,
 		},
 	})
 }
@@ -967,6 +973,32 @@ func parseProjectID(w http.ResponseWriter, r *http.Request) (int, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+func (h *Handler) ListPlansFromAppAPI(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseProjectID(w, r)
+	if !ok {
+		return
+	}
+	var providerID *int
+	if raw := strings.TrimSpace(r.URL.Query().Get("provider_id")); raw != "" {
+		id, err := strconv.Atoi(raw)
+		if err != nil {
+			httputil.WriteJSON(w, http.StatusBadRequest, map[string]any{"success": false, "error": "Invalid provider_id"})
+			return
+		}
+		providerID = &id
+	}
+	plans, err := h.service.ListActivePlans(r.Context(), projectID, providerID)
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"error":   "Failed to list payment plans",
+			"message": err.Error(),
+		})
+		return
+	}
+	httputil.WriteSuccess(w, http.StatusOK, "Payment plans listed successfully", toPublicPlans(plans))
 }
 
 func (h *Handler) InitiatePaymentFromAppAPI(w http.ResponseWriter, r *http.Request) {
@@ -1031,17 +1063,25 @@ func (h *Handler) GetTransactionStatusFromAppAPI(w http.ResponseWriter, r *http.
 		})
 		return
 	}
+	if tx.Status == "pending" || tx.Status == "processing" {
+		if verifiedTx, verifyErr := h.service.VerifyPaystackTransactionStatus(r.Context(), projectID, transactionID); verifyErr == nil && verifiedTx != nil {
+			tx = verifiedTx
+		}
+	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"success": true,
 		"data": map[string]any{
-			"transaction_id": tx.TransactionID,
-			"status":         tx.Status,
-			"amount":         tx.Amount,
-			"currency":       tx.Currency,
-			"item_name":      tx.ItemName,
-			"payment_type":   tx.PaymentType,
-			"paid_at":        tx.PaidAt,
-			"created_at":     tx.CreatedAt,
+			"transaction_id":     tx.TransactionID,
+			"status":             tx.Status,
+			"amount":             tx.Amount,
+			"currency":           tx.Currency,
+			"item_name":          tx.ItemName,
+			"payment_type":       tx.PaymentType,
+			"plan_id":            tx.PlanID,
+			"plan_code":          tx.PlanCode,
+			"subscription_token": tx.SubscriptionToken,
+			"paid_at":            tx.PaidAt,
+			"created_at":         tx.CreatedAt,
 		},
 	})
 }

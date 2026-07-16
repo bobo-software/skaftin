@@ -86,6 +86,31 @@ func (s *Service) ListPlans(ctx context.Context, projectID int, providerID *int)
 	return s.store.ListPlans(ctx, projectID, providerID, schema)
 }
 
+func (s *Service) ListActivePlans(ctx context.Context, projectID int, providerID *int) ([]PaymentPlanRecord, error) {
+	schema, err := s.store.ProjectSchema(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.ListActivePlans(ctx, projectID, providerID, schema)
+}
+
+func toPublicPlans(plans []PaymentPlanRecord) []PublicPaymentPlan {
+	out := make([]PublicPaymentPlan, 0, len(plans))
+	for _, p := range plans {
+		out = append(out, PublicPaymentPlan{
+			ID:          p.ID,
+			ProviderID:  p.ProviderID,
+			PlanCode:    p.PlanCode,
+			Name:        p.Name,
+			Description: p.Description,
+			Amount:      p.Amount,
+			Currency:    p.Currency,
+			Interval:    p.Interval,
+		})
+	}
+	return out
+}
+
 func (s *Service) GetPlan(ctx context.Context, projectID, planID int) (*PaymentPlanRecord, error) {
 	schema, err := s.store.ProjectSchema(ctx, projectID)
 	if err != nil {
@@ -319,16 +344,22 @@ func (s *Service) InitiateFNBPayment(ctx context.Context, userID, description st
 	return FNBInitiateResult{Success: true, URL: redirectURL, Reference: reference}, nil
 }
 
-func (s *Service) InitiatePayment(ctx context.Context, projectID int, req InitiatePaymentRequest) (InitiatePaymentResult, error) {
-	if req.Amount <= 0 || strings.TrimSpace(req.ItemName) == "" {
-		return InitiatePaymentResult{
-			Success:       false,
-			TransactionID: "",
-			PaymentURL:    "",
-			Error:         "Missing required fields: amount and item_name are required",
-		}, nil
+func applyPlanToInitiateRequest(req *InitiatePaymentRequest, plan *PaymentPlanRecord) {
+	if req == nil || plan == nil {
+		return
 	}
+	// Paystack charges the plan's own amount when a plan is passed.
+	req.Amount = plan.Amount
+	if strings.TrimSpace(req.ItemName) == "" {
+		req.ItemName = plan.Name
+	}
+	if req.PaymentType == nil || strings.TrimSpace(*req.PaymentType) == "" {
+		sub := "subscription"
+		req.PaymentType = &sub
+	}
+}
 
+func (s *Service) InitiatePayment(ctx context.Context, projectID int, req InitiatePaymentRequest) (InitiatePaymentResult, error) {
 	var provider *PaymentProviderRecord
 	var err error
 	if req.ProviderID != nil && *req.ProviderID > 0 {
@@ -344,10 +375,8 @@ func (s *Service) InitiatePayment(ctx context.Context, projectID int, req Initia
 	}
 	if provider == nil || !provider.IsActive {
 		return InitiatePaymentResult{
-			Success:       false,
-			TransactionID: "",
-			PaymentURL:    "",
-			Error:         "No active payment provider configured for this project. Please configure a payment provider or specify provider_id.",
+			Success: false,
+			Error:   "No active payment provider configured for this project. Please configure a payment provider or specify provider_id.",
 		}, nil
 	}
 
@@ -356,6 +385,9 @@ func (s *Service) InitiatePayment(ctx context.Context, projectID int, req Initia
 		plan, err = s.GetPlan(ctx, projectID, *req.PlanID)
 		if err != nil {
 			return InitiatePaymentResult{}, err
+		}
+		if plan == nil {
+			return InitiatePaymentResult{Success: false, Error: "Payment plan not found"}, nil
 		}
 	} else if req.PlanCode != nil && strings.TrimSpace(*req.PlanCode) != "" {
 		schemaForPlan, schemaErr := s.store.ProjectSchema(ctx, projectID)
@@ -366,6 +398,9 @@ func (s *Service) InitiatePayment(ctx context.Context, projectID int, req Initia
 		if err != nil {
 			return InitiatePaymentResult{}, err
 		}
+		if plan == nil {
+			return InitiatePaymentResult{Success: false, Error: "Payment plan not found"}, nil
+		}
 	}
 	if plan != nil {
 		if plan.ProviderID != provider.ID {
@@ -374,9 +409,17 @@ func (s *Service) InitiatePayment(ctx context.Context, projectID int, req Initia
 		if provider.ProviderType != ProviderTypePaystack {
 			return InitiatePaymentResult{Success: false, Error: "Plans are only supported for Paystack providers"}, nil
 		}
-		// Paystack charges the plan's own amount when a plan is passed, so keep the
-		// locally stored transaction amount truthful to what will actually be charged.
-		req.Amount = plan.Amount
+		if !plan.IsActive {
+			return InitiatePaymentResult{Success: false, Error: "Payment plan is not active"}, nil
+		}
+		applyPlanToInitiateRequest(&req, plan)
+	}
+
+	if req.Amount <= 0 || strings.TrimSpace(req.ItemName) == "" {
+		return InitiatePaymentResult{
+			Success: false,
+			Error:   "Missing required fields: amount and item_name are required (or supply plan_id / plan_code)",
+		}, nil
 	}
 
 	transactionID := uuid.NewString()
@@ -505,7 +548,35 @@ func (s *Service) CancelSubscription(ctx context.Context, projectID int, transac
 		return false, "Transaction not found", nil
 	}
 	if txRecord.SubscriptionToken == nil || strings.TrimSpace(*txRecord.SubscriptionToken) == "" {
-		return false, "Transaction is not a subscription or has no token", nil
+		return false, "Subscription not yet confirmed. Wait for the payment webhook, then retry.", nil
+	}
+
+	provider, err := s.GetProvider(ctx, projectID, txRecord.ProviderID)
+	if err != nil {
+		return false, "", err
+	}
+	if provider == nil {
+		return false, "Payment provider not found", nil
+	}
+
+	switch provider.ProviderType {
+	case ProviderTypePaystack:
+		emailToken := ""
+		if txRecord.SubscriptionEmailToken != nil {
+			emailToken = strings.TrimSpace(*txRecord.SubscriptionEmailToken)
+		}
+		if emailToken == "" {
+			return false, "Subscription email token missing. Wait for the subscription.create webhook, then retry.", nil
+		}
+		if err := cancelPaystackSubscription(ctx, provider, strings.TrimSpace(*txRecord.SubscriptionToken), emailToken); err != nil {
+			return false, err.Error(), nil
+		}
+	case ProviderTypePayFast:
+		if err := cancelPayFastSubscription(ctx, provider, strings.TrimSpace(*txRecord.SubscriptionToken)); err != nil {
+			return false, err.Error(), nil
+		}
+	default:
+		return false, "Subscription cancel is not supported for this provider", nil
 	}
 
 	schema, err := s.store.ProjectSchema(ctx, projectID)
@@ -754,24 +825,192 @@ func (s *Service) ProcessWebhook(ctx context.Context, projectID int, providerTyp
 		}
 		return result, nil
 	case ProviderTypePaystack:
-		result := validatePaystackWebhook(provider, rawBody)
-		if result.Valid && result.TransactionID != "" {
-			if err := s.store.UpdateTransactionFromWebhook(
-				ctx,
-				schema,
-				projectID,
-				result.TransactionID,
-				result.Status,
-				result.ExternalPaymentID,
-				result.RawData,
-			); err != nil {
-				return WebhookValidationResult{}, err
-			}
+		result := parsePaystackWebhook(rawBody)
+		if !result.Valid {
+			return result, nil
+		}
+		if err := s.applyPaystackWebhook(ctx, projectID, schema, provider, result); err != nil {
+			return WebhookValidationResult{}, err
 		}
 		return result, nil
 	default:
 		return WebhookValidationResult{Valid: false, Error: "Unsupported provider type"}, nil
 	}
+}
+
+func (s *Service) applyPaystackWebhook(ctx context.Context, projectID int, schema string, provider *PaymentProviderRecord, result WebhookValidationResult) error {
+	switch result.Event {
+	case "charge.success", "transfer.failed", "charge.dispute.create":
+		if result.TransactionID == "" {
+			return nil
+		}
+		if result.Event == "charge.success" {
+			verification, err := verifyPaystackTransaction(ctx, provider, result.TransactionID)
+			if err != nil {
+				return err
+			}
+			if !verification.Success {
+				return fmt.Errorf("paystack verification did not confirm successful payment for %s", result.TransactionID)
+			}
+			result.ExternalPaymentID = verification.ExternalPaymentID
+			if verification.Amount > 0 {
+				result.Amount = verification.Amount
+			}
+			result.RawData = verification.RawData
+		}
+		var statusMsg *string
+		if result.StatusMessage != "" {
+			statusMsg = &result.StatusMessage
+		}
+		opts := WebhookUpdateOpts{
+			Status:            result.Status,
+			StatusMessage:     statusMsg,
+			ExternalPaymentID: result.ExternalPaymentID,
+			RawData:           result.RawData,
+		}
+		if err := s.store.UpdateTransactionFromWebhookOpts(ctx, schema, projectID, result.TransactionID, opts); err != nil {
+			return err
+		}
+		if result.Event == "charge.success" {
+			return s.backfillPaystackSubscriptionTokens(ctx, projectID, schema, provider, result.TransactionID)
+		}
+		return nil
+
+	case "subscription.create":
+		if result.SubscriptionCode == "" || result.CustomerEmail == "" || result.PlanCode == "" {
+			return nil
+		}
+		txRecord, err := s.store.FindSubscriptionTransaction(ctx, projectID, result.CustomerEmail, result.PlanCode, schema)
+		if err != nil {
+			return err
+		}
+		if txRecord == nil {
+			return nil
+		}
+		code := result.SubscriptionCode
+		emailToken := result.SubscriptionEmailToken
+		status := "complete"
+		return s.store.UpdateTransactionFromWebhookOpts(ctx, schema, projectID, txRecord.TransactionID, WebhookUpdateOpts{
+			Status:                 status,
+			SubscriptionToken:      &code,
+			SubscriptionEmailToken: &emailToken,
+			RawData:                result.RawData,
+		})
+
+	case "subscription.disable", "subscription.not_renew":
+		if result.SubscriptionCode == "" {
+			return nil
+		}
+		txRecord, err := s.store.FindTransactionBySubscriptionToken(ctx, projectID, result.SubscriptionCode, schema)
+		if err != nil {
+			return err
+		}
+		if txRecord == nil {
+			return nil
+		}
+		msg := "Subscription cancelled"
+		if result.Event == "subscription.not_renew" {
+			msg = "Subscription will not renew"
+		}
+		return s.store.UpdateTransactionFromWebhookOpts(ctx, schema, projectID, txRecord.TransactionID, WebhookUpdateOpts{
+			Status:        "cancelled",
+			StatusMessage: &msg,
+			RawData:       result.RawData,
+		})
+
+	case "invoice.payment_failed":
+		if result.SubscriptionCode == "" {
+			return nil
+		}
+		txRecord, err := s.store.FindTransactionBySubscriptionToken(ctx, projectID, result.SubscriptionCode, schema)
+		if err != nil {
+			return err
+		}
+		if txRecord == nil {
+			return nil
+		}
+		msg := "Invoice payment failed"
+		if result.StatusMessage != "" {
+			msg = result.StatusMessage
+		}
+		return s.store.UpdateTransactionFromWebhookOpts(ctx, schema, projectID, txRecord.TransactionID, WebhookUpdateOpts{
+			Status:        "failed",
+			StatusMessage: &msg,
+			RawData:       result.RawData,
+		})
+
+	default:
+		// Acknowledge unknown events so Paystack does not retry forever.
+		return nil
+	}
+}
+
+func (s *Service) VerifyPaystackTransactionStatus(ctx context.Context, projectID int, transactionID string) (*PaymentTransactionRecord, error) {
+	txRecord, err := s.GetTransaction(ctx, projectID, transactionID)
+	if err != nil || txRecord == nil {
+		return txRecord, err
+	}
+	if txRecord.Status != "pending" && txRecord.Status != "processing" {
+		return txRecord, nil
+	}
+	provider, err := s.GetProvider(ctx, projectID, txRecord.ProviderID)
+	if err != nil || provider == nil {
+		return txRecord, err
+	}
+	if provider.ProviderType != ProviderTypePaystack {
+		return txRecord, nil
+	}
+	verification, err := verifyPaystackTransaction(ctx, provider, transactionID)
+	if err != nil {
+		return txRecord, nil
+	}
+	if !verification.Success {
+		return txRecord, nil
+	}
+	schema, err := s.store.ProjectSchema(ctx, projectID)
+	if err != nil {
+		return txRecord, err
+	}
+	if err := s.store.UpdateTransactionFromWebhookOpts(ctx, schema, projectID, transactionID, WebhookUpdateOpts{
+		Status:            "complete",
+		ExternalPaymentID: verification.ExternalPaymentID,
+		RawData:           verification.RawData,
+	}); err != nil {
+		return nil, err
+	}
+	if err := s.backfillPaystackSubscriptionTokens(ctx, projectID, schema, provider, transactionID); err != nil {
+		return nil, err
+	}
+	return s.GetTransaction(ctx, projectID, transactionID)
+}
+
+func (s *Service) backfillPaystackSubscriptionTokens(ctx context.Context, projectID int, schema string, provider *PaymentProviderRecord, transactionID string) error {
+	txRecord, err := s.store.GetTransaction(ctx, projectID, transactionID, schema)
+	if err != nil || txRecord == nil {
+		return err
+	}
+	if txRecord.SubscriptionToken != nil && strings.TrimSpace(*txRecord.SubscriptionToken) != "" {
+		return nil
+	}
+	planCode := ""
+	if txRecord.PlanCode != nil {
+		planCode = strings.TrimSpace(*txRecord.PlanCode)
+	}
+	email := ""
+	if txRecord.CustomerEmail != nil {
+		email = strings.TrimSpace(*txRecord.CustomerEmail)
+	}
+	if planCode == "" || email == "" {
+		return nil
+	}
+	code, emailToken, err := fetchPaystackSubscription(ctx, provider, email, planCode)
+	if err != nil || code == "" {
+		return nil // best-effort; subscription.create webhook may arrive later
+	}
+	return s.store.UpdateTransactionFromWebhookOpts(ctx, schema, projectID, transactionID, WebhookUpdateOpts{
+		SubscriptionToken:      &code,
+		SubscriptionEmailToken: &emailToken,
+	})
 }
 
 func validatePayFastWebhook(provider *PaymentProviderRecord, rawBody string, parsedData map[string]string) WebhookValidationResult {
@@ -1271,17 +1510,7 @@ func listPaystackPlans(ctx context.Context, provider *PaymentProviderRecord) ([]
 	return plans, nil
 }
 
-func validatePaystackWebhook(provider *PaymentProviderRecord, rawBody string) WebhookValidationResult {
-	secretKey := ""
-	if provider.APISecret != nil {
-		secretKey = strings.TrimSpace(*provider.APISecret)
-	}
-
-	// Verify HMAC-SHA512 signature if secret key is present
-	if secretKey != "" {
-		// The signature header is checked in the HTTP handler; here we just parse the body
-	}
-
+func parsePaystackWebhook(rawBody string) WebhookValidationResult {
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(rawBody), &payload); err != nil {
 		return WebhookValidationResult{Valid: false, Error: "Invalid JSON payload"}
@@ -1293,36 +1522,235 @@ func validatePaystackWebhook(provider *PaymentProviderRecord, rawBody string) We
 		return WebhookValidationResult{Valid: false, Error: "Missing data in webhook payload"}
 	}
 
-	// Reference is our transactionID
-	reference, _ := data["reference"].(string)
-	if reference == "" {
-		return WebhookValidationResult{Valid: false, Error: "Missing reference in webhook data"}
+	result := WebhookValidationResult{
+		Valid:   true,
+		Event:   event,
+		RawData: payload,
 	}
 
-	externalID, _ := data["id"].(float64)
-	externalIDStr := strconv.FormatInt(int64(externalID), 10)
+	switch event {
+	case "charge.success", "transfer.failed", "charge.dispute.create":
+		reference, _ := data["reference"].(string)
+		if reference == "" {
+			return WebhookValidationResult{Valid: false, Error: "Missing reference in webhook data"}
+		}
+		result.TransactionID = reference
+		if externalID, ok := data["id"].(float64); ok {
+			result.ExternalPaymentID = strconv.FormatInt(int64(externalID), 10)
+		}
+		if amountRaw, ok := data["amount"].(float64); ok {
+			result.Amount = amountRaw / 100.0
+		}
+		result.Status = "pending"
+		switch event {
+		case "charge.success":
+			result.Status = "complete"
+		case "transfer.failed", "charge.dispute.create":
+			result.Status = "failed"
+		}
 
+	case "subscription.create", "subscription.disable", "subscription.not_renew":
+		result.SubscriptionCode, _ = data["subscription_code"].(string)
+		result.SubscriptionEmailToken, _ = data["email_token"].(string)
+		if customer, ok := data["customer"].(map[string]any); ok {
+			result.CustomerEmail, _ = customer["email"].(string)
+		}
+		if plan, ok := data["plan"].(map[string]any); ok {
+			result.PlanCode, _ = plan["plan_code"].(string)
+		}
+		if result.SubscriptionCode == "" {
+			// Still valid so we ACK; applyPaystackWebhook no-ops when fields are incomplete.
+			return result
+		}
+
+	case "invoice.payment_failed":
+		if sub, ok := data["subscription"].(map[string]any); ok {
+			result.SubscriptionCode, _ = sub["subscription_code"].(string)
+		}
+		if result.SubscriptionCode == "" {
+			result.SubscriptionCode, _ = data["subscription_code"].(string)
+		}
+		if msg, ok := data["description"].(string); ok {
+			result.StatusMessage = msg
+		}
+
+	default:
+		// Unknown event — still Valid so the HTTP handler returns 200.
+	}
+
+	return result
+}
+
+// validatePaystackWebhook is kept for tests / callers that expect the old name.
+func validatePaystackWebhook(_ *PaymentProviderRecord, rawBody string) WebhookValidationResult {
+	return parsePaystackWebhook(rawBody)
+}
+
+func paystackSecretKey(provider *PaymentProviderRecord) string {
+	if provider == nil || provider.APISecret == nil {
+		return ""
+	}
+	return strings.TrimSpace(*provider.APISecret)
+}
+
+func paystackDisablePayload(subscriptionCode, emailToken string) map[string]string {
+	return map[string]string{
+		"code":  subscriptionCode,
+		"token": emailToken,
+	}
+}
+
+type PaystackVerificationResult struct {
+	Success           bool
+	ExternalPaymentID string
+	Amount            float64
+	RawData           map[string]any
+}
+
+func verifyPaystackTransaction(ctx context.Context, provider *PaymentProviderRecord, reference string) (PaystackVerificationResult, error) {
+	secretKey := paystackSecretKey(provider)
+	if secretKey == "" {
+		return PaystackVerificationResult{}, errors.New("Missing Paystack secret key")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.paystack.co/transaction/verify/"+url.PathEscape(strings.TrimSpace(reference)), nil)
+	if err != nil {
+		return PaystackVerificationResult{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+secretKey)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return PaystackVerificationResult{}, err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return parsePaystackVerificationResponse(respBody)
+}
+
+func parsePaystackVerificationResponse(respBody []byte) (PaystackVerificationResult, error) {
+	var result map[string]any
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return PaystackVerificationResult{}, errors.New("Invalid Paystack response")
+	}
+	if status, _ := result["status"].(bool); !status {
+		msg, _ := result["message"].(string)
+		if msg == "" {
+			msg = "Paystack verification failed"
+		}
+		return PaystackVerificationResult{}, errors.New(msg)
+	}
+	data, _ := result["data"].(map[string]any)
+	if data == nil {
+		return PaystackVerificationResult{}, errors.New("Missing data in Paystack verification response")
+	}
+	paymentStatus, _ := data["status"].(string)
+	if !strings.EqualFold(paymentStatus, "success") {
+		return PaystackVerificationResult{Success: false, RawData: result}, nil
+	}
+	externalPaymentID := ""
+	switch rawID := data["id"].(type) {
+	case float64:
+		externalPaymentID = strconv.FormatInt(int64(rawID), 10)
+	case string:
+		externalPaymentID = strings.TrimSpace(rawID)
+	}
 	amount := 0.0
 	if amountRaw, ok := data["amount"].(float64); ok {
 		amount = amountRaw / 100.0
 	}
-
-	status := "pending"
-	switch event {
-	case "charge.success":
-		status = "complete"
-	case "transfer.failed", "charge.dispute.create":
-		status = "failed"
-	}
-
-	return WebhookValidationResult{
-		Valid:             true,
-		TransactionID:     reference,
-		ExternalPaymentID: externalIDStr,
-		Status:            status,
+	return PaystackVerificationResult{
+		Success:           true,
+		ExternalPaymentID: externalPaymentID,
 		Amount:            amount,
-		RawData:           payload,
+		RawData:           result,
+	}, nil
+}
+
+func cancelPaystackSubscription(ctx context.Context, provider *PaymentProviderRecord, subscriptionCode, emailToken string) error {
+	secretKey := paystackSecretKey(provider)
+	if secretKey == "" {
+		return errors.New("Missing Paystack secret key")
 	}
+	body, _ := json.Marshal(paystackDisablePayload(subscriptionCode, emailToken))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.paystack.co/subscription/disable", strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+secretKey)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	var result map[string]any
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return errors.New("Invalid Paystack response")
+	}
+	if status, _ := result["status"].(bool); !status {
+		msg, _ := result["message"].(string)
+		if msg == "" {
+			msg = "Paystack subscription disable failed"
+		}
+		return errors.New(msg)
+	}
+	return nil
+}
+
+func fetchPaystackSubscription(ctx context.Context, provider *PaymentProviderRecord, customerEmail, planCode string) (subscriptionCode, emailToken string, err error) {
+	secretKey := paystackSecretKey(provider)
+	if secretKey == "" {
+		return "", "", errors.New("Missing Paystack secret key")
+	}
+	u, _ := url.Parse("https://api.paystack.co/subscription")
+	q := u.Query()
+	q.Set("customer", customerEmail)
+	q.Set("plan", planCode)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+secretKey)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var result map[string]any
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", "", errors.New("Invalid Paystack response")
+	}
+	if status, _ := result["status"].(bool); !status {
+		return "", "", nil
+	}
+	rawList, _ := result["data"].([]any)
+	for _, item := range rawList {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		code, _ := m["subscription_code"].(string)
+		token, _ := m["email_token"].(string)
+		statusStr, _ := m["status"].(string)
+		if code == "" {
+			continue
+		}
+		// Prefer active subscriptions.
+		if statusStr == "" || statusStr == "active" || statusStr == "non-renewing" {
+			return code, token, nil
+		}
+		if subscriptionCode == "" {
+			subscriptionCode = code
+			emailToken = token
+		}
+	}
+	return subscriptionCode, emailToken, nil
 }
 
 func cancelPayFastSubscription(ctx context.Context, provider *PaymentProviderRecord, subscriptionToken string) error {

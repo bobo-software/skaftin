@@ -48,10 +48,11 @@ type PaymentTransactionRecord struct {
 	SubscriptionType  *int           `json:"subscription_type,omitempty"`
 	Frequency         *int           `json:"frequency,omitempty"`
 	Cycles            *int           `json:"cycles,omitempty"`
-	SubscriptionToken *string        `json:"subscription_token,omitempty"`
-	PlanID            *int           `json:"plan_id,omitempty"`
-	PlanCode          *string        `json:"plan_code,omitempty"`
-	Status            string         `json:"status"`
+	SubscriptionToken      *string        `json:"subscription_token,omitempty"`
+	SubscriptionEmailToken *string        `json:"subscription_email_token,omitempty"`
+	PlanID                 *int           `json:"plan_id,omitempty"`
+	PlanCode               *string        `json:"plan_code,omitempty"`
+	Status                 string         `json:"status"`
 	StatusMessage     *string        `json:"status_message,omitempty"`
 	PaymentURL        *string        `json:"payment_url,omitempty"`
 	ReturnURL         *string        `json:"return_url,omitempty"`
@@ -86,6 +87,18 @@ type PaymentPlanRecord struct {
 	Metadata    map[string]any `json:"metadata,omitempty"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+// PublicPaymentPlan is the client-facing plan shape (no metadata / inactive flag).
+type PublicPaymentPlan struct {
+	ID          int     `json:"id"`
+	ProviderID  int     `json:"provider_id"`
+	PlanCode    string  `json:"plan_code"`
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	Amount      float64 `json:"amount"`
+	Currency    string  `json:"currency"`
+	Interval    string  `json:"interval"`
 }
 
 type CreatePlanRequest struct {
@@ -215,13 +228,19 @@ type PaystackInitiateResult struct {
 }
 
 type WebhookValidationResult struct {
-	Valid             bool
-	TransactionID     string
-	ExternalPaymentID string
-	Status            string
-	Amount            float64
-	Error             string
-	RawData           map[string]any
+	Valid                  bool
+	Event                  string
+	TransactionID          string
+	ExternalPaymentID      string
+	Status                 string
+	Amount                 float64
+	SubscriptionCode       string
+	SubscriptionEmailToken string
+	CustomerEmail          string
+	PlanCode               string
+	StatusMessage          string
+	Error                  string
+	RawData                map[string]any
 }
 
 type SubscriptionActionResult struct {

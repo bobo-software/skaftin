@@ -5,14 +5,18 @@ This document provides comprehensive guides for integrating payments into your R
 ## Overview
 
 The Payment API allows you to:
+- List active payment plans (Paystack)
 - Initiate payments (once-off and subscriptions)
 - Check transaction status
-- Cancel subscriptions
+- Cancel subscriptions (PayFast and Paystack)
 - Handle payment redirects and deep links
 
 Currently supported payment gateways:
-- **PayFast** (South African payment gateway)
-- Yoco, Paystack, Peach Payments, Ozow, Flutterwave (coming soon)
+- **PayFast** (South African payment gateway) — once-off and subscription fields
+- **FNB Pay** — once-off redirect payments
+- **Paystack** — once-off and plan-based subscriptions
+
+Other gateways (Yoco, Peach Payments, Ozow, Flutterwave) are coming soon.
 
 ## Table of Contents
 
@@ -45,7 +49,7 @@ headers: {
 
 **Note:** The API key must be active (`is_active: true`) and have the required permissions. The system automatically extracts the project ID from the API key, so you don't need to include it in the request.
 
-**Client payment routes (Go):** `POST /app-api/payments/initiate`, `GET /app-api/payments/transaction/{transactionId}`, `POST /app-api/payments/subscription/cancel` — all require **`x-api-key`**. Admin/dashboard provider management may use separate `/api/payments/...` JWT routes.
+**Client payment routes (Go):** `GET /app-api/payments/plans`, `POST /app-api/payments/initiate`, `GET /app-api/payments/transaction/{transactionId}`, `POST /app-api/payments/subscription/cancel` — all require **`x-api-key`**. Admin/dashboard provider and plan management use separate `/api/payments/...` JWT routes.
 
 ## Quick Start
 
@@ -813,7 +817,28 @@ export const App: React.FC = () => {
 
 ## API Reference
 
-### 1. Initiate Payment
+### 1. List Payment Plans
+
+List **active** payment plans for the project (Paystack plans created or synced in the dashboard).
+
+**Endpoint:** `GET /app-api/payments/plans`
+
+**Query:** optional `provider_id`
+
+**Response `data`:** `{ id, provider_id, plan_code, name, description?, amount, currency, interval }[]`
+
+```typescript
+const listPlans = async (providerId?: number) => {
+  const qs = providerId ? `?provider_id=${providerId}` : '';
+  const response = await fetch(`/app-api/payments/plans${qs}`, {
+    headers: { 'X-API-Key': 'your-api-key' }
+  });
+  const result = await response.json();
+  return result.data;
+};
+```
+
+### 2. Initiate Payment
 
 Start a payment and get the redirect URL.
 
@@ -826,20 +851,24 @@ interface InitiatePaymentRequest {
   // Provider selection (optional - uses first active provider if not specified)
   provider_id?: number;       // Payment provider ID (recommended for reliability)
   
-  // Required fields
-  amount: number;           // Amount in ZAR (e.g., 99.99)
-  item_name: string;        // Product/service name (max 100 chars)
+  // Required for once-off (optional when plan_id / plan_code is set — amount/name taken from plan)
+  amount?: number;            // Amount in major units (e.g. 99.99)
+  item_name?: string;         // Product/service name (defaults to plan name when using a plan)
   
-  // Optional customer info (recommended for better conversion)
+  // Optional customer info (Paystack requires customer_email)
   item_description?: string;
   customer_email?: string;
   customer_name?: string;   // "First Last" format
   customer_phone?: string;
   
-  // Payment type
+  // Payment type (auto 'subscription' when a Paystack plan is used)
   payment_type?: 'once_off' | 'subscription';  // Default: 'once_off'
   
-  // Subscription options (only for subscription payments)
+  // Paystack plan subscription
+  plan_id?: number;           // From GET /app-api/payments/plans
+  plan_code?: string;         // Paystack PLN_… code
+  
+  // PayFast subscription options (only for PayFast subscription payments)
   subscription_type?: number;  // PayFast: 1=subscription, 2=tokenization
   frequency?: number;          // PayFast: 3=monthly, 4=quarterly, 5=biannual, 6=annual
   cycles?: number;             // Number of cycles (0 = infinite)
@@ -856,6 +885,8 @@ interface InitiatePaymentRequest {
 ```
 
 **Note:** Use `provider_id` for reliable provider selection. If not provided, the system will use the first active payment provider for your project. To get available provider IDs, use the `list_payment_providers` MCP tool or call `/api/payments/{projectId}/providers`.
+
+**Paystack plans:** pass `plan_id` or `plan_code` plus `customer_email`. Amount/`item_name` may be omitted.
 
 **Response:**
 
@@ -972,11 +1003,13 @@ const initiatePayment = async (providerId?: number) => {
 };
 ```
 
-### 2. Get Transaction Status
+### 3. Get Transaction Status
 
 Check the status of a payment.
 
 **Endpoint:** `GET /app-api/payments/transaction/{transactionId}`
+
+**Paystack note:** if a Paystack transaction is still `pending` or `processing`, this endpoint may verify it directly with Paystack and promote it to `complete`. This helps recover from delayed or missed webhooks.
 
 **Response:**
 
@@ -990,6 +1023,9 @@ interface TransactionStatusResponse {
     currency: string;
     item_name: string;
     payment_type: 'once_off' | 'subscription';
+    plan_id?: number;
+    plan_code?: string;
+    subscription_token?: string; // Present after Paystack subscription.create (or PayFast token)
     paid_at?: string;      // ISO timestamp when payment completed
     created_at: string;
   };
@@ -1029,9 +1065,9 @@ const checkPaymentStatus = async (transactionId: string) => {
 };
 ```
 
-### 3. Cancel Subscription
+### 4. Cancel Subscription
 
-Cancel an active subscription.
+Cancel an active subscription. Paystack calls `POST /subscription/disable` (needs `subscription_token` + email token from webhooks). PayFast calls the PayFast cancel API. If tokens are not yet stored, wait for webhooks and retry.
 
 **Endpoint:** `POST /app-api/payments/subscription/cancel`
 
@@ -1082,6 +1118,8 @@ const cancelSubscription = async (transactionId: string) => {
 
 Payment gateways send notifications (webhooks) when payment status changes. Skaftin handles these automatically and updates the transaction status.
 
+For Paystack, Skaftin also verifies `charge.success` events with Paystack's `transaction/verify/{reference}` API before marking the local transaction as `complete`. If Paystack verification is temporarily unavailable, the transaction can remain `processing` until Paystack retries the webhook or a later status poll succeeds.
+
 ### Webhook URL
 
 Configure this URL in your payment gateway dashboard:
@@ -1096,6 +1134,42 @@ If you need real-time updates in your app, you can:
 
 1. **Polling:** Check transaction status periodically after initiating payment
 2. **WebSocket:** Listen for transaction updates via Skaftin WebSocket (coming soon)
+
+## Paystack Plan Subscriptions
+
+1. Create or sync plans in the dashboard (`/api/payments/{projectId}/plans`, `POST .../plans/sync`).
+2. Client: `GET /app-api/payments/plans` → show plans.
+3. Client: `POST /app-api/payments/initiate` with `plan_id` (or `plan_code`) + `customer_email`.
+4. Redirect to `paymentUrl`.
+5. Poll `GET /app-api/payments/transaction/{id}` until `status === 'complete'` (trust webhooks, not the return URL). For Paystack, this polling endpoint can also trigger provider-side verification while the payment is still `pending` / `processing`.
+6. When `subscription_token` is set, cancel via `POST /app-api/payments/subscription/cancel`.
+
+**Webhook URL:** `POST /api/payments/webhook/paystack/{projectId}`  
+
+Enable at least: `charge.success`, `subscription.create`, `subscription.disable` (recommended: `invoice.payment_failed`).
+
+```typescript
+const subscribeToPlan = async (planId: number) => {
+  const response = await fetch('/app-api/payments/initiate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'your-api-key'
+    },
+    body: JSON.stringify({
+      plan_id: planId,
+      customer_email: 'user@example.com',
+      metadata: { user_id: '123' },
+      return_url: 'https://myapp.com/payment/success',
+      cancel_url: 'https://myapp.com/payment/cancel'
+    })
+  });
+  const result = await response.json();
+  if (result.success && result.paymentUrl) {
+    window.location.href = result.paymentUrl;
+  }
+};
+```
 
 ## PayFast Subscription Frequencies
 

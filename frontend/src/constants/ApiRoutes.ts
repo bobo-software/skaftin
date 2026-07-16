@@ -310,6 +310,7 @@ const ApiRoutes = {
   
   // App API Payment routes - Client API (API keys, project ID auto-extracted)
   APP_API_PAYMENTS: {
+    LIST_PLANS: (providerId?: string) => `/app-api/payments/plans${providerId ? `?provider_id=${providerId}` : ''}`,
     INITIATE: () => '/app-api/payments/initiate',
     GET_TRANSACTION: (transactionId: string) => `/app-api/payments/transaction/${transactionId}`,
     CANCEL_SUBSCRIPTION: () => '/app-api/payments/subscription/cancel',
