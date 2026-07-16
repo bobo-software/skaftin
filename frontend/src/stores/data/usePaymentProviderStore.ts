@@ -343,9 +343,20 @@ const usePaymentProviderStore = create<PaymentProviderStore>()(
           const response = await RequestUtils.get(url, getToken());
 
           if (response.success) {
+            const payload = response.data;
+            const items = Array.isArray(payload)
+              ? payload
+              : Array.isArray(payload?.transactions)
+                ? payload.transactions
+                : [];
+            const total = typeof payload?.total === 'number'
+              ? payload.total
+              : typeof response.total === 'number'
+                ? response.total
+                : items.length;
             set({
-              transactions: response.data,
-              transactionsTotal: response.total || response.data.length,
+              transactions: items,
+              transactionsTotal: total,
               transactionsLoading: false,
             });
           } else {

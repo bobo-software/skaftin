@@ -298,10 +298,18 @@ class PaymentService {
       const response = await RequestUtils.get(url, this.getToken());
 
       if (response.success) {
-        return {
-          transactions: response.data,
-          total: response.total || response.data.length,
-        };
+        const payload = response.data;
+        const transactions = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.transactions)
+            ? payload.transactions
+            : [];
+        const total = typeof payload?.total === 'number'
+          ? payload.total
+          : typeof response.total === 'number'
+            ? response.total
+            : transactions.length;
+        return { transactions, total };
       }
 
       throw new Error(response.error || 'Failed to list transactions');
